@@ -4,13 +4,6 @@ import { getLocalProject } from "@/lib/local/project-repository";
 import { createLocalReadingAsset } from "@/lib/local/reading-repository";
 import { getReadingApiErrorMessage } from "@/lib/reading/api-errors";
 import { getReadingAssetSizeError } from "@/lib/reading/limits";
-import { createReadingAsset } from "@/lib/reading/supabase-repository";
-import {
-  authErrorResponse,
-  requireProjectAccess,
-  requireUser,
-} from "@/lib/supabase/auth";
-import { isLocalStorageMode } from "@/lib/utils";
 
 export async function POST(request: Request) {
   try {
@@ -38,9 +31,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "缺少 projectId" }, { status: 400 });
     }
 
-    const userAccess = isLocalStorageMode() ? null : await requireUser();
-    const projectAccess = userAccess ? await requireProjectAccess(projectId) : null;
-    if (!projectAccess && !(await getLocalProject(projectId))) {
+    if (!(await getLocalProject(projectId))) {
       return NextResponse.json({ error: "项目不存在" }, { status: 404 });
     }
 
@@ -82,33 +73,18 @@ export async function POST(request: Request) {
     const coverBytes = coverFile
       ? Buffer.from(await coverFile.arrayBuffer())
       : undefined;
-    const asset = projectAccess
-      ? await createReadingAsset({
-          projectId,
-          nodeId: typeof nodeId === "string" ? nodeId : undefined,
-          fileName: uploadedFile.name || "untitled",
-          mimeType: uploadedFile.type,
-          bytes,
-          coverBytes,
-          coverMimeType: coverFile?.type,
-          ownerId: userAccess!.user.id,
-          supabase: projectAccess.supabase,
-        })
-      : await createLocalReadingAsset({
-          projectId,
-          nodeId: typeof nodeId === "string" ? nodeId : undefined,
-          fileName: uploadedFile.name || "untitled",
-          mimeType: uploadedFile.type,
-          bytes,
-          coverBytes,
-          coverMimeType: coverFile?.type,
-        });
+    const asset = await createLocalReadingAsset({
+      projectId,
+      nodeId: typeof nodeId === "string" ? nodeId : undefined,
+      fileName: uploadedFile.name || "untitled",
+      mimeType: uploadedFile.type,
+      bytes,
+      coverBytes,
+      coverMimeType: coverFile?.type,
+    });
 
     return NextResponse.json(asset);
   } catch (error) {
-    const authResponse = authErrorResponse(error);
-    if (authResponse) return authResponse;
-
     return NextResponse.json(
       {
         error: getReadingApiErrorMessage(error, "阅读资料登记失败"),
@@ -134,17 +110,8 @@ async function registerBinaryReadingAsset(request: Request) {
     return NextResponse.json({ error: "文件名编码无效" }, { status: 400 });
   }
 
-  let access: Awaited<ReturnType<typeof requireProjectAccess>> | null;
-  let ownerId = "local";
-  if (isLocalStorageMode()) {
-    if (!(await getLocalProject(projectId))) {
-      return NextResponse.json({ error: "项目不存在" }, { status: 404 });
-    }
-    access = null;
-  } else {
-    const userAccess = await requireUser();
-    access = await requireProjectAccess(projectId);
-    ownerId = userAccess.user.id;
+  if (!(await getLocalProject(projectId))) {
+    return NextResponse.json({ error: "项目不存在" }, { status: 404 });
   }
   const declaredSizeError = getReadingAssetSizeError(
     Number.isFinite(expectedFileSize) && expectedFileSize > 0
@@ -179,23 +146,13 @@ async function registerBinaryReadingAsset(request: Request) {
     );
   }
 
-  const asset = isLocalStorageMode()
-    ? await createLocalReadingAsset({
-        projectId,
-        nodeId,
-        fileName,
-        mimeType: request.headers.get("content-type") ?? undefined,
-        bytes,
-      })
-    : await createReadingAsset({
-        projectId,
-        nodeId,
-        fileName,
-        mimeType: request.headers.get("content-type") ?? undefined,
-        bytes,
-        ownerId,
-        supabase: access!.supabase,
-      });
+  const asset = await createLocalReadingAsset({
+    projectId,
+    nodeId,
+    fileName,
+    mimeType: request.headers.get("content-type") ?? undefined,
+    bytes,
+  });
 
   return NextResponse.json(asset);
 }

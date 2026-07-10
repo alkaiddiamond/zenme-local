@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { checkRateLimit, getClientIp } from "@/lib/api/rate-limit";
+import { normalizeProviderBaseUrl } from "@/lib/api/provider-url";
 import type { ModelProviderConfig } from "@/lib/local/settings";
-import { authErrorResponse, requireUser } from "@/lib/supabase/auth";
-import { isLocalStorageMode } from "@/lib/utils";
 
 type ModelsResponse = {
   data?: Array<{
@@ -13,7 +12,7 @@ type ModelsResponse = {
 
 export async function POST(request: Request) {
   try {
-    const { user } = await requireAiAccess();
+    const user = { id: "local" };
     const userLimitResponse = checkRateLimit({
       key: `provider-models:user:${user.id}`,
       limit: 20,
@@ -47,10 +46,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const baseUrl = trimTrailingSlash(provider.baseUrl?.trim() ?? "");
-    if (!baseUrl) {
-      return NextResponse.json({ error: "缺少接口地址" }, { status: 400 });
-    }
+    const baseUrl = normalizeProviderBaseUrl(provider.baseUrl ?? "");
 
     const apiKey = resolveProviderApiKey(provider);
     if (!apiKey && provider.authType !== "none") {
@@ -83,26 +79,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       data: modelIds.map((id) => ({ id })),
     });
-  } catch (error) {
-    const authResponse = authErrorResponse(error);
-    if (authResponse) {
-      return authResponse;
-    }
-
+  } catch {
     return NextResponse.json({ error: "模型拉取失败" }, { status: 500 });
   }
-}
-
-async function requireAiAccess() {
-  if (isExplicitLocalStorageMode()) {
-    return { user: { id: "local" } };
-  }
-
-  return requireUser();
-}
-
-function isExplicitLocalStorageMode() {
-  return process.env.ZENME_STORAGE_DRIVER === "local" && isLocalStorageMode();
 }
 
 function createProviderHeaders(
@@ -128,8 +107,4 @@ function resolveProviderApiKey(provider: ModelProviderConfig) {
     return provider.apiKey?.trim() || process.env.ZHIPU_API_KEY?.trim() || "";
   }
   return provider.apiKey?.trim() || process.env.ZENME_PROVIDER_API_KEY?.trim() || "";
-}
-
-function trimTrailingSlash(value: string) {
-  return value.replace(/\/+$/, "");
 }

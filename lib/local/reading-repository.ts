@@ -31,9 +31,9 @@ import type {
   ReadingSection,
 } from "@/lib/reading/types";
 import {
-  normalizeColor,
-  normalizeType,
-} from "@/lib/reading/repositories/rows";
+  normalizeReadingColor,
+  normalizeReadingType,
+} from "@/lib/reading/normalization";
 
 export function detectLocalReadingFormat(fileName: string): ReadingFormat | null {
   const ext = path.extname(fileName).toLowerCase();
@@ -204,8 +204,8 @@ export async function createLocalReadingNote(
     comment: input.comment ?? "",
     sectionIndex: input.sectionIndex,
     chapterTitle: input.chapterTitle ?? null,
-    color: normalizeColor(input.color),
-    type: normalizeType(input.type),
+    color: normalizeReadingColor(input.color),
+    type: normalizeReadingType(input.type),
     offset: input.offset ?? null,
     length: input.length ?? null,
     rect: input.rect ?? null,
@@ -271,8 +271,8 @@ export async function updateLocalReadingNote(
           ...note,
           ...(input.selectedText !== undefined ? { selectedText: input.selectedText } : {}),
           ...(input.comment !== undefined ? { comment: input.comment } : {}),
-          ...(input.color !== undefined ? { color: normalizeColor(input.color) } : {}),
-          ...(input.type !== undefined ? { type: normalizeType(input.type) } : {}),
+          ...(input.color !== undefined ? { color: normalizeReadingColor(input.color) } : {}),
+          ...(input.type !== undefined ? { type: normalizeReadingType(input.type) } : {}),
           updatedAt,
         }
       : note,
@@ -527,8 +527,8 @@ function normalizeNotes(value: unknown): ReadingNote[] | null {
     );
   }).map((note) => ({
     ...note,
-    color: normalizeColor(note.color),
-    type: normalizeType(note.type),
+    color: normalizeReadingColor(note.color),
+    type: normalizeReadingType(note.type),
   }));
 }
 
@@ -557,4 +557,3 @@ function normalizeProgress(value: unknown): ReadingProgress | null {
 function isReadingFormat(value: unknown): value is ReadingFormat {
   return value === "epub" || value === "pdf" || value === "txt";
 }
-

@@ -108,6 +108,7 @@ export type CanvasNodeData = {
         | "fileId"
         | "imageEditAspectRatio"
         | "imageEditError"
+        | "imageEditModel"
         | "imageEditQuality"
         | "imageEditPrompt"
         | "imageEditStatus"
@@ -119,7 +120,7 @@ export type CanvasNodeData = {
   ) => void;
   onSubmitImageEditNode?: (
     nodeId: string,
-    input?: { aspectRatio?: string; prompt?: string; quality?: string },
+    input?: { aspectRatio?: string; model?: string; prompt?: string; quality?: string },
   ) => Promise<void> | void;
 };
 

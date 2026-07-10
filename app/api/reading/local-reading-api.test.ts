@@ -26,7 +26,6 @@ let projectId: string;
 beforeEach(async () => {
   dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "zenme-reading-api-"));
   process.env.ZENME_DATA_DIR = dataDir;
-  process.env.ZENME_STORAGE_DRIVER = "local";
   const project = await createLocalProject({
     name: "Reading API",
     prompt: "",
@@ -37,12 +36,11 @@ beforeEach(async () => {
 
 afterEach(async () => {
   delete process.env.ZENME_DATA_DIR;
-  delete process.env.ZENME_STORAGE_DRIVER;
   await fs.rm(dataDir, { force: true, recursive: true });
 });
 
 describe("local reading API", () => {
-  it("imports text assets and persists notes and progress without Supabase auth", async () => {
+  it("imports text assets and persists notes and progress locally", async () => {
     const formData = new FormData();
     formData.set("projectId", projectId);
     formData.set("nodeId", "node-1");
@@ -133,4 +131,3 @@ describe("local reading API", () => {
     expect(deleteResponse.status).toBe(200);
   });
 });
-

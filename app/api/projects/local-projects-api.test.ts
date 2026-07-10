@@ -18,12 +18,10 @@ let dataDir: string;
 beforeEach(async () => {
   dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "zenme-api-"));
   process.env.ZENME_DATA_DIR = dataDir;
-  process.env.ZENME_STORAGE_DRIVER = "local";
 });
 
 afterEach(async () => {
   delete process.env.ZENME_DATA_DIR;
-  delete process.env.ZENME_STORAGE_DRIVER;
   await fs.rm(dataDir, { force: true, recursive: true });
 });
 
@@ -83,4 +81,3 @@ describe("local projects API", () => {
     expect(await listResponse.json()).toHaveLength(1);
   });
 });
-

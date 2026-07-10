@@ -5,8 +5,6 @@ import {
   Image as ImageIcon,
   MessageSquareText,
   MousePointer2,
-  Plus,
-  Sparkles,
   Type,
   Upload,
 } from "lucide-react";
@@ -27,7 +25,6 @@ type CanvasAddMenuProps = {
   menu: CanvasAddMenuState;
   onClose: () => void;
   onCreateTextNode: (position: { x: number; y: number }) => void;
-  onCreateTextGenerationNode: (position: { x: number; y: number }) => void;
   onUploadFiles: (position: { x: number; y: number }) => void;
 };
 
@@ -35,7 +32,6 @@ export function CanvasAddMenu({
   menu,
   onClose,
   onCreateTextNode,
-  onCreateTextGenerationNode,
   onUploadFiles,
 }: CanvasAddMenuProps) {
   return (
@@ -51,12 +47,6 @@ export function CanvasAddMenu({
         onClick={() => onCreateTextNode(menu.flowPosition)}
         primary
         title="文本"
-      />
-      <FloatingMenuItem
-        description="根据提示词生成文案内容"
-        icon={Sparkles}
-        onClick={() => onCreateTextGenerationNode(menu.flowPosition)}
-        title="文本生成"
       />
       <FloatingMenuSectionLabel>资源</FloatingMenuSectionLabel>
       <FloatingMenuItem
@@ -91,13 +81,6 @@ export function NodeActionMenu({
   return (
     <FloatingMenu left={menu.x + 12} top={menu.y - 8}>
       <FloatingMenuHeader onClose={onClose} title="引用该节点生成" />
-      <FloatingMenuItem
-        description="脚本、广告词、品牌文案"
-        icon={Plus}
-        onClick={() => onCreateConnectedPlaceholder("textGeneration")}
-        primary
-        title="文本生成"
-      />
       <FloatingMenuItem
         icon={MessageSquareText}
         onClick={onProcessWithAgent}

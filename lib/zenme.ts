@@ -12,17 +12,6 @@ export type ZenmeProject = {
   lastOpenedAt?: string | null;
 };
 
-export type ProjectRow = {
-  id: string;
-  name: string;
-  prompt: string;
-  model: string;
-  thumbnail_path: string | null;
-  created_at: string;
-  updated_at: string;
-  last_saved_at: string | null;
-};
-
 export type CanvasSnapshotPayload = {
   version: 1;
   nodes: unknown[];
@@ -57,19 +46,6 @@ export const modelOptions = [
   "glm-5.2",
   "glm-4-flash",
 ];
-
-export function mapProjectRow(row: ProjectRow): ZenmeProject {
-  return {
-    id: row.id,
-    name: row.name,
-    prompt: row.prompt,
-    model: row.model,
-    thumbnailPath: row.thumbnail_path,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    lastSavedAt: row.last_saved_at,
-  };
-}
 
 export function createProjectName(prompt: string) {
   const trimmed = prompt.trim();

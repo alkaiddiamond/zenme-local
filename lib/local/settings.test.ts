@@ -22,29 +22,22 @@ afterEach(async () => {
 describe("local settings", () => {
   it("returns defaults and persists updates to settings.json", async () => {
     await expect(getLocalSettings(dataDir)).resolves.toMatchObject({
-      autoSaveIntervalMs: 30000,
+      autoSaveIntervalMs: 5000,
       dataDir,
-      enableCloudSyncExperimental: false,
-      enableSnapshotHistory: false,
-      language: "zh-CN",
-      theme: "system",
       version: 1,
     });
 
     const settings = await updateLocalSettings({
       autoSaveIntervalMs: 1000,
-      enableSnapshotHistory: true,
-      theme: "dark",
+      lastTextModelId: "glm-5.2",
     }, dataDir);
 
     expect(settings).toMatchObject({
       autoSaveIntervalMs: 5000,
-      enableSnapshotHistory: true,
-      theme: "dark",
+      lastTextModelId: "glm-5.2",
     });
     await expect(
       fs.readFile(getLocalSettingsPath(dataDir), "utf-8"),
-    ).resolves.toContain('"enableSnapshotHistory": true');
+    ).resolves.toContain('"lastTextModelId": "glm-5.2"');
   });
 });
-

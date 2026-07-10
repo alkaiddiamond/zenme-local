@@ -10,7 +10,6 @@ import {
   FolderOpen,
   HardDrive,
   ImageIcon,
-  KeyRound,
   Plus,
   RefreshCw,
   Save,
@@ -32,7 +31,7 @@ import type {
 } from "@/lib/local/settings";
 
 type SettingsPayload = {
-  mode: "local" | "supabase";
+  mode: "local";
   settings: ZenmeLocalSettings;
 };
 
@@ -93,14 +92,10 @@ export function SettingsClient() {
   const [desktopDataDir, setDesktopDataDir] = useState("");
   const [isDesktop, setIsDesktop] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>("models");
-  const [autoSaveIntervalMs, setAutoSaveIntervalMs] = useState(30_000);
-  const [enableSnapshotHistory, setEnableSnapshotHistory] = useState(false);
-  const [enableCloudSyncExperimental, setEnableCloudSyncExperimental] = useState(false);
+  const [autoSaveIntervalMs, setAutoSaveIntervalMs] = useState(5_000);
   const [modelProviders, setModelProviders] = useState<ModelProviderConfig[]>([]);
   const [editingProvider, setEditingProvider] = useState<ModelProviderConfig | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
-  const [importState, setImportState] = useState<"idle" | "importing" | "done" | "failed">("idle");
-  const [importMessage, setImportMessage] = useState("");
   const [restoreState, setRestoreState] = useState<"idle" | "restoring" | "done" | "failed">("idle");
   const [restoreMessage, setRestoreMessage] = useState("");
   const [directoryState, setDirectoryState] = useState<"idle" | "choosing" | "opening" | "failed">("idle");
@@ -113,8 +108,6 @@ export function SettingsClient() {
       const nextPayload = await response.json() as SettingsPayload;
       setPayload(nextPayload);
       setAutoSaveIntervalMs(nextPayload.settings.autoSaveIntervalMs);
-      setEnableSnapshotHistory(nextPayload.settings.enableSnapshotHistory);
-      setEnableCloudSyncExperimental(nextPayload.settings.enableCloudSyncExperimental);
       setModelProviders(nextPayload.settings.modelProviders);
       const dataDir = await window.zenmeDesktop?.getDataDir();
       setDesktopDataDir(dataDir ?? "");
@@ -126,16 +119,12 @@ export function SettingsClient() {
   async function saveSettings() {
     await persistSettings({
       autoSaveIntervalMs,
-      enableCloudSyncExperimental,
-      enableSnapshotHistory,
       modelProviders,
     });
   }
 
   async function persistSettings(updates: {
     autoSaveIntervalMs?: number;
-    enableCloudSyncExperimental?: boolean;
-    enableSnapshotHistory?: boolean;
     modelProviders?: ModelProviderConfig[];
   }) {
     setSaveState("saving");
@@ -145,8 +134,6 @@ export function SettingsClient() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           autoSaveIntervalMs,
-          enableCloudSyncExperimental,
-          enableSnapshotHistory,
           modelProviders,
           ...updates,
         }),
@@ -161,40 +148,6 @@ export function SettingsClient() {
     } catch {
       setSaveState("failed");
       return null;
-    }
-  }
-
-  async function importDataPackage(file: File | undefined) {
-    if (!file) return;
-    setImportState("importing");
-    setImportMessage("");
-
-    try {
-      const formData = new FormData();
-      formData.set("file", file, file.name);
-      const response = await fetch("/api/settings/import-local", {
-        method: "POST",
-        body: formData,
-      });
-      const payload = (await response.json().catch(() => null)) as {
-        error?: string;
-        summary?: {
-          projects?: number;
-          readingAssets?: number;
-        };
-      } | null;
-      if (!response.ok) {
-        throw new Error(payload?.error ?? "导入失败");
-      }
-      setImportState("done");
-      setImportMessage(
-        `已导入 ${payload?.summary?.projects ?? 0} 个项目、${
-          payload?.summary?.readingAssets ?? 0
-        } 个阅读资料`,
-      );
-    } catch (error) {
-      setImportState("failed");
-      setImportMessage(error instanceof Error ? error.message : "导入失败");
     }
   }
 
@@ -325,7 +278,7 @@ export function SettingsClient() {
           </nav>
           {payload ? (
             <div className="absolute bottom-5 rounded-md px-2 py-1 text-xs text-[var(--color-text-tertiary)]">
-              {payload.mode === "local" ? "本地模式" : "云端模式"}
+              本地模式
             </div>
           ) : null}
         </aside>
@@ -346,9 +299,6 @@ export function SettingsClient() {
             <LocalDataSettings
               directoryState={directoryState}
               effectiveDataDir={effectiveDataDir}
-              importDataPackage={importDataPackage}
-              importMessage={importMessage}
-              importState={importState}
               isDesktop={isDesktop}
               openDataDir={openDataDir}
               restoreBackup={restoreBackup}
@@ -361,13 +311,9 @@ export function SettingsClient() {
           {activeTab === "save" ? (
             <SavePolicySettings
               autoSaveIntervalMs={autoSaveIntervalMs}
-              enableCloudSyncExperimental={enableCloudSyncExperimental}
-              enableSnapshotHistory={enableSnapshotHistory}
               saveSettings={saveSettings}
               saveState={saveState}
               setAutoSaveIntervalMs={setAutoSaveIntervalMs}
-              setEnableCloudSyncExperimental={setEnableCloudSyncExperimental}
-              setEnableSnapshotHistory={setEnableSnapshotHistory}
             />
           ) : null}
         </main>
@@ -550,13 +496,11 @@ function ProviderEditorModal({
       ),
     [draft.models],
   );
-  const settingsJson = useMemo(() => buildProviderSettingsJson(draft), [draft]);
-
   async function saveProvider() {
     setProviderSaveState("saving");
     try {
       const savedProvider = await onSave(
-        prepareProviderForSave(draft, settingsJson),
+        prepareProviderForSave(draft),
       );
       setDraft(savedProvider);
       setProviderSaveState("saved");
@@ -801,51 +745,6 @@ function ProviderEditorModal({
               </Field>
             </div>
 
-            <div className="grid gap-3 rounded-md border border-[var(--color-border)] p-3.5">
-              <label className="flex items-start gap-3">
-                <input
-                  checked={draft.enableToolSearch}
-                  className="mt-1 size-4"
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      enableToolSearch: event.target.checked,
-                    }))
-                  }
-                  type="checkbox"
-                />
-                <span>
-                  <span className="block text-sm font-medium text-[var(--color-text-primary)]">
-                    启用 Tool Search
-                  </span>
-                  <span className="text-sm text-[var(--color-text-tertiary)]">
-                    按需加载工具 schema，适合支持 tool reference 的服务商。
-                  </span>
-                </span>
-              </label>
-              <label className="flex items-start gap-3">
-                <input
-                  checked={draft.disableExperimentalBetas}
-                  className="mt-1 size-4"
-                  onChange={(event) =>
-                    setDraft((current) => ({
-                      ...current,
-                      disableExperimentalBetas: event.target.checked,
-                    }))
-                  }
-                  type="checkbox"
-                />
-                <span>
-                  <span className="block text-sm font-medium text-[var(--color-text-primary)]">
-                    关闭实验性 Beta 头
-                  </span>
-                  <span className="text-sm text-[var(--color-text-tertiary)]">
-                    避免第三方通道拒绝 beta API 形态。
-                  </span>
-                </span>
-              </label>
-            </div>
-
             <Field label="API 密钥">
               <div className="relative">
                 <Input
@@ -1046,17 +945,6 @@ function ProviderEditorModal({
               </div>
             </section>
 
-            <section className="space-y-3">
-              <div className="flex items-center gap-2">
-                <KeyRound className="size-5 text-[#96573f]" />
-                <h3 className="text-base font-semibold text-[var(--color-text-primary)]">
-                  设置 JSON
-                </h3>
-              </div>
-              <pre className="max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-md border border-[var(--color-border)] bg-zinc-950 p-3 text-xs leading-5 text-zinc-100">
-                {settingsJson}
-              </pre>
-            </section>
           </div>
         </div>
 
@@ -1138,9 +1026,6 @@ function Select({
 function LocalDataSettings({
   directoryState,
   effectiveDataDir,
-  importDataPackage,
-  importMessage,
-  importState,
   isDesktop,
   openDataDir,
   restoreBackup,
@@ -1150,9 +1035,6 @@ function LocalDataSettings({
 }: {
   directoryState: "idle" | "choosing" | "opening" | "failed";
   effectiveDataDir: string;
-  importDataPackage: (file: File | undefined) => void;
-  importMessage: string;
-  importState: "idle" | "importing" | "done" | "failed";
   isDesktop: boolean;
   openDataDir: () => void;
   restoreBackup: (file: File | undefined) => void;
@@ -1207,6 +1089,9 @@ function LocalDataSettings({
           <p className="text-sm text-red-600">数据目录操作失败</p>
         ) : null}
         <div className="border-t border-[var(--color-border)] pt-4">
+          <p className="mb-3 text-sm text-[var(--color-text-tertiary)]">
+            备份包含项目、画布和阅读资料，但不会包含模型 API 密钥。
+          </p>
           <div className="flex flex-wrap gap-3">
             <a
               className="inline-flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-container-low)]"
@@ -1233,24 +1118,6 @@ function LocalDataSettings({
                 type="file"
               />
             </label>
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] bg-white px-3 py-2 text-sm font-medium text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-container-low)]">
-              {importState === "importing" ? (
-                <RefreshCw className="size-4 animate-spin" />
-              ) : (
-                <Upload className="size-4" />
-              )}
-              从 Supabase 导出包导入
-              <input
-                accept=".zip,application/zip"
-                className="sr-only"
-                disabled={importState === "importing"}
-                onChange={(event) => {
-                  importDataPackage(event.target.files?.[0]);
-                  event.currentTarget.value = "";
-                }}
-                type="file"
-              />
-            </label>
           </div>
           {restoreMessage ? (
             <p
@@ -1261,15 +1128,6 @@ function LocalDataSettings({
               {restoreMessage}
             </p>
           ) : null}
-          {importMessage ? (
-            <p
-              className={`mt-2 text-sm ${
-                importState === "failed" ? "text-red-600" : "text-[var(--color-text-tertiary)]"
-              }`}
-            >
-              {importMessage}
-            </p>
-          ) : null}
         </div>
       </div>
     </section>
@@ -1278,22 +1136,14 @@ function LocalDataSettings({
 
 function SavePolicySettings({
   autoSaveIntervalMs,
-  enableCloudSyncExperimental,
-  enableSnapshotHistory,
   saveSettings,
   saveState,
   setAutoSaveIntervalMs,
-  setEnableCloudSyncExperimental,
-  setEnableSnapshotHistory,
 }: {
   autoSaveIntervalMs: number;
-  enableCloudSyncExperimental: boolean;
-  enableSnapshotHistory: boolean;
   saveSettings: () => void;
   saveState: "idle" | "saving" | "saved" | "failed";
   setAutoSaveIntervalMs: (value: number) => void;
-  setEnableCloudSyncExperimental: (value: boolean) => void;
-  setEnableSnapshotHistory: (value: boolean) => void;
 }) {
   return (
     <section className="max-w-3xl space-y-4">
@@ -1311,26 +1161,6 @@ function SavePolicySettings({
             type="number"
             value={Math.round(autoSaveIntervalMs / 1000)}
           />
-        </label>
-        <label className="flex items-center gap-3 text-sm text-[var(--color-text-secondary)]">
-          <input
-            checked={enableSnapshotHistory}
-            className="size-4"
-            onChange={(event) => setEnableSnapshotHistory(event.target.checked)}
-            type="checkbox"
-          />
-          启用画布快照历史
-        </label>
-        <label className="flex items-center gap-3 text-sm text-[var(--color-text-secondary)]">
-          <input
-            checked={enableCloudSyncExperimental}
-            className="size-4"
-            onChange={(event) =>
-              setEnableCloudSyncExperimental(event.target.checked)
-            }
-            type="checkbox"
-          />
-          启用云同步实验功能
         </label>
         <div className="flex items-center gap-3">
           <Button disabled={saveState === "saving"} onClick={saveSettings} type="button">
@@ -1363,19 +1193,13 @@ function createEmptyProvider(): ModelProviderConfig {
     apiKey: "",
     enabled: true,
     isDefault: false,
-    enableToolSearch: false,
-    disableExperimentalBetas: false,
     modelMapping: {
       main: "",
-      haiku: "",
-      sonnet: "",
-      opus: "",
       imageEdit: "",
     },
     models: [],
     contextWindows: {},
     modelModalities: {},
-    settingsJson: "",
   };
 }
 
@@ -1422,52 +1246,7 @@ function getModalityLabel(value: ModelModality) {
   return MODALITY_OPTIONS.find((option) => option.value === value)?.label ?? value;
 }
 
-function buildProviderSettingsJson(provider: ModelProviderConfig) {
-  const textModels = provider.models
-    .filter((model) => model.enabled && model.modalities.includes("text"))
-    .map((model) => model.id);
-  const imageModels = provider.models
-    .filter((model) => model.enabled && model.modalities.includes("image"))
-    .map((model) => model.id);
-  const env: Record<string, string> = {
-    ZENME_PROVIDER_BASE_URL: provider.baseUrl,
-    ZENME_PROVIDER_API_FORMAT: provider.apiFormat,
-    ZENME_PROVIDER_AUTH_TYPE: provider.authType,
-    ZENME_PROVIDER_MODEL: provider.modelMapping.main,
-  };
-
-  if (provider.apiKey) {
-    env.ZENME_PROVIDER_API_KEY = "••••••••";
-  }
-  if (provider.modelMapping.imageEdit) {
-    env.ZENME_PROVIDER_IMAGE_MODEL = provider.modelMapping.imageEdit;
-  }
-  if (provider.enableToolSearch) {
-    env.ZENME_ENABLE_TOOL_SEARCH = "1";
-  }
-  if (provider.disableExperimentalBetas) {
-    env.ZENME_DISABLE_EXPERIMENTAL_BETAS = "1";
-  }
-  if (Object.keys(provider.contextWindows).length > 0) {
-    env.ZENME_MODEL_CONTEXT_WINDOWS = JSON.stringify(provider.contextWindows);
-  }
-
-  return JSON.stringify(
-    {
-      env,
-      enabledImageModels: imageModels,
-      enabledTextModels: textModels,
-      models: provider.models,
-    },
-    null,
-    2,
-  );
-}
-
-function prepareProviderForSave(
-  provider: ModelProviderConfig,
-  settingsJson: string,
-): ModelProviderConfig {
+function prepareProviderForSave(provider: ModelProviderConfig): ModelProviderConfig {
   const models = provider.models
     .map((model) => ({
       ...model,
@@ -1507,12 +1286,8 @@ function prepareProviderForSave(
     modelMapping: {
       main,
       imageEdit,
-      haiku: "",
-      sonnet: "",
-      opus: "",
     },
     modelModalities,
     models,
-    settingsJson,
   };
 }

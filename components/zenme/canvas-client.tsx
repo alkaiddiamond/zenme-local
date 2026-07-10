@@ -118,7 +118,6 @@ import {
   createReadingNoteCanvasNode,
   createTextChildCanvasNode,
   createTextCanvasNode,
-  createTextGenerationCanvasNode,
 } from "@/components/zenme/canvas/node-factories";
 import {
   createImageEditNodeDataUpdate,
@@ -196,6 +195,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     zoom: 1,
   });
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("已保存");
+  const [autoSaveIntervalMs, setAutoSaveIntervalMs] = useState(5_000);
   const [lastSavedAt, setLastSavedAt] = useState<string>();
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [canvasNotice, setCanvasNotice] = useState<string | null>(null);
@@ -206,6 +206,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([]);
   const [agentModel, setAgentModel] = useState(modelOptions[0]);
   const configuredModelOptions = useAiModelOptions();
+  const configuredImageModelOptions = useAiModelOptions("image");
   const configuredModelIds = useMemo(
     () => configuredModelOptions.map((option) => option.id),
     [configuredModelOptions],
@@ -267,6 +268,22 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const groupDragPosition = useRef<GroupDragPosition | null>(null);
 
   const agentKey = `${ZENME_AGENT_KEY_PREFIX}${projectId}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/settings", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload: { settings?: { autoSaveIntervalMs?: number } } | null) => {
+        const interval = payload?.settings?.autoSaveIntervalMs;
+        if (!cancelled && typeof interval === "number" && Number.isFinite(interval)) {
+          setAutoSaveIntervalMs(Math.min(300_000, Math.max(5_000, interval)));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     return observeCanvasLongTasks({ projectId });
@@ -1250,7 +1267,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
     autosaveTimer.current = setTimeout(() => {
       void saveCanvasRef.current();
-    }, 5000);
+    }, autoSaveIntervalMs);
 
     return () => {
       if (autosaveTimer.current) {
@@ -1258,7 +1275,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         autosaveTimer.current = null;
       }
     };
-  }, [canvasLoaded, edges, nodes, saveStatus]);
+  }, [autoSaveIntervalMs, canvasLoaded, edges, nodes, saveStatus]);
 
   useEffect(() => {
     if (
@@ -1514,7 +1531,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const submitImageEditNode = useCallback(
     async (
       nodeId: string,
-      input?: { aspectRatio?: string; prompt?: string; quality?: string },
+      input?: { aspectRatio?: string; model?: string; prompt?: string; quality?: string },
     ) => {
       const currentNodes = reactFlow?.getNodes() ?? nodesRef.current;
       const sourceNode = currentNodes.find((node) => {
@@ -1562,6 +1579,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         const imageDataUrl = await fetchImageAsDataUrl(sourceImageUrl);
         const edited = await editImageWithOpenRouter({
           imageDataUrl,
+          model: input?.model ?? sourceNode.data.imageEditModel ?? configuredImageModelOptions[0]?.id ?? "",
           prompt: buildImageEditPrompt({
             aspectRatio,
             prompt,
@@ -1624,7 +1642,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         throw error;
       }
     },
-    [projectId, pushNodeUpdateHistory, reactFlow, setNodes, updateImageEditNode],
+    [configuredImageModelOptions, projectId, pushNodeUpdateHistory, reactFlow, setNodes, updateImageEditNode],
   );
 
   function createTextNodeAt(position: { x: number; y: number }) {
@@ -1636,20 +1654,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     appendCanvasItems({
       currentEdges: edges,
       currentNodes: nodes,
-      nodes: [nextNode],
-    });
-    setCanvasAddMenu(null);
-  }
-
-  function createTextGenerationNodeAt(position: { x: number; y: number }) {
-    const { node: nextNode } = createTextGenerationCanvasNode({
-      id: crypto.randomUUID(),
-      position,
-    });
-
-    appendCanvasItems({
-      currentEdges: reactFlow?.getEdges() ?? edges,
-      currentNodes: reactFlow?.getNodes() ?? nodes,
       nodes: [nextNode],
     });
     setCanvasAddMenu(null);
@@ -2119,6 +2123,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       createConnectedPlaceholderCanvasNode({
         id: crypto.randomUUID(),
         kind,
+        model: kind === "imageEdit" ? configuredImageModelOptions[0]?.id : defaultTextModel,
         position,
         sourceNode: actionNode,
       });
@@ -2344,7 +2349,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             menu={canvasAddMenu}
             onClose={() => setCanvasAddMenu(null)}
             onCreateTextNode={createTextNodeAt}
-            onCreateTextGenerationNode={createTextGenerationNodeAt}
             onUploadFiles={openUploadPickerAt}
           />
         ) : null}

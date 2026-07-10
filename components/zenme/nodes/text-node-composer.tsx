@@ -7,6 +7,7 @@ import { Loader2, Send, Sparkles } from "lucide-react";
 import type { CanvasNodeData } from "@/components/zenme/node-types";
 import {
   createModelOption,
+  rememberAiModelPreference,
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
 import { ZenmeModelPicker } from "@/components/zenme/visual-components";
@@ -58,6 +59,7 @@ export function TextNodeComposer({
   function handleModelChange(nextModel: string) {
     setModel(nextModel);
     syncComposerState({ model: nextModel });
+    void rememberAiModelPreference("text", nextModel);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {

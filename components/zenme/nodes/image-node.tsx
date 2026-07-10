@@ -28,7 +28,12 @@ import {
 } from "@/components/zenme/node-ui";
 import { NANO_BANANA_2_IMAGE_MODEL } from "@/components/zenme/canvas/node-factories";
 import { ImageEditSizePicker } from "@/components/zenme/nodes/image-edit-node";
-import { useAiModelOptions } from "@/components/zenme/use-ai-model-options";
+import {
+  createModelOption,
+  rememberAiModelPreference,
+  useAiModelOptions,
+} from "@/components/zenme/use-ai-model-options";
+import { ZenmeModelPicker } from "@/components/zenme/visual-components";
 
 export function ImageNode({ data, id, selected }: NodeProps) {
   const { zoom } = useViewport();
@@ -44,6 +49,9 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   const [quality, setQuality] = useState<string>(
     getImageEditQualityOption(nodeData.imageEditQuality).value,
   );
+  const [model, setModel] = useState(
+    nodeData.imageEditModel ?? imageModelOptions[0]?.id ?? NANO_BANANA_2_IMAGE_MODEL,
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const isEditing = isSubmitting || nodeData.imageEditStatus === "editing";
@@ -58,7 +66,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   const imageUrl = nodeData.originalUrl ?? nodeData.previewUrl;
   const displayImageUrl = nodeData.previewUrl ?? nodeData.originalUrl;
   const imageTitle = isGeneratedImage ? "图片生成" : nodeData.title;
-  const imageEditModelId = nodeData.imageEditModel ?? NANO_BANANA_2_IMAGE_MODEL;
+  const imageEditModelId = model;
   const imageEditModelLabel =
     imageModelOptions.find((option) => option.id === imageEditModelId)?.label ??
     imageEditModelId;
@@ -77,9 +85,15 @@ export function ImageNode({ data, id, selected }: NodeProps) {
     setQuality(getImageEditQualityOption(nodeData.imageEditQuality).value);
   }, [nodeData.imageEditQuality]);
 
+  useEffect(() => {
+    const nextModel = nodeData.imageEditModel ?? imageModelOptions[0]?.id;
+    if (nextModel) setModel(nextModel);
+  }, [imageModelOptions, nodeData.imageEditModel]);
+
   function syncPrompt() {
     nodeData.onUpdateImageEditNode?.(id, {
       imageEditAspectRatio: aspectRatio,
+      imageEditModel: model,
       imageEditPrompt: prompt,
       imageEditQuality: quality,
     });
@@ -96,6 +110,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
     nodeData.onUpdateImageEditNode?.(id, {
       imageEditAspectRatio: aspectRatio,
       imageEditError: undefined,
+      imageEditModel: model,
       imageEditPrompt: nextPrompt,
       imageEditQuality: quality,
       imageEditStatus: "editing",
@@ -104,6 +119,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
     try {
       await nodeData.onSubmitImageEditNode?.(id, {
         aspectRatio,
+        model,
         prompt: nextPrompt,
         quality,
       });
@@ -232,12 +248,20 @@ export function ImageNode({ data, id, selected }: NodeProps) {
               ) : null}
               <div className="mt-auto flex items-end justify-between gap-3 pt-3">
                 <div className="flex min-w-0 items-center gap-2">
-                  <div className="flex min-w-0 items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs text-zinc-600">
-                    <Sparkles className="size-3.5 shrink-0" />
-                    <span className="truncate" title={imageEditModelId}>
-                      {imageEditModelLabel}
-                    </span>
-                  </div>
+                  <ZenmeModelPicker
+                    icon={<Sparkles className="size-3.5" />}
+                    model={model}
+                    models={
+                      imageModelOptions.some((option) => option.id === model)
+                        ? imageModelOptions
+                        : [createModelOption(model), ...imageModelOptions]
+                    }
+                    onChange={(nextModel) => {
+                      setModel(nextModel);
+                      nodeData.onUpdateImageEditNode?.(id, { imageEditModel: nextModel });
+                      void rememberAiModelPreference("image", nextModel);
+                    }}
+                  />
                   <ImageEditSizePicker
                     aspectRatio={aspectRatioOption.value}
                     aspectRatioLabel={aspectRatioOption.label}

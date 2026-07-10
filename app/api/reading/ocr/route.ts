@@ -3,8 +3,6 @@ import { NextResponse } from "next/server";
 import { checkRateLimit, getClientIp } from "@/lib/api/rate-limit";
 import { recognizeLocalModelOcr } from "@/lib/local-model-ocr";
 import { resolveOcrProvider, type OcrProvider } from "@/lib/reading/ocr-policy";
-import { isLocalStorageMode } from "@/lib/utils";
-import { authErrorResponse, requireUser } from "@/lib/supabase/auth";
 import {
   recognizeTencentCloudOcr,
   type TencentOcrAction,
@@ -21,7 +19,7 @@ const OCR_PROVIDER_ERROR_MESSAGE = "OCR 识别失败，请稍后重试";
 
 export async function POST(request: Request) {
   try {
-    const user = isLocalStorageMode() ? { id: "local" } : (await requireUser()).user;
+    const user = { id: "local" };
     const userLimitResponse = checkRateLimit({
       key: `reading-ocr:user:${user.id}`,
       limit: 20,
@@ -77,12 +75,7 @@ export async function POST(request: Request) {
       text: cleanOcrText(result.text),
       textDetections: result.textDetections,
     });
-  } catch (error) {
-    const authResponse = authErrorResponse(error);
-    if (authResponse) {
-      return authResponse;
-    }
-
+  } catch {
     return NextResponse.json(
       { error: OCR_PROVIDER_ERROR_MESSAGE },
       { status: 500 },

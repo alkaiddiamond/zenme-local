@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   createLocalDataBackup,
+  MAX_BACKUP_ARCHIVE_BYTES,
   restoreLocalDataBackup,
 } from "@/lib/local/backup";
 
@@ -31,6 +32,9 @@ export async function POST(request: Request) {
       typeof (file as { arrayBuffer?: unknown }).arrayBuffer !== "function"
     ) {
       return NextResponse.json({ error: "缺少备份文件" }, { status: 400 });
+    }
+    if ((file as File).size > MAX_BACKUP_ARCHIVE_BYTES) {
+      return NextResponse.json({ error: "备份包超过 200 MB 限制" }, { status: 413 });
     }
 
     const result = await restoreLocalDataBackup({

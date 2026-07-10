@@ -4,6 +4,10 @@ import {
   importLocalProjectFile,
   listLocalProjectFiles,
 } from "@/lib/local/project-files-repository";
+import { getLocalProject } from "@/lib/local/project-repository";
+
+const MAX_PROJECT_FILE_BYTES = 50 * 1024 * 1024;
+const MAX_PREVIEW_BYTES = 5 * 1024 * 1024;
 
 export async function GET(
   _request: Request,
@@ -23,6 +27,9 @@ export async function POST(
 ) {
   try {
     const { projectId } = await params;
+    if (!(await getLocalProject(projectId))) {
+      return NextResponse.json({ error: "项目不存在" }, { status: 404 });
+    }
     const formData = await request.formData();
     const file = formData.get("file");
     const preview = formData.get("preview");
@@ -42,6 +49,19 @@ export async function POST(
       typeof (preview as { arrayBuffer?: unknown }).arrayBuffer === "function"
         ? (preview as File)
         : null;
+    if (uploadedFile.size === 0 || uploadedFile.size > MAX_PROJECT_FILE_BYTES) {
+      return NextResponse.json(
+        { error: "项目文件大小必须在 1 B 到 50 MB 之间" },
+        { status: 413 },
+      );
+    }
+    if (
+      previewFile &&
+      (previewFile.size > MAX_PREVIEW_BYTES ||
+        !previewFile.type.startsWith("image/"))
+    ) {
+      return NextResponse.json({ error: "预览图格式或大小无效" }, { status: 400 });
+    }
     const record = await importLocalProjectFile({
       projectId,
       fileName: uploadedFile.name,
@@ -66,4 +86,3 @@ export async function POST(
     return NextResponse.json({ error: "项目文件导入失败" }, { status: 500 });
   }
 }
-

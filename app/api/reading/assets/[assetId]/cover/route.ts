@@ -2,9 +2,6 @@ import { NextResponse } from "next/server";
 
 import { getLocalReadingAssetCover } from "@/lib/local/reading-repository";
 import { getReadingApiErrorMessage } from "@/lib/reading/api-errors";
-import { getReadingAssetCover } from "@/lib/reading/supabase-repository";
-import { authErrorResponse, requireReadingAssetAccess } from "@/lib/supabase/auth";
-import { isLocalStorageMode } from "@/lib/utils";
 
 export async function GET(
   _request: Request,
@@ -12,11 +9,7 @@ export async function GET(
 ) {
   try {
     const { assetId } = await params;
-    const cover = isLocalStorageMode()
-      ? await getLocalReadingAssetCover(assetId)
-      : await requireReadingAssetAccess(assetId).then(({ supabase }) =>
-          getReadingAssetCover(supabase, assetId),
-        );
+    const cover = await getLocalReadingAssetCover(assetId);
 
     if (!cover) {
       return NextResponse.json({ error: "阅读资料封面不存在" }, { status: 404 });
@@ -29,9 +22,6 @@ export async function GET(
       },
     });
   } catch (error) {
-    const authResponse = authErrorResponse(error);
-    if (authResponse) return authResponse;
-
     return NextResponse.json(
       { error: getReadingApiErrorMessage(error, "封面读取失败") },
       { status: 500 },

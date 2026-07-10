@@ -4,7 +4,6 @@ import {
   createProjectName,
   formatFileSize,
   getProjectActivityTime,
-  mapProjectRow,
   type ZenmeProject,
 } from "./zenme";
 
@@ -21,30 +20,6 @@ function project(overrides: Partial<ZenmeProject> = {}): ZenmeProject {
 }
 
 describe("zenme project helpers", () => {
-  it("maps project rows from Supabase into app projects", () => {
-    expect(
-      mapProjectRow({
-        id: "project-1",
-        name: "项目",
-        prompt: "prompt",
-        model: "glm-4-flash",
-        thumbnail_path: "user/project/thumbnail/latest.webp",
-        created_at: "2026-06-28T01:00:00.000Z",
-        updated_at: "2026-06-28T02:00:00.000Z",
-        last_saved_at: "2026-06-28T03:00:00.000Z",
-      }),
-    ).toEqual({
-      id: "project-1",
-      name: "项目",
-      prompt: "prompt",
-      model: "glm-4-flash",
-      thumbnailPath: "user/project/thumbnail/latest.webp",
-      createdAt: "2026-06-28T01:00:00.000Z",
-      updatedAt: "2026-06-28T02:00:00.000Z",
-      lastSavedAt: "2026-06-28T03:00:00.000Z",
-    });
-  });
-
   it("uses the freshest project activity timestamp available", () => {
     expect(
       getProjectActivityTime(

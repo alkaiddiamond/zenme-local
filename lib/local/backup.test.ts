@@ -46,6 +46,20 @@ describe("local backup", () => {
     ).resolves.toContain("before");
   });
 
+  it("excludes provider API keys from backups", async () => {
+    await fs.writeFile(
+      path.join(dataDir, "settings.json"),
+      JSON.stringify({ modelProviders: [{ id: "provider", apiKey: "secret-key" }] }),
+    );
+
+    const backup = await createLocalDataBackup(dataDir);
+    const settings = new AdmZip(backup)
+      .readAsText("zenme-data/settings.json");
+
+    expect(settings).not.toContain("secret-key");
+    expect(settings).toContain('"apiKey": ""');
+  });
+
   it("rejects backup entries that escape the data directory", async () => {
     const zip = new AdmZip();
     zip.addFile("C:/escape.txt", Buffer.from("bad"));

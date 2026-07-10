@@ -5,6 +5,11 @@ import {
   saveLocalCanvasSnapshot,
 } from "@/lib/local/project-repository";
 import type { CanvasSnapshotPayload } from "@/lib/zenme";
+import {
+  isValidCanvasSnapshot,
+  MAX_CANVAS_SNAPSHOT_BYTES,
+  MAX_CANVAS_THUMBNAIL_BYTES,
+} from "@/lib/local/canvas-validation";
 
 export async function GET(
   _request: Request,
@@ -29,19 +34,23 @@ export async function PUT(
     if (typeof rawSnapshot !== "string") {
       return NextResponse.json({ error: "缺少画布快照" }, { status: 400 });
     }
+    if (Buffer.byteLength(rawSnapshot, "utf-8") > MAX_CANVAS_SNAPSHOT_BYTES) {
+      return NextResponse.json({ error: "画布快照超过 20 MB 限制" }, { status: 413 });
+    }
 
     const snapshot = JSON.parse(rawSnapshot) as CanvasSnapshotPayload;
-    if (
-      snapshot.version !== 1 ||
-      !Array.isArray(snapshot.nodes) ||
-      !Array.isArray(snapshot.edges) ||
-      !snapshot.viewport ||
-      typeof snapshot.updatedAt !== "string"
-    ) {
+    if (!isValidCanvasSnapshot(snapshot)) {
       return NextResponse.json({ error: "画布快照格式无效" }, { status: 400 });
     }
 
     const thumbnailFile = formData.get("thumbnail");
+    if (
+      thumbnailFile instanceof File &&
+      (thumbnailFile.size > MAX_CANVAS_THUMBNAIL_BYTES ||
+        thumbnailFile.type !== "image/webp")
+    ) {
+      return NextResponse.json({ error: "缩略图格式或大小无效" }, { status: 400 });
+    }
     const thumbnail =
       thumbnailFile &&
       typeof thumbnailFile === "object" &&

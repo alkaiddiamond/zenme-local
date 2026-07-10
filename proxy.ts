@@ -1,8 +1,20 @@
-import { updateSession } from "@/lib/supabase/proxy";
-import { type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
+
+import { validateLocalRequest } from "@/lib/api/local-access";
 
 export async function proxy(request: NextRequest) {
-  return await updateSession(request);
+  if (request.nextUrl.pathname.startsWith("/api/")) {
+    const error = validateLocalRequest(request);
+    if (error) {
+      return NextResponse.json({ error }, { status: 403 });
+    }
+  }
+
+  const response = NextResponse.next();
+  response.headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  return response;
 }
 
 export const config = {

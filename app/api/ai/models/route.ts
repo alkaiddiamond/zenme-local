@@ -3,12 +3,10 @@ import { NextResponse } from "next/server";
 import { getAllowedAiModels } from "@/lib/ai/request-policy";
 import { checkRateLimit, getClientIp } from "@/lib/api/rate-limit";
 import { getEnabledProviderModels, getLocalSettings } from "@/lib/local/settings";
-import { authErrorResponse, requireUser } from "@/lib/supabase/auth";
-import { isLocalStorageMode } from "@/lib/utils";
 
 export async function GET(request: Request) {
   try {
-    const { user } = await requireAiAccess();
+    const user = { id: "local" };
     const userLimitResponse = checkRateLimit({
       key: `ai-models:user:${user.id}`,
       limit: 60,
@@ -36,37 +34,30 @@ export async function GET(request: Request) {
     const models = configuredModels.length > 0
       ? configuredModels
       : getAllowedAiModels().map((id) => ({ id, label: id }));
+    const preferredModelId = modality === "image"
+      ? settings?.lastImageModelId
+      : settings?.lastTextModelId;
+    const orderedModels = preferredModelId && models.some((model) => model.id === preferredModelId)
+      ? [
+          models.find((model) => model.id === preferredModelId)!,
+          ...models.filter((model) => model.id !== preferredModelId),
+        ]
+      : models;
 
     return NextResponse.json({
-      data: models.map((model) => ({
+      data: orderedModels.map((model) => ({
         id: model.id,
         label: model.label,
         object: "model",
       })),
+      preferredModelId: orderedModels[0]?.id ?? null,
     });
-  } catch (error) {
-    const authResponse = authErrorResponse(error);
-    if (authResponse) {
-      return authResponse;
-    }
-
+  } catch {
     return NextResponse.json(
       { error: "模型列表加载失败" },
       { status: 500 },
     );
   }
-}
-
-async function requireAiAccess() {
-  if (isExplicitLocalStorageMode()) {
-    return { user: { id: "local" } };
-  }
-
-  return requireUser();
-}
-
-function isExplicitLocalStorageMode() {
-  return process.env.ZENME_STORAGE_DRIVER === "local" && isLocalStorageMode();
 }
 
 function getConfiguredModels(

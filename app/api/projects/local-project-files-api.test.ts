@@ -22,7 +22,6 @@ let projectId: string;
 beforeEach(async () => {
   dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "zenme-files-api-"));
   process.env.ZENME_DATA_DIR = dataDir;
-  process.env.ZENME_STORAGE_DRIVER = "local";
   const project = await createLocalProject({
     name: "Files API",
     prompt: "",
@@ -33,7 +32,6 @@ beforeEach(async () => {
 
 afterEach(async () => {
   delete process.env.ZENME_DATA_DIR;
-  delete process.env.ZENME_STORAGE_DRIVER;
   await fs.rm(dataDir, { force: true, recursive: true });
 });
 
@@ -92,4 +90,3 @@ describe("local project files API", () => {
     expect(await secondListResponse.json()).toEqual([]);
   });
 });
-

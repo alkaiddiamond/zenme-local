@@ -5,12 +5,9 @@ import { resolveInside } from "@/lib/local/path-safety";
 export type ZenmeLocalSettings = {
   version: 1;
   dataDir: string;
-  theme: "light" | "dark" | "system";
-  language: "zh-CN" | "en-US";
-  recentProjectIds: string[];
   autoSaveIntervalMs: number;
-  enableSnapshotHistory: boolean;
-  enableCloudSyncExperimental: boolean;
+  lastTextModelId?: string;
+  lastImageModelId?: string;
   modelProviders: ModelProviderConfig[];
 };
 
@@ -50,31 +47,20 @@ export type ModelProviderConfig = {
   apiKey?: string;
   enabled: boolean;
   isDefault: boolean;
-  enableToolSearch: boolean;
-  disableExperimentalBetas: boolean;
   modelMapping: {
     main: string;
-    haiku?: string;
-    sonnet?: string;
-    opus?: string;
     imageEdit?: string;
   };
   models: ModelConfig[];
   contextWindows: Record<string, number>;
   modelModalities: Record<string, ModelModality[]>;
-  settingsJson?: string;
 };
 
 export function createDefaultLocalSettings(dataDir = getZenmeDataDir()): ZenmeLocalSettings {
   return {
     version: 1,
     dataDir,
-    theme: "system",
-    language: "zh-CN",
-    recentProjectIds: [],
-    autoSaveIntervalMs: 30_000,
-    enableSnapshotHistory: false,
-    enableCloudSyncExperimental: false,
+    autoSaveIntervalMs: 5_000,
     modelProviders: createDefaultModelProviders(),
   };
 }
@@ -123,33 +109,20 @@ function normalizeLocalSettings(
     dataDir: typeof settings.dataDir === "string" && settings.dataDir.trim()
       ? settings.dataDir
       : defaults.dataDir,
-    theme: normalizeTheme(settings.theme, defaults.theme),
-    language: settings.language === "en-US" ? "en-US" : "zh-CN",
-    recentProjectIds: Array.isArray(settings.recentProjectIds)
-      ? settings.recentProjectIds.filter((id): id is string => typeof id === "string")
-      : [],
     autoSaveIntervalMs:
       typeof settings.autoSaveIntervalMs === "number" &&
       Number.isFinite(settings.autoSaveIntervalMs)
         ? Math.min(300_000, Math.max(5_000, Math.floor(settings.autoSaveIntervalMs)))
         : defaults.autoSaveIntervalMs,
-    enableSnapshotHistory: Boolean(settings.enableSnapshotHistory),
-    enableCloudSyncExperimental: Boolean(settings.enableCloudSyncExperimental),
+    lastTextModelId:
+      typeof settings.lastTextModelId === "string" ? settings.lastTextModelId : undefined,
+    lastImageModelId:
+      typeof settings.lastImageModelId === "string" ? settings.lastImageModelId : undefined,
     modelProviders: normalizeModelProviders(
       settings.modelProviders,
       defaults.modelProviders,
     ),
   };
-}
-
-function normalizeTheme(
-  value: unknown,
-  fallback: ZenmeLocalSettings["theme"],
-): ZenmeLocalSettings["theme"] {
-  if (value === "light" || value === "dark" || value === "system") {
-    return value;
-  }
-  return fallback;
 }
 
 function createDefaultModelProviders(): ModelProviderConfig[] {
@@ -167,13 +140,8 @@ function createDefaultModelProviders(): ModelProviderConfig[] {
       apiKey: zhipuApiKey,
       enabled: true,
       isDefault: true,
-      enableToolSearch: false,
-      disableExperimentalBetas: false,
       modelMapping: {
         main: "glm-4.5",
-        haiku: "glm-4.5-air",
-        sonnet: "glm-5-turbo",
-        opus: "glm-5.2",
       },
       models: [
         { id: "glm-4.5", alias: "GLM 4.5", enabled: true, contextWindow: 128_000, modalities: ["text", "tool"] },
@@ -204,8 +172,6 @@ function createDefaultModelProviders(): ModelProviderConfig[] {
       apiKey: openRouterApiKey,
       enabled: true,
       isDefault: false,
-      enableToolSearch: false,
-      disableExperimentalBetas: false,
       modelMapping: {
         imageEdit: "google/gemini-3.1-flash-image-preview",
         main: "",
@@ -284,17 +250,9 @@ function normalizeModelProvider(value: unknown): ModelProviderConfig | null {
     apiKey: typeof provider.apiKey === "string" ? provider.apiKey : "",
     enabled: provider.enabled !== false,
     isDefault: Boolean(provider.isDefault),
-    enableToolSearch: Boolean(provider.enableToolSearch),
-    disableExperimentalBetas: Boolean(provider.disableExperimentalBetas),
     modelMapping: {
       main:
         typeof modelMapping.main === "string" ? modelMapping.main : "",
-      haiku:
-        typeof modelMapping.haiku === "string" ? modelMapping.haiku : "",
-      sonnet:
-        typeof modelMapping.sonnet === "string" ? modelMapping.sonnet : "",
-      opus:
-        typeof modelMapping.opus === "string" ? modelMapping.opus : "",
       imageEdit:
         typeof modelMapping.imageEdit === "string"
           ? modelMapping.imageEdit
@@ -303,8 +261,6 @@ function normalizeModelProvider(value: unknown): ModelProviderConfig | null {
     models,
     contextWindows: normalizeContextWindowsFromModels(contextWindows, models),
     modelModalities: normalizeModelModalitiesFromModels(modelModalities, models),
-    settingsJson:
-      typeof provider.settingsJson === "string" ? provider.settingsJson : "",
   };
 }
 

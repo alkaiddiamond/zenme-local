@@ -144,7 +144,7 @@ function spawnNextServer(port, dataDir) {
   const env = {
     ...process.env,
     ZENME_DATA_DIR: dataDir,
-    ZENME_STORAGE_DRIVER: "local",
+    ZENME_DESKTOP: "1",
   };
   if (app.isPackaged) {
     env.ELECTRON_RUN_AS_NODE = "1";
@@ -215,6 +215,7 @@ async function waitForServer(url) {
 
 async function createWindow() {
   const nextServerUrl = await startLocalServer();
+  const trustedOrigin = new URL(nextServerUrl).origin;
 
   mainWindow = new BrowserWindow({
     autoHideMenuBar: true,
@@ -248,8 +249,35 @@ async function createWindow() {
     console.error(`[zenme-renderer] gone reason=${details.reason} exitCode=${details.exitCode}`);
   });
 
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    let target;
+    try {
+      target = new URL(url);
+    } catch {
+      event.preventDefault();
+      return;
+    }
+    if (target.origin !== trustedOrigin) {
+      event.preventDefault();
+      if (target.protocol === "https:" || target.protocol === "http:") {
+        void shell.openExternal(target.toString());
+      }
+    }
+  });
+
+  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(false);
+  });
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    try {
+      const target = new URL(url);
+      if (target.protocol === "https:" || target.protocol === "http:") {
+        void shell.openExternal(target.toString());
+      }
+    } catch {
+      // Ignore malformed or unsupported external URLs.
+    }
     return { action: "deny" };
   });
 

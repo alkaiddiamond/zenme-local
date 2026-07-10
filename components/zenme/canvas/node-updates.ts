@@ -79,6 +79,7 @@ export function createImageEditNodeDataUpdate(input: {
       | "fileId"
       | "imageEditAspectRatio"
       | "imageEditError"
+      | "imageEditModel"
       | "imageEditQuality"
       | "imageEditPrompt"
       | "imageEditStatus"
@@ -94,6 +95,7 @@ export function createImageEditNodeDataUpdate(input: {
       "fileId",
       "imageEditAspectRatio",
       "imageEditError",
+      "imageEditModel",
       "imageEditQuality",
       "imageEditPrompt",
       "imageEditStatus",

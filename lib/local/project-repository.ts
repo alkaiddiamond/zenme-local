@@ -5,9 +5,7 @@ import { getProjectDir, getProjectsDir, getZenmeDataDir } from "@/lib/local/data
 import { readJsonFile, writeJsonFile } from "@/lib/local/atomic-json";
 import { assertSafePathSegment, resolveInside } from "@/lib/local/path-safety";
 import {
-  mapProjectRow,
   type CanvasSnapshotPayload,
-  type ProjectRow,
   type ZenmeProject,
 } from "@/lib/zenme";
 
@@ -255,15 +253,15 @@ function normalizeCanvasRecord(value: unknown): CanvasSnapshotRecord | null {
 }
 
 function toZenmeProject(project: LocalProjectFile): ZenmeProject {
-  return mapProjectRow({
+  return {
     id: project.id,
     name: project.name,
     prompt: project.prompt,
     model: project.model,
-    thumbnail_path: project.thumbnailPath,
-    created_at: project.createdAt,
-    updated_at: project.updatedAt,
-    last_saved_at: project.lastSavedAt,
-  } satisfies ProjectRow);
+    thumbnailPath: project.thumbnailPath,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+    lastSavedAt: project.lastSavedAt,
+    lastOpenedAt: project.lastOpenedAt,
+  };
 }
-

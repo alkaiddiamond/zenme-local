@@ -4,13 +4,7 @@ import {
   deleteLocalReadingNote,
   updateLocalReadingNote,
 } from "@/lib/local/reading-repository";
-import {
-  deleteReadingNote,
-  updateReadingNote,
-} from "@/lib/reading/supabase-repository";
 import type { ReadingAnnotationColor, ReadingAnnotationType } from "@/lib/reading/types";
-import { authErrorResponse, requireReadingNoteAccess } from "@/lib/supabase/auth";
-import { isLocalStorageMode } from "@/lib/utils";
 
 export async function PATCH(
   request: Request,
@@ -26,21 +20,14 @@ export async function PATCH(
       return NextResponse.json({ error: "缺少可更新的笔记内容" }, { status: 400 });
     }
 
-    const note = isLocalStorageMode()
-      ? await updateLocalReadingNote(noteId, body)
-      : await requireReadingNoteAccess(noteId).then(({ supabase }) =>
-          updateReadingNote(supabase, noteId, body),
-        );
+    const note = await updateLocalReadingNote(noteId, body);
 
     if (!note) {
       return NextResponse.json({ error: "笔记不存在" }, { status: 404 });
     }
 
     return NextResponse.json(note);
-  } catch (error) {
-    const authResponse = authErrorResponse(error);
-    if (authResponse) return authResponse;
-
+  } catch {
     return NextResponse.json(
       { error: "笔记保存失败" },
       { status: 500 },
@@ -113,21 +100,14 @@ export async function DELETE(
 ) {
   try {
     const { noteId } = await params;
-    const deleted = isLocalStorageMode()
-      ? await deleteLocalReadingNote(noteId)
-      : await requireReadingNoteAccess(noteId).then(({ supabase }) =>
-          deleteReadingNote(supabase, noteId),
-        );
+    const deleted = await deleteLocalReadingNote(noteId);
 
     if (!deleted) {
       return NextResponse.json({ error: "笔记不存在" }, { status: 404 });
     }
 
     return NextResponse.json({ success: true });
-  } catch (error) {
-    const authResponse = authErrorResponse(error);
-    if (authResponse) return authResponse;
-
+  } catch {
     return NextResponse.json(
       { error: "笔记删除失败" },
       { status: 500 },

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { normalizeProviderBaseUrl } from "@/lib/api/provider-url";
 import { getEnabledProviderModels, getLocalSettings } from "@/lib/local/settings";
-import { authErrorResponse, requireUser } from "@/lib/supabase/auth";
 
 const DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const NANO_BANANA_2_MODEL = "google/gemini-3.1-flash-image-preview";
@@ -17,7 +17,6 @@ type OpenRouterImageResponse = {
 
 export async function POST(request: Request) {
   try {
-    await requireUser();
     const provider = await resolveImageEditProvider();
     if (!provider.apiKey) {
       return NextResponse.json(
@@ -28,16 +27,21 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as {
       imageDataUrl?: string;
+      model?: string;
       prompt?: string;
     };
     const prompt = body.prompt?.trim();
     const imageDataUrl = body.imageDataUrl?.trim();
+    const model = body.model?.trim();
 
     if (!prompt) {
       return NextResponse.json({ error: "缺少图片编辑指令" }, { status: 400 });
     }
     if (!imageDataUrl?.startsWith("data:image/")) {
       return NextResponse.json({ error: "缺少有效的参考图片" }, { status: 400 });
+    }
+    if (!model || !provider.models.includes(model)) {
+      return NextResponse.json({ error: "未启用该图片模型" }, { status: 400 });
     }
 
     const upstream = await fetch(`${provider.baseUrl}/images`, {
@@ -49,7 +53,7 @@ export async function POST(request: Request) {
         "X-Title": "Zenme Local",
       },
       body: JSON.stringify({
-        model: provider.model,
+        model,
         prompt,
         input_references: [
           {
@@ -86,15 +90,10 @@ export async function POST(request: Request) {
     return NextResponse.json({
       b64Json: image.b64_json,
       mediaType: image.media_type ?? "image/png",
-      model: provider.model,
+      model,
       usage: payload?.usage,
     });
-  } catch (error) {
-    const authResponse = authErrorResponse(error);
-    if (authResponse) {
-      return authResponse;
-    }
-
+  } catch {
     return NextResponse.json({ error: DEFAULT_ERROR_MESSAGE }, { status: 500 });
   }
 }
@@ -105,28 +104,24 @@ async function resolveImageEditProvider() {
     settings?.modelProviders.find(
       (item) =>
         item.enabled &&
+        item.apiFormat === "openrouter" &&
         (item.modelMapping.imageEdit || getEnabledProviderModels(item, "image").length > 0),
     ) ??
     settings?.modelProviders.find(
       (item) => item.enabled && item.apiFormat === "openrouter",
     );
-  const baseUrl = trimTrailingSlash(
+  const baseUrl = normalizeProviderBaseUrl(
     provider?.baseUrl?.trim() || DEFAULT_OPENROUTER_BASE_URL,
   );
-  const model =
-    provider?.modelMapping.imageEdit?.trim() ||
-    (provider ? getEnabledProviderModels(provider, "image")[0]?.id : undefined) ||
-    NANO_BANANA_2_MODEL;
+  const models = provider
+    ? getEnabledProviderModels(provider, "image").map((model) => model.id)
+    : [NANO_BANANA_2_MODEL];
   const apiKey =
     provider?.apiKey?.trim() || process.env.OPENROUTER_API_KEY?.trim() || "";
 
   return {
     apiKey,
     baseUrl,
-    model,
+    models,
   };
-}
-
-function trimTrailingSlash(value: string) {
-  return value.replace(/\/+$/, "");
 }

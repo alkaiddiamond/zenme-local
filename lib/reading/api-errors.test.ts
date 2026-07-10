@@ -9,7 +9,7 @@ describe("reading API error messages", () => {
     ).toBe("不支持的阅读文件类型");
   });
 
-  it("redacts Supabase Storage invalid-key object paths", () => {
+  it("redacts invalid local storage paths", () => {
     expect(
       getReadingApiErrorMessage(
         new Error(

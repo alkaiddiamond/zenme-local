@@ -5,12 +5,11 @@ import {
   updateLocalSettings,
   type ZenmeLocalSettings,
 } from "@/lib/local/settings";
-import { isLocalStorageMode } from "@/lib/utils";
 
 export async function GET() {
   try {
     return NextResponse.json({
-      mode: isLocalStorageMode() ? "local" : "supabase",
+      mode: "local",
       settings: await getLocalSettings(),
     });
   } catch {
@@ -21,19 +20,16 @@ export async function GET() {
 export async function PATCH(request: Request) {
   try {
     const body = await request.json() as Partial<ZenmeLocalSettings>;
-    const settings = await updateLocalSettings({
-      autoSaveIntervalMs: body.autoSaveIntervalMs,
-      dataDir: typeof body.dataDir === "string" ? body.dataDir : undefined,
-      enableCloudSyncExperimental: body.enableCloudSyncExperimental,
-      enableSnapshotHistory: body.enableSnapshotHistory,
-      language: body.language,
-      modelProviders: body.modelProviders,
-      recentProjectIds: body.recentProjectIds,
-      theme: body.theme,
-    });
+    const updates: Partial<Omit<ZenmeLocalSettings, "version">> = {};
+    if ("autoSaveIntervalMs" in body) updates.autoSaveIntervalMs = body.autoSaveIntervalMs!;
+    if (typeof body.dataDir === "string") updates.dataDir = body.dataDir;
+    if ("lastImageModelId" in body) updates.lastImageModelId = body.lastImageModelId;
+    if ("lastTextModelId" in body) updates.lastTextModelId = body.lastTextModelId;
+    if ("modelProviders" in body) updates.modelProviders = body.modelProviders!;
+    const settings = await updateLocalSettings(updates);
 
     return NextResponse.json({
-      mode: isLocalStorageMode() ? "local" : "supabase",
+      mode: "local",
       settings,
     });
   } catch {

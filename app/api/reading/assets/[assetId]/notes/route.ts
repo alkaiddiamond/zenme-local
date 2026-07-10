@@ -6,14 +6,7 @@ import {
   listLocalReadingNotes,
   reorderLocalReadingNotes,
 } from "@/lib/local/reading-repository";
-import {
-  createReadingNote,
-  listReadingNotes,
-  reorderReadingNotes,
-} from "@/lib/reading/supabase-repository";
 import type { ReadingNoteCreate } from "@/lib/reading/types";
-import { authErrorResponse, requireReadingAssetAccess } from "@/lib/supabase/auth";
-import { isLocalStorageMode } from "@/lib/utils";
 
 export async function GET(
   _request: Request,
@@ -21,16 +14,8 @@ export async function GET(
 ) {
   try {
     const { assetId } = await params;
-    if (!isLocalStorageMode()) {
-      const { supabase } = await requireReadingAssetAccess(assetId);
-      return NextResponse.json(await listReadingNotes(supabase, assetId));
-    }
-
     return NextResponse.json(await listLocalReadingNotes(assetId));
-  } catch (error) {
-    const authResponse = authErrorResponse(error);
-    if (authResponse) return authResponse;
-
+  } catch {
     return NextResponse.json(
       { error: "笔记加载失败" },
       { status: 500 },
@@ -44,9 +29,6 @@ export async function POST(
 ) {
   try {
     const { assetId } = await params;
-    const access = isLocalStorageMode()
-      ? null
-      : await requireReadingAssetAccess(assetId);
     const body = (await request.json()) as Record<string, unknown>;
 
     const normalizedBody = normalizeReadingNoteCreateBody(body);
@@ -54,38 +36,21 @@ export async function POST(
       return NextResponse.json({ error: "缺少笔记内容" }, { status: 400 });
     }
 
-    if (isLocalStorageMode()) {
-      const asset = await getLocalReadingAsset(assetId);
-      if (!asset) {
-        return NextResponse.json({ error: "阅读资料不存在" }, { status: 404 });
-      }
-      if (normalizedBody.projectId !== asset.projectId) {
-        return NextResponse.json({ error: "项目与阅读资料不匹配" }, { status: 400 });
-      }
-      return NextResponse.json(
-        await createLocalReadingNote({
-          assetId,
-          ownerId: "local",
-          ...normalizedBody,
-        }),
-      );
+    const asset = await getLocalReadingAsset(assetId);
+    if (!asset) {
+      return NextResponse.json({ error: "阅读资料不存在" }, { status: 404 });
     }
-
-    if (normalizedBody.projectId !== access!.asset.project_id) {
+    if (normalizedBody.projectId !== asset.projectId) {
       return NextResponse.json({ error: "项目与阅读资料不匹配" }, { status: 400 });
     }
-
-    const note = await createReadingNote(access!.supabase, {
-      assetId,
-      ownerId: access!.user.id,
-      ...normalizedBody,
-    });
-
-    return NextResponse.json(note);
-  } catch (error) {
-    const authResponse = authErrorResponse(error);
-    if (authResponse) return authResponse;
-
+    return NextResponse.json(
+      await createLocalReadingNote({
+        assetId,
+        ownerId: "local",
+        ...normalizedBody,
+      }),
+    );
+  } catch {
     return NextResponse.json(
       { error: "笔记保存失败" },
       { status: 500 },
@@ -196,16 +161,8 @@ export async function PATCH(
       return NextResponse.json({ error: "笔记顺序格式无效" }, { status: 400 });
     }
 
-    if (!isLocalStorageMode()) {
-      const { supabase } = await requireReadingAssetAccess(assetId);
-      return NextResponse.json(await reorderReadingNotes(supabase, assetId, noteIds));
-    }
-
     return NextResponse.json(await reorderLocalReadingNotes(assetId, noteIds));
-  } catch (error) {
-    const authResponse = authErrorResponse(error);
-    if (authResponse) return authResponse;
-
+  } catch {
     return NextResponse.json(
       { error: "笔记顺序保存失败" },
       { status: 500 },

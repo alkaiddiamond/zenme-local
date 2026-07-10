@@ -104,6 +104,7 @@ export async function refreshFileSignedUrlsFromApi(_fileId: string) {
 
 export async function editImageWithOpenRouter(input: {
   imageDataUrl: string;
+  model: string;
   prompt: string;
 }) {
   return readJson<{

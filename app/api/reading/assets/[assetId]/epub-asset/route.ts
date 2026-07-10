@@ -2,9 +2,6 @@ import { NextResponse } from "next/server";
 
 import { getLocalReadingEpubAsset } from "@/lib/local/reading-repository";
 import { getReadingApiErrorMessage } from "@/lib/reading/api-errors";
-import { getReadingEpubAsset } from "@/lib/reading/supabase-repository";
-import { authErrorResponse, requireReadingAssetAccess } from "@/lib/supabase/auth";
-import { isLocalStorageMode } from "@/lib/utils";
 
 export async function GET(
   request: Request,
@@ -19,18 +16,10 @@ export async function GET(
       return NextResponse.json({ error: "资源不存在" }, { status: 404 });
     }
 
-    const asset = isLocalStorageMode()
-      ? await getLocalReadingEpubAsset({
-          assetId,
-          assetPath,
-        })
-      : await requireReadingAssetAccess(assetId).then(({ supabase }) =>
-          getReadingEpubAsset({
-            assetId,
-            assetPath,
-            supabase,
-          }),
-        );
+    const asset = await getLocalReadingEpubAsset({
+      assetId,
+      assetPath,
+    });
 
     if (!asset) {
       return NextResponse.json({ error: "资源不存在" }, { status: 404 });
@@ -42,9 +31,6 @@ export async function GET(
       },
     });
   } catch (error) {
-    const authResponse = authErrorResponse(error);
-    if (authResponse) return authResponse;
-
     return NextResponse.json(
       { error: getReadingApiErrorMessage(error, "资源读取失败") },
       { status: 500 },

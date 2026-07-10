@@ -10,12 +10,10 @@ let dataDir: string;
 beforeEach(async () => {
   dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "zenme-settings-api-"));
   process.env.ZENME_DATA_DIR = dataDir;
-  process.env.ZENME_STORAGE_DRIVER = "local";
 });
 
 afterEach(async () => {
   delete process.env.ZENME_DATA_DIR;
-  delete process.env.ZENME_STORAGE_DRIVER;
   await fs.rm(dataDir, { force: true, recursive: true });
 });
 
@@ -26,7 +24,7 @@ describe("settings API", () => {
       mode: "local",
       settings: {
         dataDir,
-        enableSnapshotHistory: false,
+        autoSaveIntervalMs: 5000,
       },
     });
 
@@ -35,7 +33,7 @@ describe("settings API", () => {
         method: "PATCH",
         body: JSON.stringify({
           autoSaveIntervalMs: 45000,
-          enableSnapshotHistory: true,
+          lastTextModelId: "glm-5.2",
         }),
       }),
     );
@@ -44,9 +42,8 @@ describe("settings API", () => {
       mode: "local",
       settings: {
         autoSaveIntervalMs: 45000,
-        enableSnapshotHistory: true,
+        lastTextModelId: "glm-5.2",
       },
     });
   });
 });
-

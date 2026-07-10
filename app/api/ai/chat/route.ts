@@ -2,14 +2,13 @@ import { NextResponse } from "next/server";
 
 import { resolveAiModel, validateChatBody } from "@/lib/ai/request-policy";
 import { checkRateLimit, getClientIp } from "@/lib/api/rate-limit";
+import { normalizeProviderBaseUrl } from "@/lib/api/provider-url";
 import {
   getEnabledProviderModels,
   getLocalSettings,
   type ZenmeLocalSettings,
   type ModelProviderConfig,
 } from "@/lib/local/settings";
-import { authErrorResponse, requireUser } from "@/lib/supabase/auth";
-import { isLocalStorageMode } from "@/lib/utils";
 
 type ChatMessage = {
   role: "user" | "assistant" | "system";
@@ -22,7 +21,7 @@ const AI_PROVIDER_ERROR_MESSAGE = "模型调用失败，请稍后重试";
 
 export async function POST(request: Request) {
   try {
-    const { user } = await requireAiAccess();
+    const user = { id: "local" };
     const userLimitResponse = checkRateLimit({
       key: `ai-chat:user:${user.id}`,
       limit: 30,
@@ -96,12 +95,7 @@ export async function POST(request: Request) {
         Connection: "keep-alive",
       },
     });
-  } catch (error) {
-    const authResponse = authErrorResponse(error);
-    if (authResponse) {
-      return authResponse;
-    }
-
+  } catch {
     return NextResponse.json(
       { error: AI_PROVIDER_ERROR_MESSAGE },
       { status: 500 },
@@ -112,6 +106,7 @@ export async function POST(request: Request) {
 type ChatProviderConfig =
   | {
       apiKey: string;
+      apiFormat: ModelProviderConfig["apiFormat"];
       authType: ModelProviderConfig["authType"];
       baseUrl: string;
       model: string;
@@ -135,8 +130,8 @@ function resolveChatProviderConfig(
   const providerBaseUrl = provider?.baseUrl?.trim();
   const providerApiKey = provider?.apiKey?.trim();
   const providerName = provider?.name?.trim() || "默认模型服务商";
-  const baseUrl = trimTrailingSlash(
-    process.env.ZHIPU_BASE_URL?.trim() ||
+  const baseUrl = normalizeProviderBaseUrl(
+    getProviderEnvBaseUrl(provider) ||
       providerBaseUrl ||
       "https://open.bigmodel.cn/api/paas/v4",
   );
@@ -157,23 +152,12 @@ function resolveChatProviderConfig(
 
   return {
     apiKey: apiKey ?? "",
+    apiFormat: provider?.apiFormat ?? "openai",
     authType: provider?.authType ?? "bearer",
     baseUrl,
     model,
     name: providerName,
   };
-}
-
-async function requireAiAccess() {
-  if (isExplicitLocalStorageMode()) {
-    return { user: { id: "local" } };
-  }
-
-  return requireUser();
-}
-
-function isExplicitLocalStorageMode() {
-  return process.env.ZENME_STORAGE_DRIVER === "local" && isLocalStorageMode();
 }
 
 function getConfiguredTextModels(settings: ZenmeLocalSettings | null) {
@@ -205,6 +189,13 @@ function getProviderEnvApiKey(provider?: ModelProviderConfig) {
   return undefined;
 }
 
+function getProviderEnvBaseUrl(provider?: ModelProviderConfig) {
+  if (provider?.apiFormat === "zhipu") {
+    return process.env.ZHIPU_BASE_URL?.trim();
+  }
+  return undefined;
+}
+
 function createProviderHeaders(provider: Exclude<ChatProviderConfig, { error: string }>) {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -220,16 +211,39 @@ function createProviderHeaders(provider: Exclude<ChatProviderConfig, { error: st
   return headers;
 }
 
-function trimTrailingSlash(value: string) {
-  return value.replace(/\/+$/, "");
-}
-
 async function fetchProviderChatCompletion(input: {
   messages: ChatMessage[];
   provider: Exclude<ChatProviderConfig, { error: string }>;
   systemContent: string;
 }): Promise<Response | { error: string }> {
   try {
+    if (input.provider.apiFormat === "anthropic") {
+      const response = await fetch(`${input.provider.baseUrl}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "anthropic-version": "2023-06-01",
+          ...(input.provider.apiKey ? { "x-api-key": input.provider.apiKey } : {}),
+        },
+        body: JSON.stringify({
+          max_tokens: 4096,
+          messages: input.messages.filter((message) => message.role !== "system"),
+          model: input.provider.model,
+          stream: false,
+          system: input.systemContent,
+        }),
+      });
+      if (!response.ok) return response;
+      const payload = (await response.json()) as {
+        content?: Array<{ text?: string; type?: string }>;
+      };
+      const content = (payload.content ?? [])
+        .filter((item) => item.type === "text" && item.text)
+        .map((item) => item.text)
+        .join("");
+      return createTextSseResponse(content);
+    }
+
     return await fetch(`${input.provider.baseUrl}/chat/completions`, {
       method: "POST",
       headers: createProviderHeaders(input.provider),
@@ -253,6 +267,20 @@ async function fetchProviderChatCompletion(input: {
       error: `${input.provider.name} 调用 ${input.provider.model} 失败，无法连接服务商，请检查接口地址或网络。`,
     };
   }
+}
+
+function createTextSseResponse(content: string) {
+  const encoder = new TextEncoder();
+  const payload = JSON.stringify({ choices: [{ delta: { content } }] });
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`data: ${payload}\n\ndata: [DONE]\n\n`));
+        controller.close();
+      },
+    }),
+    { headers: { "content-type": "text/event-stream; charset=utf-8" } },
+  );
 }
 
 async function createSafeProviderError(

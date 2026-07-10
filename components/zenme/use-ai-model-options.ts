@@ -13,6 +13,21 @@ export function createModelOption(id: string, label = id): AiModelOption {
   return { id, label };
 }
 
+export async function rememberAiModelPreference(
+  modality: "image" | "text",
+  modelId: string,
+) {
+  await fetch("/api/settings", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(
+      modality === "image"
+        ? { lastImageModelId: modelId }
+        : { lastTextModelId: modelId },
+    ),
+  }).catch(() => undefined);
+}
+
 export function useAiModelOptions(modality: "image" | "text" = "text") {
   const [models, setModels] = useState<AiModelOption[]>(
     modality === "text"

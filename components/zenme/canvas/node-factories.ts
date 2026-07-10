@@ -127,6 +127,7 @@ export function createTextGenerationCanvasNode(input: {
 
 export function createImageEditCanvasNode(input: {
   id: string;
+  model?: string;
   position?: { x: number; y: number };
   sourceNode: CanvasNode;
 }): { edge: Edge; node: CanvasNode } {
@@ -152,7 +153,7 @@ export function createImageEditCanvasNode(input: {
       kind: "imageEdit",
       imageEditAspectRatio: DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
       title: "图片编辑",
-      imageEditModel: NANO_BANANA_2_IMAGE_MODEL,
+      imageEditModel: input.model ?? NANO_BANANA_2_IMAGE_MODEL,
       imageEditPrompt: "",
       imageEditQuality: DEFAULT_IMAGE_EDIT_QUALITY,
       imageEditStatus: "idle",
@@ -344,6 +345,7 @@ export function createReaderCanvasNode(input: {
 export function createConnectedPlaceholderCanvasNode(input: {
   id: string;
   kind: "text" | "agent" | "textGeneration" | "imageEdit";
+  model?: string;
   position?: { x: number; y: number };
   sourceNode: CanvasNode;
 }): { edge: Edge; node: CanvasNode } {
