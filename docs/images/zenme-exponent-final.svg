@@ -1,0 +1,24 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">zenme exponent final logo</title>
+  <desc id="desc">A black and white zenme logo with a custom me mark and zen as a light superscript exponent.</desc>
+  <rect width="1024" height="1024" fill="white"/>
+
+  <g stroke="#050505" stroke-width="58" stroke-linecap="butt" stroke-linejoin="round">
+    <path d="M292 640V470C292 422 330 392 376 392C424 392 457 423 457 474V640"/>
+    <path d="M457 640V470C457 422 495 392 541 392C589 392 622 423 622 474V640"/>
+  </g>
+
+  <g stroke="#050505" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M768 445C718 404 644 410 601 457C554 507 560 586 612 630C663 674 741 667 785 617C801 598 810 579 813 558"/>
+    <path d="M613 607L779 441"/>
+  </g>
+
+  <text
+    x="678"
+    y="338"
+    fill="#050505"
+    font-family="'Inter Tight', Inter, Avenir Next, Helvetica Neue, Arial, sans-serif"
+    font-size="82"
+    font-weight="260"
+    letter-spacing="-2">zen</text>
+</svg>

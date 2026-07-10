@@ -1,0 +1,52 @@
+<svg width="1200" height="420" viewBox="0 0 1200 420" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">zenme dot line wordmark</title>
+  <desc id="desc">The word zenme constructed from minimal black dots and connecting lines.</desc>
+  <rect width="1200" height="420" fill="white"/>
+  <g transform="translate(106 92)" stroke="#080808" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke-width="8">
+      <path d="M0 36H132L0 196H132"/>
+      <path d="M228 196C158 196 158 36 228 36C293 36 301 118 186 118"/>
+      <path d="M360 196V36C424 36 476 78 476 196"/>
+      <path d="M564 196V36C610 36 642 70 642 126V196"/>
+      <path d="M642 126C642 70 674 36 720 36C766 36 798 70 798 126V196"/>
+      <path d="M912 196C842 196 842 36 912 36C977 36 985 118 870 118"/>
+    </g>
+    <g stroke-width="4" opacity="0.92">
+      <path d="M132 36C162 34 178 36 206 44"/>
+      <path d="M300 118C326 113 340 105 360 88"/>
+      <path d="M476 196C504 201 528 201 564 196"/>
+      <path d="M798 196C828 201 852 200 884 190"/>
+    </g>
+  </g>
+  <g transform="translate(106 92)" fill="#080808">
+    <circle cx="0" cy="36" r="10"/>
+    <circle cx="132" cy="36" r="10"/>
+    <circle cx="0" cy="196" r="10"/>
+    <circle cx="132" cy="196" r="10"/>
+    <circle cx="228" cy="36" r="10"/>
+    <circle cx="186" cy="118" r="7"/>
+    <circle cx="228" cy="196" r="10"/>
+    <circle cx="360" cy="36" r="10"/>
+    <circle cx="360" cy="196" r="10"/>
+    <circle cx="476" cy="196" r="10"/>
+    <circle cx="564" cy="36" r="10"/>
+    <circle cx="564" cy="196" r="10"/>
+    <circle cx="642" cy="126" r="7"/>
+    <circle cx="642" cy="196" r="10"/>
+    <circle cx="720" cy="36" r="10"/>
+    <circle cx="798" cy="196" r="10"/>
+    <circle cx="912" cy="36" r="10"/>
+    <circle cx="870" cy="118" r="7"/>
+    <circle cx="912" cy="196" r="10"/>
+  </g>
+  <g transform="translate(106 92)" fill="#080808" opacity="0.72">
+    <circle cx="166" cy="36" r="4"/>
+    <circle cx="190" cy="40" r="4"/>
+    <circle cx="324" cy="106" r="4"/>
+    <circle cx="338" cy="96" r="4"/>
+    <circle cx="508" cy="201" r="4"/>
+    <circle cx="532" cy="201" r="4"/>
+    <circle cx="830" cy="201" r="4"/>
+    <circle cx="854" cy="198" r="4"/>
+  </g>
+</svg>

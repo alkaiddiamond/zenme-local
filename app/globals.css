@@ -1,0 +1,662 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/inter-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("/fonts/inter-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7,
+    U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
+    U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/fonts/manrope-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("/fonts/manrope-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7,
+    U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
+    U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/jetbrains-mono-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7,
+    U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F,
+    U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 28% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 28% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 28% 11%;
+    --primary: 17 28% 74%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 222 28% 17%;
+    --muted: 216 33% 97%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 214 32% 95%;
+    --accent-foreground: 222 28% 17%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 214 26% 91%;
+    --input: 214 26% 91%;
+    --ring: 214 18% 68%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem;
+    --font-body: "Inter", "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei",
+      system-ui, sans-serif;
+    --font-headline: "Manrope", "Inter", "Noto Sans SC", "Microsoft YaHei UI",
+      system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+    --color-surface: #ffffff;
+    --color-surface-sidebar: #f3f6fa;
+    --color-surface-topbar: #f8fafc;
+    --color-surface-container: #f3f6fa;
+    --color-surface-container-low: #f7f9fc;
+    --color-surface-container-high: #edf1f6;
+    --color-surface-container-lowest: #ffffff;
+    --color-text-primary: #111827;
+    --color-text-secondary: #4b5563;
+    --color-text-tertiary: #8b95a5;
+    --color-border: #e3e8ef;
+    --color-border-strong: #d5dce7;
+    --color-border-focus: #b6c0ce;
+    --color-brand: #8f482f;
+    --color-brand-container: #a56551;
+    --color-brand-soft: #f7f0ee;
+    --color-run: #ead5cf;
+    --color-run-hover: #dfc4bc;
+    --color-tab-active: #8f482f;
+    --color-info: #64748b;
+    --shadow-dropdown: 0 12px 40px rgba(15, 23, 42, 0.08);
+    --shadow-button-primary: none;
+    --shadow-focus-ring: 0 0 0 3px rgba(148, 163, 184, 0.22);
+    --gradient-btn-primary: linear-gradient(135deg, #ead5cf, #dec4bd);
+    --gradient-btn-primary-hover: linear-gradient(135deg, #dfc4bc, #d6b8af);
+  }
+  .dark {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  [data-desktop-drag-region] {
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  [data-desktop-no-drag],
+  [data-desktop-no-drag] * {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+
+  h1,
+  h2,
+  h3,
+  .zenme-headline {
+    font-family: var(--font-headline);
+  }
+
+  code,
+  pre,
+  kbd,
+  samp,
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+
+  ::selection {
+    background: rgba(234, 213, 207, 0.86);
+    color: #0f172a;
+  }
+}
+
+@layer components {
+  .react-flow__pane,
+  .react-flow__selection {
+    user-select: none !important;
+  }
+
+  .react-flow .react-flow__pane {
+    cursor: default !important;
+  }
+
+  .react-flow .react-flow__pane.selection {
+    cursor: crosshair !important;
+  }
+}
+
+.zenme-canvas .react-flow__pane {
+  -webkit-user-select: none !important;
+  caret-color: transparent !important;
+  cursor: default !important;
+  user-select: none !important;
+}
+
+.zenme-canvas .react-flow__pane.selection {
+  cursor: crosshair !important;
+}
+
+.zenme-canvas .zenme-reader-resize-line {
+  border-color: transparent !important;
+  border-width: 1px !important;
+  pointer-events: auto !important;
+  z-index: 30 !important;
+}
+
+.zenme-canvas .react-flow__node-reader,
+.zenme-canvas .react-flow__node-reader.selected,
+.zenme-canvas .zenme-reader-node {
+  outline: none !important;
+  outline-color: transparent !important;
+  outline-style: none !important;
+  outline-width: 0 !important;
+}
+
+.zenme-canvas .react-flow__node-group,
+.zenme-canvas .react-flow__node-group.selected {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  pointer-events: none !important;
+}
+
+.zenme-canvas .react-flow__node-group [class*="pointer-events-auto"] {
+  pointer-events: auto !important;
+}
+
+.zenme-canvas .react-flow__node-reader.selected .zenme-reader-workspace {
+  border-color: #18181b !important;
+}
+
+.zenme-canvas .zenme-reader-resize-handle {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  height: 18px !important;
+  opacity: 0 !important;
+  pointer-events: auto !important;
+  width: 18px !important;
+  z-index: 31 !important;
+}
+
+.zenme-canvas .zenme-reader-resize-handle.bottom.right {
+  cursor: nwse-resize !important;
+  opacity: 0 !important;
+  pointer-events: auto !important;
+}
+
+.zenme-canvas .react-flow__node-text,
+.zenme-canvas .react-flow__node-agent,
+.zenme-canvas .react-flow__node-code,
+.zenme-canvas .react-flow__node-markdown,
+.zenme-canvas .react-flow__node-textGeneration,
+.zenme-canvas .react-flow__node-text *,
+.zenme-canvas .react-flow__node-agent *,
+.zenme-canvas .react-flow__node-code *,
+.zenme-canvas .react-flow__node-markdown *,
+.zenme-canvas .react-flow__node-textGeneration *,
+.zenme-canvas .zenme-text-node {
+  cursor: default !important;
+}
+
+.zenme-canvas .react-flow__node-text.selected,
+.zenme-canvas .react-flow__node-text:focus-within,
+.zenme-canvas .react-flow__node-agent.selected,
+.zenme-canvas .react-flow__node-agent:focus-within,
+.zenme-canvas .react-flow__node-code.selected,
+.zenme-canvas .react-flow__node-code:focus-within,
+.zenme-canvas .react-flow__node-markdown.selected,
+.zenme-canvas .react-flow__node-markdown:focus-within,
+.zenme-canvas .react-flow__node-textGeneration.selected,
+.zenme-canvas .react-flow__node-textGeneration:focus-within {
+  z-index: 50 !important;
+}
+
+.zenme-canvas .zenme-text-node-editor,
+.zenme-canvas .zenme-text-node-editor * {
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-canvas .zenme-text-node-editor {
+  caret-color: currentColor !important;
+}
+
+.zenme-canvas .zenme-text-ai-input {
+  caret-color: currentColor !important;
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-canvas .zenme-code-editor {
+  caret-color: #18181b !important;
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-canvas .zenme-code-editor::selection {
+  background: rgba(147, 197, 253, 0.45);
+  color: transparent;
+}
+
+.zenme-canvas .zenme-code-highlight {
+  pointer-events: none !important;
+}
+
+.zenme-canvas .zenme-markdown-editor {
+  caret-color: #18181b !important;
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-canvas .zenme-markdown-editor::selection {
+  background: rgba(147, 197, 253, 0.45);
+  color: transparent;
+}
+
+.zenme-canvas .zenme-markdown-preview {
+  color: #27272a;
+  cursor: text !important;
+  overflow-wrap: anywhere;
+  pointer-events: none !important;
+}
+
+.zenme-canvas .zenme-markdown-preview pre,
+.zenme-canvas .zenme-markdown-preview code {
+  font-variant-ligatures: none;
+}
+
+.zenme-canvas .zenme-agent-response-text,
+.zenme-canvas .zenme-agent-response-text * {
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-canvas .react-flow__node-note,
+.zenme-canvas .react-flow__node-note * {
+  cursor: default !important;
+}
+
+.zenme-canvas .react-flow__node-note .select-text,
+.zenme-canvas .react-flow__node-note .select-text * {
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-canvas .zenme-text-node-editor code {
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 0.375rem;
+  color: #18181b;
+  font-family:
+    var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9em;
+  padding: 0.08rem 0.32rem;
+}
+
+.zenme-canvas .zenme-text-node-editor::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+.zenme-canvas .zenme-markdown-editor::-webkit-scrollbar-button,
+.zenme-canvas .zenme-markdown-preview::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+.zenme-canvas .zenme-node-title-icon-hitbox {
+  align-items: center;
+  cursor: grab !important;
+  display: inline-flex;
+  height: 1.25rem;
+  justify-content: center;
+  margin: -0.125rem 0 -0.125rem -0.125rem;
+  width: 1.25rem;
+}
+
+.zenme-canvas .zenme-node-title-icon-hitbox * {
+  cursor: grab !important;
+}
+
+.zenme-canvas .zenme-node-title-icon-hitbox:active {
+  cursor: grabbing !important;
+}
+
+.zenme-canvas .zenme-node-title-icon-hitbox:active * {
+  cursor: grabbing !important;
+}
+
+.zenme-canvas .zenme-target-handle {
+  cursor: crosshair !important;
+}
+
+.zenme-canvas.zenme-context-connecting .zenme-node-action-handle {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.zenme-canvas .zenme-target-handle.connecting .zenme-target-handle-dot,
+.zenme-canvas .zenme-target-handle.valid .zenme-target-handle-dot {
+  opacity: 1 !important;
+}
+
+.zenme-canvas .zenme-context-target-handle {
+  cursor: crosshair !important;
+}
+
+.zenme-canvas .zenme-context-target-handle.connecting .zenme-context-target-handle-dot,
+.zenme-canvas .zenme-context-target-handle.valid .zenme-context-target-handle-dot {
+  opacity: 1 !important;
+}
+
+.zenme-canvas .zenme-text-resize-line {
+  border-color: transparent !important;
+  border-width: 1px !important;
+  pointer-events: auto !important;
+  z-index: 30 !important;
+}
+
+.zenme-canvas .zenme-text-resize-line.left,
+.zenme-canvas .zenme-text-resize-line.right {
+  cursor: ew-resize !important;
+  width: 12px !important;
+}
+
+.zenme-canvas .zenme-text-resize-line.top,
+.zenme-canvas .zenme-text-resize-line.bottom {
+  cursor: ns-resize !important;
+  height: 12px !important;
+}
+
+.zenme-canvas .zenme-text-resize-handle {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  height: 18px !important;
+  opacity: 0 !important;
+  pointer-events: auto !important;
+  width: 18px !important;
+  z-index: 31 !important;
+}
+
+.zenme-canvas .zenme-text-resize-handle.left,
+.zenme-canvas .zenme-text-resize-handle.right {
+  cursor: ew-resize !important;
+}
+
+.zenme-canvas .zenme-text-resize-handle.top,
+.zenme-canvas .zenme-text-resize-handle.bottom {
+  cursor: ns-resize !important;
+}
+
+.zenme-canvas .zenme-text-resize-handle.bottom.left,
+.zenme-canvas .zenme-text-resize-handle.top.right {
+  cursor: nesw-resize !important;
+}
+
+.zenme-canvas .zenme-text-resize-handle.bottom.right {
+  cursor: nwse-resize !important;
+}
+
+.zenme-canvas .zenme-text-resize-handle.top.left {
+  cursor: nwse-resize !important;
+}
+
+.zenme-canvas .zenme-reader-workspace .reading-prose,
+.zenme-canvas .zenme-reader-workspace .reading-prose *,
+.zenme-canvas .zenme-reader-workspace textarea {
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-canvas .zenme-reader-workspace .reading-prose-cjk p {
+  text-indent: 2em;
+}
+
+.zenme-canvas .zenme-reader-workspace .reading-prose-epub p {
+  margin-block: 0 1.5em;
+}
+
+.zenme-canvas .zenme-reader-workspace .reading-prose-epub p:last-child {
+  margin-block-end: 0;
+}
+
+.zenme-canvas
+  .zenme-reader-workspace
+  .reading-prose-epub
+  :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: 700;
+  line-height: 2;
+  margin-block: 0 20px;
+}
+
+.zenme-canvas .zenme-reader-workspace .reading-prose-epub :is(ul, ol) {
+  margin-block: 0 1.5em;
+  padding-inline-start: 1.5em;
+}
+
+.zenme-canvas .zenme-reader-workspace .reading-prose-epub :is(img, svg, table) {
+  max-width: 100%;
+}
+
+.zenme-canvas .zenme-reader-workspace .reading-prose-epub img {
+  height: auto;
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer,
+.zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer * {
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer {
+  caret-color: transparent;
+  forced-color-adjust: none;
+  letter-spacing: normal;
+  line-height: 1;
+  opacity: 1;
+  overflow: clip;
+  text-align: initial;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  word-spacing: normal;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer :is(span, br) {
+  color: transparent;
+  cursor: text !important;
+  position: absolute;
+  white-space: pre;
+  transform-origin: 0% 0%;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer > :not(.markedContent),
+.zenme-canvas
+  .zenme-reader-workspace
+  .zenme-pdf-text-layer
+  .markedContent
+  span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x))
+    scale(var(--min-font-size-inv));
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer .markedContent {
+  display: contents;
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer span[role='img'] {
+  cursor: default !important;
+  user-select: none !important;
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer ::selection {
+  background: transparent;
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer br::selection,
+.zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer br::-moz-selection {
+  background: transparent;
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer .endOfContent {
+  cursor: default;
+  display: none !important;
+  inset: 100% 0 0;
+  position: absolute;
+  user-select: none !important;
+  z-index: 0;
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer.selecting .endOfContent {
+  top: 0;
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-note-focus-ring {
+  box-shadow:
+    0 0 0 2px #18181b,
+    0 0 0 6px rgba(24, 24, 27, 0.12) !important;
+  outline: 2px solid #18181b !important;
+  outline-offset: 2px !important;
+}
+
+.zenme-dashboard-shell,
+.zenme-dashboard-shell *:not(input):not(textarea):not(select):not([contenteditable='true']) {
+  caret-color: transparent !important;
+  user-select: none !important;
+}
+
+.zenme-dashboard-shell input,
+.zenme-dashboard-shell textarea,
+.zenme-dashboard-shell select,
+.zenme-dashboard-shell [contenteditable='true'] {
+  caret-color: auto !important;
+  user-select: text !important;
+}
+
+.zenme-project-card-media {
+  aspect-ratio: 16 / 10;
+  background-color: var(--color-surface-container-lowest);
+  border-radius: 0.375rem;
+  border-style: solid;
+  border-width: 1px;
+  box-sizing: border-box;
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  width: 100%;
+}

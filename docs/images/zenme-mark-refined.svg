@@ -1,0 +1,19 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">zenme refined mark</title>
+  <desc id="desc">Refined black and white zenme symbol using elegant lines and nodes to express zen activating me.</desc>
+  <rect width="512" height="512" fill="white"/>
+  <g stroke="#0A0A0A" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M108 286C154 205 232 188 282 245C326 295 379 300 434 226" stroke-width="10"/>
+    <path d="M152 227C190 270 230 288 282 245" stroke-width="5"/>
+    <path d="M282 245C319 220 356 215 394 239" stroke-width="5"/>
+  </g>
+  <g fill="#0A0A0A">
+    <circle cx="108" cy="286" r="12"/>
+    <circle cx="152" cy="227" r="8"/>
+    <circle cx="394" cy="239" r="8"/>
+    <circle cx="434" cy="226" r="24"/>
+  </g>
+  <circle cx="282" cy="245" r="22" fill="white" stroke="#0A0A0A" stroke-width="8"/>
+  <circle cx="282" cy="245" r="5" fill="#0A0A0A"/>
+  <path d="M418 226H450" stroke="#0A0A0A" stroke-width="5" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,99 @@
+import type { Connection } from "@xyflow/react";
+
+import type {
+  CanvasNode,
+  NodeActionMenuState,
+} from "@/components/zenme/canvas/types";
+import {
+  NODE_ACTION_HANDLE_ID,
+  NODE_CONTEXT_HANDLE_ID,
+  NODE_RIGHT_HANDLE_ID,
+} from "@/components/zenme/node-types";
+
+import { isTextGenerationContextNode } from "./text-generation-context";
+
+const CONTEXT_CONSUMER_NODE_KINDS = new Set([
+  "agent",
+  "code",
+  "markdown",
+  "note",
+  "text",
+  "textGeneration",
+]);
+
+export function normalizeCanvasConnection(
+  connection: Connection,
+  nodes: CanvasNode[],
+): Connection | null {
+  if (!connection.source || !connection.target) {
+    return null;
+  }
+
+  if (connection.source === connection.target) {
+    return null;
+  }
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const sourceNode = nodeById.get(connection.source);
+  const targetNode = nodeById.get(connection.target);
+
+  if (!sourceNode || !targetNode) {
+    return connection;
+  }
+
+  if (
+    CONTEXT_CONSUMER_NODE_KINDS.has(sourceNode.data.kind) &&
+    connection.sourceHandle === NODE_CONTEXT_HANDLE_ID &&
+    isTextGenerationContextNode(targetNode)
+  ) {
+    return {
+      ...connection,
+      source: targetNode.id,
+      sourceHandle: NODE_RIGHT_HANDLE_ID,
+      target: sourceNode.id,
+      targetHandle: null,
+    };
+  }
+
+  if (
+    isTextGenerationContextNode(sourceNode) &&
+    CONTEXT_CONSUMER_NODE_KINDS.has(targetNode.data.kind)
+  ) {
+    return {
+      ...connection,
+      sourceHandle: NODE_RIGHT_HANDLE_ID,
+    };
+  }
+
+  if (connection.sourceHandle === NODE_ACTION_HANDLE_ID) {
+    return {
+      ...connection,
+      sourceHandle: NODE_RIGHT_HANDLE_ID,
+    };
+  }
+
+  return connection;
+}
+
+export function createNodeActionMenuFromConnectEnd(input: {
+  didConnectToNode: boolean;
+  flowPosition: { x: number; y: number };
+  point: { x: number; y: number };
+  sourceHandleId: string | null;
+  sourceNodeId: string | null;
+}): NodeActionMenuState | null {
+  if (
+    !input.sourceNodeId ||
+    input.sourceHandleId === NODE_CONTEXT_HANDLE_ID ||
+    input.didConnectToNode
+  ) {
+    return null;
+  }
+
+  return {
+    flowPosition: input.flowPosition,
+    nodeId: input.sourceNodeId,
+    x: input.point.x,
+    y: input.point.y,
+  };
+}

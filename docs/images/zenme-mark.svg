@@ -1,0 +1,25 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">zenme mark</title>
+  <desc id="desc">Minimal black and white zenme symbol using connected nodes to express inner activation.</desc>
+  <rect width="512" height="512" fill="white"/>
+  <g transform="translate(0 24)" stroke="#0A0A0A" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M107 196C141 155 195 153 230 190C263 225 316 227 352 191C388 155 448 157 482 198" stroke-width="10"/>
+    <path d="M107 252C141 293 195 295 230 258C263 223 316 221 352 257C388 293 448 291 482 250" stroke-width="10"/>
+    <path d="M230 190L352 257" stroke-width="7"/>
+    <path d="M230 258L352 191" stroke-width="7"/>
+  </g>
+  <g transform="translate(0 24)" fill="#0A0A0A">
+    <circle cx="107" cy="196" r="15"/>
+    <circle cx="107" cy="252" r="15"/>
+    <circle cx="230" cy="190" r="18"/>
+    <circle cx="230" cy="258" r="18"/>
+    <circle cx="352" cy="191" r="18"/>
+    <circle cx="352" cy="257" r="18"/>
+    <circle cx="482" cy="198" r="22"/>
+    <circle cx="482" cy="250" r="22"/>
+  </g>
+  <g transform="translate(0 24)" stroke="#0A0A0A" stroke-linecap="round">
+    <path d="M423 224H459" stroke-width="7"/>
+    <path d="M441 206V242" stroke-width="7"/>
+  </g>
+</svg>

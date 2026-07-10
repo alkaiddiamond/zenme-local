@@ -1,0 +1,85 @@
+import type { ReadingFormat, ReadingSection } from "@/lib/reading/types";
+
+export type ReadingNavigationSection = {
+  endIndex: number;
+  index: number;
+  title: string;
+};
+
+export function getReadingActiveTitle(input: {
+  assetFormat: ReadingFormat;
+  assetTitle: string;
+  activeSection: number;
+  pdfPageCount: number;
+  sections: ReadingSection[];
+}) {
+  if (input.assetFormat === "pdf" || input.assetFormat === "epub") {
+    const total =
+      input.assetFormat === "pdf" ? input.pdfPageCount : input.sections.length;
+    return total > 0
+      ? `第 ${input.activeSection + 1} / ${total} 页`
+      : input.assetTitle;
+  }
+
+  return input.sections[input.activeSection]?.title ?? input.assetTitle;
+}
+
+export function getReadingSectionTitle(input: {
+  activeTitle: string;
+  assetFormat: ReadingFormat;
+  index: number;
+  sections: ReadingSection[];
+}) {
+  if (input.assetFormat === "pdf") {
+    return `第 ${input.index + 1} 页`;
+  }
+
+  return input.sections[input.index]?.title ?? input.activeTitle;
+}
+
+export function buildReadingNavigationSections(input: {
+  assetFormat: ReadingFormat;
+  pdfPageCount: number;
+  sections: ReadingSection[];
+}): ReadingNavigationSection[] {
+  if (input.assetFormat === "pdf") {
+    const count = Math.max(input.pdfPageCount, input.sections.length, 1);
+    return Array.from({ length: count }, (_, index) => ({
+      endIndex: index,
+      index,
+      title: `第 ${index + 1} 页`,
+    }));
+  }
+
+  if (input.assetFormat === "epub") {
+    return buildEpubNavigationSections(input.sections);
+  }
+
+  return input.sections.map((section) => ({
+    endIndex: section.index,
+    index: section.index,
+    title: section.title,
+  }));
+}
+
+function buildEpubNavigationSections(
+  sections: ReadingSection[],
+): ReadingNavigationSection[] {
+  const entries: ReadingNavigationSection[] = [];
+
+  for (const section of sections) {
+    const title = section.title.replace(/\s·\s\d+$/, "");
+    const last = entries[entries.length - 1];
+    if (last?.title === title) {
+      last.endIndex = section.index;
+    } else {
+      entries.push({
+        endIndex: section.index,
+        index: section.index,
+        title,
+      });
+    }
+  }
+
+  return entries;
+}
