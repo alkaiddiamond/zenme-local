@@ -136,7 +136,9 @@ async function startLocalServer() {
 }
 
 function spawnNextServer(port, dataDir) {
-  const root = path.resolve(__dirname, "..");
+  const root = app.isPackaged
+    ? path.join(process.resourcesPath, "app.asar.unpacked")
+    : path.resolve(__dirname, "..");
   const nextCli = require.resolve("next/dist/bin/next");
   const nodeRuntime = app.isPackaged
     ? process.execPath
