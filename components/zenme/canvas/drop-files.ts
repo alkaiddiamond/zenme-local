@@ -12,6 +12,7 @@ import {
   createBookCoverPreview,
   registerReadingAsset,
 } from "./reading-assets";
+import { getImageDisplaySize } from "../image-edit-options";
 import type { CanvasNode } from "./types";
 
 export async function createDroppedFileCanvasNodes(input: {
@@ -71,6 +72,10 @@ export async function createDroppedFileCanvasNodes(input: {
         }
       }
 
+      const imageSize = preview
+        ? getImageDisplaySize(preview.width / preview.height)
+        : undefined;
+
       return {
         id,
         type: isImage ? "image" : isBook ? "book" : "file",
@@ -78,6 +83,7 @@ export async function createDroppedFileCanvasNodes(input: {
           x: input.position.x + index * 32,
           y: input.position.y + index * 32,
         },
+        ...(imageSize ? { style: imageSize } : {}),
         data: {
           kind: isImage ? "image" : isBook ? "book" : "file",
           title: readingAsset?.title ?? file.name,
@@ -89,6 +95,9 @@ export async function createDroppedFileCanvasNodes(input: {
           readingAssetId: readingAsset?.id,
           readingError,
           mimeType: file.type,
+          imageAspectRatio: preview ? preview.width / preview.height : undefined,
+          imageHeight: preview?.height,
+          imageWidth: preview?.width,
           previewUrl,
           originalUrl,
           uploadStatus,

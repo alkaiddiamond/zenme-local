@@ -25,7 +25,7 @@ export function ReadingAnnotationPalette({
 }: ReadingAnnotationPaletteProps) {
   return (
     <div
-      className="absolute z-20 flex items-center gap-1 rounded-lg border border-zinc-200 bg-white p-1 shadow-xl"
+      className="zenme-shadow-dropdown absolute z-20 flex items-center gap-1 rounded-lg border border-zinc-200 bg-white p-1"
       style={{ left: x, top: y }}
     >
       {HIGHLIGHT_OPTIONS.map((option) => (

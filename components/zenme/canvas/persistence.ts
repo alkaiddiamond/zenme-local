@@ -123,7 +123,7 @@ export async function saveCanvasSnapshot(input: {
     "save snapshot build",
     () =>
       ({
-        version: 1,
+        version: 2,
         nodes: getPersistableCanvasNodes(input.nodes),
         edges: input.edges,
         viewport: input.viewport,

@@ -16,7 +16,7 @@ const CODE_NODE_DEFAULT_SIZE = { height: 420, width: 720 };
 const MARKDOWN_NODE_DEFAULT_SIZE = { height: 320, width: 560 };
 export const NANO_BANANA_2_IMAGE_MODEL =
   "google/gemini-3.1-flash-image-preview";
-const IMAGE_EDIT_NODE_DEFAULT_SIZE = { height: 260, width: 560 };
+const IMAGE_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
 const TEXT_NODE_MIN_HEIGHT = 180;
 const TEXT_NODE_MAX_GENERATED_HEIGHT = 560;
 const TEXT_NODE_VERTICAL_PADDING = 56;
@@ -125,46 +125,77 @@ export function createTextGenerationCanvasNode(input: {
   };
 }
 
-export function createImageEditCanvasNode(input: {
+export function createReferencedImageGenerationCanvasNode(input: {
+  aspectRatio?: string;
   id: string;
   model?: string;
   position?: { x: number; y: number };
+  quality?: string;
   sourceNode: CanvasNode;
 }): { edge: Edge; node: CanvasNode } {
   const sourceSize = readNodeSize(input.sourceNode, {
     height: 360,
     width: 280,
   });
-  const sourceImageUrl =
-    input.sourceNode.data.originalUrl ?? input.sourceNode.data.previewUrl;
   const node: CanvasNode = {
     id: input.id,
-    type: "imageEdit",
+    type: "imageGeneration",
     position:
       input.position ?? {
         x: input.sourceNode.position.x + sourceSize.width + 80,
         y: input.sourceNode.position.y,
       },
     style: {
-      height: IMAGE_EDIT_NODE_DEFAULT_SIZE.height,
-      width: IMAGE_EDIT_NODE_DEFAULT_SIZE.width,
+      height: IMAGE_NODE_DEFAULT_SIZE.height,
+      width: IMAGE_NODE_DEFAULT_SIZE.width,
     },
     data: {
-      kind: "imageEdit",
-      imageEditAspectRatio: DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
-      title: "图片编辑",
-      imageEditModel: input.model ?? NANO_BANANA_2_IMAGE_MODEL,
-      imageEditPrompt: "",
-      imageEditQuality: DEFAULT_IMAGE_EDIT_QUALITY,
-      imageEditStatus: "idle",
-      sourceImageTitle: input.sourceNode.data.title,
-      sourceImageUrl,
+      kind: "imageGeneration",
+      imageOperation: "generate",
+      imageReferenceNodeIds: [input.sourceNode.id],
+      imageOutputAspectRatio:
+        input.aspectRatio ?? DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
+      title: "图片生成",
+      imageModel: input.model ?? NANO_BANANA_2_IMAGE_MODEL,
+      imagePrompt: "",
+      imageQuality: input.quality ?? DEFAULT_IMAGE_EDIT_QUALITY,
+      imageStatus: "idle",
     },
   };
 
   return {
     edge: createConnectedEdge(input.sourceNode.id, input.id),
     node,
+  };
+}
+
+export function createImageGenerationCanvasNode(input: {
+  aspectRatio?: string;
+  id: string;
+  model?: string;
+  position: { x: number; y: number };
+  quality?: string;
+}): CanvasNode {
+  return {
+    id: input.id,
+    type: "imageGeneration",
+    position: input.position,
+    style: {
+      height: IMAGE_NODE_DEFAULT_SIZE.height,
+      width: IMAGE_NODE_DEFAULT_SIZE.width,
+    },
+    data: {
+      kind: "imageGeneration",
+      imageOperation: "generate",
+      imageReferenceNodeIds: [],
+      imageOutputAspectRatio:
+        input.aspectRatio ?? DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
+      title: "图片生成",
+      imageModel: input.model ?? NANO_BANANA_2_IMAGE_MODEL,
+      imagePrompt: "",
+      imageQuality: input.quality ?? DEFAULT_IMAGE_EDIT_QUALITY,
+      imageStatus: "idle",
+    },
   };
 }
 
@@ -180,8 +211,8 @@ export function createEditedImageChildCanvasNode(input: {
   title?: string;
 }): { edge: Edge; node: CanvasNode } {
   const sourceSize = readNodeSize(input.sourceNode, {
-    height: IMAGE_EDIT_NODE_DEFAULT_SIZE.height,
-    width: IMAGE_EDIT_NODE_DEFAULT_SIZE.width,
+    height: IMAGE_NODE_DEFAULT_SIZE.height,
+    width: IMAGE_NODE_DEFAULT_SIZE.width,
   });
   const resultSize = getImageEditResultNodeSize(input.aspectRatio);
   const node: CanvasNode = {
@@ -198,8 +229,8 @@ export function createEditedImageChildCanvasNode(input: {
     },
     data: {
       fileId: input.fileId,
-      imageEditAspectRatio: input.aspectRatio,
-      imageEditPrompt: input.prompt,
+      imageOutputAspectRatio: input.aspectRatio,
+      imagePrompt: input.prompt,
       imageGenerated: true,
       kind: "image",
       originalUrl: input.originalUrl,
@@ -276,6 +307,7 @@ export function createAiResponseChildCanvasNode(input: {
       aiCreatedAt: new Date().toISOString(),
       textGenerationModel: input.model,
       plainText: input.response,
+      textMode: "markdown",
     },
   };
 
@@ -343,10 +375,12 @@ export function createReaderCanvasNode(input: {
 }
 
 export function createConnectedPlaceholderCanvasNode(input: {
+  aspectRatio?: string;
   id: string;
-  kind: "text" | "agent" | "textGeneration" | "imageEdit";
+  kind: "text" | "agent" | "textGeneration" | "imageGeneration";
   model?: string;
   position?: { x: number; y: number };
+  quality?: string;
   sourceNode: CanvasNode;
 }): { edge: Edge; node: CanvasNode } {
   const sourceSize = readNodeSize(input.sourceNode, {
@@ -370,8 +404,8 @@ export function createConnectedPlaceholderCanvasNode(input: {
     };
   }
 
-  if (input.kind === "imageEdit") {
-    return createImageEditCanvasNode(input);
+  if (input.kind === "imageGeneration") {
+    return createReferencedImageGenerationCanvasNode(input);
   }
 
   const node: CanvasNode = {

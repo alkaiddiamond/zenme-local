@@ -4,6 +4,7 @@ import path from "node:path";
 import { getProjectDir, getProjectsDir, getZenmeDataDir } from "@/lib/local/data-dir";
 import { readJsonFile, writeJsonFile } from "@/lib/local/atomic-json";
 import { assertSafePathSegment, resolveInside } from "@/lib/local/path-safety";
+import { migrateCanvasSnapshot } from "@/lib/local/canvas-migrations";
 import {
   type CanvasSnapshotPayload,
   type ZenmeProject,
@@ -73,7 +74,7 @@ export async function createLocalProject(input: {
   await saveLocalCanvasSnapshot({
     projectId: project.id,
     snapshot: {
-      version: 1,
+      version: 2,
       nodes: [],
       edges: [],
       viewport: { x: 0, y: 0, zoom: 1 },
@@ -134,10 +135,30 @@ export async function deleteLocalProject(projectId: string, dataDir = getZenmeDa
 export async function getLocalCanvasSnapshot(projectId: string, dataDir = getZenmeDataDir()) {
   assertSafePathSegment(projectId, "projectId");
   const snapshotPath = resolveInside(getProjectDir(projectId, dataDir), "canvas", "latest.json");
-  return readJsonFile<CanvasSnapshotRecord | null>(snapshotPath, {
+  let migrated = false;
+  const record = await readJsonFile<CanvasSnapshotRecord | null>(snapshotPath, {
     defaultValue: null,
-    normalize: normalizeCanvasRecord,
+    normalize: (value) => {
+      const result = normalizeCanvasRecord(value);
+      if (
+        result &&
+        value &&
+        typeof value === "object" &&
+        "snapshot" in value &&
+        value.snapshot &&
+        typeof value.snapshot === "object" &&
+        "version" in value.snapshot &&
+        value.snapshot.version === 1
+      ) {
+        migrated = true;
+      }
+      return result;
+    },
   });
+  if (record && migrated) {
+    await writeJsonFile(snapshotPath, record);
+  }
+  return record;
 }
 
 export async function saveLocalCanvasSnapshot(input: {
@@ -239,17 +260,12 @@ function normalizeCanvasRecord(value: unknown): CanvasSnapshotRecord | null {
   if (!record.snapshot || typeof record.updated_at !== "string") {
     return null;
   }
-  const snapshot = record.snapshot as Partial<CanvasSnapshotPayload>;
-  if (
-    snapshot.version !== 1 ||
-    !Array.isArray(snapshot.nodes) ||
-    !Array.isArray(snapshot.edges) ||
-    !snapshot.viewport ||
-    typeof snapshot.updatedAt !== "string"
-  ) {
-    return null;
-  }
-  return record as CanvasSnapshotRecord;
+  const migration = migrateCanvasSnapshot(record.snapshot);
+  if (!migration) return null;
+  return {
+    snapshot: migration.snapshot,
+    updated_at: migration.snapshot.updatedAt,
+  };
 }
 
 function toZenmeProject(project: LocalProjectFile): ZenmeProject {

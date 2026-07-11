@@ -8,7 +8,7 @@ export type CanvasNodeData = {
     | "markdown"
     | "text"
     | "textGeneration"
-    | "imageEdit"
+    | "imageGeneration"
     | "agent"
     | "book"
     | "note"
@@ -32,6 +32,10 @@ export type CanvasNodeData = {
   originalUrl?: string;
   mimeType?: string;
   imageGenerated?: boolean;
+  imageOperation?: "edit" | "generate";
+  imageHeight?: number;
+  imageWidth?: number;
+  imageAspectRatio?: number;
   uploadStatus?: "pending" | "uploaded" | "failed";
   readerCollapsed?: boolean;
   readerExpandedSize?: { height: number; width: number };
@@ -46,16 +50,31 @@ export type CanvasNodeData = {
   aiCreatedAt?: string;
   textGenerationPrompt?: string;
   textGenerationModel?: string;
-  imageEditPrompt?: string;
-  imageEditModel?: string;
-  imageEditAspectRatio?: string;
-  imageEditQuality?: string;
-  imageEditStatus?: "idle" | "editing" | "done" | "failed";
-  imageEditError?: string;
-  sourceImageUrl?: string;
-  sourceImageTitle?: string;
+  imagePrompt?: string;
+  imageModel?: string;
+  imageOutputAspectRatio?: string;
+  imageQuality?: string;
+  imageStatus?: "idle" | "editing" | "done" | "failed";
+  imageError?: string;
+  imageTaskStartedAt?: string;
+  imageTaskDurationMs?: number;
+  imageReferences?: Array<{
+    nodeId: string;
+    title: string;
+    url: string;
+  }>;
+  imageReferenceCandidates?: Array<{
+    nodeId: string;
+    title: string;
+    url: string;
+  }>;
+  imageReferenceNodeIds?: string[];
   hasIncomingEdge?: boolean;
   hasOutgoingEdge?: boolean;
+  onResolveImageDimensions?: (
+    nodeId: string,
+    dimensions: { height: number; width: number },
+  ) => void;
   onCreateNoteNode?: (
     note: ReadingNote,
     asset: ReadingAsset,
@@ -100,25 +119,28 @@ export type CanvasNodeData = {
     nodeId: string,
     input?: { model?: string; prompt?: string },
   ) => Promise<void> | void;
-  onUpdateImageEditNode?: (
+  onUpdateImageNode?: (
     nodeId: string,
     updates: Partial<
       Pick<
         CanvasNodeData,
         | "fileId"
-        | "imageEditAspectRatio"
-        | "imageEditError"
-        | "imageEditModel"
-        | "imageEditQuality"
-        | "imageEditPrompt"
-        | "imageEditStatus"
+        | "imageOutputAspectRatio"
+        | "imageError"
+        | "imageModel"
+        | "imageQuality"
+        | "imagePrompt"
+        | "imageStatus"
+        | "imageReferenceNodeIds"
+        | "imageTaskDurationMs"
+        | "imageTaskStartedAt"
         | "originalUrl"
         | "previewUrl"
         | "title"
       >
     >,
   ) => void;
-  onSubmitImageEditNode?: (
+  onSubmitImageNode?: (
     nodeId: string,
     input?: { aspectRatio?: string; model?: string; prompt?: string; quality?: string },
   ) => Promise<void> | void;

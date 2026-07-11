@@ -34,7 +34,7 @@ export function CanvasSelectionToolbar({
 }: CanvasSelectionToolbarProps) {
   return (
     <div
-      className="fixed z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-zinc-200 bg-white/95 p-1.5 text-zinc-800 shadow-xl backdrop-blur"
+      className="zenme-shadow-canvas fixed z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-zinc-200 bg-white/95 p-1.5 text-zinc-800 backdrop-blur"
       data-thumbnail-hidden="true"
       style={{ left, top }}
     >
@@ -63,7 +63,7 @@ export function CanvasSideToolbar({
 }: CanvasSideToolbarProps) {
   return (
     <div
-      className="absolute left-3 top-1/2 z-20 flex w-[53px] -translate-y-1/2 flex-col items-center gap-2 rounded-full border border-zinc-200 bg-white/95 py-3 shadow-xl backdrop-blur"
+      className="zenme-shadow-canvas absolute left-3 top-1/2 z-20 flex w-[53px] -translate-y-1/2 flex-col items-center gap-2 rounded-full border border-zinc-200 bg-white/95 py-3 backdrop-blur"
       data-thumbnail-hidden="true"
     >
       <ZenmeIconButton active onClick={onZoomIn} title="放大画布">
@@ -112,7 +112,7 @@ export function CanvasBottomControls({
 }: CanvasBottomControlsProps) {
   return (
     <div
-      className="absolute bottom-3 left-3 z-20 flex w-[200px] items-center gap-1 rounded-full border border-zinc-200 bg-white/95 p-1.5 shadow-xl backdrop-blur"
+      className="zenme-shadow-canvas absolute bottom-3 left-3 z-20 flex w-[200px] items-center gap-1 rounded-full border border-zinc-200 bg-white/95 p-1.5 backdrop-blur"
       data-thumbnail-hidden="true"
     >
       <ZenmeControlButton
@@ -164,7 +164,7 @@ type CanvasAgentButtonProps = {
 export function CanvasAgentButton({ onOpenAgent }: CanvasAgentButtonProps) {
   return (
     <ZenmeIconButton
-      className="absolute bottom-5 right-5 z-10 bg-white text-zinc-700 shadow-xl ring-1 ring-zinc-200"
+      className="zenme-shadow-canvas absolute bottom-5 right-5 z-10 bg-white text-zinc-700 ring-1 ring-zinc-200"
       data-thumbnail-hidden="true"
       onClick={onOpenAgent}
       title="开启 Agent 对话"
@@ -182,7 +182,7 @@ type CanvasNoticeProps = {
 export function CanvasNotice({ message, onClose }: CanvasNoticeProps) {
   return (
     <div
-      className="absolute right-5 top-5 z-40 flex max-w-md items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-xl"
+      className="zenme-shadow-dropdown absolute right-5 top-5 z-40 flex max-w-md items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
       data-thumbnail-hidden="true"
     >
       <AlertCircle className="size-4 shrink-0" />
@@ -201,7 +201,7 @@ export function CanvasNotice({ message, onClose }: CanvasNoticeProps) {
 export function EmptyCanvasHint() {
   return (
     <div
-      className="pointer-events-none absolute left-1/2 top-1/2 z-10 w-[420px] max-w-[calc(100vw-96px)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-zinc-200 bg-white/80 px-6 py-5 text-center text-sm leading-6 text-zinc-500"
+      className="pointer-events-none absolute left-1/2 top-1/2 z-10 w-[420px] max-w-[calc(100vw-96px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-zinc-200 bg-white/80 px-6 py-5 text-center text-sm leading-6 text-zinc-500"
       data-thumbnail-hidden="true"
     >
       <p>双击画布创建一个节点</p>

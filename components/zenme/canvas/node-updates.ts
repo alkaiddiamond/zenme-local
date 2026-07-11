@@ -70,19 +70,22 @@ export function createTextGenerationNodeDataUpdate(input: {
   });
 }
 
-export function createImageEditNodeDataUpdate(input: {
+export function createImageGenerationNodeDataUpdate(input: {
   nodeId: string;
   nodes: CanvasNode[];
   updates: Partial<
     Pick<
       CanvasNodeData,
       | "fileId"
-      | "imageEditAspectRatio"
-      | "imageEditError"
-      | "imageEditModel"
-      | "imageEditQuality"
-      | "imageEditPrompt"
-      | "imageEditStatus"
+      | "imageOutputAspectRatio"
+      | "imageError"
+      | "imageModel"
+      | "imageQuality"
+      | "imagePrompt"
+      | "imageStatus"
+      | "imageReferenceNodeIds"
+      | "imageTaskDurationMs"
+      | "imageTaskStartedAt"
       | "originalUrl"
       | "previewUrl"
       | "title"
@@ -93,17 +96,20 @@ export function createImageEditNodeDataUpdate(input: {
     ...input,
     changedKeys: [
       "fileId",
-      "imageEditAspectRatio",
-      "imageEditError",
-      "imageEditModel",
-      "imageEditQuality",
-      "imageEditPrompt",
-      "imageEditStatus",
+      "imageOutputAspectRatio",
+      "imageError",
+      "imageModel",
+      "imageQuality",
+      "imagePrompt",
+      "imageStatus",
+      "imageReferenceNodeIds",
+      "imageTaskDurationMs",
+      "imageTaskStartedAt",
       "originalUrl",
       "previewUrl",
       "title",
     ],
-    allowedKinds: new Set(["imageEdit", "image"]),
+    allowedKinds: new Set(["imageGeneration", "image"]),
   });
 }
 

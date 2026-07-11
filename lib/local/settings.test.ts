@@ -29,15 +29,22 @@ describe("local settings", () => {
 
     const settings = await updateLocalSettings({
       autoSaveIntervalMs: 1000,
+      lastImageAspectRatio: "auto",
+      lastImageQuality: "1K",
       lastTextModelId: "glm-5.2",
     }, dataDir);
 
     expect(settings).toMatchObject({
       autoSaveIntervalMs: 5000,
+      lastImageAspectRatio: "auto",
+      lastImageQuality: "1K",
       lastTextModelId: "glm-5.2",
     });
     await expect(
       fs.readFile(getLocalSettingsPath(dataDir), "utf-8"),
     ).resolves.toContain('"lastTextModelId": "glm-5.2"');
+    await expect(
+      fs.readFile(getLocalSettingsPath(dataDir), "utf-8"),
+    ).resolves.toContain('"lastImageAspectRatio": "auto"');
   });
 });

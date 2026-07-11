@@ -3,6 +3,7 @@
 import {
   BookOpen,
   Image as ImageIcon,
+  ImagePlus,
   MessageSquareText,
   MousePointer2,
   Type,
@@ -24,6 +25,7 @@ import type {
 type CanvasAddMenuProps = {
   menu: CanvasAddMenuState;
   onClose: () => void;
+  onCreateImageGenerationNode: (position: { x: number; y: number }) => void;
   onCreateTextNode: (position: { x: number; y: number }) => void;
   onUploadFiles: (position: { x: number; y: number }) => void;
 };
@@ -31,12 +33,13 @@ type CanvasAddMenuProps = {
 export function CanvasAddMenu({
   menu,
   onClose,
+  onCreateImageGenerationNode,
   onCreateTextNode,
   onUploadFiles,
 }: CanvasAddMenuProps) {
   return (
     <FloatingMenu
-      className="rounded-2xl"
+      className="rounded-lg"
       left={menu.x + 12}
       top={menu.y - 8}
     >
@@ -47,6 +50,12 @@ export function CanvasAddMenu({
         onClick={() => onCreateTextNode(menu.flowPosition)}
         primary
         title="文本"
+      />
+      <FloatingMenuItem
+        description="根据提示词创建图片"
+        icon={ImagePlus}
+        onClick={() => onCreateImageGenerationNode(menu.flowPosition)}
+        title="图片生成"
       />
       <FloatingMenuSectionLabel>资源</FloatingMenuSectionLabel>
       <FloatingMenuItem
@@ -64,7 +73,7 @@ type NodeActionMenuProps = {
   menu: NodeActionMenuState;
   onClose: () => void;
   onCreateConnectedPlaceholder: (
-    kind: "text" | "agent" | "textGeneration" | "imageEdit",
+    kind: "text" | "agent" | "textGeneration" | "imageGeneration",
   ) => void;
   onOpenReadingWorkspace: () => void;
   onProcessWithAgent: () => void;
@@ -106,8 +115,8 @@ export function NodeActionMenu({
           (!actionNode.data.originalUrl && !actionNode.data.previewUrl)
         }
         icon={ImageIcon}
-        onClick={() => onCreateConnectedPlaceholder("imageEdit")}
-        title="图片编辑"
+        onClick={() => onCreateConnectedPlaceholder("imageGeneration")}
+        title="图片生成"
       />
     </FloatingMenu>
   );

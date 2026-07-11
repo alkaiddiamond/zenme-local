@@ -18,6 +18,8 @@ import {
   Search,
   Settings,
   Square,
+  Star,
+  Trash2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -27,6 +29,7 @@ import { UserMenu } from "@/components/zenme/user-menu";
 import { cn } from "@/lib/utils";
 import {
   createProjectInApi,
+  deleteProjectInApi,
   listProjectsFromApi,
   updateProjectNameInApi,
 } from "@/lib/zenme-api";
@@ -48,6 +51,7 @@ const TITLEBAR_HEIGHT = 40;
 const OPEN_PROJECT_TABS_KEY = "zenme.openProjectTabs.v1";
 const SIDEBAR_COLLAPSED_KEY = "zenme.sidebarCollapsed.v1";
 const PINNED_PROJECTS_KEY = "zenme.pinnedProjects.v1";
+const FAVORITE_PROJECTS_KEY = "zenme.favoriteProjects.v1";
 const PROJECT_ORDER_KEY = "zenme.projectOrder.v1";
 
 type DesktopWindowApi = {
@@ -70,10 +74,14 @@ export function AppShell({ children, active }: AppShellProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [pinnedProjectIds, setPinnedProjectIds] = useState<string[]>([]);
+  const [favoriteProjectIds, setFavoriteProjectIds] = useState<string[]>([]);
   const [projectOrderIds, setProjectOrderIds] = useState<string[]>([]);
   const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null);
   const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
   const [renameProjectName, setRenameProjectName] = useState("");
+  const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
+  const [deleteProjectError, setDeleteProjectError] = useState("");
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
 
   const currentProjectId = useMemo(() => {
     const match = pathname.match(/^\/projects\/([^/?#]+)/);
@@ -126,6 +134,18 @@ export function AppShell({ children, active }: AppShellProps) {
 
   useEffect(() => {
     try {
+      const stored = window.localStorage.getItem(FAVORITE_PROJECTS_KEY);
+      const ids = stored ? JSON.parse(stored) as unknown : [];
+      if (Array.isArray(ids)) {
+        setFavoriteProjectIds(ids.filter((id): id is string => typeof id === "string"));
+      }
+    } catch {
+      setFavoriteProjectIds([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
       const stored = window.localStorage.getItem(PROJECT_ORDER_KEY);
       const ids = stored ? JSON.parse(stored) as unknown : [];
       if (Array.isArray(ids)) {
@@ -166,6 +186,9 @@ export function AppShell({ children, active }: AppShellProps) {
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
   );
+  const projectPendingDeletion = deleteProjectId
+    ? projectsById.get(deleteProjectId) ?? null
+    : null;
 
   const sortedProjects = useMemo(() => {
     const pinned = new Set(pinnedProjectIds);
@@ -189,6 +212,16 @@ export function AppShell({ children, active }: AppShellProps) {
       `${project.name} ${project.prompt}`.toLowerCase().includes(normalizedQuery),
     );
   }, [query, sortedProjects]);
+
+  const favoriteProjects = useMemo(() => {
+    const favorites = new Set(favoriteProjectIds);
+    const normalizedQuery = query.trim().toLowerCase();
+    return sortedProjects.filter((project) =>
+      favorites.has(project.id) &&
+      (!normalizedQuery ||
+        `${project.name} ${project.prompt}`.toLowerCase().includes(normalizedQuery)),
+    );
+  }, [favoriteProjectIds, query, sortedProjects]);
 
   const projectTabs = useMemo(
     () =>
@@ -336,6 +369,74 @@ export function AppShell({ children, active }: AppShellProps) {
     });
   }
 
+  function toggleProjectFavorite(projectId: string) {
+    setOpenProjectMenuId(null);
+    setFavoriteProjectIds((current) => {
+      const next = current.includes(projectId)
+        ? current.filter((id) => id !== projectId)
+        : [...current, projectId];
+      window.localStorage.setItem(FAVORITE_PROJECTS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  function requestDeleteProject(projectId: string) {
+    setOpenProjectMenuId(null);
+    setDeleteProjectError("");
+    setDeleteProjectId(projectId);
+  }
+
+  function cancelDeleteProject() {
+    if (isDeletingProject) return;
+    setDeleteProjectId(null);
+    setDeleteProjectError("");
+  }
+
+  async function confirmDeleteProject() {
+    const projectId = deleteProjectId;
+    if (!projectId || isDeletingProject) return;
+
+    setIsDeletingProject(true);
+    setDeleteProjectError("");
+
+    try {
+      await deleteProjectInApi(projectId);
+
+      const nextOpenProjectIds = openProjectIds.filter((id) => id !== projectId);
+      persistOpenProjectIds(nextOpenProjectIds);
+      setProjects((current) => current.filter((project) => project.id !== projectId));
+      setPinnedProjectIds((current) => {
+        const next = current.filter((id) => id !== projectId);
+        window.localStorage.setItem(PINNED_PROJECTS_KEY, JSON.stringify(next));
+        return next;
+      });
+      setFavoriteProjectIds((current) => {
+        const next = current.filter((id) => id !== projectId);
+        window.localStorage.setItem(FAVORITE_PROJECTS_KEY, JSON.stringify(next));
+        return next;
+      });
+      setProjectOrderIds((current) => {
+        const next = current.filter((id) => id !== projectId);
+        window.localStorage.setItem(PROJECT_ORDER_KEY, JSON.stringify(next));
+        return next;
+      });
+
+      setDeleteProjectId(null);
+      if (currentProjectId === projectId) {
+        const nextProjectId = nextOpenProjectIds.find(
+          (id) => id !== projectId && projectsById.has(id),
+        );
+        router.push(nextProjectId ? `/projects/${nextProjectId}` : "/");
+      }
+    } catch (error) {
+      setDeleteProjectError(
+        error instanceof Error ? error.message : "项目删除失败，请稍后重试",
+      );
+    } finally {
+      setIsDeletingProject(false);
+    }
+  }
+
   function handleWindowMinimize() {
     void getDesktopWindowApi()?.minimizeWindow?.();
   }
@@ -451,7 +552,7 @@ export function AppShell({ children, active }: AppShellProps) {
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
             <Input
-              className="h-9 rounded-xl border-[var(--color-border)] bg-white pl-9 pr-3 text-sm shadow-none placeholder:text-[var(--color-text-tertiary)] focus-visible:ring-1 focus-visible:ring-[var(--color-border-focus)]"
+              className="h-9 rounded-lg border-[var(--color-border)] bg-white pl-9 pr-3 text-sm shadow-none placeholder:text-[var(--color-text-tertiary)] focus-visible:ring-1 focus-visible:ring-[var(--color-border-focus)]"
               onChange={(event) => setQuery(event.target.value)}
               placeholder="搜索项目"
               value={query}
@@ -460,6 +561,36 @@ export function AppShell({ children, active }: AppShellProps) {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+          <div className="mb-4">
+            <div className="mb-2 flex items-center px-1 text-xs font-medium text-[var(--color-text-secondary)]">
+              <span>收藏</span>
+            </div>
+            <div className="space-y-1">
+              {favoriteProjects.map((project) => {
+                const isActive = currentProjectId === project.id;
+                return (
+                  <Link
+                    className={cn(
+                      "flex h-9 min-w-0 items-center gap-2 rounded-md px-2 text-sm text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-container-high)] hover:text-[var(--color-text-primary)]",
+                      isActive && "font-medium text-[var(--color-text-primary)]",
+                    )}
+                    href={`/projects/${project.id}`}
+                    key={project.id}
+                    title={project.name}
+                  >
+                    <Star className="size-4 shrink-0 fill-[var(--color-favorite,#b7791f)] text-[var(--color-favorite,#b7791f)]" />
+                    <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                  </Link>
+                );
+              })}
+              {favoriteProjects.length === 0 ? (
+                <p className="px-2 py-1 text-xs text-[var(--color-text-tertiary)]">
+                  暂无收藏项目
+                </p>
+              ) : null}
+            </div>
+          </div>
+
           <div className="mb-2 flex items-center justify-between px-1 text-xs font-medium text-[var(--color-text-secondary)]">
             <span>项目</span>
             <Link
@@ -474,6 +605,7 @@ export function AppShell({ children, active }: AppShellProps) {
             {filteredProjects.map((project) => {
               const isActive = currentProjectId === project.id;
               const isPinned = pinnedProjectIds.includes(project.id);
+              const isFavorite = favoriteProjectIds.includes(project.id);
 
               return (
                 <div
@@ -489,6 +621,9 @@ export function AppShell({ children, active }: AppShellProps) {
                     href={`/projects/${project.id}`}
                     title={project.name}
                   >
+                    {isFavorite ? (
+                      <Star className="size-4 shrink-0 fill-[var(--color-favorite,#b7791f)] text-[var(--color-favorite,#b7791f)]" />
+                    ) : null}
                     <Folder className="size-4 shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{project.name}</span>
                     {isPinned ? (
@@ -527,14 +662,14 @@ export function AppShell({ children, active }: AppShellProps) {
                     <Pencil className="size-4" />
                   </button>
                   {openProjectMenuId === project.id ? (
-                    <div className="absolute right-1 top-8 z-50 w-32 rounded-md border border-[var(--color-border)] bg-white p-1 text-sm shadow-[var(--shadow-dropdown)]">
+                    <div className="zenme-shadow-dropdown absolute right-1 top-8 z-50 w-32 rounded-md border border-[var(--color-border)] bg-white p-1 text-sm">
                       <button
                         className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-container-low)] hover:text-[var(--color-text-primary)]"
-                        onClick={() => beginRenameProject(project)}
+                        onClick={() => toggleProjectFavorite(project.id)}
                         type="button"
                       >
-                        <Pencil className="size-4" />
-                        重命名
+                        <Star className={cn("size-4", isFavorite && "fill-current")} />
+                        {isFavorite ? "取消收藏" : "添加收藏"}
                       </button>
                       <button
                         className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-container-low)] hover:text-[var(--color-text-primary)]"
@@ -543,6 +678,14 @@ export function AppShell({ children, active }: AppShellProps) {
                       >
                         <Pin className="size-4" />
                         {isPinned ? "取消置顶" : "置顶"}
+                      </button>
+                      <button
+                        className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[var(--color-danger)] hover:bg-red-50"
+                        onClick={() => requestDeleteProject(project.id)}
+                        type="button"
+                      >
+                        <Trash2 className="size-4" />
+                        删除
                       </button>
                     </div>
                   ) : null}
@@ -629,7 +772,7 @@ export function AppShell({ children, active }: AppShellProps) {
                   className={cn(
                     "group relative flex h-full min-w-0 max-w-[220px] flex-1 items-center justify-center border-r border-transparent text-sm transition hover:bg-[var(--color-surface-container-high)]",
                     isActive &&
-                      "bg-white font-medium text-[var(--color-text-primary)] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:bg-[var(--color-tab-active)]",
+                      "font-medium text-[var(--color-text-primary)] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:bg-[var(--color-tab-active)]",
                   )}
                   data-desktop-no-drag
                   key={tab.id}
@@ -676,7 +819,7 @@ export function AppShell({ children, active }: AppShellProps) {
                 className={cn(
                   "group relative flex h-full min-w-0 max-w-[220px] flex-1 items-center justify-center border-r border-transparent px-4 text-sm transition hover:bg-[var(--color-surface-container-high)]",
                   isActive &&
-                    "bg-white font-medium text-[var(--color-text-primary)] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:bg-[var(--color-tab-active)]",
+                    "font-medium text-[var(--color-text-primary)] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:bg-[var(--color-tab-active)]",
                 )}
                 data-desktop-no-drag
                 href={tab.href}
@@ -741,7 +884,7 @@ export function AppShell({ children, active }: AppShellProps) {
           }}
         >
           <form
-            className="w-[360px] rounded-lg border border-[var(--color-border)] bg-white p-4 shadow-[var(--shadow-dropdown)]"
+            className="zenme-shadow-dropdown w-[360px] rounded-lg border border-[var(--color-border)] bg-white p-4"
             onSubmit={(event) => {
               event.preventDefault();
               void commitRenameProject();
@@ -788,6 +931,77 @@ export function AppShell({ children, active }: AppShellProps) {
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {projectPendingDeletion ? (
+        <div
+          className="fixed inset-0 z-[90] flex items-start justify-center bg-black/20 pt-24"
+          data-desktop-no-drag
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              cancelDeleteProject();
+            }
+          }}
+        >
+          <div
+            aria-describedby="delete-project-description"
+            aria-labelledby="delete-project-title"
+            aria-modal="true"
+            className="zenme-shadow-overlay w-[400px] rounded-lg border border-[var(--color-border)] bg-white p-5"
+            role="alertdialog"
+          >
+            <div className="mb-3 flex items-start justify-between gap-4">
+              <div>
+                <h2
+                  className="text-base font-medium text-[var(--color-text-primary)]"
+                  id="delete-project-title"
+                >
+                  删除项目？
+                </h2>
+                <p
+                  className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]"
+                  id="delete-project-description"
+                >
+                  将永久删除“{projectPendingDeletion.name}”及其画布和本地文件，此操作无法恢复。
+                </p>
+              </div>
+              <button
+                aria-label="关闭"
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-container-low)] hover:text-[var(--color-text-primary)] disabled:opacity-50"
+                disabled={isDeletingProject}
+                onClick={cancelDeleteProject}
+                type="button"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            {deleteProjectError ? (
+              <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-[var(--color-danger)]">
+                {deleteProjectError}
+              </p>
+            ) : null}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                className="h-9 rounded-md px-3 text-sm text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-container-low)] disabled:opacity-50"
+                disabled={isDeletingProject}
+                onClick={cancelDeleteProject}
+                type="button"
+              >
+                取消
+              </button>
+              <button
+                className="h-9 rounded-md bg-[var(--color-danger)] px-3 text-sm font-medium text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isDeletingProject}
+                onClick={() => void confirmDeleteProject()}
+                type="button"
+              >
+                {isDeletingProject ? "正在删除..." : "删除项目"}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

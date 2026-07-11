@@ -42,7 +42,7 @@ export function NodeActionHandle({
 }) {
   return (
     <Handle
-      className={`zenme-node-action-handle !absolute !-right-14 ${className} !z-10 !flex !size-8 !-translate-y-1/2 !items-center !justify-center !rounded-full !border !border-zinc-300 !bg-white !text-zinc-700 !shadow-md !backdrop-blur !transition group-hover:!opacity-100 ${
+      className={`zenme-node-floating-control zenme-node-action-handle !absolute !-right-14 ${className} !z-10 !flex !size-8 !-translate-y-1/2 !items-center !justify-center !rounded-full !border !border-zinc-300 !bg-white !text-zinc-700 !shadow-sm !backdrop-blur !transition group-hover:!opacity-100 ${
         selected ? "opacity-100" : "opacity-0"
       }`}
       data-node-action
@@ -64,7 +64,7 @@ export function NodeContextHandle({
 }) {
   return (
     <Handle
-      className={`!absolute !-left-14 ${className} !z-10 !flex !size-8 !-translate-y-1/2 !items-center !justify-center !rounded-full !border !border-zinc-300 !bg-white !text-zinc-700 !shadow-md !backdrop-blur !transition group-hover:!opacity-100 ${
+      className={`zenme-node-floating-control zenme-node-context-handle !absolute !-left-14 ${className} !z-10 !flex !size-8 !-translate-y-1/2 !items-center !justify-center !rounded-full !border !border-zinc-300 !bg-white !text-zinc-700 !shadow-sm !backdrop-blur !transition group-hover:!opacity-100 ${
         selected ? "opacity-100" : "opacity-0"
       }`}
       data-node-context
@@ -86,7 +86,7 @@ export function NodeEdgeSourceHandle({
 }) {
   return (
     <Handle
-      className={`!z-20 !h-3 !w-3 !shadow-sm ${className} ${
+      className={`zenme-node-connection-handle !z-20 !h-3 !w-3 !shadow-sm ${className} ${
         visible
           ? "!border-zinc-300 !bg-white !opacity-100"
           : "!border-transparent !bg-transparent !opacity-0"
@@ -109,7 +109,7 @@ export function NodeTargetHandle({
 }) {
   return (
     <Handle
-      className={`zenme-target-handle !absolute !-left-1.5 ${className} !z-20 !flex !size-3 !-translate-y-1/2 !items-center !justify-center !border-0 !bg-transparent !shadow-none`}
+      className={`zenme-node-connection-handle zenme-target-handle !absolute !-left-1.5 ${className} !z-20 !flex !size-3 !-translate-y-1/2 !items-center !justify-center !border-0 !bg-transparent !shadow-none`}
       position={Position.Left}
       type="target"
     >
@@ -133,7 +133,7 @@ export function NodeContextTargetHandle({
 }) {
   return (
     <Handle
-      className="zenme-context-target-handle !absolute !-right-5 !top-1/2 !z-30 !flex !size-10 !-translate-y-1/2 !items-center !justify-center !border-0 !bg-transparent !shadow-none"
+      className="zenme-node-floating-control zenme-context-target-handle !absolute !-right-5 !top-1/2 !z-30 !flex !size-10 !-translate-y-1/2 !items-center !justify-center !border-0 !bg-transparent !shadow-none"
       id={NODE_CONTEXT_TARGET_HANDLE_ID}
       isConnectableStart={false}
       position={Position.Right}

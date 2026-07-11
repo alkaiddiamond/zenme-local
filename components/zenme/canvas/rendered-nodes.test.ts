@@ -40,9 +40,9 @@ describe("rendered canvas nodes", () => {
         }),
       ],
       onCreateTextChildNode: vi.fn(),
-      onSubmitImageEditNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
       onSubmitTextGenerationNode: vi.fn(),
-      onUpdateImageEditNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
       onUpdateTextGenerationNode,
       onUpdateTextNode: vi.fn(),
       projectId: "project",
@@ -62,4 +62,79 @@ describe("rendered canvas nodes", () => {
         onUpdateTextGenerationNode,
       });
   });
+
+  it("derives image-generation references from incoming image edges", () => {
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [
+        { source: "image-a", target: "generation" },
+        { source: "image-b", target: "generation" },
+      ],
+      nodes: [
+        node({
+          data: { kind: "image", previewUrl: "/a.webp", title: "参考 A" },
+          id: "image-a",
+          type: "image",
+        }),
+        node({
+          data: { kind: "image", originalUrl: "/b.png", title: "参考 B" },
+          id: "image-b",
+          type: "image",
+        }),
+        node({
+          data: { kind: "imageGeneration", title: "图片生成" },
+          id: "generation",
+          type: "imageGeneration",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    expect(renderedNodes.find((item) => item.id === "generation")?.data.imageReferences)
+      .toEqual([
+        { nodeId: "image-a", title: "参考 A", url: "/a.webp" },
+        { nodeId: "image-b", title: "参考 B", url: "/b.png" },
+      ]);
+  });
+
+  it("shows only explicitly selected reference candidates", () => {
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [
+        { source: "image-a", target: "generation" },
+        { source: "image-b", target: "generation" },
+      ],
+      nodes: [
+        node({ data: { kind: "image", previewUrl: "/a.webp" }, id: "image-a", type: "image" }),
+        node({ data: { kind: "image", previewUrl: "/b.webp" }, id: "image-b", type: "image" }),
+        node({
+          data: {
+            imageReferenceNodeIds: ["image-b"],
+            kind: "imageGeneration",
+          },
+          id: "generation",
+          type: "imageGeneration",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+    const generation = renderedNodes.find((item) => item.id === "generation");
+    expect(generation?.data.imageReferenceCandidates).toHaveLength(2);
+    expect(generation?.data.imageReferences?.map((item) => item.nodeId)).toEqual(["image-b"]);
+  });
+
 });

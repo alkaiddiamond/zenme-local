@@ -3,6 +3,7 @@
 import {
   type ChangeEvent,
   type MouseEvent,
+  type WheelEvent as ReactWheelEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -50,7 +51,7 @@ import { nodeTypes } from "@/components/zenme/nodes";
 import {
   getCanvasSnapshotFromApi,
   getProjectFromApi,
-  editImageWithOpenRouter,
+  generateOrEditImage,
   uploadProjectFileToApi,
 } from "@/lib/zenme-api";
 import {
@@ -59,6 +60,14 @@ import {
 } from "@/lib/zenme";
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 import { createDroppedFileCanvasNodes } from "@/components/zenme/canvas/drop-files";
+import {
+  createCanvasNodeClipboardPayload,
+  createPastedCanvasNodes,
+  parseCanvasNodeClipboardPayload,
+  type CanvasNodeClipboardPayload,
+  ZENME_NODE_CLIPBOARD_MIME,
+  ZENME_NODE_CLIPBOARD_PREFIX,
+} from "@/components/zenme/canvas/clipboard";
 import { parseDroppedReadingNotePayload } from "@/components/zenme/canvas/drop-payload";
 import {
   canPrepareReadingAsset,
@@ -84,6 +93,7 @@ import {
   isEditableTarget,
   isNodeDimensionChange,
   normalizeGroupNodeRelations,
+  recoverInterruptedImageTasks,
   removeLegacyWelcomeNodes,
 } from "@/components/zenme/canvas/geometry";
 import {
@@ -113,6 +123,7 @@ import {
 } from "@/components/zenme/canvas/text-generation-context";
 import {
   createConnectedPlaceholderCanvasNode,
+  createImageGenerationCanvasNode,
   createDroppedReadingNoteCanvasNode,
   createAiResponseChildCanvasNode,
   createReadingNoteCanvasNode,
@@ -120,14 +131,17 @@ import {
   createTextCanvasNode,
 } from "@/components/zenme/canvas/node-factories";
 import {
-  createImageEditNodeDataUpdate,
+  createImageGenerationNodeDataUpdate,
   createTextGenerationNodeDataUpdate,
   createTextNodeDataUpdate,
 } from "@/components/zenme/canvas/node-updates";
 import { createCanvasAddMenuFromPaneDoubleClick } from "@/components/zenme/canvas/pane-menu";
 import {
+  CANVAS_ZOOM_MAX,
+  CANVAS_ZOOM_MIN,
   clampCanvasZoom,
   createCanvasZoomViewport,
+  createCanvasZoomViewportAtPoint,
   getNextCanvasZoom,
 } from "@/components/zenme/canvas/viewport";
 import type {
@@ -159,11 +173,15 @@ import { createOpenReadingWorkspaceUpdate } from "@/components/zenme/canvas/read
 import { createReaderCollapseUpdate } from "@/components/zenme/canvas/reader-collapse";
 import { getRenderedCanvasNodes } from "@/components/zenme/canvas/rendered-nodes";
 import {
-  buildImageEditPrompt,
   DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
   DEFAULT_IMAGE_EDIT_QUALITY,
-  getImageEditResultNodeSize,
+  getImageDisplaySize,
 } from "@/components/zenme/image-edit-options";
+import {
+  getImageEditPreferences,
+  hydrateImageEditPreferences,
+} from "@/components/zenme/image-edit-preferences";
+import { getImageDimensions } from "@/components/zenme/canvas/files";
 import { NODE_CONTEXT_HANDLE_ID } from "@/components/zenme/node-types";
 
 type CanvasClientProps = {
@@ -173,11 +191,12 @@ type CanvasClientProps = {
 const THUMBNAIL_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const MISSING_THUMBNAIL_REFRESH_DELAY_MS = 1200;
 const DEFAULT_EDGE_OPTIONS = {
+  interactionWidth: 24,
   type: "default",
   style: { stroke: "#9ca3af", strokeWidth: 2 },
 };
 const MINI_MAP_CLASS =
-  "!bottom-[66px] !left-3 !right-auto !top-auto !m-0 !h-[150px] !w-[200px] !overflow-hidden !rounded-2xl !border !border-zinc-200 !bg-white/95 !shadow-xl !backdrop-blur";
+  "zenme-shadow-canvas !bottom-[66px] !left-3 !right-auto !top-auto !m-0 !h-[150px] !w-[200px] !overflow-hidden !rounded-xl !border !border-zinc-200 !bg-white/95 !backdrop-blur";
 
 export function CanvasClient({ projectId }: CanvasClientProps) {
   const [nodes, setNodes, onNodesChange] =
@@ -187,6 +206,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     useState<ReactFlowInstance<CanvasNode, Edge>>();
   const [showMiniMap, setShowMiniMap] = useState(true);
   const [isMiniMapSuspended, setIsMiniMapSuspended] = useState(false);
+  const [isNodeDragging, setIsNodeDragging] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [canvasViewport, setCanvasViewport] = useState<Viewport>({
@@ -240,6 +260,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const reactFlowRef = useRef<ReactFlowInstance<CanvasNode, Edge> | null>(null);
   const fileUploadInputRef = useRef<HTMLInputElement | null>(null);
   const pendingUploadPosition = useRef<{ x: number; y: number } | null>(null);
+  const lastCanvasPointer = useRef<{ x: number; y: number } | null>(null);
+  const nodeClipboard = useRef<{
+    marker: string;
+    payload: CanvasNodeClipboardPayload;
+  } | null>(null);
   const didInitViewport = useRef(false);
   const appliedViewportSignature = useRef<string | null>(null);
   const perfSeedDidRun = useRef(false);
@@ -268,6 +293,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const groupDragPosition = useRef<GroupDragPosition | null>(null);
 
   const agentKey = `${ZENME_AGENT_KEY_PREFIX}${projectId}`;
+
+  useEffect(() => {
+    void hydrateImageEditPreferences();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -493,8 +522,12 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     return nodeKindById;
   }, [edgeNodeKindSignature]);
   const renderedEdges = useMemo(
-    () => getRenderedCanvasEdges(edgeNodeKindById, edges),
-    [edgeNodeKindById, edges],
+    () => getRenderedCanvasEdges(
+      edgeNodeKindById,
+      edges,
+      new Set(nodes.filter((node) => node.selected).map((node) => node.id)),
+    ),
+    [edgeNodeKindById, edges, nodes],
   );
 
   const resetCanvasHistory = useCallback(
@@ -733,7 +766,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             snapshot.nodes.length ? snapshot.nodes : createWelcomeNodes(),
             snapshot.edges,
           );
-          const restoredNodes = normalizeGroupNodeRelations(restored.nodes);
+          const restoredNodes = recoverInterruptedImageTasks(
+            normalizeGroupNodeRelations(restored.nodes),
+          );
           setNodes(restoredNodes);
           setEdges(restored.edges);
           resetCanvasHistory(
@@ -836,6 +871,138 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }
     };
   }, [canvasLoaded, edges, nodes, pushCanvasHistory]);
+
+  const getClipboardPastePosition = useCallback(() => {
+    const flow = reactFlowRef.current;
+    const bounds = canvasViewportRef.current?.getBoundingClientRect();
+    if (!flow || !bounds) return { x: 0, y: 0 };
+    const point = lastCanvasPointer.current ?? {
+      x: bounds.left + bounds.width / 2,
+      y: bounds.top + bounds.height / 2,
+    };
+    return flow.screenToFlowPosition(point);
+  }, []);
+
+  useEffect(() => {
+    function writeSelectedNodesToClipboard(event: ClipboardEvent) {
+      if (isEditableTarget(event.target) || !event.clipboardData) return false;
+      const payload = createCanvasNodeClipboardPayload(nodesRef.current);
+      if (!payload) return false;
+      const marker = `${ZENME_NODE_CLIPBOARD_PREFIX}${crypto.randomUUID()}`;
+      nodeClipboard.current = { marker, payload };
+      event.preventDefault();
+      event.clipboardData.setData(
+        ZENME_NODE_CLIPBOARD_MIME,
+        JSON.stringify(payload),
+      );
+      event.clipboardData.setData("text/plain", marker);
+      return true;
+    }
+
+    function handleCopy(event: ClipboardEvent) {
+      writeSelectedNodesToClipboard(event);
+    }
+
+    function handleCut(event: ClipboardEvent) {
+      if (!writeSelectedNodesToClipboard(event)) return;
+      const currentNodes = nodesRef.current;
+      const currentEdges = edgesRef.current;
+      const deletion = createCanvasDeleteSelection({
+        edges: currentEdges,
+        nodes: currentNodes,
+      });
+      if (!deletion) return;
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(deletion.nextNodes);
+      setEdges(deletion.nextEdges);
+      pushDeleteHistory({
+        afterEdges: deletion.nextEdges,
+        afterNodes: deletion.nextNodes,
+        edges: deletion.deletedEdges,
+        nodes: deletion.deletedNodes,
+      });
+    }
+
+    async function handlePaste(event: ClipboardEvent) {
+      if (isEditableTarget(event.target) || !event.clipboardData) return;
+      const clipboardData = event.clipboardData;
+      const customPayload = parseCanvasNodeClipboardPayload(
+        clipboardData.getData(ZENME_NODE_CLIPBOARD_MIME),
+      );
+      const plainText = clipboardData.getData("text/plain");
+      const fallbackPayload =
+        nodeClipboard.current?.marker === plainText
+          ? nodeClipboard.current.payload
+          : null;
+      const nodePayload = customPayload ?? fallbackPayload;
+      const position = getClipboardPastePosition();
+
+      if (nodePayload) {
+        event.preventDefault();
+        const pastedNodes = createPastedCanvasNodes({
+          anchor: position,
+          createId: () => crypto.randomUUID(),
+          payload: nodePayload,
+        });
+        appendCanvasItems({
+          currentEdges: edgesRef.current,
+          currentNodes: nodesRef.current,
+          nodes: pastedNodes,
+        });
+        return;
+      }
+
+      const imageFiles = Array.from(clipboardData.items)
+        .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => Boolean(file))
+        .map((file, index) => file.name
+          ? file
+          : new File(
+              [file],
+              `clipboard-${Date.now()}-${index + 1}.${getClipboardImageExtension(file.type)}`,
+              { type: file.type },
+            ));
+      if (imageFiles.length > 0) {
+        event.preventDefault();
+        const pastedImages = await createDroppedFileCanvasNodes({
+          files: imageFiles,
+          onReadingError: setCanvasNotice,
+          position,
+          projectId,
+        });
+        appendCanvasItems({
+          currentEdges: edgesRef.current,
+          currentNodes: nodesRef.current,
+          nodes: pastedImages,
+        });
+        return;
+      }
+
+      if (plainText.trim()) {
+        event.preventDefault();
+        const textNode = createTextCanvasNode({
+          id: crypto.randomUUID(),
+          plainText,
+          position,
+        });
+        appendCanvasItems({
+          currentEdges: edgesRef.current,
+          currentNodes: nodesRef.current,
+          nodes: [textNode],
+        });
+      }
+    }
+
+    window.addEventListener("copy", handleCopy);
+    window.addEventListener("cut", handleCut);
+    window.addEventListener("paste", handlePaste);
+    return () => {
+      window.removeEventListener("copy", handleCopy);
+      window.removeEventListener("cut", handleCut);
+      window.removeEventListener("paste", handlePaste);
+    };
+  }, [appendCanvasItems, getClipboardPastePosition, projectId, pushDeleteHistory, setEdges, setNodes]);
 
   useEffect(() => {
     function handleCanvasKeyboardShortcuts(event: KeyboardEvent) {
@@ -1438,23 +1605,27 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     [pushNodeUpdateHistory, setNodes],
   );
 
-  const updateImageEditNode = useCallback(
+  const updateImageGenerationNode = useCallback(
     (
       nodeId: string,
       updates: {
         fileId?: string;
-        imageEditAspectRatio?: string;
-        imageEditError?: string;
-        imageEditQuality?: string;
-        imageEditPrompt?: string;
-        imageEditStatus?: "idle" | "editing" | "done" | "failed";
+        imageOutputAspectRatio?: string;
+        imageError?: string;
+        imageModel?: string;
+        imageQuality?: string;
+        imagePrompt?: string;
+        imageStatus?: "idle" | "editing" | "done" | "failed";
+        imageReferenceNodeIds?: string[];
+        imageTaskDurationMs?: number;
+        imageTaskStartedAt?: string;
         originalUrl?: string;
         previewUrl?: string;
         title?: string;
       },
     ) => {
       const currentNodes = nodesRef.current;
-      const update = createImageEditNodeDataUpdate({
+      const update = createImageGenerationNodeDataUpdate({
         nodeId,
         nodes: currentNodes,
         updates,
@@ -1466,6 +1637,40 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
     },
     [pushNodeUpdateHistory, setNodes],
+  );
+
+  const resolveImageNodeDimensions = useCallback(
+    (nodeId: string, dimensions: { height: number; width: number }) => {
+      if (dimensions.width <= 0 || dimensions.height <= 0) return;
+      const imageAspectRatio = dimensions.width / dimensions.height;
+      const displaySize = getImageDisplaySize(imageAspectRatio);
+
+      setNodes((currentNodes) => currentNodes.map((node) => {
+        if (node.id !== nodeId || node.data.kind !== "image") return node;
+        const style = node.style as { height?: number; width?: number } | undefined;
+        if (
+          Math.abs((node.data.imageAspectRatio ?? 0) - imageAspectRatio) < 0.0001 &&
+          style?.height === displaySize.height &&
+          style?.width === displaySize.width
+        ) {
+          return node;
+        }
+        return {
+          ...node,
+          height: displaySize.height,
+          measured: displaySize,
+          style: displaySize,
+          width: displaySize.width,
+          data: {
+            ...node.data,
+            imageAspectRatio,
+            imageHeight: dimensions.height,
+            imageWidth: dimensions.width,
+          },
+        };
+      }));
+    },
+    [setNodes],
   );
 
   const submitTextGenerationNode = useCallback(
@@ -1528,83 +1733,111 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     [appendCanvasItems, defaultTextModel, edges, reactFlow],
   );
 
-  const submitImageEditNode = useCallback(
+  const submitImageGenerationNode = useCallback(
     async (
       nodeId: string,
       input?: { aspectRatio?: string; model?: string; prompt?: string; quality?: string },
     ) => {
       const currentNodes = reactFlow?.getNodes() ?? nodesRef.current;
+      const currentEdges = reactFlow?.getEdges() ?? edgesRef.current;
       const sourceNode = currentNodes.find((node) => {
         if (node.id !== nodeId) {
           return false;
         }
 
-        if (node.data.kind === "imageEdit") {
+        if (node.data.kind === "imageGeneration") {
           return true;
         }
 
         return (
           node.data.kind === "image" &&
-          Boolean(node.data.imageGenerated || node.data.imageEditPrompt)
+          Boolean(node.data.imageGenerated || node.data.imagePrompt)
         );
       });
       const prompt =
-        input?.prompt?.trim() ?? sourceNode?.data.imageEditPrompt?.trim() ?? "";
+        input?.prompt?.trim() ?? sourceNode?.data.imagePrompt?.trim() ?? "";
       const aspectRatio =
         input?.aspectRatio ??
-        sourceNode?.data.imageEditAspectRatio ??
+        sourceNode?.data.imageOutputAspectRatio ??
         DEFAULT_IMAGE_EDIT_ASPECT_RATIO;
       const quality =
         input?.quality ??
-        sourceNode?.data.imageEditQuality ??
+        sourceNode?.data.imageQuality ??
         DEFAULT_IMAGE_EDIT_QUALITY;
-      const sourceImageUrl =
-        sourceNode?.data.kind === "imageEdit"
-          ? sourceNode.data.sourceImageUrl
-          : sourceNode?.data.originalUrl ?? sourceNode?.data.previewUrl;
+      const standaloneImageUrl = sourceNode?.data.kind === "imageGeneration"
+        ? undefined
+        : sourceNode?.data.originalUrl ?? sourceNode?.data.previewUrl;
+      const selectedReferenceNodeIds = sourceNode?.data.imageReferenceNodeIds;
+      const connectedReferenceImageUrls = currentEdges
+            .filter((edge) => edge.target === nodeId)
+            .map((edge) => currentNodes.find((node) => node.id === edge.source))
+            .filter((node): node is CanvasNode => node?.data.kind === "image")
+            .filter((node) =>
+              selectedReferenceNodeIds === undefined ||
+              selectedReferenceNodeIds.includes(node.id),
+            )
+            .map((node) => node.data.originalUrl ?? node.data.previewUrl)
+            .filter((url): url is string => Boolean(url))
+            .slice(0, 8);
+      const isStandaloneUploadedImage =
+        sourceNode?.data.kind === "image" && !sourceNode.data.imageGenerated;
+      const referenceImageUrls = isStandaloneUploadedImage && standaloneImageUrl
+        ? [standaloneImageUrl]
+        : connectedReferenceImageUrls.length > 0
+          ? connectedReferenceImageUrls
+          : [];
+      const operation = referenceImageUrls.length > 0
+        ? "edit" as const
+        : "generate" as const;
 
-      if (!sourceNode || !prompt || !sourceImageUrl) {
+      if (!sourceNode || !prompt) {
         return;
       }
 
-      updateImageEditNode(nodeId, {
-        imageEditAspectRatio: aspectRatio,
-        imageEditError: undefined,
-        imageEditQuality: quality,
-        imageEditPrompt: prompt,
-        imageEditStatus: "editing",
+      updateImageGenerationNode(nodeId, {
+        imageOutputAspectRatio: aspectRatio,
+        imageError: undefined,
+        imageQuality: quality,
+        imagePrompt: prompt,
+        imageStatus: "editing",
+        imageTaskDurationMs: undefined,
+        imageTaskStartedAt: new Date().toISOString(),
       });
 
       try {
-        const imageDataUrl = await fetchImageAsDataUrl(sourceImageUrl);
-        const edited = await editImageWithOpenRouter({
-          imageDataUrl,
-          model: input?.model ?? sourceNode.data.imageEditModel ?? configuredImageModelOptions[0]?.id ?? "",
-          prompt: buildImageEditPrompt({
-            aspectRatio,
-            prompt,
-            quality,
-          }),
+        const taskStartedAt = Date.now();
+        const imageDataUrls = await Promise.all(
+          referenceImageUrls.map((url) => fetchImageAsDataUrl(url)),
+        );
+        const edited = await generateOrEditImage({
+          aspectRatio,
+          imageDataUrls,
+          model: input?.model ?? sourceNode.data.imageModel ?? configuredImageModelOptions[0]?.id ?? "",
+          operation,
+          prompt,
+          quality,
         });
         const outputDataUrl = `data:${edited.mediaType};base64,${edited.b64Json}`;
+        const outputDimensions = await getImageDimensions(outputDataUrl);
         const outputFile = dataUrlToFile(
           outputDataUrl,
-          `nano-banana-2-${Date.now()}.${getImageExtension(edited.mediaType)}`,
+          `zenme-image-${Date.now()}.${getImageExtension(edited.mediaType)}`,
         );
         const upload = await uploadProjectFileToApi({
           projectId,
           file: outputFile,
         });
         const nextCurrentNodes = reactFlow?.getNodes() ?? nodesRef.current;
-        const resultNodeSize = getImageEditResultNodeSize(aspectRatio);
+        const outputAspectRatio = outputDimensions.width / outputDimensions.height;
+        const resultNodeSize = getImageDisplaySize(outputAspectRatio);
         const beforeNodeSnapshots = new Map([
           [nodeId, createCanvasHistoryNodeSnapshot(sourceNode)],
         ]);
         const nextNodes = nextCurrentNodes.map((node) =>
           node.id === nodeId &&
-          (node.data.kind === "imageEdit" ||
+          (node.data.kind === "imageGeneration" ||
             (node.data.kind === "image" &&
-              Boolean(node.data.imageGenerated || node.data.imageEditPrompt)))
+              Boolean(node.data.imageGenerated || node.data.imagePrompt)))
             ? {
                 ...node,
                 measured: resultNodeSize,
@@ -1613,16 +1846,21 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
                 data: {
                   ...node.data,
                   fileId: upload.fileId,
-                  imageEditAspectRatio: aspectRatio,
-                  imageEditError: undefined,
-                  imageEditPrompt: prompt,
-                  imageEditQuality: quality,
-                  imageEditStatus: "done" as const,
+                  imageOutputAspectRatio: aspectRatio,
+                  imageError: undefined,
+                  imagePrompt: prompt,
+                  imageQuality: quality,
+                  imageStatus: "done" as const,
+                  imageTaskDurationMs: Date.now() - taskStartedAt,
+                  imageTaskStartedAt: new Date(taskStartedAt).toISOString(),
                   imageGenerated: true,
+                  imageAspectRatio: outputAspectRatio,
+                  imageHeight: outputDimensions.height,
+                  imageWidth: outputDimensions.width,
                   kind: "image" as const,
                   originalUrl: upload.originalUrl,
                   previewUrl: upload.previewUrl ?? upload.originalUrl,
-                  title: "图片生成",
+                  title: node.data.title || "图片生成",
                   uploadStatus: "uploaded" as const,
                 },
               }
@@ -1630,19 +1868,38 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         );
 
         skipNextHistoryEntryCount.current += 1;
+        nodesRef.current = nextNodes;
         setNodes(nextNodes);
         pushNodeUpdateHistory(beforeNodeSnapshots, nextNodes);
+        const committedEdges = reactFlow?.getEdges() ?? edgesRef.current;
+        const committedViewport =
+          reactFlow?.getViewport() ?? canvasViewportStateRef.current;
+        const committedSnapshot = await saveCanvasSnapshot({
+          edges: committedEdges,
+          nodes: nextNodes,
+          projectId,
+          thumbnail: null,
+          viewport: committedViewport,
+        });
+        const committedSignature = getCanvasPersistableSignature(
+          nextNodes,
+          committedEdges,
+          committedViewport,
+        );
+        savedCanvasSignature.current = committedSignature;
+        pendingCanvasSignature.current = committedSignature;
+        setLastSavedAt(committedSnapshot.updatedAt);
+        setSaveStatus("已保存");
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "图片编辑失败，请稍后重试";
-        updateImageEditNode(nodeId, {
-          imageEditError: message,
-          imageEditStatus: "failed",
+        updateImageGenerationNode(nodeId, {
+          imageError: message,
+          imageStatus: "failed",
         });
-        throw error;
       }
     },
-    [configuredImageModelOptions, projectId, pushNodeUpdateHistory, reactFlow, setNodes, updateImageEditNode],
+    [configuredImageModelOptions, projectId, pushNodeUpdateHistory, reactFlow, setNodes, updateImageGenerationNode],
   );
 
   function createTextNodeAt(position: { x: number; y: number }) {
@@ -1666,6 +1923,48 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       fileUploadInputRef.current.click();
     }
     setCanvasAddMenu(null);
+  }
+
+  function createImageGenerationNodeAt(position: { x: number; y: number }) {
+    const preferences = getImageEditPreferences();
+    const nextNode = createImageGenerationCanvasNode({
+      aspectRatio: preferences.aspectRatio,
+      id: crypto.randomUUID(),
+      model: preferences.modelId ?? configuredImageModelOptions[0]?.id,
+      position,
+      quality: preferences.quality,
+    });
+
+    appendCanvasItems({
+      currentEdges: edges,
+      currentNodes: nodes,
+      nodes: [nextNode],
+    });
+    setCanvasAddMenu(null);
+  }
+
+  function handleCanvasWheelCapture(event: ReactWheelEvent<HTMLElement>) {
+    if (!event.ctrlKey && !event.metaKey) return;
+    const flow = reactFlowRef.current;
+    const bounds = canvasViewportRef.current?.getBoundingClientRect();
+    if (!flow || !bounds || event.deltaY === 0) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    const currentViewport = flow.getViewport();
+    const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;
+    const nextZoom = clampCanvasZoom(currentViewport.zoom * zoomFactor);
+    const nextViewport = createCanvasZoomViewportAtPoint(
+      currentViewport,
+      nextZoom,
+      {
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      },
+    );
+    setZoomLevel(nextViewport.zoom);
+    setCanvasViewport(nextViewport);
+    void flow.setViewport(nextViewport, { duration: 0 });
   }
 
   async function handleUploadInputChange(event: ChangeEvent<HTMLInputElement>) {
@@ -1801,6 +2100,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const handleCanvasNodeDragStart = useCallback(
     (draggedNode: CanvasNode) => {
       setIsMiniMapSuspended(true);
+      setIsNodeDragging(true);
       const currentNodes = reactFlow?.getNodes() ?? nodes;
       dragInteractionSample.current = startCanvasInteractionSample(
         "interaction drag",
@@ -1863,6 +2163,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     (draggedNode: CanvasNode) => {
       isCanvasInteractionActive.current = false;
       setIsMiniMapSuspended(false);
+      setIsNodeDragging(false);
       tickCanvasInteractionSample(dragInteractionSample.current);
 
       if (draggedNode.data.kind === "group") {
@@ -2106,7 +2407,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }
 
   function createConnectedPlaceholder(
-    kind: "text" | "agent" | "textGeneration" | "imageEdit",
+    kind: "text" | "agent" | "textGeneration" | "imageGeneration",
   ) {
     if (!actionNode) {
       return;
@@ -2119,12 +2420,19 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       kind,
     });
 
+    const imagePreferences = getImageEditPreferences();
     const { edge: nextEdge, node: nextNode } =
       createConnectedPlaceholderCanvasNode({
+        aspectRatio:
+          kind === "imageGeneration" ? imagePreferences.aspectRatio : undefined,
         id: crypto.randomUUID(),
         kind,
-        model: kind === "imageEdit" ? configuredImageModelOptions[0]?.id : defaultTextModel,
+        model:
+          kind === "imageGeneration"
+            ? imagePreferences.modelId ?? configuredImageModelOptions[0]?.id
+            : defaultTextModel,
         position,
+        quality: kind === "imageGeneration" ? imagePreferences.quality : undefined,
         sourceNode: actionNode,
       });
 
@@ -2143,10 +2451,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         createNoteNode,
         edges,
         nodes,
+        onResolveImageDimensions: resolveImageNodeDimensions,
         onCreateTextChildNode: createTextChildNode,
-        onSubmitImageEditNode: submitImageEditNode,
+        onSubmitImageNode: submitImageGenerationNode,
         onSubmitTextGenerationNode: submitTextGenerationNode,
-        onUpdateImageEditNode: updateImageEditNode,
+        onUpdateImageNode: updateImageGenerationNode,
         onUpdateTextGenerationNode: updateTextGenerationNode,
         onUpdateTextNode: updateTextNode,
         projectId,
@@ -2158,20 +2467,25 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       edges,
       nodes,
       projectId,
-      submitImageEditNode,
+      resolveImageNodeDimensions,
+      submitImageGenerationNode,
       submitTextGenerationNode,
       toggleReaderCollapse,
-      updateImageEditNode,
+      updateImageGenerationNode,
       updateTextGenerationNode,
       updateTextNode,
     ],
   );
 
   return (
-    <div className="zenme-canvas-shell h-full overflow-hidden bg-white text-zinc-950">
+    <div className={`zenme-canvas-shell h-full overflow-hidden bg-white text-zinc-950 ${isNodeDragging ? "zenme-canvas-node-dragging" : ""}`}>
       <main
         className="relative h-full w-full"
         onDoubleClick={handleCanvasDoubleClick}
+        onPointerMove={(event) => {
+          lastCanvasPointer.current = { x: event.clientX, y: event.clientY };
+        }}
+        onWheelCapture={handleCanvasWheelCapture}
         ref={canvasViewportRef}
       >
         <input
@@ -2196,7 +2510,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             isContextConnecting ? "zenme-context-connecting" : ""
           }`}
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+          edgesFocusable
           edges={renderedEdges}
+          elementsSelectable
           nodeTypes={nodeTypes}
           nodes={renderedNodes}
           connectionRadius={120}
@@ -2240,8 +2556,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             setZoomLevel(viewport.zoom);
             setCanvasViewport(viewport);
           }}
-          minZoom={0.2}
-          maxZoom={2}
+          minZoom={CANVAS_ZOOM_MIN}
+          maxZoom={CANVAS_ZOOM_MAX}
           onNodeClick={(_event, node) => bringNodeToFront(node.id)}
           onNodeDrag={(_event, node) => moveGroupedNodesWithFrame(node)}
           onNodeDragStart={(_event, node) => handleCanvasNodeDragStart(node)}
@@ -2292,7 +2608,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           ) : null}
         </ReactFlow>
 
-        {selectionToolbarPosition ? (
+        {selectionToolbarPosition && !isNodeDragging ? (
           <CanvasSelectionToolbar
             left={selectionToolbarPosition.left}
             onGroupSelectedNodes={groupSelectedNodes}
@@ -2348,6 +2664,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           <CanvasAddMenu
             menu={canvasAddMenu}
             onClose={() => setCanvasAddMenu(null)}
+            onCreateImageGenerationNode={createImageGenerationNodeAt}
             onCreateTextNode={createTextNodeAt}
             onUploadFiles={openUploadPickerAt}
           />
@@ -2396,6 +2713,13 @@ function blobToDataUrl(blob: Blob) {
     };
     reader.readAsDataURL(blob);
   });
+}
+
+function getClipboardImageExtension(mimeType: string) {
+  if (mimeType === "image/jpeg") return "jpg";
+  if (mimeType === "image/webp") return "webp";
+  if (mimeType === "image/gif") return "gif";
+  return "png";
 }
 
 function dataUrlToFile(dataUrl: string, fileName: string) {

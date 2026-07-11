@@ -1,6 +1,9 @@
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 import type { CanvasNodeData } from "@/components/zenme/node-types";
-import { getImageEditResultNodeSize } from "@/components/zenme/image-edit-options";
+import {
+  getImageDisplaySize,
+  getImageEditResultNodeSize,
+} from "@/components/zenme/image-edit-options";
 
 import {
   numericSize,
@@ -27,6 +30,10 @@ type RenderedCanvasNodeInput = {
     },
   ) => void;
   nodes: CanvasNode[];
+  onResolveImageDimensions?: (
+    nodeId: string,
+    dimensions: { height: number; width: number },
+  ) => void;
   onUpdateTextNode: (
     nodeId: string,
     updates: Partial<
@@ -45,22 +52,25 @@ type RenderedCanvasNodeInput = {
     nodeId: string,
     input?: { model?: string; prompt?: string },
   ) => Promise<void> | void;
-  onSubmitImageEditNode: (
+  onSubmitImageNode: (
     nodeId: string,
     input?: { aspectRatio?: string; model?: string; prompt?: string; quality?: string },
   ) => Promise<void> | void;
-  onUpdateImageEditNode: (
+  onUpdateImageNode: (
     nodeId: string,
     updates: Partial<
       Pick<
         CanvasNodeData,
         | "fileId"
-        | "imageEditAspectRatio"
-        | "imageEditError"
-        | "imageEditModel"
-        | "imageEditQuality"
-        | "imageEditPrompt"
-        | "imageEditStatus"
+        | "imageOutputAspectRatio"
+        | "imageError"
+        | "imageModel"
+        | "imageQuality"
+        | "imagePrompt"
+        | "imageStatus"
+        | "imageReferenceNodeIds"
+        | "imageTaskDurationMs"
+        | "imageTaskStartedAt"
         | "originalUrl"
         | "previewUrl"
         | "title"
@@ -82,9 +92,9 @@ type RenderedNodeCacheEntry = {
   node: CanvasNode;
   onCreateTextChildNode?: RenderedCanvasNodeInput["onCreateTextChildNode"];
   onSubmitTextGenerationNode?: RenderedCanvasNodeInput["onSubmitTextGenerationNode"];
-  onSubmitImageEditNode?: RenderedCanvasNodeInput["onSubmitImageEditNode"];
+  onSubmitImageNode?: RenderedCanvasNodeInput["onSubmitImageNode"];
   onUpdateTextGenerationNode?: RenderedCanvasNodeInput["onUpdateTextGenerationNode"];
-  onUpdateImageEditNode?: RenderedCanvasNodeInput["onUpdateImageEditNode"];
+  onUpdateImageNode?: RenderedCanvasNodeInput["onUpdateImageNode"];
   onUpdateTextNode?: RenderedCanvasNodeInput["onUpdateTextNode"];
   projectId?: string;
   toggleReaderCollapse?: RenderedCanvasNodeInput["toggleReaderCollapse"];
@@ -96,10 +106,11 @@ export function getRenderedCanvasNodes({
   createNoteNode,
   edges,
   nodes,
+  onResolveImageDimensions,
   onCreateTextChildNode,
-  onSubmitImageEditNode,
+  onSubmitImageNode,
   onSubmitTextGenerationNode,
-  onUpdateImageEditNode,
+  onUpdateImageNode,
   onUpdateTextGenerationNode,
   onUpdateTextNode,
   projectId,
@@ -117,6 +128,22 @@ export function getRenderedCanvasNodes({
       outgoing: new Set<string>(),
     },
   );
+  const imageReferencesByTargetId = new Map<
+    string,
+    NonNullable<CanvasNodeData["imageReferences"]>
+  >();
+  for (const edge of edges) {
+    const source = nodeById.get(edge.source);
+    const url = source?.data.originalUrl ?? source?.data.previewUrl;
+    if (source?.data.kind !== "image" || !url) continue;
+    const references = imageReferencesByTargetId.get(edge.target) ?? [];
+    references.push({
+      nodeId: source.id,
+      title: source.data.title || "图片",
+      url: source.data.previewUrl ?? url,
+    });
+    imageReferencesByTargetId.set(edge.target, references);
+  }
 
   return nodes.map((node) => {
     const parentNode = node.parentId ? nodeById.get(node.parentId) : undefined;
@@ -133,6 +160,25 @@ export function getRenderedCanvasNodes({
         ...nodeWithoutGroupDragLimit.data,
         hasIncomingEdge: connectedNodeIdsByDirection.incoming.has(node.id),
         hasOutgoingEdge: connectedNodeIdsByDirection.outgoing.has(node.id),
+        ...(
+          nodeWithoutGroupDragLimit.data.kind === "imageGeneration" ||
+          (nodeWithoutGroupDragLimit.data.kind === "image" &&
+            nodeWithoutGroupDragLimit.data.imageGenerated)
+            ? (() => {
+                const candidates = imageReferencesByTargetId.get(node.id) ?? [];
+                const selectedIds = nodeWithoutGroupDragLimit.data.imageReferenceNodeIds;
+                return {
+                  imageReferenceCandidates: candidates,
+                  imageReferences: selectedIds === undefined
+                    ? candidates
+                    : candidates.filter((reference) => selectedIds.includes(reference.nodeId)),
+                };
+              })()
+            : {}
+        ),
+        ...(nodeWithoutGroupDragLimit.data.kind === "image"
+          ? { onResolveImageDimensions }
+          : {}),
       },
     };
 
@@ -206,90 +252,59 @@ export function getRenderedCanvasNodes({
       return renderedTextGenerationNode;
     }
 
-    if (nodeWithConnectionState.data.kind === "imageEdit") {
-      const style = nodeWithConnectionState.style as
-        | Record<string, unknown>
-        | undefined;
-      const isLegacyImageEditSize =
-        (numericSize(style?.height) === 520 && numericSize(style?.width) === 420) ||
-        (numericSize(style?.height) === 180 && numericSize(style?.width) === 560) ||
-        (numericSize(style?.height) === 440 && numericSize(style?.width) === 560);
-      const normalizedImageEditNode = isLegacyImageEditSize
-        ? {
-            ...nodeWithConnectionState,
-            height: 260,
-            measured: { height: 260, width: 560 },
-            style: {
-              ...nodeWithConnectionState.style,
-              height: 260,
-              width: 560,
-            },
-            width: 560,
-          }
-        : nodeWithConnectionState;
-      const cached = renderedNodeCache.get(normalizedImageEditNode);
+    if (nodeWithConnectionState.data.kind === "imageGeneration") {
+      const cached = renderedNodeCache.get(nodeWithConnectionState);
 
       if (
-        cached?.onSubmitImageEditNode === onSubmitImageEditNode &&
-        cached.onUpdateImageEditNode === onUpdateImageEditNode &&
-        cached.node.data.hasIncomingEdge === normalizedImageEditNode.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === normalizedImageEditNode.data.hasOutgoingEdge
+        cached?.onSubmitImageNode === onSubmitImageNode &&
+        cached.onUpdateImageNode === onUpdateImageNode &&
+        cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
+        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge
       ) {
         return cached.node;
       }
 
-      const renderedImageEditNode = {
-        ...normalizedImageEditNode,
+      const renderedImageGenerationNode = {
+        ...nodeWithConnectionState,
         data: {
-          ...normalizedImageEditNode.data,
-          onSubmitImageEditNode,
-          onUpdateImageEditNode,
+          ...nodeWithConnectionState.data,
+          onSubmitImageNode,
+          onUpdateImageNode,
         },
       };
 
-      renderedNodeCache.set(normalizedImageEditNode, {
-        node: renderedImageEditNode,
-        onSubmitImageEditNode,
-        onUpdateImageEditNode,
+      renderedNodeCache.set(nodeWithConnectionState, {
+        node: renderedImageGenerationNode,
+        onSubmitImageNode,
+        onUpdateImageNode,
       });
 
-      return renderedImageEditNode;
+      return renderedImageGenerationNode;
     }
 
     if (
       nodeWithConnectionState.data.kind === "image" &&
       (nodeWithConnectionState.data.imageGenerated ||
-        nodeWithConnectionState.data.imageEditPrompt)
+        nodeWithConnectionState.data.imagePrompt)
     ) {
-      const style = nodeWithConnectionState.style as
-        | Record<string, unknown>
-        | undefined;
-      const hasExplicitSize =
-        Boolean(numericSize(style?.height)) && Boolean(numericSize(style?.width));
+      const normalizedSize = nodeWithConnectionState.data.imageAspectRatio
+        ? getImageDisplaySize(nodeWithConnectionState.data.imageAspectRatio)
+        : getImageEditResultNodeSize(
+            nodeWithConnectionState.data.imageOutputAspectRatio,
+          );
 
-      const generatedImageNode =
-        hasExplicitSize
-          ? nodeWithConnectionState
-          : {
-              ...nodeWithConnectionState,
-              height: getImageEditResultNodeSize(
-                nodeWithConnectionState.data.imageEditAspectRatio,
-              ).height,
-              measured: getImageEditResultNodeSize(
-                nodeWithConnectionState.data.imageEditAspectRatio,
-              ),
-              style: getImageEditResultNodeSize(
-                nodeWithConnectionState.data.imageEditAspectRatio,
-              ),
-              width: getImageEditResultNodeSize(
-                nodeWithConnectionState.data.imageEditAspectRatio,
-              ).width,
-            };
+      const generatedImageNode = {
+        ...nodeWithConnectionState,
+        height: normalizedSize.height,
+        measured: normalizedSize,
+        style: normalizedSize,
+        width: normalizedSize.width,
+      };
       const cached = renderedNodeCache.get(generatedImageNode);
 
       if (
-        cached?.onSubmitImageEditNode === onSubmitImageEditNode &&
-        cached.onUpdateImageEditNode === onUpdateImageEditNode &&
+        cached?.onSubmitImageNode === onSubmitImageNode &&
+        cached.onUpdateImageNode === onUpdateImageNode &&
         cached.node.data.hasIncomingEdge === generatedImageNode.data.hasIncomingEdge &&
         cached.node.data.hasOutgoingEdge === generatedImageNode.data.hasOutgoingEdge
       ) {
@@ -300,18 +315,45 @@ export function getRenderedCanvasNodes({
         ...generatedImageNode,
         data: {
           ...generatedImageNode.data,
-          onSubmitImageEditNode,
-          onUpdateImageEditNode,
+          onSubmitImageNode,
+          onUpdateImageNode,
         },
       };
 
       renderedNodeCache.set(generatedImageNode, {
         node: renderedGeneratedImageNode,
-        onSubmitImageEditNode,
-        onUpdateImageEditNode,
+        onSubmitImageNode,
+        onUpdateImageNode,
       });
 
       return renderedGeneratedImageNode;
+    }
+
+    if (nodeWithConnectionState.data.kind === "image") {
+      const cached = renderedNodeCache.get(nodeWithConnectionState);
+
+      if (
+        cached?.onUpdateImageNode === onUpdateImageNode &&
+        cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
+        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge
+      ) {
+        return cached.node;
+      }
+
+      const renderedImageNode = {
+        ...nodeWithConnectionState,
+        data: {
+          ...nodeWithConnectionState.data,
+          onUpdateImageNode,
+        },
+      };
+
+      renderedNodeCache.set(nodeWithConnectionState, {
+        node: renderedImageNode,
+        onUpdateImageNode,
+      });
+
+      return renderedImageNode;
     }
 
     if (nodeWithConnectionState.data.kind === "note") {

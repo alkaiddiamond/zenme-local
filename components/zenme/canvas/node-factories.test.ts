@@ -9,6 +9,8 @@ import {
   createCodeCanvasNode,
   createConnectedPlaceholderCanvasNode,
   createDroppedReadingNoteCanvasNode,
+  createReferencedImageGenerationCanvasNode,
+  createImageGenerationCanvasNode,
   createMarkdownCanvasNode,
   createReaderCanvasNode,
   createReadingNoteCanvasNode,
@@ -191,6 +193,59 @@ describe("canvas node factories", () => {
         textGenerationModel: "glm-5.1",
       },
     });
+  });
+
+  it("creates a standalone image generation node without a source image", () => {
+    expect(
+      createImageGenerationCanvasNode({
+        aspectRatio: "auto",
+        id: "image-generation-1",
+        model: "gpt-5.6-sol",
+        position: { x: 40, y: 80 },
+        quality: "1K",
+      }),
+    ).toMatchObject({
+      id: "image-generation-1",
+      position: { x: 40, y: 80 },
+      style: { height: 260, width: 520 },
+      type: "imageGeneration",
+      data: {
+        imageOutputAspectRatio: "auto",
+        imageModel: "gpt-5.6-sol",
+        imagePrompt: "",
+        imageQuality: "1K",
+        kind: "imageGeneration",
+        title: "图片生成",
+      },
+    });
+  });
+
+  it("creates the same image generation node with the source selected as a reference", () => {
+    const sourceNode = {
+      ...textNode({ id: "image-source" }),
+      type: "image",
+      data: {
+        kind: "image" as const,
+        title: "参考图片",
+        originalUrl: "/source.png",
+      },
+    } as CanvasNode;
+    const result = createReferencedImageGenerationCanvasNode({
+      id: "image-generation-2",
+      position: { x: 40, y: 80 },
+      sourceNode,
+    });
+
+    expect(result.node).toMatchObject({
+      type: "imageGeneration",
+      data: {
+        imageOperation: "generate",
+        imageReferenceNodeIds: ["image-source"],
+        kind: "imageGeneration",
+        title: "图片生成",
+      },
+    });
+    expect(result.edge).toEqual(expectedEdge("image-source", "image-generation-2"));
   });
 
   it("creates reader and placeholder nodes with connected edges", () => {

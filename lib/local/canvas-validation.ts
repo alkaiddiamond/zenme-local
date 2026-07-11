@@ -9,7 +9,7 @@ export function isValidCanvasSnapshot(value: unknown): value is CanvasSnapshotPa
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const snapshot = value as Partial<CanvasSnapshotPayload>;
   if (
-    snapshot.version !== 1 ||
+    snapshot.version !== 2 ||
     !Array.isArray(snapshot.nodes) ||
     snapshot.nodes.length > MAX_CANVAS_NODES ||
     !Array.isArray(snapshot.edges) ||

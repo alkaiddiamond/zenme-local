@@ -60,6 +60,18 @@ describe("local backup", () => {
     expect(settings).toContain('"apiKey": ""');
   });
 
+  it("never includes or restores ChatGPT OAuth tokens", async () => {
+    await fs.writeFile(path.join(dataDir, "openai-oauth.json"), '{"accessToken":"private"}');
+    const backup = await createLocalDataBackup(dataDir);
+    expect(new AdmZip(backup).getEntry("zenme-data/openai-oauth.json")).toBeNull();
+
+    const maliciousBackup = new AdmZip();
+    maliciousBackup.addFile("zenme-data/openai-oauth.json", Buffer.from('{"accessToken":"injected"}'));
+    maliciousBackup.addFile("zenme-data/projects/example.json", Buffer.from("{}"));
+    await restoreLocalDataBackup({ backup: maliciousBackup.toBuffer(), dataDir });
+    await expect(fs.access(path.join(dataDir, "openai-oauth.json"))).rejects.toThrow();
+  });
+
   it("rejects backup entries that escape the data directory", async () => {
     const zip = new AdmZip();
     zip.addFile("C:/escape.txt", Buffer.from("bad"));

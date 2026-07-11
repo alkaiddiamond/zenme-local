@@ -104,7 +104,7 @@ export function ZenmeModelPicker({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="w-[var(--radix-dropdown-menu-trigger-width)] rounded-xl border-zinc-200 bg-white p-1.5 shadow-xl"
+        className="zenme-shadow-dropdown w-[var(--radix-dropdown-menu-trigger-width)] rounded-lg border-zinc-200 bg-white p-1.5"
         side="top"
         sideOffset={8}
       >

@@ -1,14 +1,24 @@
 import { NextResponse } from "next/server";
 
 import { resolveAiModel, validateChatBody } from "@/lib/ai/request-policy";
+import {
+  createOpenAiAuthHeaders,
+  ensureFreshOpenAiTokens,
+  RESPONSES_URL,
+} from "@/lib/ai/openai-oauth";
+import { openAiResponsesToChatStream } from "@/lib/ai/openai-responses-stream";
+import { normalizeStreamTokenUsage } from "@/lib/ai/openai-responses-stream";
+import { observeChatUsageStream } from "@/lib/ai/chat-usage-stream";
 import { checkRateLimit, getClientIp } from "@/lib/api/rate-limit";
 import { normalizeProviderBaseUrl } from "@/lib/api/provider-url";
+import { getProxyFetchOptions } from "@/lib/api/proxy-fetch";
 import {
   getEnabledProviderModels,
   getLocalSettings,
   type ZenmeLocalSettings,
   type ModelProviderConfig,
 } from "@/lib/local/settings";
+import { recordTokenUsage } from "@/lib/local/token-usage";
 
 type ChatMessage = {
   role: "user" | "assistant" | "system";
@@ -20,6 +30,7 @@ const DEFAULT_SYSTEM_PROMPT =
 const AI_PROVIDER_ERROR_MESSAGE = "模型调用失败，请稍后重试";
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   try {
     const user = { id: "local" };
     const userLimitResponse = checkRateLimit({
@@ -88,7 +99,33 @@ export async function POST(request: Request) {
       );
     }
 
-    return new Response(upstream.body, {
+    const recordUsage = (usage: { inputTokens: number; outputTokens: number; totalTokens: number } | null) =>
+      recordTokenUsage({
+        providerId: providerConfig.id,
+        providerName: providerConfig.name,
+        modelId: providerConfig.model,
+        modality: "text",
+        inputTokens: usage?.inputTokens,
+        outputTokens: usage?.outputTokens,
+        totalTokens: usage?.totalTokens,
+        durationMs: Date.now() - startedAt,
+        messageCount: body.messages?.length,
+      }).catch(() => undefined);
+
+    let responseBody: ReadableStream<Uint8Array>;
+    if (providerConfig.apiFormat === "openai_oauth") {
+      responseBody = openAiResponsesToChatStream(upstream.body, { onUsage: recordUsage });
+    } else if (providerConfig.apiFormat === "anthropic") {
+      const usage = normalizeStreamTokenUsage(
+        JSON.parse(upstream.headers.get("x-zenme-token-usage") || "null"),
+      );
+      void recordUsage(usage);
+      responseBody = upstream.body;
+    } else {
+      responseBody = observeChatUsageStream(upstream.body, recordUsage);
+    }
+
+    return new Response(responseBody, {
       headers: {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
@@ -106,6 +143,7 @@ export async function POST(request: Request) {
 type ChatProviderConfig =
   | {
       apiKey: string;
+      id: string;
       apiFormat: ModelProviderConfig["apiFormat"];
       authType: ModelProviderConfig["authType"];
       baseUrl: string;
@@ -125,11 +163,10 @@ function resolveChatProviderConfig(
         getEnabledProviderModels(item, "text").some(
           (providerModel) => providerModel.id === model,
         ),
-    ) ??
-    settings?.modelProviders.find((item) => item.enabled && item.isDefault);
+    );
   const providerBaseUrl = provider?.baseUrl?.trim();
   const providerApiKey = provider?.apiKey?.trim();
-  const providerName = provider?.name?.trim() || "默认模型服务商";
+  const providerName = provider?.name?.trim() || "所选模型服务商";
   const baseUrl = normalizeProviderBaseUrl(
     getProviderEnvBaseUrl(provider) ||
       providerBaseUrl ||
@@ -152,6 +189,7 @@ function resolveChatProviderConfig(
 
   return {
     apiKey: apiKey ?? "",
+    id: provider?.id ?? "unknown",
     apiFormat: provider?.apiFormat ?? "openai",
     authType: provider?.authType ?? "bearer",
     baseUrl,
@@ -217,6 +255,34 @@ async function fetchProviderChatCompletion(input: {
   systemContent: string;
 }): Promise<Response | { error: string }> {
   try {
+    if (input.provider.apiFormat === "openai_oauth") {
+      const tokens = await ensureFreshOpenAiTokens();
+      if (!tokens) {
+        return { error: "ChatGPT 登录已失效，请到设置 > 模型配置中重新登录。" };
+      }
+      return await fetch(RESPONSES_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...createOpenAiAuthHeaders(tokens),
+        },
+        body: JSON.stringify({
+          model: input.provider.model,
+          instructions: input.systemContent,
+          input: input.messages
+            .filter((message) => message.role !== "system")
+            .map((message) => ({
+              type: "message",
+              role: message.role,
+              content: message.content,
+            })),
+          stream: true,
+          store: false,
+        }),
+        ...getProxyFetchOptions(RESPONSES_URL),
+      });
+    }
+
     if (input.provider.apiFormat === "anthropic") {
       const response = await fetch(`${input.provider.baseUrl}/messages`, {
         method: "POST",
@@ -236,12 +302,13 @@ async function fetchProviderChatCompletion(input: {
       if (!response.ok) return response;
       const payload = (await response.json()) as {
         content?: Array<{ text?: string; type?: string }>;
+        usage?: Record<string, unknown>;
       };
       const content = (payload.content ?? [])
         .filter((item) => item.type === "text" && item.text)
         .map((item) => item.text)
         .join("");
-      return createTextSseResponse(content);
+      return createTextSseResponse(content, payload.usage);
     }
 
     return await fetch(`${input.provider.baseUrl}/chat/completions`, {
@@ -254,6 +321,7 @@ async function fetchProviderChatCompletion(input: {
           ...input.messages,
         ],
         stream: true,
+        stream_options: { include_usage: true },
       }),
     });
   } catch (error) {
@@ -269,7 +337,7 @@ async function fetchProviderChatCompletion(input: {
   }
 }
 
-function createTextSseResponse(content: string) {
+function createTextSseResponse(content: string, usage?: Record<string, unknown>) {
   const encoder = new TextEncoder();
   const payload = JSON.stringify({ choices: [{ delta: { content } }] });
   return new Response(
@@ -279,7 +347,12 @@ function createTextSseResponse(content: string) {
         controller.close();
       },
     }),
-    { headers: { "content-type": "text/event-stream; charset=utf-8" } },
+    {
+      headers: {
+        "content-type": "text/event-stream; charset=utf-8",
+        ...(usage ? { "x-zenme-token-usage": JSON.stringify(usage) } : {}),
+      },
+    },
   );
 }
 
@@ -307,6 +380,9 @@ async function createSafeProviderError(
   }
 
   if (status === 401 || status === 403) {
+    if (provider.apiFormat === "openai_oauth") {
+      return `ChatGPT 调用 ${provider.model} 失败（${status}），请重新登录或检查账号模型权限。`;
+    }
     return `${provider.name} 调用 ${provider.model} 失败（${status}），请检查 API 密钥或模型权限。`;
   }
 

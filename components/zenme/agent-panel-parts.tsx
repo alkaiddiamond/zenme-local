@@ -14,7 +14,7 @@ import type { AiModelOption } from "@/components/zenme/use-ai-model-options";
 export function AgentPanelShell({ children }: { children: ReactNode }) {
   return (
     <aside
-      className="absolute inset-y-0 right-0 z-20 flex w-[420px] flex-col rounded-l-2xl border-l border-zinc-200 bg-white text-zinc-950 shadow-2xl"
+      className="zenme-shadow-overlay absolute inset-y-0 right-0 z-20 flex w-[420px] flex-col rounded-l-xl border-l border-zinc-200 bg-white text-zinc-950"
       data-thumbnail-hidden="true"
     >
       {children}
@@ -133,7 +133,7 @@ export function AgentComposer({
 
   return (
     <form
-      className="rounded-2xl border border-zinc-200 bg-zinc-50 p-3"
+      className="rounded-lg border border-zinc-200 bg-zinc-50 p-3"
       onSubmit={onSubmit}
     >
       <textarea

@@ -29,8 +29,8 @@ export function ReadingWorkspaceShell({
     <div
       className={`relative isolate flex flex-col overflow-hidden border bg-white text-zinc-950 ${
         nodeMode
-          ? "zenme-reader-workspace h-full w-full rounded-xl border-zinc-200 shadow-xl"
-          : "absolute inset-4 z-30 rounded-2xl border-zinc-200 shadow-2xl"
+          ? "zenme-reader-workspace zenme-shadow-node h-full w-full rounded-xl border-zinc-200"
+          : "zenme-shadow-overlay absolute inset-4 z-30 rounded-xl border-zinc-200"
       }`}
       onAuxClickCapture={onAuxClickCapture}
       onMouseDownCapture={onMouseDownCapture}

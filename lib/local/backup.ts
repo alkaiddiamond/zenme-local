@@ -9,6 +9,7 @@ const BACKUP_ENTRY_PREFIX = "zenme-data";
 export const MAX_BACKUP_ARCHIVE_BYTES = 200 * 1024 * 1024;
 const MAX_BACKUP_ENTRIES = 20_000;
 const MAX_BACKUP_EXPANDED_BYTES = 2 * 1024 * 1024 * 1024;
+const PRIVATE_LOCAL_FILES = new Set(["openai-oauth.json"]);
 
 export async function createLocalDataBackup(dataDir = getZenmeDataDir()) {
   const zip = new AdmZip();
@@ -53,6 +54,7 @@ export async function restoreLocalDataBackup(input: {
     for (const entry of entries) {
       const relativePath = normalizeBackupEntryName(entry.entryName);
       if (!relativePath) continue;
+      if (PRIVATE_LOCAL_FILES.has(relativePath)) continue;
       const destination = resolveInside(stagingDir, relativePath);
       await fs.mkdir(path.dirname(destination), { recursive: true });
       await fs.writeFile(destination, entry.getData());
@@ -88,6 +90,9 @@ async function addDirectoryToZip(zip: AdmZip, dir: string, entryRoot: string) {
   }
 
   for (const entry of entries) {
+    if (entryRoot === BACKUP_ENTRY_PREFIX && PRIVATE_LOCAL_FILES.has(entry.name)) {
+      continue;
+    }
     const absolutePath = path.join(dir, entry.name);
     const entryName = `${entryRoot}/${entry.name}`.replaceAll("\\", "/");
     if (entry.isDirectory()) {

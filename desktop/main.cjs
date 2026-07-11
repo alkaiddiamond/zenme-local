@@ -288,6 +288,14 @@ async function createWindow() {
 
 function registerIpcHandlers() {
   ipcMain.handle("zenme:get-data-dir", () => getDataDir());
+  ipcMain.handle("zenme:open-external", async (_event, rawUrl) => {
+    const target = new URL(String(rawUrl));
+    if (target.protocol !== "https:" && target.protocol !== "http:") {
+      throw new Error("Unsupported external URL protocol");
+    }
+    await shell.openExternal(target.toString());
+    return true;
+  });
   ipcMain.handle("zenme:minimize-window", () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     mainWindow.minimize();

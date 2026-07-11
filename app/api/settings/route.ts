@@ -24,6 +24,8 @@ export async function PATCH(request: Request) {
     if ("autoSaveIntervalMs" in body) updates.autoSaveIntervalMs = body.autoSaveIntervalMs!;
     if (typeof body.dataDir === "string") updates.dataDir = body.dataDir;
     if ("lastImageModelId" in body) updates.lastImageModelId = body.lastImageModelId;
+    if ("lastImageAspectRatio" in body) updates.lastImageAspectRatio = body.lastImageAspectRatio;
+    if ("lastImageQuality" in body) updates.lastImageQuality = body.lastImageQuality;
     if ("lastTextModelId" in body) updates.lastTextModelId = body.lastTextModelId;
     if ("modelProviders" in body) updates.modelProviders = body.modelProviders!;
     const settings = await updateLocalSettings(updates);

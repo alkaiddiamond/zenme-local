@@ -23,7 +23,7 @@ export function FloatingMenu({
   return (
     <div
       className={cn(
-        "fixed z-30 w-72 rounded-xl border border-zinc-200 bg-white/95 p-2 text-zinc-950 shadow-2xl backdrop-blur",
+        "zenme-shadow-dropdown fixed z-30 w-72 rounded-lg border border-zinc-200 bg-white/95 p-2 text-zinc-950 backdrop-blur",
         className,
       )}
       data-thumbnail-hidden="true"
@@ -81,7 +81,7 @@ export function FloatingMenuItem({
   return (
     <button
       className={cn(
-        "mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm transition hover:bg-zinc-100",
+        "mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm transition hover:bg-zinc-100",
         primary && "mt-0 bg-zinc-100 hover:bg-zinc-200",
         disabled &&
           "cursor-not-allowed text-zinc-400 opacity-70 hover:bg-transparent",

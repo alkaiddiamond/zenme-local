@@ -8,11 +8,14 @@ export type ZenmeLocalSettings = {
   autoSaveIntervalMs: number;
   lastTextModelId?: string;
   lastImageModelId?: string;
+  lastImageAspectRatio?: string;
+  lastImageQuality?: string;
   modelProviders: ModelProviderConfig[];
 };
 
 export type ModelProviderApiFormat =
   | "openai"
+  | "openai_oauth"
   | "anthropic"
   | "openrouter"
   | "zhipu"
@@ -49,7 +52,7 @@ export type ModelProviderConfig = {
   isDefault: boolean;
   modelMapping: {
     main: string;
-    imageEdit?: string;
+    image?: string;
   };
   models: ModelConfig[];
   contextWindows: Record<string, number>;
@@ -118,6 +121,14 @@ function normalizeLocalSettings(
       typeof settings.lastTextModelId === "string" ? settings.lastTextModelId : undefined,
     lastImageModelId:
       typeof settings.lastImageModelId === "string" ? settings.lastImageModelId : undefined,
+    lastImageAspectRatio:
+      typeof settings.lastImageAspectRatio === "string"
+        ? settings.lastImageAspectRatio
+        : undefined,
+    lastImageQuality:
+      typeof settings.lastImageQuality === "string"
+        ? settings.lastImageQuality
+        : undefined,
     modelProviders: normalizeModelProviders(
       settings.modelProviders,
       defaults.modelProviders,
@@ -130,16 +141,17 @@ function createDefaultModelProviders(): ModelProviderConfig[] {
   const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim();
 
   return [
+    createChatGptProvider(),
     {
       id: "zhipu-glm",
       name: "Zhipu GLM",
-      note: "智谱 GLM，默认文本模型服务商",
+      note: "智谱 GLM 文本模型服务商",
       baseUrl: "https://open.bigmodel.cn/api/paas/v4",
       apiFormat: "zhipu",
       authType: "bearer",
       apiKey: zhipuApiKey,
       enabled: true,
-      isDefault: true,
+      isDefault: false,
       modelMapping: {
         main: "glm-4.5",
       },
@@ -173,7 +185,7 @@ function createDefaultModelProviders(): ModelProviderConfig[] {
       enabled: true,
       isDefault: false,
       modelMapping: {
-        imageEdit: "google/gemini-3.1-flash-image-preview",
+        image: "google/gemini-3.1-flash-image-preview",
         main: "",
       },
       models: [
@@ -195,6 +207,26 @@ function createDefaultModelProviders(): ModelProviderConfig[] {
   ];
 }
 
+export const CHATGPT_PROVIDER_ID = "chatgpt-official";
+export const CHATGPT_IMAGE_MODEL_IDS = new Set(["gpt-5.6-sol"]);
+
+export function createChatGptProvider(): ModelProviderConfig {
+  return {
+    id: CHATGPT_PROVIDER_ID,
+    name: "ChatGPT",
+    note: "通过 ChatGPT 账号使用 Codex 模型",
+    baseUrl: "https://chatgpt.com/backend-api/codex",
+    apiFormat: "openai_oauth",
+    authType: "none",
+    enabled: true,
+    isDefault: false,
+    modelMapping: { main: "" },
+    models: [],
+    contextWindows: {},
+    modelModalities: {},
+  };
+}
+
 function normalizeModelProviders(
   value: unknown,
   defaults: ModelProviderConfig[],
@@ -211,7 +243,36 @@ function normalizeModelProviders(
     return defaults;
   }
 
-  return ensureSingleDefaultProvider(providers);
+  const normalizedProviders = providers.map((provider) =>
+    provider.id === CHATGPT_PROVIDER_ID
+      ? {
+          ...provider,
+          name: "ChatGPT",
+          note: "通过 ChatGPT 账号使用 Codex 模型",
+          baseUrl: "https://chatgpt.com/backend-api/codex",
+          apiFormat: "openai_oauth" as const,
+          authType: "none" as const,
+          apiKey: "",
+          models: provider.models.map(withChatGptImageCapability),
+          modelModalities: Object.fromEntries(
+            provider.models.map((model) => {
+              const normalized = withChatGptImageCapability(model);
+              return [normalized.id, normalized.modalities];
+            }),
+          ),
+        }
+      : provider,
+  );
+  const hasChatGpt = normalizedProviders.some((provider) => provider.id === CHATGPT_PROVIDER_ID);
+  return (hasChatGpt ? normalizedProviders : [createChatGptProvider(), ...normalizedProviders])
+    .map((provider) => ({ ...provider, isDefault: false }));
+}
+
+function withChatGptImageCapability(model: ModelConfig): ModelConfig {
+  if (!CHATGPT_IMAGE_MODEL_IDS.has(model.id) || model.modalities.includes("image")) {
+    return model;
+  }
+  return { ...model, modalities: [...model.modalities, "image"] };
 }
 
 function normalizeModelProvider(value: unknown): ModelProviderConfig | null {
@@ -229,11 +290,20 @@ function normalizeModelProvider(value: unknown): ModelProviderConfig | null {
     !Array.isArray(provider.modelMapping)
       ? provider.modelMapping
       : { main: "" };
+  const legacyImageModel = (modelMapping as Record<string, unknown>).imageEdit;
+  const normalizedModelMapping = {
+    main: typeof modelMapping.main === "string" ? modelMapping.main : "",
+    image: typeof modelMapping.image === "string"
+      ? modelMapping.image
+      : typeof legacyImageModel === "string"
+        ? legacyImageModel
+        : "",
+  };
   const contextWindows = normalizeContextWindows(provider.contextWindows);
   const modelModalities = normalizeModelModalities(provider.modelModalities);
   const models = normalizeModelConfigs(
     provider.models,
-    modelMapping,
+    normalizedModelMapping,
     contextWindows,
     modelModalities,
   );
@@ -249,14 +319,9 @@ function normalizeModelProvider(value: unknown): ModelProviderConfig | null {
     authType: normalizeAuthType(provider.authType),
     apiKey: typeof provider.apiKey === "string" ? provider.apiKey : "",
     enabled: provider.enabled !== false,
-    isDefault: Boolean(provider.isDefault),
+    isDefault: false,
     modelMapping: {
-      main:
-        typeof modelMapping.main === "string" ? modelMapping.main : "",
-      imageEdit:
-        typeof modelMapping.imageEdit === "string"
-          ? modelMapping.imageEdit
-          : "",
+      ...normalizedModelMapping,
     },
     models,
     contextWindows: normalizeContextWindowsFromModels(contextWindows, models),
@@ -264,24 +329,10 @@ function normalizeModelProvider(value: unknown): ModelProviderConfig | null {
   };
 }
 
-function ensureSingleDefaultProvider(providers: ModelProviderConfig[]) {
-  const defaultIndex = providers.findIndex((provider) => provider.isDefault);
-  if (defaultIndex === -1) {
-    return providers.map((provider, index) => ({
-      ...provider,
-      isDefault: index === 0,
-    }));
-  }
-
-  return providers.map((provider, index) => ({
-    ...provider,
-    isDefault: index === defaultIndex,
-  }));
-}
-
 function normalizeApiFormat(value: unknown): ModelProviderApiFormat {
   if (
     value === "openai" ||
+    value === "openai_oauth" ||
     value === "anthropic" ||
     value === "openrouter" ||
     value === "zhipu" ||
@@ -367,7 +418,7 @@ function normalizeModelConfigs(
       contextWindow: contextWindows[id],
       modalities:
         modelModalities[id] ??
-        (mappingKey === "imageEdit" ? ["image", "vision"] : ["text"]),
+        (mappingKey === "image" ? ["image", "vision"] : ["text"]),
     });
   }
 

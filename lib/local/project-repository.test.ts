@@ -53,7 +53,7 @@ describe("local project repository", () => {
     await saveLocalCanvasSnapshot({
       projectId: project.id,
       snapshot: {
-        version: 1,
+        version: 2,
         nodes: [{ id: "node-1" }],
         edges: [],
         viewport: { x: 1, y: 2, zoom: 1.5 },
@@ -69,5 +69,47 @@ describe("local project repository", () => {
       updated_at: "2026-07-08T00:00:00.000Z",
     });
   });
-});
 
+  it("migrates and rewrites legacy image edit snapshots on first read", async () => {
+    const project = await createLocalProject({
+      name: "Legacy Canvas",
+      prompt: "",
+      model: "glm-4.5",
+    }, dataDir);
+    const snapshotPath = path.join(
+      dataDir,
+      "projects",
+      project.id,
+      "canvas",
+      "latest.json",
+    );
+    await fs.writeFile(snapshotPath, JSON.stringify({
+      snapshot: {
+        version: 1,
+        nodes: [{
+          id: "legacy",
+          type: "imageEdit",
+          position: { x: 0, y: 0 },
+          data: { kind: "imageEdit", title: "图片编辑" },
+        }],
+        edges: [],
+        viewport: { x: 0, y: 0, zoom: 1 },
+        updatedAt: "2026-07-08T00:00:00.000Z",
+      },
+      updated_at: "2026-07-08T00:00:00.000Z",
+    }), "utf8");
+
+    await expect(getLocalCanvasSnapshot(project.id, dataDir)).resolves.toMatchObject({
+      snapshot: {
+        version: 2,
+        nodes: [{
+          type: "imageGeneration",
+          data: { kind: "imageGeneration", title: "图片生成" },
+        }],
+      },
+    });
+    const persisted = JSON.parse(await fs.readFile(snapshotPath, "utf8"));
+    expect(persisted.snapshot.version).toBe(2);
+    expect(JSON.stringify(persisted)).not.toContain("imageEdit\"");
+  });
+});

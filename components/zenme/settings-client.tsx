@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Check,
+  ChartNoAxesColumn,
   ChevronDown,
   Download,
   Eye,
@@ -10,6 +11,8 @@ import {
   FolderOpen,
   HardDrive,
   ImageIcon,
+  LogIn,
+  LogOut,
   Plus,
   RefreshCw,
   Save,
@@ -38,6 +41,7 @@ type SettingsPayload = {
 type ZenmeDesktopApi = {
   getDataDir: () => Promise<string>;
   openDataDir: () => Promise<string>;
+  openExternal: (url: string) => Promise<boolean>;
   selectDataDir: () => Promise<{
     canceled: boolean;
     dataDir: string;
@@ -45,7 +49,36 @@ type ZenmeDesktopApi = {
   }>;
 };
 
-type SettingsTab = "models" | "local" | "save";
+type SettingsTab = "models" | "usage" | "local" | "save";
+
+type TokenUsagePayload = {
+  summary: {
+    totalTokens: number;
+    trackedDays: number;
+    peakDailyTokens: number;
+    peakDate: string | null;
+    longestRequestMs: number;
+    longestRequestMessages: number;
+    currentStreak: number;
+    longestStreak: number;
+    currentDayTokens: number;
+    totalRequests: number;
+    activityRate: number;
+    textRequests: number;
+    imageRequests: number;
+  };
+  daily: Array<{ date: string; inputTokens: number; outputTokens: number; totalTokens: number; requests: number }>;
+  models: Array<{ modelId: string; providerName: string; totalTokens: number; requests: number }>;
+  providers: Array<{ providerName: string; totalTokens: number; requests: number }>;
+};
+
+type ChatGptAuthStatus = {
+  loggedIn: boolean;
+  email: string | null;
+  accountId: string | null;
+  modelCount: number;
+  error: string | null;
+};
 
 const API_FORMAT_OPTIONS: Array<{
   label: string;
@@ -99,6 +132,25 @@ export function SettingsClient() {
   const [restoreState, setRestoreState] = useState<"idle" | "restoring" | "done" | "failed">("idle");
   const [restoreMessage, setRestoreMessage] = useState("");
   const [directoryState, setDirectoryState] = useState<"idle" | "choosing" | "opening" | "failed">("idle");
+  const [chatGptStatus, setChatGptStatus] = useState<ChatGptAuthStatus | null>(null);
+  const [chatGptAction, setChatGptAction] = useState<"idle" | "login" | "sync" | "logout" | "failed">("idle");
+  const [chatGptMessage, setChatGptMessage] = useState("");
+
+  async function loadChatGptStatus() {
+    const response = await fetch("/api/ai/openai-oauth/status", { cache: "no-store" });
+    if (!response.ok) return null;
+    const status = await response.json() as ChatGptAuthStatus;
+    setChatGptStatus(status);
+    return status;
+  }
+
+  async function reloadSettings() {
+    const response = await fetch("/api/settings", { cache: "no-store" });
+    if (!response.ok) return;
+    const nextPayload = await response.json() as SettingsPayload;
+    setPayload(nextPayload);
+    setModelProviders(nextPayload.settings.modelProviders);
+  }
 
   useEffect(() => {
     async function loadSettings() {
@@ -109,12 +161,68 @@ export function SettingsClient() {
       setPayload(nextPayload);
       setAutoSaveIntervalMs(nextPayload.settings.autoSaveIntervalMs);
       setModelProviders(nextPayload.settings.modelProviders);
+      void loadChatGptStatus();
       const dataDir = await window.zenmeDesktop?.getDataDir();
       setDesktopDataDir(dataDir ?? "");
     }
 
     void loadSettings();
   }, []);
+
+  async function loginChatGpt() {
+    setChatGptAction("login");
+    setChatGptMessage("");
+    try {
+      const response = await fetch("/api/ai/openai-oauth/start", { method: "POST" });
+      const result = await response.json() as { authorizeUrl?: string; error?: string };
+      if (!response.ok || !result.authorizeUrl) throw new Error(result.error ?? "无法启动 ChatGPT 登录。");
+      if (window.zenmeDesktop?.openExternal) {
+        await window.zenmeDesktop.openExternal(result.authorizeUrl);
+      } else {
+        window.open(result.authorizeUrl, "_blank", "noopener,noreferrer");
+      }
+      const startedAt = Date.now();
+      const timer = window.setInterval(async () => {
+        const status = await loadChatGptStatus();
+        if (status?.loggedIn || status?.error || Date.now() - startedAt > 5 * 60_000) {
+          window.clearInterval(timer);
+          if (status?.loggedIn) await reloadSettings();
+          setChatGptAction(status?.loggedIn ? "idle" : "failed");
+          if (!status?.loggedIn) {
+            setChatGptMessage(status?.error || "登录等待已超时，请重新发起登录。");
+          }
+        }
+      }, 1800);
+    } catch (error) {
+      setChatGptMessage(error instanceof Error ? error.message : "无法启动 ChatGPT 登录。");
+      setChatGptAction("failed");
+    }
+  }
+
+  async function syncChatGptModels() {
+    setChatGptAction("sync");
+    setChatGptMessage("");
+    const response = await fetch("/api/ai/openai-oauth/models", { method: "POST" });
+    if (response.ok) {
+      await Promise.all([reloadSettings(), loadChatGptStatus()]);
+      setChatGptAction("idle");
+    } else {
+      const result = await response.json().catch(() => null) as { error?: string } | null;
+      setChatGptMessage(result?.error ?? "ChatGPT 模型同步失败。");
+      setChatGptAction("failed");
+    }
+  }
+
+  async function logoutChatGpt() {
+    setChatGptAction("logout");
+    const response = await fetch("/api/ai/openai-oauth", { method: "DELETE" });
+    if (response.ok) {
+      await Promise.all([reloadSettings(), loadChatGptStatus()]);
+      setChatGptAction("idle");
+    } else {
+      setChatGptAction("failed");
+    }
+  }
 
   async function saveSettings() {
     await persistSettings({
@@ -208,11 +316,9 @@ export function SettingsClient() {
 
   async function upsertProvider(provider: ModelProviderConfig) {
     const exists = modelProviders.some((item) => item.id === provider.id);
-    const nextProviders = ensureSingleDefaultProvider(
-      exists
-        ? modelProviders.map((item) => item.id === provider.id ? provider : item)
-        : [...modelProviders, provider],
-    );
+    const nextProviders = exists
+      ? modelProviders.map((item) => item.id === provider.id ? provider : item)
+      : [...modelProviders, provider];
 
     setModelProviders(nextProviders);
     const nextPayload = await persistSettings({ modelProviders: nextProviders });
@@ -226,19 +332,7 @@ export function SettingsClient() {
   }
 
   function deleteProvider(providerId: string) {
-    const nextProviders = ensureSingleDefaultProvider(
-      modelProviders.filter((provider) => provider.id !== providerId),
-    );
-    setModelProviders(nextProviders);
-    void persistSettings({ modelProviders: nextProviders });
-  }
-
-  function activateProvider(providerId: string) {
-    const nextProviders = modelProviders.map((provider) => ({
-        ...provider,
-        enabled: provider.id === providerId ? true : provider.enabled,
-        isDefault: provider.id === providerId,
-      }));
+    const nextProviders = modelProviders.filter((provider) => provider.id !== providerId);
     setModelProviders(nextProviders);
     void persistSettings({ modelProviders: nextProviders });
   }
@@ -252,11 +346,17 @@ export function SettingsClient() {
         <aside className="border-r border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] px-4 py-6">
           <div className="mb-6 flex items-center gap-3 px-2">
             <Settings2 className="size-6 text-[var(--color-text-secondary)]" />
-            <h1 className="text-base font-semibold tracking-normal text-[var(--color-text-primary)]">
+            <h1 className="text-base font-medium tracking-normal text-[var(--color-text-primary)]">
               设置
             </h1>
           </div>
           <nav className="space-y-1">
+            <SettingsNavButton
+              active={activeTab === "usage"}
+              icon={<ChartNoAxesColumn className="size-5" />}
+              label="Token 用量"
+              onClick={() => setActiveTab("usage")}
+            />
             <SettingsNavButton
               active={activeTab === "models"}
               icon={<Server className="size-5" />}
@@ -286,11 +386,15 @@ export function SettingsClient() {
         <main className="px-10 py-8">
           {activeTab === "models" ? (
             <ModelProviderSettings
-              activeProviderId={modelProviders.find((provider) => provider.isDefault)?.id}
-              onActivateProvider={activateProvider}
               onAddProvider={() => setEditingProvider(createEmptyProvider())}
               onDeleteProvider={deleteProvider}
               onEditProvider={setEditingProvider}
+              chatGptAction={chatGptAction}
+              chatGptMessage={chatGptMessage}
+              chatGptStatus={chatGptStatus}
+              onLoginChatGpt={loginChatGpt}
+              onLogoutChatGpt={logoutChatGpt}
+              onSyncChatGptModels={syncChatGptModels}
               providers={modelProviders}
             />
           ) : null}
@@ -307,6 +411,8 @@ export function SettingsClient() {
               selectDataDir={selectDataDir}
             />
           ) : null}
+
+          {activeTab === "usage" ? <TokenUsageSettings /> : null}
 
           {activeTab === "save" ? (
             <SavePolicySettings
@@ -345,7 +451,7 @@ function SettingsNavButton({
     <button
       className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-medium transition ${
         active
-          ? "bg-[var(--color-surface-container-high)] text-[var(--color-text-primary)]"
+          ? "text-[var(--color-text-primary)]"
           : "text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-container-low)]"
       }`}
       onClick={onClick}
@@ -357,26 +463,330 @@ function SettingsNavButton({
   );
 }
 
+function TokenUsageSettings() {
+  const [payload, setPayload] = useState<TokenUsagePayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [mode, setMode] = useState<"daily" | "weekly" | "cumulative">("daily");
+
+  async function loadUsage() {
+    setLoading(true);
+    setError("");
+    try {
+      const response = await fetch("/api/settings/token-usage", { cache: "no-store" });
+      if (!response.ok) throw new Error("usage load failed");
+      setPayload(await response.json() as TokenUsagePayload);
+    } catch {
+      setError("Token 用量读取失败，请稍后重试。");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadUsage();
+  }, []);
+
+  const chart = useMemo(() => buildUsageChart(payload?.daily ?? []), [payload]);
+  const summary = payload?.summary;
+  const mostUsedModel = payload?.models[0];
+
+  return (
+    <section className="mx-auto max-w-[1240px] space-y-10">
+      <header className="flex items-start justify-between gap-6">
+        <div>
+          <h2 className="text-xl font-medium tracking-normal text-[var(--color-text-primary)]">Token 用量</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+            查看本机模型调用的 Token 消耗和使用趋势。
+          </p>
+        </div>
+        <Button disabled={loading} onClick={() => void loadUsage()} variant="outline">
+          <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
+          刷新
+        </Button>
+      </header>
+
+      {error ? (
+        <div className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
+      ) : null}
+
+      <div className="grid overflow-hidden rounded-md border border-[var(--color-border)] bg-white shadow-sm md:grid-cols-5">
+        <UsageMetric
+          detail={`${summary?.trackedDays ?? 0} 个活跃日`}
+          label="累计 Token 数"
+          value={formatTokenCount(summary?.totalTokens ?? 0)}
+        />
+        <UsageMetric
+          detail={formatUsageDate(summary?.peakDate)}
+          label="峰值 Token 数"
+          value={formatTokenCount(summary?.peakDailyTokens ?? 0)}
+        />
+        <UsageMetric
+          detail={`${summary?.longestRequestMessages ?? 0} 条消息`}
+          label="最长生成耗时"
+          value={formatUsageDuration(summary?.longestRequestMs ?? 0)}
+        />
+        <UsageMetric
+          detail={`${formatTokenCount(summary?.currentDayTokens ?? 0)} Token`}
+          label="当前连续天数"
+          value={`${summary?.currentStreak ?? 0} 天`}
+        />
+        <UsageMetric
+          detail={`${summary?.totalRequests ?? 0} 次调用`}
+          label="最长连续天数"
+          value={`${summary?.longestStreak ?? 0} 天`}
+        />
+      </div>
+
+      <section>
+        <div className="mb-5 flex items-center justify-between gap-5">
+          <div>
+            <h3 className="text-base font-medium text-[var(--color-text-primary)]">Token 活动</h3>
+            <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">仅统计服务商实际返回的用量，不估算缺失数据。</p>
+          </div>
+          <div className="flex items-center gap-1" aria-label="统计周期">
+            {(["daily", "weekly", "cumulative"] as const).map((item) => (
+              <button
+                className={`px-3 py-1.5 text-sm font-medium transition ${mode === item ? "text-[var(--color-text-primary)]" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"}`}
+                key={item}
+                onClick={() => setMode(item)}
+                type="button"
+              >
+                {{ daily: "每日", weekly: "每周", cumulative: "累计" }[item]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="min-h-52 rounded-md border border-[var(--color-border)] bg-white px-5 py-5">
+          {mode === "daily" ? <DailyUsageHeatmap days={chart.days} /> : null}
+          {mode === "weekly" ? <UsageBars items={chart.weeks} valueKey="totalTokens" /> : null}
+          {mode === "cumulative" ? <UsageBars items={chart.cumulative} valueKey="totalTokens" /> : null}
+          {!loading && (summary?.totalRequests ?? 0) === 0 ? (
+            <p className="mt-5 text-center text-sm text-[var(--color-text-tertiary)]">
+              统计将从下一次模型调用开始记录。
+            </p>
+          ) : null}
+        </div>
+      </section>
+
+      <div className="grid gap-12 lg:grid-cols-2">
+        <section>
+          <h3 className="mb-5 text-base font-medium text-[var(--color-text-primary)]">活动洞察</h3>
+          <div className="space-y-4">
+            <UsageInsight label="活跃率" value={`${summary?.activityRate ?? 0}%`} />
+            <UsageInsight
+              label="最常用模型"
+              value={mostUsedModel ? `${mostUsedModel.modelId} · ${formatTokenCount(mostUsedModel.totalTokens)} Token` : "暂无数据"}
+            />
+            <UsageInsight label="已使用模型" value={`${payload?.models.length ?? 0}`} />
+            <UsageInsight label="文本生成" value={`${summary?.textRequests ?? 0} 次`} />
+            <UsageInsight label="图片生成/编辑" value={`${summary?.imageRequests ?? 0} 次`} />
+            <UsageInsight label="调用总数" value={`${summary?.totalRequests ?? 0}`} />
+          </div>
+        </section>
+
+        <section>
+          <h3 className="mb-5 text-base font-medium text-[var(--color-text-primary)]">最常用的模型和服务商</h3>
+          <div className="space-y-2">
+            {(payload?.models ?? []).slice(0, 5).map((model) => (
+              <div className="flex items-center justify-between gap-4 py-2" key={`${model.providerName}:${model.modelId}`}>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">{model.modelId}</p>
+                  <p className="truncate text-xs text-[var(--color-text-tertiary)]">{model.providerName}</p>
+                </div>
+                <p className="shrink-0 text-sm text-[var(--color-text-secondary)]">
+                  {formatTokenCount(model.totalTokens)} Token · {model.requests} 次
+                </p>
+              </div>
+            ))}
+            {(payload?.models.length ?? 0) === 0 ? (
+              <p className="py-2 text-sm text-[var(--color-text-tertiary)]">暂无模型调用记录。</p>
+            ) : null}
+          </div>
+          {(payload?.providers.length ?? 0) > 0 ? (
+            <div className="mt-5 border-t border-[var(--color-border)] pt-4">
+              {(payload?.providers ?? []).slice(0, 3).map((provider) => (
+                <div className="flex items-center justify-between gap-4 py-1.5 text-sm" key={provider.providerName}>
+                  <span className="text-[var(--color-text-secondary)]">{provider.providerName}</span>
+                  <span className="text-[var(--color-text-tertiary)]">{provider.requests} 次 · {formatTokenCount(provider.totalTokens)} Token</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      </div>
+    </section>
+  );
+}
+
+function UsageMetric({ detail, label, value }: { detail: string; label: string; value: string }) {
+  return (
+    <div className="border-b border-[var(--color-border)] px-4 py-5 text-center last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
+      <p className="truncate text-2xl font-semibold text-[var(--color-text-primary)]" title={value}>{value}</p>
+      <p className="mt-1 text-sm font-medium text-[var(--color-text-secondary)]">{label}</p>
+      <p className="mt-1 truncate text-xs text-[var(--color-text-tertiary)]" title={detail}>{detail}</p>
+    </div>
+  );
+}
+
+function UsageInsight({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-6 text-sm">
+      <span className="text-[var(--color-text-tertiary)]">{label}</span>
+      <span className="text-right font-medium text-[var(--color-text-primary)]">{value}</span>
+    </div>
+  );
+}
+
+type UsageChartItem = { date: string; totalTokens: number; requests: number };
+
+function DailyUsageHeatmap({ days }: { days: UsageChartItem[] }) {
+  const max = Math.max(1, ...days.map((day) => day.totalTokens));
+  return (
+    <div className="overflow-x-auto pb-2">
+      <div className="mb-3 flex min-w-[900px] items-center justify-between text-xs text-[var(--color-text-tertiary)]">
+        <span>{formatUsageDate(days[0]?.date ?? null)}</span>
+        <span>{formatUsageDate(days.at(-1)?.date ?? null)}</span>
+      </div>
+      <div className="grid min-w-[900px] grid-flow-col grid-rows-7 gap-1">
+        {days.map((day) => (
+          <span
+            className="aspect-square min-w-3 rounded-[3px] border border-black/5"
+            key={day.date}
+            style={{ backgroundColor: usageHeatColor(day.totalTokens, max) }}
+            title={`${day.date} · ${formatTokenCount(day.totalTokens)} Token · ${day.requests} 次`}
+          />
+        ))}
+      </div>
+      <div className="mt-4 flex min-w-[900px] items-center justify-end gap-2 text-xs text-[var(--color-text-tertiary)]">
+        <span>少</span>
+        {[0, 0.2, 0.4, 0.7, 1].map((value) => (
+          <span className="size-3 rounded-[3px] border border-black/5" key={value} style={{ backgroundColor: usageHeatColor(value * max, max) }} />
+        ))}
+        <span>多</span>
+      </div>
+    </div>
+  );
+}
+
+function UsageBars({ items, valueKey }: { items: UsageChartItem[]; valueKey: "totalTokens" }) {
+  const max = Math.max(1, ...items.map((item) => item[valueKey]));
+  return (
+    <div>
+      <div className="flex h-36 items-end gap-1.5 border-b border-[var(--color-border)]">
+        {items.map((item) => (
+          <div className="group relative flex min-w-0 flex-1 items-end" key={item.date} title={`${item.date} · ${formatTokenCount(item[valueKey])} Token`}>
+            <span
+              className="w-full rounded-t-sm bg-[#c48668] transition group-hover:bg-[#96573f]"
+              style={{ height: `${Math.max(item[valueKey] ? 4 : 1, item[valueKey] / max * 100)}%` }}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex justify-between text-xs text-[var(--color-text-tertiary)]">
+        <span>{formatUsageDate(items[0]?.date ?? null)}</span>
+        <span>{formatUsageDate(items.at(-1)?.date ?? null)}</span>
+      </div>
+    </div>
+  );
+}
+
+function buildUsageChart(daily: TokenUsagePayload["daily"]) {
+  const lookup = new Map(daily.map((item) => [item.date, item]));
+  const end = startOfLocalDay(new Date());
+  const start = new Date(end);
+  start.setDate(start.getDate() - 370);
+  start.setDate(start.getDate() - start.getDay());
+  const days: UsageChartItem[] = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const date = formatLocalDateKey(cursor);
+    const item = lookup.get(date);
+    days.push({ date, totalTokens: item?.totalTokens ?? 0, requests: item?.requests ?? 0 });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  const weeks: UsageChartItem[] = [];
+  for (let index = 0; index < days.length; index += 7) {
+    const group = days.slice(index, index + 7);
+    weeks.push({
+      date: group[0]?.date ?? "",
+      totalTokens: group.reduce((sum, item) => sum + item.totalTokens, 0),
+      requests: group.reduce((sum, item) => sum + item.requests, 0),
+    });
+  }
+  let running = 0;
+  const cumulative = weeks.map((week) => {
+    running += week.totalTokens;
+    return { ...week, totalTokens: running };
+  });
+  return { days, weeks, cumulative };
+}
+
+function formatTokenCount(value: number) {
+  return new Intl.NumberFormat("zh-CN", { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
+function formatUsageDuration(value: number) {
+  if (value < 1_000) return `${value} 毫秒`;
+  if (value < 60_000) return `${Math.round(value / 100) / 10} 秒`;
+  const hours = Math.floor(value / 3_600_000);
+  const minutes = Math.floor(value % 3_600_000 / 60_000);
+  return hours ? `${hours} 小时 ${minutes} 分` : `${minutes} 分钟`;
+}
+
+function formatUsageDate(value: string | null | undefined) {
+  if (!value) return "暂无记录";
+  const date = new Date(`${value}T00:00:00`);
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function usageHeatColor(value: number, max: number) {
+  if (!value) return "#f1f4f7";
+  const ratio = value / max;
+  if (ratio < 0.2) return "#f7e8e1";
+  if (ratio < 0.4) return "#efd0c2";
+  if (ratio < 0.7) return "#dca98f";
+  return "#96573f";
+}
+
+function startOfLocalDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function formatLocalDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function ModelProviderSettings({
-  activeProviderId,
-  onActivateProvider,
   onAddProvider,
   onDeleteProvider,
   onEditProvider,
+  chatGptAction,
+  chatGptMessage,
+  chatGptStatus,
+  onLoginChatGpt,
+  onLogoutChatGpt,
+  onSyncChatGptModels,
   providers,
 }: {
-  activeProviderId?: string;
-  onActivateProvider: (providerId: string) => void;
   onAddProvider: () => void;
   onDeleteProvider: (providerId: string) => void;
   onEditProvider: (provider: ModelProviderConfig) => void;
+  chatGptAction: "idle" | "login" | "sync" | "logout" | "failed";
+  chatGptMessage: string;
+  chatGptStatus: ChatGptAuthStatus | null;
+  onLoginChatGpt: () => void;
+  onLogoutChatGpt: () => void;
+  onSyncChatGptModels: () => void;
   providers: ModelProviderConfig[];
 }) {
   return (
     <section className="max-w-5xl">
       <div className="mb-7 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
+          <h2 className="text-xl font-medium text-[var(--color-text-primary)]">
             模型配置
           </h2>
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
@@ -390,13 +800,19 @@ function ModelProviderSettings({
       </div>
 
       <div className="space-y-3">
-        {providers.map((provider) => (
+        {providers.map((provider) => provider.apiFormat === "openai_oauth" ? (
+          <ChatGptProviderCard
+            action={chatGptAction}
+            key={provider.id}
+            message={chatGptMessage}
+            onLogin={onLoginChatGpt}
+            onLogout={onLogoutChatGpt}
+            onSync={onSyncChatGptModels}
+            status={chatGptStatus}
+          />
+        ) : (
           <article
-            className={`rounded-md border bg-white p-4 shadow-sm transition ${
-              provider.id === activeProviderId
-                ? "border-[#96573f]"
-                : "border-[var(--color-border)]"
-            }`}
+            className="rounded-md border border-[var(--color-border)] bg-white p-4 shadow-sm transition"
             key={provider.id}
           >
             <div className="flex items-center justify-between gap-4">
@@ -407,17 +823,12 @@ function ModelProviderSettings({
                       provider.enabled ? "bg-emerald-500" : "bg-zinc-300"
                     }`}
                   />
-                  <h3 className="truncate text-base font-semibold text-[var(--color-text-primary)]">
+                  <h3 className="truncate text-base font-medium text-[var(--color-text-primary)]">
                     {provider.name}
                   </h3>
                   <span className="rounded-md bg-[var(--color-surface-container-high)] px-2 py-0.5 text-xs text-[var(--color-text-tertiary)]">
                     {getApiFormatLabel(provider.apiFormat)}
                   </span>
-                  {provider.isDefault ? (
-                    <span className="rounded-md bg-[#ead9d1] px-2 py-0.5 text-xs font-medium text-[#96573f]">
-                      默认
-                    </span>
-                  ) : null}
                 </div>
                 <p className="mt-1 truncate text-sm text-[var(--color-text-secondary)]">
                   {provider.baseUrl || "未配置接口地址"} · {getProviderModelSummary(provider)}
@@ -434,15 +845,6 @@ function ModelProviderSettings({
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {!provider.isDefault ? (
-                  <Button
-                    onClick={() => onActivateProvider(provider.id)}
-                    type="button"
-                    variant="outline"
-                  >
-                    设为默认
-                  </Button>
-                ) : null}
                 <Button onClick={() => onEditProvider(provider)} type="button" variant="outline">
                   编辑
                 </Button>
@@ -460,6 +862,61 @@ function ModelProviderSettings({
         ))}
       </div>
     </section>
+  );
+}
+
+function ChatGptProviderCard({
+  action,
+  message,
+  onLogin,
+  onLogout,
+  onSync,
+  status,
+}: {
+  action: "idle" | "login" | "sync" | "logout" | "failed";
+  message: string;
+  onLogin: () => void;
+  onLogout: () => void;
+  onSync: () => void;
+  status: ChatGptAuthStatus | null;
+}) {
+  const busy = action === "login" || action === "sync" || action === "logout";
+  return (
+    <article className="rounded-md border border-[var(--color-border)] bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className={`size-2.5 rounded-full ${status?.loggedIn ? "bg-emerald-500" : "bg-zinc-300"}`} />
+            <h3 className="text-base font-medium text-[var(--color-text-primary)]">ChatGPT</h3>
+            <span className="rounded-md bg-[#ead9d1] px-2 py-0.5 text-xs font-medium text-[#96573f]">官方</span>
+          </div>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">通过 ChatGPT 账号完成 OpenAI OAuth，无需 API 密钥</p>
+        </div>
+      </div>
+      <div className="mt-4 border-t border-[var(--color-border)] pt-4">
+        {status?.loggedIn ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-emerald-700">已登录 {status.email || "ChatGPT 账号"}</p>
+              <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">已同步 {status.modelCount} 个可用模型</p>
+            </div>
+            <div className="flex gap-2">
+              <Button disabled={busy} onClick={onSync} type="button" variant="outline"><RefreshCw className={`size-4 ${action === "sync" ? "animate-spin" : ""}`} />同步模型</Button>
+              <Button disabled={busy} onClick={onLogout} type="button" variant="outline"><LogOut className="size-4" />退出登录</Button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <p className="mb-3 text-sm text-[var(--color-text-secondary)]">登录后即可在 Zenme 的文本节点中使用账号可用的 Codex 模型。</p>
+            <Button className="bg-[#96573f] text-white hover:bg-[#854b36]" disabled={busy} onClick={onLogin} type="button">
+              {action === "login" ? <RefreshCw className="size-4 animate-spin" /> : <LogIn className="size-4" />}
+              {action === "login" ? "等待浏览器登录" : "登录 ChatGPT"}
+            </Button>
+            {action === "failed" ? <p className="mt-2 text-xs text-red-600">{message || "操作失败，请检查网络后重试。"}</p> : null}
+          </div>
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -511,7 +968,7 @@ function ProviderEditorModal({
   }
 
   function updateDefaultModel(
-    key: "main" | "imageEdit",
+    key: "main" | "image",
     value: string,
   ) {
     setDraft((current) => ({
@@ -595,10 +1052,10 @@ function ProviderEditorModal({
       modelMapping: {
         ...current.modelMapping,
         main: current.modelMapping.main === previousId ? id : current.modelMapping.main,
-        imageEdit:
-          current.modelMapping.imageEdit === previousId
+        image:
+          current.modelMapping.image === previousId
             ? id
-            : current.modelMapping.imageEdit,
+            : current.modelMapping.image,
       },
     }));
   }
@@ -628,10 +1085,10 @@ function ProviderEditorModal({
       modelMapping: {
         ...current.modelMapping,
         main: current.modelMapping.main === modelId ? "" : current.modelMapping.main,
-        imageEdit:
-          current.modelMapping.imageEdit === modelId
+        image:
+          current.modelMapping.image === modelId
             ? ""
-            : current.modelMapping.imageEdit,
+            : current.modelMapping.image,
       },
     }));
   }
@@ -676,9 +1133,9 @@ function ProviderEditorModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/45 px-6 py-[80px]">
-      <div className="flex max-h-[calc(100vh-160px)] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl">
+      <div className="zenme-shadow-overlay flex max-h-[calc(100vh-160px)] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white">
         <header className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
-          <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
+          <h2 className="text-lg font-medium text-[var(--color-text-primary)]">
             编辑服务商
           </h2>
           <button
@@ -769,11 +1226,11 @@ function ProviderEditorModal({
             <section className="grid gap-4 rounded-md border border-[var(--color-border)] p-3.5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-base font-semibold text-[var(--color-text-primary)]">
-                    默认模型
+                  <h3 className="text-base font-medium text-[var(--color-text-primary)]">
+                    模型映射
                   </h3>
                   <p className="text-sm text-[var(--color-text-tertiary)]">
-                    节点会直接显示启用模型；这里仅决定新建节点的默认选择。
+                    用于标记该服务商的文本与图片处理入口，不代表全局默认模型。
                   </p>
                 </div>
                 <Button onClick={() => addModel()} type="button" variant="outline">
@@ -781,7 +1238,7 @@ function ProviderEditorModal({
                   添加模型
                 </Button>
               </div>
-              <Field label="默认文本模型">
+              <Field label="文本模型映射">
                 <Select
                   onChange={(value) => updateDefaultModel("main", value)}
                   options={[
@@ -794,9 +1251,9 @@ function ProviderEditorModal({
                   value={draft.modelMapping.main ?? ""}
                 />
               </Field>
-              <Field label="默认图片模型">
+              <Field label="图片模型映射">
                 <Select
-                  onChange={(value) => updateDefaultModel("imageEdit", value)}
+                  onChange={(value) => updateDefaultModel("image", value)}
                   options={[
                     { label: "未选择", value: "" },
                     ...imageModels.map((model) => ({
@@ -804,7 +1261,7 @@ function ProviderEditorModal({
                       value: model.id,
                     })),
                   ]}
-                  value={draft.modelMapping.imageEdit ?? ""}
+                  value={draft.modelMapping.image ?? ""}
                 />
               </Field>
             </section>
@@ -813,11 +1270,11 @@ function ProviderEditorModal({
               <div className="mb-4 flex items-start gap-3">
                 <ImageIcon className="mt-0.5 size-5 text-[#96573f]" />
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-base font-semibold text-[var(--color-text-primary)]">
+                  <h3 className="text-base font-medium text-[var(--color-text-primary)]">
                     模型列表
                   </h3>
                   <p className="text-sm text-[var(--color-text-tertiary)]">
-                    文本节点只显示启用且包含“文本”模态的模型；图片编辑节点只使用图片模型。
+                    文本节点只显示启用且包含“文本”模态的模型；图片生成节点只使用图片模型。
                   </p>
                 </div>
                 <Button
@@ -962,7 +1419,7 @@ function ProviderEditorModal({
             取消
           </Button>
           <Button
-            className="min-w-28 bg-zinc-950 text-white shadow-lg shadow-zinc-950/15 hover:bg-zinc-800 disabled:bg-zinc-400"
+            className="min-w-28 bg-zinc-950 text-white hover:bg-zinc-800 disabled:bg-zinc-400"
             disabled={providerSaveState === "saving"}
             onClick={() => void saveProvider()}
             type="button"
@@ -1046,7 +1503,7 @@ function LocalDataSettings({
     <section className="max-w-3xl space-y-4">
       <div className="flex items-center gap-2">
         <HardDrive className="size-5 text-[var(--color-text-secondary)]" />
-        <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
+        <h2 className="text-xl font-medium text-[var(--color-text-primary)]">
           本地数据
         </h2>
       </div>
@@ -1147,7 +1604,7 @@ function SavePolicySettings({
 }) {
   return (
     <section className="max-w-3xl space-y-4">
-      <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">
+      <h2 className="text-xl font-medium text-[var(--color-text-primary)]">
         保存策略
       </h2>
       <div className="grid gap-4 rounded-md border border-[var(--color-border)] bg-white p-4">
@@ -1195,25 +1652,12 @@ function createEmptyProvider(): ModelProviderConfig {
     isDefault: false,
     modelMapping: {
       main: "",
-      imageEdit: "",
+      image: "",
     },
     models: [],
     contextWindows: {},
     modelModalities: {},
   };
-}
-
-function ensureSingleDefaultProvider(providers: ModelProviderConfig[]) {
-  if (providers.length === 0) {
-    return providers;
-  }
-
-  const defaultIndex = providers.findIndex((provider) => provider.isDefault);
-  const targetIndex = defaultIndex === -1 ? 0 : defaultIndex;
-  return providers.map((provider, index) => ({
-    ...provider,
-    isDefault: index === targetIndex,
-  }));
 }
 
 function collectProviderModalities(provider: ModelProviderConfig) {
@@ -1239,6 +1683,7 @@ function getProviderModelSummary(provider: ModelProviderConfig) {
 }
 
 function getApiFormatLabel(value: ModelProviderApiFormat) {
+  if (value === "openai_oauth") return "ChatGPT OAuth";
   return API_FORMAT_OPTIONS.find((option) => option.value === value)?.label ?? value;
 }
 
@@ -1276,8 +1721,8 @@ function prepareProviderForSave(provider: ModelProviderConfig): ModelProviderCon
   const main = models.some((model) => model.id === provider.modelMapping.main)
     ? provider.modelMapping.main
     : firstTextModel;
-  const imageEdit = models.some((model) => model.id === provider.modelMapping.imageEdit)
-    ? provider.modelMapping.imageEdit
+  const image = models.some((model) => model.id === provider.modelMapping.image)
+    ? provider.modelMapping.image
     : firstImageModel;
 
   return {
@@ -1285,7 +1730,7 @@ function prepareProviderForSave(provider: ModelProviderConfig): ModelProviderCon
     contextWindows,
     modelMapping: {
       main,
-      imageEdit,
+      image,
     },
     modelModalities,
     models,

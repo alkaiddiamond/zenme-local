@@ -6,7 +6,7 @@ import { BookNode } from "@/components/zenme/nodes/book-node";
 import { FileNode } from "@/components/zenme/nodes/file-node";
 import { GroupNode } from "@/components/zenme/nodes/group-node";
 import { ImageNode } from "@/components/zenme/nodes/image-node";
-import { ImageEditNode } from "@/components/zenme/nodes/image-edit-node";
+import { ImageGenerationNode } from "@/components/zenme/nodes/image-edit-node";
 import { NoteNode } from "@/components/zenme/nodes/note-node";
 import { ReaderNode } from "@/components/zenme/nodes/reader-node";
 import { TextNode } from "@/components/zenme/nodes/text-node";
@@ -21,7 +21,7 @@ export {
 export const nodeTypes = {
   group: memo(GroupNode),
   image: memo(ImageNode),
-  imageEdit: memo(ImageEditNode),
+  imageGeneration: memo(ImageGenerationNode),
   file: memo(FileNode),
   book: memo(BookNode),
   code: memo(TextNode),

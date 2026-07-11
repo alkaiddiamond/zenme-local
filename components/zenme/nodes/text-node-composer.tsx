@@ -88,12 +88,12 @@ export function TextNodeComposer({
 
   return (
     <form
-      className="nodrag nowheel absolute left-1/2 z-50 flex min-h-[180px] w-[560px] max-w-[calc(100vw-48px)] flex-col rounded-xl border border-zinc-200 bg-white p-3 text-zinc-950 shadow-xl"
+      className="zenme-node-floating-control zenme-shadow-canvas nodrag nowheel absolute left-1/2 z-50 flex min-h-[220px] w-[640px] max-w-[calc(100vw-48px)] flex-col rounded-xl border border-zinc-200 bg-white p-3 text-zinc-950"
       onSubmit={submit}
       style={composerStyle}
     >
       <textarea
-        className="zenme-text-ai-input min-h-20 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-6 text-zinc-900 caret-zinc-950 outline-none placeholder:text-zinc-400 focus:placeholder:text-transparent"
+        className="zenme-text-ai-input min-h-24 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-6 text-zinc-900 caret-zinc-950 outline-none placeholder:text-zinc-400 focus:placeholder:text-transparent"
         onBlur={() => syncComposerState()}
         onChange={(event) => setPrompt(event.target.value)}
         onKeyDown={(event) => {

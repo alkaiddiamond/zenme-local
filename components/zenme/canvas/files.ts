@@ -32,7 +32,7 @@ export function getReadingCoverUrl(asset: ReadingAsset | null | undefined) {
 }
 
 export function createImagePreview(file: File) {
-  return new Promise<{ dataUrl: string; blob: Blob }>((resolve, reject) => {
+  return new Promise<{ dataUrl: string; blob: Blob; height: number; width: number }>((resolve, reject) => {
     const img = new Image();
     const reader = new FileReader();
 
@@ -41,7 +41,7 @@ export function createImagePreview(file: File) {
     };
     reader.onerror = () => reject(reader.error);
     img.onload = () => {
-      const maxSide = 900;
+      const maxSide = 1200;
       const ratio = Math.min(maxSide / img.width, maxSide / img.height, 1);
       const canvas = document.createElement("canvas");
       canvas.width = Math.round(img.width * ratio);
@@ -52,10 +52,27 @@ export function createImagePreview(file: File) {
         return;
       }
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL("image/webp", 0.82);
-      resolve({ dataUrl, blob: dataUrlToBlob(dataUrl) });
+      const dataUrl = canvas.toDataURL("image/webp", 0.88);
+      resolve({
+        dataUrl,
+        blob: dataUrlToBlob(dataUrl),
+        height: img.naturalHeight || img.height,
+        width: img.naturalWidth || img.width,
+      });
     };
     img.onerror = () => reject(new Error("图片读取失败"));
     reader.readAsDataURL(file);
+  });
+}
+
+export function getImageDimensions(source: string) {
+  return new Promise<{ height: number; width: number }>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve({
+      height: image.naturalHeight || image.height,
+      width: image.naturalWidth || image.width,
+    });
+    image.onerror = () => reject(new Error("图片尺寸读取失败"));
+    image.src = source;
   });
 }

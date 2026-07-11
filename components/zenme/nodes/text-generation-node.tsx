@@ -87,7 +87,7 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
         文本生成
       </div>
       <form
-        className={`nodrag nowheel flex h-full min-h-[160px] w-full min-w-[360px] flex-col rounded-xl border bg-white p-3 text-zinc-950 shadow-xl ${
+        className={`zenme-shadow-node nodrag nowheel flex h-full min-h-[160px] w-full min-w-[360px] flex-col rounded-xl border bg-white p-3 text-zinc-950 ${
           selected ? "border-zinc-900" : "border-zinc-200"
         }`}
         onSubmit={submit}

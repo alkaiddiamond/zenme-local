@@ -59,6 +59,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
   );
   const latestTextRef = useRef(initialPlainText);
   const [isEditing, setIsEditing] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
   const [plainText, setPlainText] = useState(initialPlainText);
   const [codeLanguage, setCodeLanguage] = useState(
     nodeData.codeLanguage ?? "python",
@@ -340,7 +341,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
 
   if (!isAgent) {
     return (
-      <div className="zenme-text-node group relative h-full w-full">
+      <div className={`zenme-text-node group relative h-full w-full ${isRenaming ? "zenme-node-renaming" : ""}`}>
         <NodeTargetHandle
           revealOnHover={false}
           visible={Boolean(nodeData.hasIncomingEdge)}
@@ -352,6 +353,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
           fallbackTitle="文本"
           icon={<FileText className="size-4" />}
           onCommit={(title) => nodeData.onUpdateTextNode?.(id, { title })}
+          onEditingChange={setIsRenaming}
           title={nodeData.title}
         />
         {selected || isEditing ? (
@@ -384,7 +386,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
           />
         ) : null}
         <div
-          className={`relative h-full min-h-[180px] w-full overflow-hidden rounded-xl border bg-white text-zinc-950 shadow-xl ${
+          className={`zenme-shadow-node relative h-full min-h-[180px] w-full overflow-hidden rounded-xl border bg-white text-zinc-950 ${
             selected ? "border-zinc-900" : "border-zinc-200"
           }`}
         >
@@ -572,7 +574,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
           AI 回复
         </div>
         <div
-          className={`flex h-full min-h-[220px] w-full flex-col overflow-hidden rounded-xl border bg-white text-zinc-950 shadow-xl ${
+          className={`zenme-shadow-node flex h-full min-h-[220px] w-full flex-col overflow-hidden rounded-xl border bg-white text-zinc-950 ${
             selected ? "border-zinc-900" : "border-zinc-200"
           }`}
         >
@@ -596,8 +598,10 @@ export function TextNode({ data, id, selected }: NodeProps) {
             </button>
           </div>
           <div className="nodrag nowheel min-h-0 flex-1 overflow-auto px-5 py-4">
-            <div className="zenme-agent-response-text min-h-full rounded-lg bg-zinc-50 px-4 py-3 whitespace-pre-wrap text-sm leading-6 text-zinc-800">
-              {nodeData.aiResponse || nodeData.plainText || "暂无回复"}
+            <div className="zenme-agent-response-text min-h-full rounded-lg bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-800">
+              {renderMarkdown(
+                nodeData.aiResponse || nodeData.plainText || "暂无回复",
+              )}
             </div>
           </div>
         </div>

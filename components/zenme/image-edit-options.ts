@@ -82,39 +82,90 @@ export function getImageEditQualityOption(value?: string) {
   );
 }
 
+function getAspectRatioPromptLines(value: string, operation: "edit" | "generate") {
+  const option = getImageEditAspectRatioOption(value);
+
+  if (option.value === "auto") {
+    return operation === "edit"
+      ? [
+          `- 节点选择的比例为“${option.label}”：${option.prompt}`,
+          "- 最终输出画布必须保持参考图片的真实宽高比，不得改用模型默认比例。",
+        ]
+      : [
+          `- 节点选择的比例为“${option.label}”：根据用户描述选择自然、合理的宽高比。`,
+        ];
+  }
+
+  return [
+    `- 节点选择的比例为“${option.label}”：${option.prompt}`,
+    `- 最终输出画布必须严格符合 ${option.value} 宽高比，不得返回参考图比例或模型默认比例。`,
+  ];
+}
+
 export function buildImageEditPrompt(input: {
   aspectRatio?: string;
   prompt: string;
   quality?: string;
 }) {
-  const aspectRatio = getImageEditAspectRatioOption(input.aspectRatio);
-  const quality = getImageEditQualityOption(input.quality);
-
   return [
-    "系统提示：",
-    "你是 Zenme 的专业图片编辑模型。你的任务是基于参考图片执行编辑，而不是重新创作一张与参考图无关的新图片。",
-    "",
-    "图片编辑原则：",
-    "- 严格遵循用户的编辑指令，只修改用户明确要求修改的内容。",
-    "- 尽可能保持参考图片的主体完整性，包括主体身份、数量、姿态、结构、服装/材质、关键细节和空间关系。",
-    "- 尽可能保持原图的构图逻辑、透视、光照方向、镜头感、景深、色彩关系和背景环境，除非用户明确要求改变。",
-    "- 不要无故裁切、遮挡、替换、增删或重绘主体；不要改变主体的核心外观和可识别特征。",
-    "- 如果用户要求改变风格或尺寸，应在满足该要求的同时最大限度保留原图主体和关键内容。",
-    "",
-    "输出尺寸与分辨率要求：",
-    `- ${aspectRatio.prompt}`,
-    `- ${quality.prompt}`,
-    "- 如果尺寸要求需要扩展画布，优先自然延展背景，不要压缩或扭曲主体。",
-    "- 如果尺寸要求需要裁切，必须优先保留主体完整和关键视觉信息。",
+    buildImageEditSystemPrompt(input),
     "",
     "用户编辑指令：",
     input.prompt.trim(),
   ].join("\n");
 }
 
+export function buildImageGenerationSystemPrompt(input: {
+  aspectRatio?: string;
+  quality?: string;
+}) {
+  const aspectRatio = getImageEditAspectRatioOption(input.aspectRatio);
+  const quality = getImageEditQualityOption(input.quality);
+
+  return [
+    "你是专业图片生成助手。你必须调用创建图片功能，将用户的描述生成成一张完整图片，而不是只回复文字或解释方案。",
+    "",
+    "图片生成要求：",
+    "- 准确落实用户描述中的主体、环境、风格、构图、光照、色彩和文字要求。",
+    "- 如果提供了参考图片，应将其作为主体、外观、风格、构图或细节参考，并以用户指令说明的修改目标为准。",
+    "- 画面应完整、清晰、结构合理；不要无故省略用户明确要求的主体或关键细节。",
+    "- 除非用户明确要求，不要在图片中添加水印、边框、说明文字或品牌标识。",
+    "",
+    "输出尺寸与分辨率要求：",
+    ...getAspectRatioPromptLines(aspectRatio.value, "generate"),
+    `- ${quality.prompt}`,
+    "- 必须按照所选宽高比直接构图，不得通过黑边、白边、透明边或空白留边伪造目标比例。",
+  ].join("\n");
+}
+
+export function buildImageEditSystemPrompt(input: {
+  aspectRatio?: string;
+  quality?: string;
+}) {
+  const aspectRatio = getImageEditAspectRatioOption(input.aspectRatio);
+  const quality = getImageEditQualityOption(input.quality);
+
+  return [
+    "你是专业参考图生成助手。你必须调用图片编辑功能处理所提供的参考图片并输出一张完整图片，而不是只回复文字。",
+    "",
+    "参考图处理原则：",
+    "- 根据用户指令判断任务意图：用户要求局部修改时执行精确编辑；用户要求重新构图、改变风格或生成新画面时，以参考图为基础重新生成。",
+    "- 精确编辑时只修改用户明确要求的内容，保持未指定区域、主体身份、数量、姿态、结构和关键细节。",
+    "- 基于参考重新生成时，应提取用户所指的主体、外观、风格、构图或细节特征，并按用户的新要求组织画面。",
+    "- 多张参考图可能承担不同作用，应结合用户指令判断每张图用于主体、造型、风格、场景或构图参考。",
+    "- 除非用户明确要求，不要无故丢失参考图中的核心主体和可识别特征。",
+    "",
+    "输出尺寸与分辨率要求：",
+    ...getAspectRatioPromptLines(aspectRatio.value, "edit"),
+    `- ${quality.prompt}`,
+    "- 必须按照所选宽高比直接构图，不得通过黑边、白边、透明边或空白留边伪造目标比例。",
+    "- 如果尺寸要求需要扩展画布，优先自然延展背景，不要压缩或扭曲主体。",
+    "- 如果尺寸要求需要裁切，必须优先保留主体完整和关键视觉信息。",
+  ].join("\n");
+}
+
 export function getImageEditResultNodeSize(aspectRatio?: string) {
   const value = getImageEditAspectRatioOption(aspectRatio).value;
-  const targetArea = 280 * 280;
   const ratio =
     value === "1:1"
       ? 1
@@ -127,11 +178,22 @@ export function getImageEditResultNodeSize(aspectRatio?: string) {
             : value === "4:3"
               ? 4 / 3
               : 3 / 4;
-  const width = Math.round(Math.sqrt(targetArea * ratio));
-  const height = Math.round(width / ratio);
+
+  return getImageDisplaySize(ratio);
+}
+
+export function getImageDisplaySize(aspectRatio?: number) {
+  const referenceDiagonal = Math.hypot(280, 280);
+  const safeRatio = typeof aspectRatio === "number" && Number.isFinite(aspectRatio) && aspectRatio > 0
+    ? aspectRatio
+    : 3 / 4;
+  // 所有图片框内接于同一个参考圆，因此对角线恒定并完整保留真实宽高比。
+  const scale = referenceDiagonal / Math.sqrt(safeRatio ** 2 + 1);
+  const height = Math.round(scale);
+  const width = Math.round(scale * safeRatio);
 
   return {
-    height: Math.max(190, Math.min(height, 380)),
-    width: Math.max(220, Math.min(width, 420)),
+    height,
+    width,
   };
 }

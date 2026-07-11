@@ -123,11 +123,16 @@
     --color-run-hover: #dfc4bc;
     --color-tab-active: #8f482f;
     --color-info: #64748b;
+    --color-danger: #dc2626;
+    --color-success: #15803d;
     --shadow-dropdown: 0 12px 40px rgba(15, 23, 42, 0.08);
+    --shadow-canvas: 0 10px 28px rgba(15, 23, 42, 0.1);
+    --shadow-node:
+      0 20px 25px -5px rgba(0, 0, 0, 0.1),
+      0 8px 10px -6px rgba(0, 0, 0, 0.1);
+    --shadow-overlay: 0 20px 60px rgba(15, 23, 42, 0.14);
     --shadow-button-primary: none;
     --shadow-focus-ring: 0 0 0 3px rgba(148, 163, 184, 0.22);
-    --gradient-btn-primary: linear-gradient(135deg, #ead5cf, #dec4bd);
-    --gradient-btn-primary-hover: linear-gradient(135deg, #dfc4bc, #d6b8af);
   }
   .dark {
     --background: 0 0% 3.9%;
@@ -201,6 +206,22 @@
 }
 
 @layer components {
+  .zenme-shadow-node {
+    box-shadow: var(--shadow-node);
+  }
+
+  .zenme-shadow-canvas {
+    box-shadow: var(--shadow-canvas);
+  }
+
+  .zenme-shadow-dropdown {
+    box-shadow: var(--shadow-dropdown);
+  }
+
+  .zenme-shadow-overlay {
+    box-shadow: var(--shadow-overlay);
+  }
+
   .react-flow__pane,
   .react-flow__selection {
     user-select: none !important;
@@ -224,6 +245,40 @@
 
 .zenme-canvas .react-flow__pane.selection {
   cursor: crosshair !important;
+}
+
+.zenme-canvas .react-flow__edge {
+  cursor: pointer;
+}
+
+.zenme-canvas .react-flow__edge .react-flow__edge-path {
+  transition: filter 120ms ease, stroke 120ms ease, stroke-width 120ms ease;
+}
+
+.zenme-canvas .react-flow__edge.zenme-edge-idle .react-flow__edge-path {
+  stroke: rgba(113, 113, 122, 0.42) !important;
+  stroke-width: 1.75px !important;
+}
+
+.zenme-canvas .react-flow__edge.zenme-edge-node-related .react-flow__edge-path {
+  stroke: rgba(82, 82, 91, 0.62) !important;
+  stroke-width: 2.2px !important;
+}
+
+.zenme-canvas .react-flow__edge:hover .react-flow__edge-path {
+  stroke: rgba(82, 82, 91, 0.68) !important;
+  stroke-width: 2.3px !important;
+}
+
+.zenme-canvas .react-flow__edge.selected .react-flow__edge-path,
+.zenme-canvas .react-flow__edge:focus-visible .react-flow__edge-path {
+  filter: drop-shadow(0 0 2px rgba(63, 63, 70, 0.18));
+  stroke: rgba(63, 63, 70, 0.78) !important;
+  stroke-width: 2.7px !important;
+}
+
+.zenme-canvas .react-flow__edge:focus-visible {
+  outline: none;
 }
 
 .zenme-canvas .zenme-reader-resize-line {
@@ -319,6 +374,32 @@
   cursor: text !important;
   -webkit-user-select: text !important;
   user-select: text !important;
+}
+
+.zenme-canvas .zenme-node-title-input {
+  caret-color: #18181b !important;
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-canvas .zenme-node-floating-control,
+.zenme-canvas .zenme-node-inline-control,
+.zenme-canvas .zenme-node-connection-handle,
+.zenme-canvas .react-flow__resize-control {
+  transition: opacity 120ms ease !important;
+}
+
+.zenme-canvas .zenme-node-renaming .zenme-node-floating-control,
+.zenme-canvas .zenme-node-renaming .zenme-node-inline-control,
+.zenme-canvas .zenme-node-renaming .zenme-node-connection-handle,
+.zenme-canvas .zenme-node-renaming .react-flow__resize-control,
+.zenme-canvas-node-dragging .zenme-node-floating-control,
+.zenme-canvas-node-dragging .zenme-node-inline-control,
+.zenme-canvas-node-dragging .zenme-node-connection-handle,
+.zenme-canvas-node-dragging .react-flow__resize-control {
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 .zenme-canvas .zenme-code-editor {

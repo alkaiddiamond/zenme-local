@@ -49,6 +49,12 @@ export async function updateProjectNameInApi(input: {
   }));
 }
 
+export async function deleteProjectInApi(projectId: string) {
+  return readJson<{ ok: true }>(await fetch(`/api/projects/${projectId}`, {
+    method: "DELETE",
+  }));
+}
+
 export async function getCanvasSnapshotFromApi(projectId: string) {
   return readJson<{ snapshot: CanvasSnapshotPayload; updated_at: string } | null>(
     await fetch(`/api/projects/${projectId}/canvas`, {
@@ -102,15 +108,20 @@ export async function refreshFileSignedUrlsFromApi(_fileId: string) {
   return null;
 }
 
-export async function editImageWithOpenRouter(input: {
-  imageDataUrl: string;
+export async function generateOrEditImage(input: {
+  aspectRatio?: string;
+  imageDataUrl?: string;
+  imageDataUrls?: string[];
   model: string;
+  operation?: "edit" | "generate";
   prompt: string;
+  quality?: string;
 }) {
   return readJson<{
     b64Json: string;
     mediaType: string;
     model: string;
+    revisedPrompt?: string;
     usage?: unknown;
   }>(await fetch("/api/ai/image-edit", {
     method: "POST",

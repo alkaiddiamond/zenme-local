@@ -56,7 +56,7 @@ export function InlineFormatToolbar({
 
   return (
     <div
-      className="nodrag nowheel absolute left-1/2 z-20 flex max-w-[calc(100vw-48px)] items-center gap-1 overflow-hidden rounded-full border border-zinc-200 bg-white/95 p-1.5 text-zinc-600 shadow-xl backdrop-blur"
+      className="zenme-node-floating-control zenme-shadow-canvas nodrag nowheel absolute left-1/2 z-20 flex max-w-[calc(100vw-48px)] items-center gap-1 overflow-hidden rounded-full border border-zinc-200 bg-white/95 p-1.5 text-zinc-600 backdrop-blur"
       style={toolbarStyle}
     >
       <InlineFormatButton label="Bold" onPress={onBold}>

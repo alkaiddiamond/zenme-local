@@ -33,7 +33,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.3.0",
-    "tesseract.js": "^7.0.0"
+    "tesseract.js": "^7.0.0",
+    "undici": "^7.28.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

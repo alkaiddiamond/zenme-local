@@ -8,6 +8,7 @@ type EditableNodeTitleProps = {
   icon: ReactNode;
   iconClassName?: string;
   onCommit: (title: string) => void;
+  onEditingChange?: (editing: boolean) => void;
   title?: string | null;
 };
 
@@ -17,6 +18,7 @@ export function EditableNodeTitle({
   icon,
   iconClassName,
   onCommit,
+  onEditingChange,
   title,
 }: EditableNodeTitleProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -32,13 +34,19 @@ export function EditableNodeTitle({
   useEffect(() => {
     if (isEditing) {
       inputRef.current?.focus();
-      inputRef.current?.select();
+      const length = inputRef.current?.value.length ?? 0;
+      inputRef.current?.setSelectionRange(length, length);
     }
   }, [isEditing]);
 
+  function changeEditing(nextEditing: boolean) {
+    setIsEditing(nextEditing);
+    onEditingChange?.(nextEditing);
+  }
+
   function commitTitle() {
     const nextTitle = draftTitle.trim();
-    setIsEditing(false);
+    changeEditing(false);
 
     if (!nextTitle || nextTitle === title) {
       setDraftTitle(title || fallbackTitle);
@@ -57,7 +65,7 @@ export function EditableNodeTitle({
       </span>
       {isEditing ? (
         <input
-          className="nodrag nowheel h-6 w-44 rounded-sm border border-zinc-200 bg-white/95 px-1.5 text-xs font-medium text-zinc-900 outline-none focus:border-zinc-400"
+          className="zenme-node-title-input nodrag nowheel h-6 w-44 cursor-text rounded-sm border border-zinc-200 bg-white/95 px-1.5 text-xs font-medium text-zinc-900 outline-none focus:border-zinc-400"
           onBlur={commitTitle}
           onChange={(event) => setDraftTitle(event.target.value)}
           onDoubleClick={(event) => event.stopPropagation()}
@@ -69,7 +77,7 @@ export function EditableNodeTitle({
             if (event.key === "Escape") {
               event.preventDefault();
               setDraftTitle(title || fallbackTitle);
-              setIsEditing(false);
+              changeEditing(false);
             }
           }}
           placeholder="请输入标题"
@@ -82,7 +90,7 @@ export function EditableNodeTitle({
           onDoubleClick={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            setIsEditing(true);
+            changeEditing(true);
           }}
           title="双击修改标题"
           type="button"

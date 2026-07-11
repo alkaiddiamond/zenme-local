@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("zenmeDesktop", {
   getServerUrl: () => ipcRenderer.invoke("zenme:get-server-url"),
   minimizeWindow: () => ipcRenderer.invoke("zenme:minimize-window"),
   openDataDir: () => ipcRenderer.invoke("zenme:open-data-dir"),
+  openExternal: (url) => ipcRenderer.invoke("zenme:open-external", url),
   selectDataDir: () => ipcRenderer.invoke("zenme:select-data-dir"),
   toggleMaximizeWindow: () => ipcRenderer.invoke("zenme:toggle-maximize-window"),
 });

@@ -10,7 +10,7 @@ export type Viewport = { x: number; y: number; zoom: number };
 export type CanvasNode = Node<CanvasNodeData>;
 
 export type CanvasSnapshot = {
-  version: 1;
+  version: 2;
   nodes: CanvasNode[];
   edges: Edge[];
   viewport: Viewport;

@@ -27,6 +27,7 @@ export function MarkdownNode({ data, id, selected }: NodeProps) {
   );
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [isEditing, setIsEditing] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
 
   useEffect(() => {
     if (isEditing) {
@@ -126,7 +127,7 @@ export function MarkdownNode({ data, id, selected }: NodeProps) {
   }
 
   return (
-    <div className="zenme-markdown-node group relative h-full w-full">
+    <div className={`zenme-markdown-node group relative h-full w-full ${isRenaming ? "zenme-node-renaming" : ""}`}>
       <NodeTargetHandle visible={Boolean(nodeData.hasIncomingEdge)} />
       <NodeEdgeSourceHandle visible={Boolean(nodeData.hasOutgoingEdge)} />
       <NodeContextTargetHandle />
@@ -134,6 +135,7 @@ export function MarkdownNode({ data, id, selected }: NodeProps) {
         fallbackTitle="Markdown"
         icon={<FileText className="size-4" />}
         onCommit={(title) => nodeData.onUpdateTextNode?.(id, { title })}
+        onEditingChange={setIsRenaming}
         title={nodeData.title}
       />
       {selected || isEditing ? (
@@ -146,7 +148,7 @@ export function MarkdownNode({ data, id, selected }: NodeProps) {
         />
       ) : null}
       <div
-        className={`relative h-full min-h-[180px] w-full overflow-hidden rounded-xl border bg-white text-zinc-950 shadow-xl ${
+        className={`zenme-shadow-node relative h-full min-h-[180px] w-full overflow-hidden rounded-xl border bg-white text-zinc-950 ${
           selected ? "border-zinc-900" : "border-zinc-200"
         }`}
       >

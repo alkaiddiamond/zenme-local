@@ -216,6 +216,21 @@ export function removeLegacyWelcomeNodes(
   return { nodes: nodesWithoutWelcome, edges: edgesWithoutWelcome };
 }
 
+export function recoverInterruptedImageTasks(nodes: CanvasNode[]) {
+  return nodes.map((node) =>
+    node.data.imageStatus === "editing"
+      ? {
+          ...node,
+          data: {
+            ...node.data,
+            imageError: "任务因页面刷新或应用重启而中断，请重新提交",
+            imageStatus: "failed" as const,
+          },
+        }
+      : node,
+  );
+}
+
 export function getClientPointFromConnectEnd(event: MouseEvent | TouchEvent) {
   if ("changedTouches" in event && event.changedTouches.length > 0) {
     return {

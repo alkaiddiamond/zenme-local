@@ -11,6 +11,7 @@ import {
   numericSize,
   readNodeSize,
   removeLegacyWelcomeNodes,
+  recoverInterruptedImageTasks,
   shouldHideReaderChildEdge,
 } from "./geometry";
 import type { CanvasNode } from "./types";
@@ -170,6 +171,29 @@ describe("canvas geometry helpers", () => {
 
     expect(result.nodes.map((item) => item.id)).toEqual(["real"]);
     expect(result.edges.map((item) => item.id)).toEqual(["real-real"]);
+  });
+
+  it("marks persisted image tasks as interrupted after a reload", () => {
+    const interrupted = node({
+      data: {
+        imageStatus: "editing",
+        kind: "imageGeneration",
+        title: "图片生成",
+      },
+      id: "image-editing",
+    });
+    const done = node({
+      data: { imageStatus: "done", kind: "image", title: "图片生成" },
+      id: "image-done",
+    });
+
+    const recovered = recoverInterruptedImageTasks([interrupted, done]);
+
+    expect(recovered[0].data).toMatchObject({
+      imageError: "任务因页面刷新或应用重启而中断，请重新提交",
+      imageStatus: "failed",
+    });
+    expect(recovered[1]).toBe(done);
   });
 
   it("creates serializable history entries without runtime-only fields", () => {

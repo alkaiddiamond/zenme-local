@@ -108,7 +108,7 @@ export function DashboardClient() {
         </p>
 
         <form
-          className="relative h-[104px] w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] px-6 py-5 shadow-[0_18px_55px_rgba(15,23,42,0.08)]"
+          className="relative h-[104px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] px-6 py-5"
           onSubmit={handleSubmit}
         >
           <Input

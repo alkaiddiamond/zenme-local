@@ -36,6 +36,7 @@ export function CodeNode({ data, id, selected }: NodeProps) {
   const nodeData = data as CanvasNodeData;
   const [code, setCode] = useState(nodeData.codeContent ?? "");
   const [language, setLanguage] = useState(nodeData.codeLanguage ?? "python");
+  const [isRenaming, setIsRenaming] = useState(false);
   const highlightRef = useRef<HTMLDivElement | null>(null);
   const codeSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -88,7 +89,7 @@ export function CodeNode({ data, id, selected }: NodeProps) {
   }
 
   return (
-    <div className="zenme-code-node group relative h-full w-full">
+    <div className={`zenme-code-node group relative h-full w-full ${isRenaming ? "zenme-node-renaming" : ""}`}>
       <NodeTargetHandle visible={Boolean(nodeData.hasIncomingEdge)} />
       <NodeEdgeSourceHandle visible={Boolean(nodeData.hasOutgoingEdge)} />
       <NodeContextTargetHandle />
@@ -97,10 +98,11 @@ export function CodeNode({ data, id, selected }: NodeProps) {
         icon={<Code2 className="size-4" />}
         iconClassName="zenme-code-node-drag-handle"
         onCommit={(title) => nodeData.onUpdateCodeNode?.(id, { title })}
+        onEditingChange={setIsRenaming}
         title={nodeData.title}
       />
       <div
-        className={`nodrag nowheel flex h-full min-h-[240px] w-full min-w-[420px] flex-col overflow-hidden rounded-xl border bg-white text-zinc-950 shadow-xl ${
+        className={`zenme-shadow-node nodrag nowheel flex h-full min-h-[240px] w-full min-w-[420px] flex-col overflow-hidden rounded-xl border bg-white text-zinc-950 ${
           selected ? "border-zinc-900" : "border-zinc-200"
         }`}
       >

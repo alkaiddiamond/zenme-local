@@ -14,6 +14,14 @@ describe("validateLocalRequest", () => {
         }),
       ),
     ).toBeNull();
+    expect(
+      validateLocalRequest(
+        new Request("http://127.0.0.1:3210/api/ai/openai-oauth/start", {
+          method: "POST",
+          headers: { origin: "http://localhost:3210" },
+        }),
+      ),
+    ).toBeNull();
   });
 
   it("rejects non-loopback and cross-origin requests", () => {
@@ -22,6 +30,13 @@ describe("validateLocalRequest", () => {
       validateLocalRequest(
         new Request("http://localhost:3000/api/settings", {
           headers: { origin: "https://attacker.example" },
+        }),
+      ),
+    ).toBeTruthy();
+    expect(
+      validateLocalRequest(
+        new Request("http://127.0.0.1:3000/api/settings", {
+          headers: { origin: "http://localhost:3001" },
         }),
       ),
     ).toBeTruthy();

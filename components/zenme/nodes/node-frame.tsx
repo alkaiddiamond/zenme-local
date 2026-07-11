@@ -11,7 +11,7 @@ type NodeFrameProps = {
 export function NodeFrame({ children, className, selected }: NodeFrameProps) {
   return (
     <div
-      className={`group relative rounded-xl border bg-white text-zinc-950 shadow-xl ${
+      className={`zenme-shadow-node group relative rounded-xl border bg-white text-zinc-950 ${
         selected ? "border-zinc-900" : "border-zinc-200"
       } ${className}`}
     >

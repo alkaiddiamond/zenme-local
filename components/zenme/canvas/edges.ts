@@ -20,9 +20,25 @@ const RIGHT_HANDLE_NODE_KINDS = new Set([
 export function getRenderedCanvasEdges(
   nodeKindById: Map<string, CanvasNodeData["kind"]>,
   edges: Edge[],
+  selectedNodeIds = new Set<string>(),
 ) {
   return edges.map((edge) => {
     const sourceNodeKind = nodeKindById.get(edge.source);
+    const isNodeRelated =
+      selectedNodeIds.has(edge.source) || selectedNodeIds.has(edge.target);
+    const preservedClassNames = edge.className
+      ?.split(/\s+/)
+      .filter(
+        (value) =>
+          value &&
+          value !== "zenme-edge-node-related" &&
+          value !== "zenme-edge-idle",
+      )
+      .join(" ");
+    const className = [
+      preservedClassNames,
+      isNodeRelated ? "zenme-edge-node-related" : "zenme-edge-idle",
+    ].filter(Boolean).join(" ");
 
     if (
       sourceNodeKind &&
@@ -31,6 +47,7 @@ export function getRenderedCanvasEdges(
     ) {
       return {
         ...edge,
+        className,
         sourceHandle: NODE_RIGHT_HANDLE_ID,
         type: "default",
       };
@@ -39,10 +56,11 @@ export function getRenderedCanvasEdges(
     if (edge.type === "smoothstep") {
       return {
         ...edge,
+        className,
         type: "default",
       };
     }
 
-    return edge;
+    return edge.className === className ? edge : { ...edge, className };
   });
 }

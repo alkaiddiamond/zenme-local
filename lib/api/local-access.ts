@@ -14,7 +14,11 @@ export function validateLocalRequest(request: Request) {
   const origin = request.headers.get("origin");
   if (origin) {
     try {
-      if (new URL(origin).origin !== url.origin) {
+      const originUrl = new URL(origin);
+      if (
+        originUrl.origin !== url.origin &&
+        !isEquivalentLoopbackOrigin(originUrl, url)
+      ) {
         return "拒绝跨源请求";
       }
     } catch {
@@ -23,4 +27,19 @@ export function validateLocalRequest(request: Request) {
   }
 
   return null;
+}
+
+function isEquivalentLoopbackOrigin(origin: URL, requestUrl: URL) {
+  return (
+    origin.protocol === "http:" &&
+    requestUrl.protocol === "http:" &&
+    LOOPBACK_HOSTS.has(origin.hostname.toLowerCase()) &&
+    LOOPBACK_HOSTS.has(requestUrl.hostname.toLowerCase()) &&
+    effectivePort(origin) === effectivePort(requestUrl)
+  );
+}
+
+function effectivePort(url: URL) {
+  if (url.port) return url.port;
+  return url.protocol === "https:" ? "443" : "80";
 }
