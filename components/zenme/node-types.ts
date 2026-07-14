@@ -139,6 +139,10 @@ export type CanvasNodeData = {
   aiResponse?: string;
   aiModel?: string;
   aiCreatedAt?: string;
+  aiStatus?: "generating" | "done" | "failed";
+  aiError?: string;
+  aiTaskStartedAt?: string;
+  aiTaskDurationMs?: number;
   textGenerationPrompt?: string;
   textGenerationModel?: string;
   imagePrompt?: string;
@@ -149,6 +153,7 @@ export type CanvasNodeData = {
   imageError?: string;
   imageTaskStartedAt?: string;
   imageTaskDurationMs?: number;
+  imageGenerationResult?: boolean;
   imageReferences?: Array<{
     nodeId: string;
     title: string;
@@ -162,6 +167,7 @@ export type CanvasNodeData = {
   imageReferenceNodeIds?: string[];
   hasIncomingEdge?: boolean;
   hasOutgoingEdge?: boolean;
+  hasRunningGenerationChild?: boolean;
   onResolveImageDimensions?: (
     nodeId: string,
     dimensions: { height: number; width: number },

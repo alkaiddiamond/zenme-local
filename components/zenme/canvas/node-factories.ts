@@ -282,7 +282,8 @@ export function createAiResponseChildCanvasNode(input: {
   model?: string;
   position?: { x: number; y: number };
   prompt: string;
-  response: string;
+  response?: string;
+  startedAt?: string;
   sourceNode: CanvasNode;
 }): { edge: Edge; node: CanvasNode } {
   const sourceSize = readNodeSize(input.sourceNode, {
@@ -297,7 +298,7 @@ export function createAiResponseChildCanvasNode(input: {
       y: input.sourceNode.position.y + 48,
     },
     style: {
-      height: estimateAiResponseNodeHeight(input.response),
+      height: input.response ? estimateAiResponseNodeHeight(input.response) : 260,
       width: 620,
     },
     data: {
@@ -307,9 +308,50 @@ export function createAiResponseChildCanvasNode(input: {
       aiResponse: input.response,
       aiModel: input.model,
       aiCreatedAt: new Date().toISOString(),
+      aiStatus: input.response ? "done" : "generating",
+      aiTaskStartedAt: input.startedAt ?? new Date().toISOString(),
       textGenerationModel: input.model,
-      plainText: input.response,
+      plainText: input.response ?? "",
       textMode: "markdown",
+    },
+  };
+
+  return {
+    edge: createConnectedEdge(input.sourceNode.id, input.id),
+    node,
+  };
+}
+
+export function createPendingImageResultChildCanvasNode(input: {
+  aspectRatio?: string;
+  id: string;
+  model?: string;
+  position: { x: number; y: number };
+  prompt: string;
+  quality?: string;
+  sourceNode: CanvasNode;
+  startedAt?: string;
+}): { edge: Edge; node: CanvasNode } {
+  const node: CanvasNode = {
+    id: input.id,
+    type: "imageGeneration",
+    position: input.position,
+    style: {
+      height: IMAGE_NODE_DEFAULT_SIZE.height,
+      width: IMAGE_NODE_DEFAULT_SIZE.width,
+    },
+    data: {
+      kind: "imageGeneration",
+      title: "图片生成",
+      imageOperation: "generate",
+      imageGenerationResult: true,
+      imageModel: input.model ?? NANO_BANANA_2_IMAGE_MODEL,
+      imageOutputAspectRatio: input.aspectRatio ?? DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
+      imagePrompt: input.prompt,
+      imageQuality: input.quality ?? DEFAULT_IMAGE_EDIT_QUALITY,
+      imageStatus: "editing",
+      imageTaskStartedAt: input.startedAt ?? new Date().toISOString(),
+      imageReferenceNodeIds: [],
     },
   };
 

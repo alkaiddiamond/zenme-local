@@ -217,18 +217,29 @@ export function removeLegacyWelcomeNodes(
 }
 
 export function recoverInterruptedImageTasks(nodes: CanvasNode[]) {
-  return nodes.map((node) =>
-    node.data.imageStatus === "editing"
-      ? {
+  return nodes.map((node) => {
+    if (node.data.imageStatus === "editing") {
+      return {
           ...node,
           data: {
             ...node.data,
             imageError: "任务因页面刷新或应用重启而中断，请重新提交",
             imageStatus: "failed" as const,
           },
-        }
-      : node,
-  );
+        };
+    }
+    if (node.data.aiStatus === "generating") {
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          aiError: "任务因页面刷新或应用重启而中断，请重新提交",
+          aiStatus: "failed" as const,
+        },
+      };
+    }
+    return node;
+  });
 }
 
 export function getClientPointFromConnectEnd(event: MouseEvent | TouchEvent) {
@@ -351,6 +362,7 @@ function getSerializableRecord<T extends Record<string, unknown>>(record: T) {
       ([key, value]) =>
         key !== "hasIncomingEdge" &&
         key !== "hasOutgoingEdge" &&
+        key !== "hasRunningGenerationChild" &&
         typeof value !== "function",
     ),
   ) as T;

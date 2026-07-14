@@ -26,7 +26,7 @@ type ChatMessage = {
 };
 
 const DEFAULT_SYSTEM_PROMPT =
-  "你是 Zenme 的创作助手。用户在一个以项目为中心的无限画布上收集资料、组织想法并推进创作。请基于用户提供的项目上下文和节点内容，帮助用户梳理资料、提炼结构、生成提纲、回答问题或推动下一步。回答聚焦当前项目目标，简洁有用。";
+  "你是 Zenme 的创作助手。用户在一个以项目为中心的无限画布上收集资料、组织想法并推进创作。请基于用户提供的项目上下文和节点内容，帮助用户梳理资料、提炼结构、生成提纲、回答问题或推动下一步。回答聚焦当前项目目标，简洁有用。如果当前请求涉及新闻、赛程、政策、价格、人物职务等可能变化的信息，并且已提供网页搜索工具，应先搜索核实再回答，不要仅依赖模型记忆。";
 const AI_PROVIDER_ERROR_MESSAGE = "模型调用失败，请稍后重试";
 
 export async function POST(request: Request) {
@@ -266,19 +266,7 @@ async function fetchProviderChatCompletion(input: {
           "Content-Type": "application/json",
           ...createOpenAiAuthHeaders(tokens),
         },
-        body: JSON.stringify({
-          model: input.provider.model,
-          instructions: input.systemContent,
-          input: input.messages
-            .filter((message) => message.role !== "system")
-            .map((message) => ({
-              type: "message",
-              role: message.role,
-              content: message.content,
-            })),
-          stream: true,
-          store: false,
-        }),
+        body: JSON.stringify(createOpenAiOAuthRequestBody(input)),
         ...getProxyFetchOptions(RESPONSES_URL),
       });
     }
@@ -335,6 +323,27 @@ async function fetchProviderChatCompletion(input: {
       error: `${input.provider.name} 调用 ${input.provider.model} 失败，无法连接服务商，请检查接口地址或网络。`,
     };
   }
+}
+
+export function createOpenAiOAuthRequestBody(input: {
+  messages: ChatMessage[];
+  provider: { model: string };
+  systemContent: string;
+}) {
+  return {
+    model: input.provider.model,
+    instructions: input.systemContent,
+    input: input.messages
+      .filter((message) => message.role !== "system")
+      .map((message) => ({
+        type: "message",
+        role: message.role,
+        content: message.content,
+      })),
+    stream: true,
+    store: false,
+    tools: [{ type: "web_search" as const }],
+  };
 }
 
 function createTextSseResponse(content: string, usage?: Record<string, unknown>) {

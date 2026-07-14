@@ -196,6 +196,20 @@ describe("canvas geometry helpers", () => {
     expect(recovered[1]).toBe(done);
   });
 
+  it("marks persisted AI tasks as interrupted after a reload", () => {
+    const interrupted = node({
+      data: { aiStatus: "generating", kind: "agent", title: "AI 回复" },
+      id: "agent-generating",
+    });
+
+    const [recovered] = recoverInterruptedImageTasks([interrupted]);
+
+    expect(recovered.data).toMatchObject({
+      aiError: "任务因页面刷新或应用重启而中断，请重新提交",
+      aiStatus: "failed",
+    });
+  });
+
   it("creates serializable history entries without runtime-only fields", () => {
     const update = () => undefined;
     const runtimeNode = {

@@ -32,6 +32,7 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
     : [createModelOption(model), ...configuredModels];
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isGenerating = isSubmitting || Boolean(nodeData.hasRunningGenerationChild);
 
   useEffect(() => {
     setPrompt(nodeData.textGenerationPrompt ?? "");
@@ -52,7 +53,7 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
     event.preventDefault();
 
     const nextPrompt = prompt.trim();
-    if (!nextPrompt || isSubmitting) {
+    if (!nextPrompt || isGenerating) {
       return;
     }
 
@@ -118,12 +119,6 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
             {error}
           </p>
         ) : null}
-        {isSubmitting ? (
-          <div className="mt-2 flex items-center gap-2 px-1 text-xs text-zinc-500">
-            <Loader2 className="size-3.5 animate-spin" />
-            AI 正在生成回复...
-          </div>
-        ) : null}
         <div className="mt-auto flex items-end justify-between gap-3 pt-3">
           <div className="min-w-0 max-w-[260px]">
             <ZenmeModelPicker
@@ -142,11 +137,11 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
           </div>
           <button
             className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-            disabled={isSubmitting || !prompt.trim()}
+            disabled={isGenerating || !prompt.trim()}
             title="提交"
             type="submit"
           >
-            {isSubmitting ? (
+            {isGenerating ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
               <Send className="size-4" />

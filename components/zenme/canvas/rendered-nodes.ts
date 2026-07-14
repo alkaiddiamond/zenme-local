@@ -171,6 +171,16 @@ export function getRenderedCanvasNodes({
       outgoing: new Set<string>(),
     },
   );
+  const runningGenerationSourceIds = new Set<string>();
+  for (const edge of edges) {
+    const target = nodeById.get(edge.target);
+    if (
+      target?.data.aiStatus === "generating" ||
+      (target?.data.imageGenerationResult && target.data.imageStatus === "editing")
+    ) {
+      runningGenerationSourceIds.add(edge.source);
+    }
+  }
   const imageReferencesByTargetId = new Map<
     string,
     NonNullable<CanvasNodeData["imageReferences"]>
@@ -203,6 +213,7 @@ export function getRenderedCanvasNodes({
         ...nodeWithoutGroupDragLimit.data,
         hasIncomingEdge: connectedNodeIdsByDirection.incoming.has(node.id),
         hasOutgoingEdge: connectedNodeIdsByDirection.outgoing.has(node.id),
+        hasRunningGenerationChild: runningGenerationSourceIds.has(node.id),
         ...(
           nodeWithoutGroupDragLimit.data.kind === "imageGeneration" ||
           (nodeWithoutGroupDragLimit.data.kind === "image" &&
@@ -332,7 +343,8 @@ export function getRenderedCanvasNodes({
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
         cached.onUpdateTextNode === onUpdateTextNode &&
         cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge
+        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
+        cached.node.data.hasRunningGenerationChild === nodeWithConnectionState.data.hasRunningGenerationChild
       ) {
         return cached.node;
       }
@@ -366,7 +378,8 @@ export function getRenderedCanvasNodes({
         cached?.onSubmitTextGenerationNode === onSubmitTextGenerationNode &&
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
         cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge
+        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
+        cached.node.data.hasRunningGenerationChild === nodeWithConnectionState.data.hasRunningGenerationChild
       ) {
         return cached.node;
       }
@@ -396,7 +409,8 @@ export function getRenderedCanvasNodes({
         cached?.onSubmitImageNode === onSubmitImageNode &&
         cached.onUpdateImageNode === onUpdateImageNode &&
         cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge
+        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
+        cached.node.data.hasRunningGenerationChild === nodeWithConnectionState.data.hasRunningGenerationChild
       ) {
         return cached.node;
       }
@@ -443,7 +457,8 @@ export function getRenderedCanvasNodes({
         cached?.onSubmitImageNode === onSubmitImageNode &&
         cached.onUpdateImageNode === onUpdateImageNode &&
         cached.node.data.hasIncomingEdge === generatedImageNode.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === generatedImageNode.data.hasOutgoingEdge
+        cached.node.data.hasOutgoingEdge === generatedImageNode.data.hasOutgoingEdge &&
+        cached.node.data.hasRunningGenerationChild === generatedImageNode.data.hasRunningGenerationChild
       ) {
         return cached.node;
       }
@@ -472,7 +487,8 @@ export function getRenderedCanvasNodes({
       if (
         cached?.onUpdateImageNode === onUpdateImageNode &&
         cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge
+        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
+        cached.node.data.hasRunningGenerationChild === nodeWithConnectionState.data.hasRunningGenerationChild
       ) {
         return cached.node;
       }
@@ -500,7 +516,8 @@ export function getRenderedCanvasNodes({
         cached?.onSubmitTextGenerationNode === onSubmitTextGenerationNode &&
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
         cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge
+        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
+        cached.node.data.hasRunningGenerationChild === nodeWithConnectionState.data.hasRunningGenerationChild
       ) {
         return cached.node;
       }
@@ -531,7 +548,8 @@ export function getRenderedCanvasNodes({
         cached?.onSubmitTextGenerationNode === onSubmitTextGenerationNode &&
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
         cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge
+        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
+        cached.node.data.hasRunningGenerationChild === nodeWithConnectionState.data.hasRunningGenerationChild
       ) {
         return cached.node;
       }

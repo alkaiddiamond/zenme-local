@@ -137,4 +137,35 @@ describe("rendered canvas nodes", () => {
     expect(generation?.data.imageReferences?.map((item) => item.nodeId)).toEqual(["image-b"]);
   });
 
+  it("locks a source while one of its generation children is running", () => {
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [
+        { source: "text", target: "agent-running" },
+        { source: "image", target: "image-running" },
+      ],
+      nodes: [
+        node({ id: "text" }),
+        node({ data: { kind: "agent", aiStatus: "generating" }, id: "agent-running", type: "agent" }),
+        node({ data: { kind: "image", imageGenerated: true }, id: "image", type: "image" }),
+        node({
+          data: { kind: "imageGeneration", imageGenerationResult: true, imageStatus: "editing" },
+          id: "image-running",
+          type: "imageGeneration",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    expect(renderedNodes.find((item) => item.id === "text")?.data.hasRunningGenerationChild).toBe(true);
+    expect(renderedNodes.find((item) => item.id === "image")?.data.hasRunningGenerationChild).toBe(true);
+  });
+
 });

@@ -124,6 +124,7 @@ import {
 import {
   createConnectedPlaceholderCanvasNode,
   createImageGenerationCanvasNode,
+  createPendingImageResultChildCanvasNode,
   createDroppedReadingNoteCanvasNode,
   createAiResponseChildCanvasNode,
   createReadingNoteCanvasNode,
@@ -744,6 +745,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
       const nextNodes = [...input.currentNodes, ...createdNodes];
       const nextEdges = [...input.currentEdges, ...createdEdges];
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
       skipNextHistoryEntryCount.current += 1;
       setNodes(nextNodes);
       setEdges(nextEdges);
@@ -1746,15 +1749,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodes: currentNodes,
       });
       const context = [ownContext, upstreamContext].filter(Boolean).join("\n\n---\n\n");
-      const result = await requestTextGenerationResponse({
-        context,
-        model,
-        prompt,
-      });
-      if (!result) {
-        return;
-      }
-
       const position = getNextConnectedChildNodePosition({
         childFallbackSize: { height: 260, width: 620 },
         edges: currentEdges,
@@ -1769,7 +1763,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           model,
           position,
           prompt,
-          response: result,
           sourceNode,
         });
 
@@ -1779,8 +1772,55 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         edges: [nextEdge],
         nodes: [nextNode],
       });
+
+      const taskStartedAt = Date.now();
+      try {
+        const result = await requestTextGenerationResponse({
+          context,
+          model,
+          prompt,
+        });
+        if (!result) {
+          throw new Error("模型未返回内容");
+        }
+
+        const nextNodes = nodesRef.current.map((node) =>
+          node.id === nextNode.id
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  aiError: undefined,
+                  aiResponse: result,
+                  aiStatus: "done" as const,
+                  aiTaskDurationMs: Date.now() - taskStartedAt,
+                  plainText: result,
+                },
+              }
+            : node,
+        );
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "文本生成失败";
+        const nextNodes = nodesRef.current.map((node) =>
+          node.id === nextNode.id
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  aiError: message,
+                  aiStatus: "failed" as const,
+                  aiTaskDurationMs: Date.now() - taskStartedAt,
+                },
+              }
+            : node,
+        );
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
+      }
     },
-    [appendCanvasItems, defaultTextModel, edges, reactFlow],
+    [appendCanvasItems, defaultTextModel, edges, reactFlow, setNodes],
   );
 
   const submitImageGenerationNode = useCallback(
@@ -1844,25 +1884,47 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         return;
       }
 
-      updateImageGenerationNode(nodeId, {
-        imageOutputAspectRatio: aspectRatio,
-        imageError: undefined,
-        imageQuality: quality,
-        imagePrompt: prompt,
-        imageStatus: "editing",
-        imageTaskDurationMs: undefined,
-        imageTaskStartedAt: new Date().toISOString(),
+      const model =
+        input?.model ??
+        sourceNode.data.imageModel ??
+        configuredImageModelOptions[0]?.id ??
+        "";
+      const position = getNextConnectedChildNodePosition({
+        childFallbackSize: { height: 320, width: 420 },
+        edges: currentEdges,
+        nodes: currentNodes,
+        sourceFallbackSize: { height: 320, width: 420 },
+        sourceNode,
+        yOffsetWithoutChild: 0,
+      });
+      const taskStartedAt = Date.now();
+      const { edge: resultEdge, node: resultNode } =
+        createPendingImageResultChildCanvasNode({
+          aspectRatio,
+          id: crypto.randomUUID(),
+          model,
+          position,
+          prompt,
+          quality,
+          sourceNode,
+          startedAt: new Date(taskStartedAt).toISOString(),
+        });
+      resultNode.data.imageOperation = operation;
+      appendCanvasItems({
+        currentEdges,
+        currentNodes,
+        edges: [resultEdge],
+        nodes: [resultNode],
       });
 
       try {
-        const taskStartedAt = Date.now();
         const imageDataUrls = await Promise.all(
           referenceImageUrls.map((url) => fetchImageAsDataUrl(url)),
         );
         const edited = await generateOrEditImage({
           aspectRatio,
           imageDataUrls,
-          model: input?.model ?? sourceNode.data.imageModel ?? configuredImageModelOptions[0]?.id ?? "",
+          model,
           operation,
           prompt,
           quality,
@@ -1877,17 +1939,15 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           projectId,
           file: outputFile,
         });
-        const nextCurrentNodes = reactFlow?.getNodes() ?? nodesRef.current;
+        const nextCurrentNodes = nodesRef.current;
         const outputAspectRatio = outputDimensions.width / outputDimensions.height;
         const resultNodeSize = getImageDisplaySize(outputAspectRatio);
-        const beforeNodeSnapshots = new Map([
-          [nodeId, createCanvasHistoryNodeSnapshot(sourceNode)],
-        ]);
+        const pendingResultNode = nextCurrentNodes.find((node) => node.id === resultNode.id);
+        const beforeNodeSnapshots = pendingResultNode
+          ? new Map([[resultNode.id, createCanvasHistoryNodeSnapshot(pendingResultNode)]])
+          : new Map<string, ReturnType<typeof createCanvasHistoryNodeSnapshot>>();
         const nextNodes = nextCurrentNodes.map((node) =>
-          node.id === nodeId &&
-          (node.data.kind === "imageGeneration" ||
-            (node.data.kind === "image" &&
-              Boolean(node.data.imageGenerated || node.data.imagePrompt)))
+          node.id === resultNode.id
             ? {
                 ...node,
                 measured: resultNodeSize,
@@ -1904,6 +1964,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
                   imageTaskDurationMs: Date.now() - taskStartedAt,
                   imageTaskStartedAt: new Date(taskStartedAt).toISOString(),
                   imageGenerated: true,
+                  imageGenerationResult: true,
                   imageAspectRatio: outputAspectRatio,
                   imageHeight: outputDimensions.height,
                   imageWidth: outputDimensions.width,
@@ -1921,7 +1982,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
         pushNodeUpdateHistory(beforeNodeSnapshots, nextNodes);
-        const committedEdges = reactFlow?.getEdges() ?? edgesRef.current;
+        const committedEdges = edgesRef.current;
         const committedViewport =
           reactFlow?.getViewport() ?? canvasViewportStateRef.current;
         const committedSnapshot = await saveCanvasSnapshot({
@@ -1943,13 +2004,24 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "图片编辑失败，请稍后重试";
-        updateImageGenerationNode(nodeId, {
-          imageError: message,
-          imageStatus: "failed",
-        });
+        const nextNodes = nodesRef.current.map((node) =>
+          node.id === resultNode.id
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  imageError: message,
+                  imageStatus: "failed" as const,
+                  imageTaskDurationMs: Date.now() - taskStartedAt,
+                },
+              }
+            : node,
+        );
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
       }
     },
-    [configuredImageModelOptions, projectId, pushNodeUpdateHistory, reactFlow, setNodes, updateImageGenerationNode],
+    [appendCanvasItems, configuredImageModelOptions, projectId, pushNodeUpdateHistory, reactFlow, setNodes],
   );
 
   function createTextNodeAt(position: { x: number; y: number }) {

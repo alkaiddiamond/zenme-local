@@ -11,6 +11,7 @@ import {
   createDroppedReadingNoteCanvasNode,
   createReferencedImageGenerationCanvasNode,
   createImageGenerationCanvasNode,
+  createPendingImageResultChildCanvasNode,
   createMarkdownCanvasNode,
   createReaderCanvasNode,
   createReadingNoteCanvasNode,
@@ -195,10 +196,54 @@ describe("canvas node factories", () => {
         aiModel: "glm-5.1",
         aiPrompt: "解释",
         aiResponse: "回答",
+        aiStatus: "done",
         kind: "agent",
         plainText: "回答",
         textGenerationModel: "glm-5.1",
       },
+    });
+  });
+
+  it("creates a running AI response child before content is available", () => {
+    const { node } = createAiResponseChildCanvasNode({
+      id: "agent-pending",
+      model: "gpt-5.6-sol",
+      prompt: "查询最新赛程",
+      sourceNode: textNode(),
+      startedAt: "2026-07-15T01:00:00.000Z",
+    });
+
+    expect(node.data).toMatchObject({
+      aiPrompt: "查询最新赛程",
+      aiResponse: undefined,
+      aiStatus: "generating",
+      aiTaskStartedAt: "2026-07-15T01:00:00.000Z",
+      plainText: "",
+    });
+  });
+
+  it("creates a separate pending image result child for every request", () => {
+    const sourceNode = textNode({
+      id: "image-source",
+      type: "imageGeneration",
+      data: { kind: "imageGeneration", title: "图片生成" },
+    });
+    const result = createPendingImageResultChildCanvasNode({
+      aspectRatio: "16:9",
+      id: "image-result-1",
+      model: "gpt-5.6-sol",
+      position: { x: 720, y: 200 },
+      prompt: "生成球场全景",
+      quality: "1K",
+      sourceNode,
+    });
+
+    expect(result.edge).toEqual(expectedEdge("image-source", "image-result-1"));
+    expect(result.node.data).toMatchObject({
+      imageGenerationResult: true,
+      imagePrompt: "生成球场全景",
+      imageStatus: "editing",
+      kind: "imageGeneration",
     });
   });
 

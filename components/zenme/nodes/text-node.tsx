@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 import { NodeResizer, type NodeProps } from "@xyflow/react";
-import { Bot, Copy, FileText, Sparkles, StickyNote } from "lucide-react";
+import { Bot, Copy, FileText, Loader2, Sparkles, StickyNote } from "lucide-react";
 
 import type { CanvasNodeData } from "@/components/zenme/node-types";
 import {
@@ -29,6 +29,7 @@ import {
   stripLegacyRichTextHtml,
 } from "@/components/zenme/nodes/renderers/rich-text";
 import { TextNodeComposer } from "@/components/zenme/nodes/text-node-composer";
+import { ImageTaskTiming } from "@/components/zenme/nodes/image-task-timing";
 import { writeTextToClipboard } from "@/lib/clipboard";
 
 type TextDisplayMode = "code" | "markdown" | "plain";
@@ -551,7 +552,8 @@ export function TextNode({ data, id, selected }: NodeProps) {
     );
   }
 
-  if (nodeData.aiPrompt || nodeData.aiResponse) {
+  if (nodeData.aiPrompt || nodeData.aiResponse || nodeData.aiStatus) {
+    const isGenerating = nodeData.aiStatus === "generating";
     const createdAt = nodeData.aiCreatedAt
       ? new Date(nodeData.aiCreatedAt)
       : null;
@@ -567,6 +569,12 @@ export function TextNode({ data, id, selected }: NodeProps) {
 
     return (
       <div className="zenme-agent-response-node group relative h-full w-full">
+        <ImageTaskTiming
+          className="pointer-events-none absolute -top-8 right-1 z-10 text-[11px] font-medium tabular-nums text-zinc-500"
+          durationMs={nodeData.aiTaskDurationMs}
+          running={isGenerating}
+          startedAt={nodeData.aiTaskStartedAt}
+        />
         <NodeTargetHandle
           revealOnHover={false}
           visible={Boolean(nodeData.hasIncomingEdge)}
@@ -594,6 +602,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
             ) : null}
             <button
               className="flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 focus-visible:bg-zinc-100 focus-visible:text-zinc-900"
+              disabled={!nodeData.aiResponse && !nodeData.plainText}
               onClick={() =>
                 copyText(nodeData.aiResponse || nodeData.plainText)
               }
@@ -605,8 +614,19 @@ export function TextNode({ data, id, selected }: NodeProps) {
           </div>
           <div className="nodrag nowheel min-h-0 flex-1 overflow-auto px-5 py-4">
             <div className="zenme-agent-response-text min-h-full rounded-lg bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-800">
-              {renderMarkdown(
-                nodeData.aiResponse || nodeData.plainText || "暂无回复",
+              {isGenerating ? (
+                <div className="flex min-h-[160px] items-center justify-center gap-2 text-zinc-500">
+                  <Loader2 className="size-4 animate-spin" />
+                  AI 正在生成回复...
+                </div>
+              ) : nodeData.aiStatus === "failed" ? (
+                <div className="rounded-md bg-red-50 px-3 py-2 text-red-600">
+                  {nodeData.aiError || "文本生成失败，请稍后重试"}
+                </div>
+              ) : (
+                renderMarkdown(
+                  nodeData.aiResponse || nodeData.plainText || "暂无回复",
+                )
               )}
             </div>
           </div>

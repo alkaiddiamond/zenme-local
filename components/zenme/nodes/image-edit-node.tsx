@@ -78,7 +78,8 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [referencePickerRequest, setReferencePickerRequest] = useState(0);
   const isEditing = isSubmitting || nodeData.imageStatus === "editing";
-  const showComposer = Boolean(selected && !isRenaming);
+  const isSubmissionLocked = isSubmitting || Boolean(nodeData.hasRunningGenerationChild);
+  const showComposer = Boolean(selected && !isRenaming && !nodeData.imageGenerationResult);
   const composerScale = 1 / Math.max(zoom, 0.2);
   const composerStyle: CSSProperties = {
     top: `calc(100% + ${12 / Math.max(zoom, 0.2)}px)`,
@@ -128,18 +129,16 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextPrompt = prompt.trim();
-    if (!nextPrompt || isEditing) {
+    if (!nextPrompt || isSubmissionLocked) {
       return;
     }
 
     setIsSubmitting(true);
     nodeData.onUpdateImageNode?.(id, {
       imageOutputAspectRatio: aspectRatio,
-      imageError: undefined,
       imageModel: model,
       imagePrompt: nextPrompt,
       imageQuality: quality,
-      imageStatus: "editing",
     });
 
     try {
@@ -255,7 +254,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
                 {nodeData.imageError}
               </p>
             ) : null}
-            {isEditing ? (
+            {isSubmissionLocked ? (
               <div className="mt-2 flex items-center gap-2 px-1 text-xs text-zinc-500">
                 <Loader2 className="size-3.5 animate-spin" />
                 {imageModelLabel} 正在生成图片...
@@ -313,11 +312,11 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
               </div>
               <button
                 className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-                disabled={isEditing || !prompt.trim()}
+                disabled={isSubmissionLocked || !prompt.trim()}
                 title="生成图片"
                 type="submit"
               >
-                {isEditing ? (
+                {isSubmissionLocked ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <Send className="size-4" />
