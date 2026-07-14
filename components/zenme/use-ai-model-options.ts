@@ -9,14 +9,26 @@ export type AiModelOption = {
   label: string;
 };
 
+type AiModelModality = "image" | "text";
+
+const MODEL_PREFERENCE_EVENT = "zenme:ai-model-preference";
+const preferredModelCache: Partial<Record<AiModelModality, string>> = {};
+
 export function createModelOption(id: string, label = id): AiModelOption {
   return { id, label };
 }
 
 export async function rememberAiModelPreference(
-  modality: "image" | "text",
+  modality: AiModelModality,
   modelId: string,
 ) {
+  preferredModelCache[modality] = modelId;
+  window.dispatchEvent(
+    new CustomEvent(MODEL_PREFERENCE_EVENT, {
+      detail: { modality, modelId },
+    }),
+  );
+
   await fetch("/api/settings", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
@@ -28,15 +40,49 @@ export async function rememberAiModelPreference(
   }).catch(() => undefined);
 }
 
-export function useAiModelOptions(modality: "image" | "text" = "text") {
+export function orderModelOptionsByPreference(
+  models: AiModelOption[],
+  preferredModelId?: string | null,
+) {
+  if (!preferredModelId) {
+    return models;
+  }
+
+  const preferredModel = models.find((model) => model.id === preferredModelId);
+  return preferredModel
+    ? [preferredModel, ...models.filter((model) => model.id !== preferredModelId)]
+    : models;
+}
+
+export function useAiModelOptions(modality: AiModelModality = "text") {
   const [models, setModels] = useState<AiModelOption[]>(
-    modality === "text"
-      ? fallbackModelOptions.map((id) => createModelOption(id))
-      : [],
+    orderModelOptionsByPreference(
+      modality === "text"
+        ? fallbackModelOptions.map((id) => createModelOption(id))
+        : [],
+      preferredModelCache[modality],
+    ),
   );
 
   useEffect(() => {
     let cancelled = false;
+
+    function handlePreferenceChange(event: Event) {
+      const detail = (event as CustomEvent<{
+        modality?: AiModelModality;
+        modelId?: string;
+      }>).detail;
+      if (detail?.modality !== modality || !detail.modelId) {
+        return;
+      }
+
+      preferredModelCache[modality] = detail.modelId;
+      setModels((current) =>
+        orderModelOptionsByPreference(current, detail.modelId),
+      );
+    }
+
+    window.addEventListener(MODEL_PREFERENCE_EVENT, handlePreferenceChange);
 
     async function loadModels() {
       try {
@@ -49,6 +95,7 @@ export function useAiModelOptions(modality: "image" | "text" = "text") {
 
         const payload = (await response.json()) as {
           data?: Array<{ id?: string; label?: string }>;
+          preferredModelId?: string | null;
         };
         const nextModels = Array.from(
           new Set(
@@ -62,7 +109,14 @@ export function useAiModelOptions(modality: "image" | "text" = "text") {
         });
 
         if (!cancelled && nextModels.length > 0) {
-          setModels(nextModels);
+          const preferredModelId =
+            payload.preferredModelId ?? preferredModelCache[modality];
+          if (preferredModelId) {
+            preferredModelCache[modality] = preferredModelId;
+          }
+          setModels(
+            orderModelOptionsByPreference(nextModels, preferredModelId),
+          );
         }
       } catch {
         // Keep the static fallback available when settings cannot be loaded.
@@ -73,6 +127,10 @@ export function useAiModelOptions(modality: "image" | "text" = "text") {
 
     return () => {
       cancelled = true;
+      window.removeEventListener(
+        MODEL_PREFERENCE_EVENT,
+        handlePreferenceChange,
+      );
     };
   }, [modality]);
 

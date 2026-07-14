@@ -26,6 +26,7 @@ export async function createDroppedFileCanvasNodes(input: {
       const id = crypto.randomUUID();
       const isImage = file.type.startsWith("image/");
       const isBook = isBookFile(file);
+      const isMusic = file.type.startsWith("audio/");
       const preview = isImage ? await createImagePreview(file) : undefined;
       const bookCover = isBook
         ? await createBookCoverPreview(file)
@@ -78,14 +79,14 @@ export async function createDroppedFileCanvasNodes(input: {
 
       return {
         id,
-        type: isImage ? "image" : isBook ? "book" : "file",
+        type: isImage ? "image" : isBook ? "book" : isMusic ? "music" : "file",
         position: {
           x: input.position.x + index * 32,
           y: input.position.y + index * 32,
         },
         ...(imageSize ? { style: imageSize } : {}),
         data: {
-          kind: isImage ? "image" : isBook ? "book" : "file",
+          kind: isImage ? "image" : isBook ? "book" : isMusic ? "music" : "file",
           title: readingAsset?.title ?? file.name,
           projectId: input.projectId,
           fileName: file.name,

@@ -11,6 +11,7 @@ import {
   READER_DEFAULT_SIZE,
 } from "./geometry";
 import type { CanvasNode } from "./types";
+import { extractMusicLyrics } from "./music-workflow";
 
 type RenderedCanvasNodeInput = {
   createNoteNode: (
@@ -30,6 +31,18 @@ type RenderedCanvasNodeInput = {
     },
   ) => void;
   nodes: CanvasNode[];
+  onMusicAnalysisComplete?: NonNullable<CanvasNodeData["onMusicAnalysisComplete"]>;
+  onEnsureMusicWaveform?: NonNullable<CanvasNodeData["onEnsureMusicWaveform"]>;
+  onCancelMusicAnalysis?: NonNullable<CanvasNodeData["onCancelMusicAnalysis"]>;
+  onCreateMusicChildNode?: NonNullable<CanvasNodeData["onCreateMusicChildNode"]>;
+  onCreateMusicPlayerNode?: NonNullable<CanvasNodeData["onCreateMusicPlayerNode"]>;
+  onMusicJobUpdate?: NonNullable<CanvasNodeData["onMusicJobUpdate"]>;
+  onLocateMusicPlayerNode?: NonNullable<CanvasNodeData["onLocateMusicPlayerNode"]>;
+  onRetryMusicAnalysis?: NonNullable<CanvasNodeData["onRetryMusicAnalysis"]>;
+  onSeekMusicPlayer?: NonNullable<CanvasNodeData["onSeekMusicPlayer"]>;
+  onToggleMusicPlayback?: NonNullable<CanvasNodeData["onToggleMusicPlayback"]>;
+  onUpdateMusicNode?: NonNullable<CanvasNodeData["onUpdateMusicNode"]>;
+  onUpdateMusicPlayback?: NonNullable<CanvasNodeData["onUpdateMusicPlayback"]>;
   onResolveImageDimensions?: (
     nodeId: string,
     dimensions: { height: number; width: number },
@@ -108,6 +121,18 @@ export function getRenderedCanvasNodes({
   nodes,
   onResolveImageDimensions,
   onCreateTextChildNode,
+  onMusicAnalysisComplete,
+  onEnsureMusicWaveform,
+  onCancelMusicAnalysis,
+  onCreateMusicChildNode,
+  onCreateMusicPlayerNode,
+  onMusicJobUpdate,
+  onLocateMusicPlayerNode,
+  onRetryMusicAnalysis,
+  onSeekMusicPlayer,
+  onToggleMusicPlayback,
+  onUpdateMusicNode,
+  onUpdateMusicPlayback,
   onSubmitImageNode,
   onSubmitTextGenerationNode,
   onUpdateImageNode,
@@ -117,6 +142,24 @@ export function getRenderedCanvasNodes({
   toggleReaderCollapse,
 }: RenderedCanvasNodeInput) {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const musicPlayerIdByMusicId = new Map<string, string>();
+  const musicSourceByPlayerId = new Map<string, CanvasNode>();
+  const playerByChildId = new Map<string, CanvasNode>();
+  for (const edge of edges) {
+    const source = nodeById.get(edge.source);
+    const target = nodeById.get(edge.target);
+    if (source?.data.kind === "music" && target?.data.kind === "musicPlayer") {
+      musicPlayerIdByMusicId.set(source.id, target.id);
+      musicSourceByPlayerId.set(target.id, source);
+    }
+    if (source?.data.kind === "musicPlayer" && target && (
+      target.data.kind === "lyrics" ||
+      target.data.kind === "musicAnalysis" ||
+      target.data.kind === "sunoPrompt"
+    )) {
+      playerByChildId.set(target.id, source);
+    }
+  }
   const connectedNodeIdsByDirection = edges.reduce(
     (result, edge) => {
       result.incoming.add(edge.target);
@@ -181,6 +224,100 @@ export function getRenderedCanvasNodes({
           : {}),
       },
     };
+
+    if (nodeWithConnectionState.data.kind === "music") {
+      return {
+        ...nodeWithConnectionState,
+        data: {
+          ...nodeWithConnectionState.data,
+          musicPlayerNodeId: musicPlayerIdByMusicId.get(nodeWithConnectionState.id),
+          onCreateMusicPlayerNode,
+          onLocateMusicPlayerNode,
+          onUpdateMusicNode,
+        },
+      };
+    }
+
+    if (nodeWithConnectionState.data.kind === "musicPlayer") {
+      const source = musicSourceByPlayerId.get(nodeWithConnectionState.id);
+      return {
+        ...nodeWithConnectionState,
+        data: {
+          ...nodeWithConnectionState.data,
+          coverUrl: source?.data.coverUrl,
+          fileId: source?.data.fileId,
+          fileName: source?.data.fileName,
+          fileSize: source?.data.fileSize,
+          mimeType: source?.data.mimeType,
+          originalUrl: source?.data.originalUrl,
+          previewUrl: source?.data.previewUrl,
+          onCancelMusicAnalysis,
+          onCreateMusicChildNode,
+          onEnsureMusicWaveform,
+          onMusicAnalysisComplete,
+          onMusicJobUpdate,
+          onRetryMusicAnalysis,
+          onSeekMusicPlayer,
+          onToggleMusicPlayback,
+          onUpdateMusicNode,
+          onUpdateMusicPlayback,
+        },
+      };
+    }
+
+    if (
+      nodeWithConnectionState.data.kind === "lyrics" ||
+      nodeWithConnectionState.data.kind === "musicAnalysis" ||
+      nodeWithConnectionState.data.kind === "sunoPrompt"
+    ) {
+      const player = playerByChildId.get(nodeWithConnectionState.id);
+      const analysisResult = nodeWithConnectionState.data.musicAnalysisResult;
+      const sunoPrompt = analysisResult?.sunoPrompt as { en?: string; zh?: string } | undefined;
+      return {
+        ...nodeWithConnectionState,
+        ...(nodeWithConnectionState.data.kind === "musicAnalysis"
+          ? {
+              style: {
+                height: 720,
+                width: 620,
+                ...(nodeWithConnectionState.style ?? {}),
+              },
+            }
+          : nodeWithConnectionState.data.kind === "sunoPrompt"
+          ? {
+              style: {
+                height: 360,
+                width: 520,
+                ...(nodeWithConnectionState.style ?? {}),
+              },
+            }
+          : {}),
+        data: {
+          ...nodeWithConnectionState.data,
+          musicCurrentTime: player?.data.musicCurrentTime,
+          musicJobId: nodeWithConnectionState.data.musicJobId,
+          musicParentPlayerNodeId: player?.id ?? nodeWithConnectionState.data.musicParentPlayerNodeId,
+          ...(nodeWithConnectionState.data.kind === "lyrics"
+            ? { musicLyrics: extractMusicLyrics(analysisResult) }
+            : {}),
+          ...(nodeWithConnectionState.data.kind === "musicAnalysis"
+            ? { musicAnalysisResult: analysisResult }
+            : {}),
+          ...(nodeWithConnectionState.data.kind === "sunoPrompt"
+            ? {
+                sunoPromptEn: sunoPrompt?.en ?? nodeWithConnectionState.data.sunoPromptEn,
+                sunoPromptZh: sunoPrompt?.zh ?? nodeWithConnectionState.data.sunoPromptZh,
+              }
+            : {}),
+          onSeekMusicPlayer,
+          onCancelMusicAnalysis,
+          onMusicAnalysisComplete,
+          onMusicJobUpdate,
+          onRetryMusicAnalysis,
+          onUpdateMusicNode,
+        },
+      };
+    }
 
     if (
       nodeWithConnectionState.data.kind === "text" ||

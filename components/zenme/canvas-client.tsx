@@ -173,6 +173,15 @@ import { createOpenReadingWorkspaceUpdate } from "@/components/zenme/canvas/read
 import { createReaderCollapseUpdate } from "@/components/zenme/canvas/reader-collapse";
 import { getRenderedCanvasNodes } from "@/components/zenme/canvas/rendered-nodes";
 import {
+  createMusicChildUpdate,
+  createMusicPlayerUpdate,
+  MUSIC_WAVEFORM_VERSION,
+  musicJobRequestFor,
+  musicPlayerPreviewRequest,
+  type MusicServiceCapabilities,
+  resolveMusicSourceNode,
+} from "@/components/zenme/canvas/music-workflow";
+import {
   DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
   DEFAULT_IMAGE_EDIT_QUALITY,
   getImageDisplaySize,
@@ -182,7 +191,11 @@ import {
   hydrateImageEditPreferences,
 } from "@/components/zenme/image-edit-preferences";
 import { getImageDimensions } from "@/components/zenme/canvas/files";
-import { NODE_CONTEXT_HANDLE_ID } from "@/components/zenme/node-types";
+import {
+  NODE_CONTEXT_HANDLE_ID,
+  type MusicChildNodeKind,
+  type MusicJobSnapshot,
+} from "@/components/zenme/node-types";
 
 type CanvasClientProps = {
   projectId: string;
@@ -197,6 +210,17 @@ const DEFAULT_EDGE_OPTIONS = {
 };
 const MINI_MAP_CLASS =
   "zenme-shadow-canvas !bottom-[66px] !left-3 !right-auto !top-auto !m-0 !h-[150px] !w-[200px] !overflow-hidden !rounded-xl !border !border-zinc-200 !bg-white/95 !backdrop-blur";
+
+async function fetchMusicServiceCapabilities(): Promise<MusicServiceCapabilities | null> {
+  try {
+    const response = await fetch("/api/music/capabilities", { cache: "no-store" });
+    if (!response.ok) return null;
+    const body = await response.json() as MusicServiceCapabilities;
+    return body && typeof body === "object" ? body : null;
+  } catch {
+    return null;
+  }
+}
 
 export function CanvasClient({ projectId }: CanvasClientProps) {
   const [nodes, setNodes, onNodesChange] =
@@ -256,6 +280,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const isRefreshingUrls = useRef(false);
   const nodesRef = useRef<CanvasNode[]>(nodes);
   const edgesRef = useRef<Edge[]>(edges);
+  const defaultTextModelRef = useRef(defaultTextModel);
+  defaultTextModelRef.current = defaultTextModel;
   const canvasViewportStateRef = useRef<Viewport>(canvasViewport);
   const reactFlowRef = useRef<ReactFlowInstance<CanvasNode, Edge> | null>(null);
   const fileUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -291,6 +317,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     (beforeNodeSnapshots: Map<string, CanvasNode>, afterNodes: CanvasNode[]) => void
   >(() => {});
   const groupDragPosition = useRef<GroupDragPosition | null>(null);
+  const musicPlayersRef = useRef(new Map<string, HTMLAudioElement>());
+  const musicWaveformTasksRef = useRef(new Map<string, Promise<void>>());
 
   const agentKey = `${ZENME_AGENT_KEY_PREFIX}${projectId}`;
 
@@ -317,6 +345,14 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   useEffect(() => {
     return observeCanvasLongTasks({ projectId });
   }, [projectId]);
+
+  useEffect(() => () => {
+    for (const audio of musicPlayersRef.current.values()) {
+      audio.pause();
+      audio.src = "";
+    }
+    musicPlayersRef.current.clear();
+  }, []);
 
   useEffect(() => {
     nodesRef.current = nodes;
@@ -465,7 +501,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             (node.data.kind !== "reader" &&
               node.data.kind !== "text" &&
               node.data.kind !== "agent" &&
-              node.data.kind !== "textGeneration")
+              node.data.kind !== "textGeneration" &&
+              node.data.kind !== "musicAnalysis" &&
+              node.data.kind !== "sunoPrompt")
           ) {
             return node;
           }
@@ -983,6 +1021,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         event.preventDefault();
         const textNode = createTextCanvasNode({
           id: crypto.randomUUID(),
+          model: defaultTextModelRef.current,
           plainText,
           position,
         });
@@ -1605,6 +1644,17 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     [pushNodeUpdateHistory, setNodes],
   );
 
+  const updateMusicNode = useCallback((nodeId: string, updates: { title?: string }) => {
+    const beforeNode = nodesRef.current.find((node) => node.id === nodeId);
+    if (!beforeNode) return;
+    const nextNodes = nodesRef.current.map((node) => node.id === nodeId
+      ? { ...node, data: { ...node.data, ...updates } }
+      : node);
+    skipNextHistoryEntryCount.current += 1;
+    setNodes(nextNodes);
+    pushNodeUpdateHistory(new Map([[nodeId, beforeNode]]), nextNodes);
+  }, [pushNodeUpdateHistory, setNodes]);
+
   const updateImageGenerationNode = useCallback(
     (
       nodeId: string,
@@ -1905,6 +1955,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   function createTextNodeAt(position: { x: number; y: number }) {
     const nextNode = createTextCanvasNode({
       id: crypto.randomUUID(),
+      model: defaultTextModel,
       position,
     });
 
@@ -2445,12 +2496,449 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     setNodeActionMenu(null);
   }
 
+  const updateMusicJob = useCallback(
+    (nodeId: string, job: MusicJobSnapshot) => {
+      setNodes((current) => current.map((node) => node.id === nodeId ? {
+        ...node,
+        data: {
+          ...node.data,
+          musicError: job.error?.message,
+          musicJobCompletedAt: job.completedAt ?? node.data.musicJobCompletedAt,
+          musicJobCreatedAt: job.createdAt ?? node.data.musicJobCreatedAt,
+          musicJobDurationMs: job.durationMs ?? node.data.musicJobDurationMs,
+          musicJobElapsedMs: job.elapsedMs ?? node.data.musicJobElapsedMs,
+          musicJobId: job.id,
+          musicJobStartedAt: job.startedAt ?? node.data.musicJobStartedAt,
+          musicJobStatus: job.status,
+          musicProgress: job.progress,
+          musicRetryable: job.retryable,
+          musicStage: job.stage,
+          musicStageLabel: job.stageLabel,
+        },
+      } : node));
+    },
+    [setNodes],
+  );
+
+  const focusMusicWorkflowNode = useCallback((nodeId: string) => {
+    setNodes((current) => current.map((node) => ({
+      ...node,
+      selected: node.id === nodeId,
+    })));
+    window.requestAnimationFrame(() => {
+      void reactFlowRef.current?.fitView({
+        duration: 220,
+        nodes: [{ id: nodeId }],
+        padding: 0.3,
+      });
+    });
+  }, [setNodes]);
+
+  const createMusicPlayer = useCallback((musicNodeId: string, position?: { x: number; y: number }) => {
+    const musicNode = nodesRef.current.find((node) => node.id === musicNodeId);
+    if (!musicNode || musicNode.data.kind !== "music") return;
+    const update = createMusicPlayerUpdate({
+      edges: edgesRef.current,
+      musicNode,
+      nodes: nodesRef.current,
+      projectId,
+    });
+    const createdNodes = position
+      ? update.createdNodes.map((node) => ({ ...node, position }))
+      : update.createdNodes;
+    if (createdNodes.length || update.createdEdges.length) {
+      appendCanvasItems({
+        currentEdges: edgesRef.current,
+        currentNodes: nodesRef.current,
+        edges: update.createdEdges,
+        nodes: createdNodes,
+      });
+    }
+    focusMusicWorkflowNode(update.focusNodeId);
+  }, [appendCanvasItems, focusMusicWorkflowNode, projectId]);
+
+  const toggleMusicPlayback = useCallback((playerNodeId: string, playing: boolean) => {
+    const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
+    const sourceNode = resolveMusicSourceNode({
+      edges: edgesRef.current,
+      nodes: nodesRef.current,
+      playerNodeId,
+    });
+    const source = playerNode?.data.originalUrl ?? (
+      sourceNode?.data.kind === "music" ? sourceNode.data.originalUrl : undefined
+    );
+    if (!playerNode || !source) return;
+
+    for (const [id, audio] of musicPlayersRef.current) {
+      if (id !== playerNodeId) audio.pause();
+    }
+    setNodes((current) => current.map((node) => node.data.kind === "musicPlayer"
+      ? { ...node, data: { ...node.data, musicIsPlaying: node.id === playerNodeId && playing } }
+      : node));
+
+    let audio = musicPlayersRef.current.get(playerNodeId);
+    if (!audio || audio.src !== new URL(source, window.location.href).href) {
+      audio?.pause();
+      audio = new Audio(source);
+      audio.preload = "metadata";
+      audio.loop = Boolean(playerNode.data.musicLoop);
+      audio.muted = Boolean(playerNode.data.musicMuted);
+      audio.playbackRate = playerNode.data.musicPlaybackRate ?? 1;
+      audio.volume = playerNode.data.musicVolume ?? 1;
+      musicPlayersRef.current.set(playerNodeId, audio);
+      audio.addEventListener("loadedmetadata", () => {
+        setNodes((current) => current.map((node) => node.id === playerNodeId
+          ? { ...node, data: { ...node.data, musicDuration: audio!.duration } }
+          : node));
+      });
+      audio.addEventListener("timeupdate", () => {
+        setNodes((current) => current.map((node) => node.id === playerNodeId
+          ? { ...node, data: { ...node.data, musicCurrentTime: audio!.currentTime } }
+          : node));
+      });
+      audio.addEventListener("ended", () => {
+        setNodes((current) => current.map((node) => node.id === playerNodeId
+          ? { ...node, data: { ...node.data, musicIsPlaying: false } }
+          : node));
+      });
+    }
+    if (playing) {
+      void audio.play().catch((error) => {
+        setNodes((current) => current.map((node) => node.id === playerNodeId
+          ? { ...node, data: { ...node.data, musicError: error instanceof Error ? error.message : "无法播放音乐", musicIsPlaying: false } }
+          : node));
+      });
+    } else {
+      audio.pause();
+    }
+  }, [setNodes]);
+
+  const updateMusicPlayback = useCallback((playerNodeId: string, updates: {
+    loop?: boolean;
+    muted?: boolean;
+    playbackRate?: number;
+    volume?: number;
+  }) => {
+    const audio = musicPlayersRef.current.get(playerNodeId);
+    if (audio) {
+      if (updates.loop !== undefined) audio.loop = updates.loop;
+      if (updates.muted !== undefined) audio.muted = updates.muted;
+      if (updates.playbackRate !== undefined) audio.playbackRate = updates.playbackRate;
+      if (updates.volume !== undefined) audio.volume = updates.volume;
+    }
+    setNodes((current) => current.map((node) => node.id === playerNodeId
+      ? {
+          ...node,
+          data: {
+            ...node.data,
+            ...(updates.loop === undefined ? {} : { musicLoop: updates.loop }),
+            ...(updates.muted === undefined ? {} : { musicMuted: updates.muted }),
+            ...(updates.playbackRate === undefined ? {} : { musicPlaybackRate: updates.playbackRate }),
+            ...(updates.volume === undefined ? {} : { musicVolume: updates.volume }),
+          },
+        }
+      : node));
+  }, [setNodes]);
+
+  const seekMusicPlayer = useCallback((playerNodeId: string, seconds: number) => {
+    const audio = musicPlayersRef.current.get(playerNodeId);
+    if (audio) audio.currentTime = seconds;
+    setNodes((current) => current.map((node) => node.id === playerNodeId
+      ? { ...node, data: { ...node.data, musicCurrentTime: seconds } }
+      : node));
+  }, [setNodes]);
+
+  const ensureMusicWaveform = useCallback((playerNodeId: string) => {
+    const existing = musicWaveformTasksRef.current.get(playerNodeId);
+    if (existing) return existing;
+
+    const task = (async () => {
+      const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
+      if (
+        playerNode?.data.musicWaveform?.length &&
+        playerNode.data.musicWaveformVersion === MUSIC_WAVEFORM_VERSION
+      ) return;
+      const sourceNode = resolveMusicSourceNode({
+        edges: edgesRef.current,
+        nodes: nodesRef.current,
+        playerNodeId,
+      });
+      const fileId = playerNode?.data.fileId ?? sourceNode?.data.fileId;
+      if (!playerNode || !fileId) {
+        throw new Error("播放器没有可生成波形的上游音乐文件");
+      }
+
+      const serviceCapabilities = await fetchMusicServiceCapabilities();
+      const requestContract = musicPlayerPreviewRequest(serviceCapabilities);
+
+      const response = await fetch("/api/music/jobs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          fileId,
+          ...requestContract,
+          options: { keepStems: false },
+        }),
+      });
+      const created = await response.json().catch(() => null) as (
+        Partial<MusicJobSnapshot> & { error?: string }
+      ) | null;
+      if (!response.ok || !created || typeof created.id !== "string") {
+        throw new Error(typeof created?.error === "string"
+          ? created.error
+          : "无法创建波形任务");
+      }
+
+      for (let attempt = 0; attempt < 600; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1_000));
+        const statusResponse = await fetch(`/api/music/jobs/${encodeURIComponent(created.id)}`);
+        const status = await statusResponse.json().catch(() => null) as MusicJobSnapshot | null;
+        if (!statusResponse.ok || !status) continue;
+        if (status.status === "failed" || status.status === "cancelled") {
+          throw new Error(status.error?.message || "波形生成失败");
+        }
+        if (status.status !== "succeeded") continue;
+
+        const resultResponse = await fetch(`/api/music/jobs/${encodeURIComponent(created.id)}/result`);
+        const result = await resultResponse.json().catch(() => null) as {
+          input?: { duration?: number };
+          waveform?: unknown[];
+        } | null;
+        const waveform = result?.waveform?.filter(
+          (value): value is number => typeof value === "number" && Number.isFinite(value),
+        );
+        const analyzedDuration = result?.input?.duration;
+        if (!resultResponse.ok || !waveform?.length) {
+          throw new Error("音乐服务没有返回有效波形");
+        }
+        setNodes((current) => current.map((node) => node.id === playerNodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                musicDuration: typeof analyzedDuration === "number"
+                  ? analyzedDuration
+                  : node.data.musicDuration,
+                musicWaveform: waveform,
+                musicWaveformVersion: MUSIC_WAVEFORM_VERSION,
+              },
+            }
+          : node));
+        return;
+      }
+      throw new Error("波形生成超时");
+    })().finally(() => {
+      musicWaveformTasksRef.current.delete(playerNodeId);
+    });
+    musicWaveformTasksRef.current.set(playerNodeId, task);
+    return task;
+  }, [projectId, setNodes]);
+
+  const submitMusicChildAnalysis = useCallback(async (
+    childNodeId: string,
+    playerNodeId: string,
+    kind: MusicChildNodeKind,
+  ) => {
+    const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
+    const sourceNode = resolveMusicSourceNode({
+      edges: edgesRef.current,
+      nodes: nodesRef.current,
+      playerNodeId,
+    });
+    const fileId = playerNode?.data.fileId ?? sourceNode?.data.fileId;
+    if (!playerNode || !fileId) {
+      setNodes((current) => current.map((node) => node.id === childNodeId
+        ? { ...node, data: { ...node.data, musicError: "播放器没有可分析的上游音乐文件", musicJobStatus: "failed" as const } }
+        : node));
+      return;
+    }
+    try {
+      if (kind === "sunoPrompt") {
+        const cachedAnalysis = nodesRef.current.find((node) =>
+          node.data.kind === "musicAnalysis" &&
+          node.data.musicParentPlayerNodeId === playerNodeId &&
+          node.data.musicJobStatus === "succeeded" &&
+          node.data.musicJobId,
+        );
+        if (cachedAnalysis?.data.musicJobId) {
+          const cachedResponse = await fetch(
+            `/api/music/jobs/${encodeURIComponent(cachedAnalysis.data.musicJobId)}/suno-prompt`,
+            { method: "POST" },
+          );
+          if (cachedResponse.ok) {
+            const prompt = await cachedResponse.json() as Record<string, unknown>;
+            setNodes((current) => current.map((node) => node.id === childNodeId
+              ? {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    musicAnalysisResult: { sunoPrompt: prompt },
+                    musicError: undefined,
+                    musicJobId: cachedAnalysis.data.musicJobId,
+                    musicJobStatus: "succeeded" as const,
+                    musicProgress: 1,
+                    musicStage: "completed",
+                    musicStageLabel: "已复用分析缓存",
+                    sunoPromptEn: typeof prompt.promptEn === "string"
+                      ? prompt.promptEn
+                      : typeof prompt.en === "string" ? prompt.en : undefined,
+                    sunoPromptZh: typeof prompt.promptZh === "string"
+                      ? prompt.promptZh
+                      : typeof prompt.zh === "string" ? prompt.zh : undefined,
+                  },
+                }
+              : node));
+            return;
+          }
+        }
+      }
+      const serviceCapabilities = await fetchMusicServiceCapabilities();
+      const requestContract = musicJobRequestFor(kind, serviceCapabilities);
+      const response = await fetch("/api/music/jobs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          fileId,
+          ...requestContract,
+          options: {
+            language: "auto",
+            keepStems: kind !== "lyrics",
+            requiredCapabilities: kind === "lyrics" ? ["lyrics"] : [],
+          },
+        }),
+      });
+      if (response.ok) {
+        updateMusicJob(childNodeId, await response.json() as MusicJobSnapshot);
+        return;
+      }
+      const body = await response.json().catch(() => null) as {
+        detail?: { message?: string };
+        error?: string;
+        message?: string;
+      } | null;
+      const errorMessage = body?.detail?.message || body?.message || body?.error || "无法创建分析任务";
+      setNodes((current) => current.map((node) => node.id === childNodeId
+        ? { ...node, data: { ...node.data, musicError: errorMessage, musicJobStatus: "failed" as const } }
+        : node));
+    } catch (error) {
+      setNodes((current) => current.map((node) => node.id === childNodeId
+        ? { ...node, data: { ...node.data, musicError: error instanceof Error ? error.message : "音乐分析服务不可用", musicJobStatus: "failed" as const } }
+        : node));
+    }
+  }, [projectId, setNodes, updateMusicJob]);
+
+  const performMusicJobAction = useCallback(async (
+    playerNodeId: string,
+    jobId: string,
+    action: "cancel" | "retry",
+  ) => {
+    const response = await fetch(`/api/music/jobs/${encodeURIComponent(jobId)}/${action}`, {
+      method: "POST",
+    });
+    if (response.ok) {
+      updateMusicJob(playerNodeId, await response.json() as MusicJobSnapshot);
+      return;
+    }
+    setNodes((current) => current.map((node) => node.id === playerNodeId
+      ? { ...node, data: { ...node.data, musicError: action === "cancel" ? "无法取消分析任务" : "无法重试分析任务" } }
+      : node));
+  }, [setNodes, updateMusicJob]);
+
+  const completeMusicAnalysis = useCallback(
+    (playerNodeId: string, jobId: string, result: Record<string, unknown>) => {
+      const warnings = Array.isArray(result.warnings)
+        ? result.warnings.flatMap((warning) => {
+            if (!warning || typeof warning !== "object") return [];
+            const message = (warning as { message?: unknown }).message;
+            return typeof message === "string" ? [message] : [];
+          })
+        : [];
+      setNodes((current) => current.map((node) => node.id === playerNodeId ? {
+        ...node,
+        data: {
+          ...node.data,
+          musicAnalysisResult: result,
+          musicError: undefined,
+          musicWarnings: warnings,
+          musicJobId: jobId,
+          musicJobStatus: "succeeded" as const,
+          musicProgress: 1,
+          musicRetryable: false,
+          musicStage: "completed",
+          musicStageLabel: "分析完成",
+          musicWaveform: Array.isArray(result.waveform)
+            ? result.waveform.filter((value): value is number => typeof value === "number")
+            : node.data.musicWaveform,
+          musicWaveformVersion: Array.isArray(result.waveform)
+            ? MUSIC_WAVEFORM_VERSION
+            : node.data.musicWaveformVersion,
+        },
+      } : node));
+    },
+    [setNodes],
+  );
+
+  const createMusicChild = useCallback((
+    playerNodeId: string,
+    kind: MusicChildNodeKind,
+    position?: { x: number; y: number },
+  ) => {
+    const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
+    if (!playerNode || playerNode.data.kind !== "musicPlayer") return;
+    const update = createMusicChildUpdate({
+      edges: edgesRef.current,
+      kind,
+      nodes: nodesRef.current,
+      playerNode,
+      position,
+      projectId,
+    });
+    if (update.createdNodes.length || update.createdEdges.length) {
+      appendCanvasItems({
+        currentEdges: edgesRef.current,
+        currentNodes: nodesRef.current,
+        edges: update.createdEdges,
+        nodes: update.createdNodes,
+      });
+    }
+    focusMusicWorkflowNode(update.focusNodeId);
+    window.setTimeout(() => {
+      void submitMusicChildAnalysis(update.focusNodeId, playerNodeId, kind);
+    }, 0);
+  }, [appendCanvasItems, focusMusicWorkflowNode, projectId, submitMusicChildAnalysis]);
+
+  const cancelMusicAnalysis = useCallback((playerNodeId: string, jobId: string) => {
+    void performMusicJobAction(playerNodeId, jobId, "cancel");
+  }, [performMusicJobAction]);
+
+  const retryMusicAnalysis = useCallback((playerNodeId: string, jobId: string) => {
+    void performMusicJobAction(playerNodeId, jobId, "retry");
+  }, [performMusicJobAction]);
+
+  const locateMusicPlayer = useCallback((_musicNodeId: string, playerNodeId: string) => {
+    focusMusicWorkflowNode(playerNodeId);
+  }, [focusMusicWorkflowNode]);
+
   const renderedNodes = useMemo(
     () =>
       getRenderedCanvasNodes({
         createNoteNode,
         edges,
         nodes,
+        onCancelMusicAnalysis: cancelMusicAnalysis,
+        onCreateMusicChildNode: createMusicChild,
+        onCreateMusicPlayerNode: createMusicPlayer,
+        onEnsureMusicWaveform: ensureMusicWaveform,
+        onLocateMusicPlayerNode: locateMusicPlayer,
+        onMusicAnalysisComplete: completeMusicAnalysis,
+        onMusicJobUpdate: updateMusicJob,
+        onRetryMusicAnalysis: retryMusicAnalysis,
+        onSeekMusicPlayer: seekMusicPlayer,
+        onToggleMusicPlayback: toggleMusicPlayback,
+        onUpdateMusicNode: updateMusicNode,
+        onUpdateMusicPlayback: updateMusicPlayback,
         onResolveImageDimensions: resolveImageNodeDimensions,
         onCreateTextChildNode: createTextChildNode,
         onSubmitImageNode: submitImageGenerationNode,
@@ -2463,9 +2951,21 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }),
     [
       createNoteNode,
+      cancelMusicAnalysis,
+      createMusicChild,
+      createMusicPlayer,
+      ensureMusicWaveform,
       createTextChildNode,
       edges,
       nodes,
+      completeMusicAnalysis,
+      locateMusicPlayer,
+      retryMusicAnalysis,
+      seekMusicPlayer,
+      toggleMusicPlayback,
+      updateMusicJob,
+      updateMusicNode,
+      updateMusicPlayback,
       projectId,
       resolveImageNodeDimensions,
       submitImageGenerationNode,
@@ -2677,6 +3177,16 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             onClose={() => setNodeActionMenu(null)}
             onCreateConnectedPlaceholder={createConnectedPlaceholder}
             onOpenReadingWorkspace={openReadingWorkspace}
+            onCreateMusicPlayer={() => {
+              if (!actionNode || actionNode.data.kind !== "music") return;
+              createMusicPlayer(actionNode.id, nodeActionMenu.flowPosition);
+              setNodeActionMenu(null);
+            }}
+            onCreateMusicChild={(kind) => {
+              if (!actionNode || actionNode.data.kind !== "musicPlayer") return;
+              createMusicChild(actionNode.id, kind, nodeActionMenu.flowPosition);
+              setNodeActionMenu(null);
+            }}
             onProcessWithAgent={() => {
               createConnectedPlaceholder("agent");
               setAgentContext(createAgentContextFromActionNode(actionNode));

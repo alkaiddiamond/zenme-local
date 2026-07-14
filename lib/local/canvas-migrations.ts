@@ -14,7 +14,7 @@ function isObject(value: unknown): value is JsonObject {
 export function migrateCanvasSnapshot(value: unknown): CanvasMigrationResult | null {
   if (!isObject(value)) return null;
   if (
-    (value.version !== 1 && value.version !== 2) ||
+    (value.version !== 1 && value.version !== 2 && value.version !== 3) ||
     !Array.isArray(value.nodes) ||
     !Array.isArray(value.edges) ||
     !isObject(value.viewport) ||
@@ -23,12 +23,73 @@ export function migrateCanvasSnapshot(value: unknown): CanvasMigrationResult | n
     return null;
   }
 
-  if (value.version === 2) {
-    return { migrated: false, snapshot: value as CanvasSnapshotPayload };
+  if (value.version === 3) {
+    return splitPlayerAnalysisJobs(value);
   }
 
+  const legacy = value.version === 1 ? migrateVersionOne(value) : value;
+  const migrated = splitPlayerAnalysisJobs(migrateMusicWorkflow(legacy) as unknown as JsonObject);
+  return { migrated: true, snapshot: migrated.snapshot };
+}
+
+function splitPlayerAnalysisJobs(value: JsonObject): CanvasMigrationResult {
+  const nodes = (value.nodes as unknown[]).map((node) => isObject(node) && isObject(node.data)
+    ? { ...node, data: { ...node.data } }
+    : node);
+  const edges = (value.edges as unknown[]).map((edge) => isObject(edge) ? { ...edge } : edge);
+  let migrated = false;
+
+  for (const rawPlayer of [...nodes]) {
+    if (!isObject(rawPlayer) || !isObject(rawPlayer.data) || rawPlayer.data.kind !== "musicPlayer" || typeof rawPlayer.id !== "string") continue;
+    const jobId = rawPlayer.data.musicJobId;
+    if (typeof jobId !== "string") continue;
+    const existingOwner = nodes.some((node) =>
+      isObject(node) &&
+      isObject(node.data) &&
+      node.data.musicParentPlayerNodeId === rawPlayer.id &&
+      node.data.musicJobId === jobId,
+    );
+    if (!existingOwner) {
+      const position = isObject(rawPlayer.position) ? rawPlayer.position : {};
+      const analysisId = `legacy-analysis:${rawPlayer.id}:${jobId}`;
+      nodes.push({
+        id: analysisId,
+        type: "musicAnalysis",
+        position: {
+          x: typeof position.x === "number" ? position.x + 600 : 600,
+          y: typeof position.y === "number" ? position.y + 120 : 120,
+        },
+        data: {
+          kind: "musicAnalysis",
+          title: `${stripLegacyPlayerSuffix(rawPlayer.data.title)} · 综合分析`,
+          musicParentPlayerNodeId: rawPlayer.id,
+          projectId: rawPlayer.data.projectId,
+          ...takeAnalysisJobData(rawPlayer.data),
+        },
+      });
+      ensureEdge(edges, `legacy-analysis-edge:${rawPlayer.id}:${jobId}`, rawPlayer.id, analysisId);
+    }
+    for (const key of Object.keys(takeAnalysisJobData(rawPlayer.data))) delete rawPlayer.data[key];
+    migrated = true;
+  }
+
+  return {
+    migrated,
+    snapshot: {
+      version: 3,
+      nodes: nodes as CanvasSnapshotPayload["nodes"],
+      edges: edges as CanvasSnapshotPayload["edges"],
+      viewport: value.viewport as CanvasSnapshotPayload["viewport"],
+      updatedAt: value.updatedAt as string,
+    },
+  };
+}
+
+function migrateVersionOne(value: JsonObject) {
+  const rawEdges = value.edges as unknown[];
+  const rawNodes = value.nodes as unknown[];
   const incomingSources = new Map<string, string[]>();
-  for (const edge of value.edges) {
+  for (const edge of rawEdges) {
     if (!isObject(edge) || typeof edge.source !== "string" || typeof edge.target !== "string") {
       continue;
     }
@@ -38,7 +99,7 @@ export function migrateCanvasSnapshot(value: unknown): CanvasMigrationResult | n
     ]);
   }
 
-  const nodes = value.nodes.map((rawNode) => {
+  const nodes = rawNodes.map((rawNode) => {
     if (!isObject(rawNode) || !isObject(rawNode.data)) return rawNode;
     const node = { ...rawNode };
     const data = { ...rawNode.data };
@@ -91,13 +152,98 @@ export function migrateCanvasSnapshot(value: unknown): CanvasMigrationResult | n
   });
 
   return {
-    migrated: true,
-    snapshot: {
-      version: 2,
-      nodes,
-      edges: value.edges,
-      viewport: value.viewport as CanvasSnapshotPayload["viewport"],
-      updatedAt: value.updatedAt,
-    },
+    version: 2,
+    nodes,
+    edges: rawEdges,
+    viewport: value.viewport,
+    updatedAt: value.updatedAt,
   };
+}
+
+function migrateMusicWorkflow(value: JsonObject): CanvasSnapshotPayload {
+  const rawNodes = Array.isArray(value.nodes) ? value.nodes : [];
+  const rawEdges = Array.isArray(value.edges) ? value.edges : [];
+  const nodes = rawNodes.map((node) => isObject(node) && isObject(node.data)
+    ? { ...node, data: { ...node.data } }
+    : node);
+  const nodeById = new Map<string, JsonObject>();
+  for (const node of nodes) {
+    if (isObject(node) && typeof node.id === "string") nodeById.set(node.id, node);
+  }
+  const edges = rawEdges.map((edge) => isObject(edge) ? { ...edge } : edge);
+
+  for (const musicNode of [...nodeById.values()]) {
+    if (!isObject(musicNode.data) || musicNode.data.kind !== "music" || typeof musicNode.id !== "string") continue;
+    const playerId = `music-player:${musicNode.id}`;
+    let player = nodeById.get(playerId);
+    if (!player) {
+      const position = isObject(musicNode.position) ? musicNode.position : {};
+      player = {
+        id: playerId,
+        type: "musicPlayer",
+        position: {
+          x: typeof position.x === "number" ? position.x + 460 : 460,
+          y: typeof position.y === "number" ? position.y : 0,
+        },
+        data: {
+          kind: "musicPlayer",
+          title: `${typeof musicNode.data.title === "string" ? musicNode.data.title : "音乐"} · 播放器`,
+          projectId: musicNode.data.projectId,
+          musicPlayerNodeId: playerId,
+          ...takeMusicJobData(musicNode.data),
+        },
+      };
+      nodes.push(player);
+      nodeById.set(playerId, player);
+    }
+    ensureEdge(edges, `music-source-edge:${musicNode.id}:${playerId}`, musicNode.id, playerId);
+
+    for (const edge of edges) {
+      if (!isObject(edge) || edge.source !== musicNode.id || typeof edge.target !== "string") continue;
+      const child = nodeById.get(edge.target);
+      if (!child || !isObject(child.data) || !["lyrics", "musicAnalysis", "sunoPrompt"].includes(String(child.data.kind))) continue;
+      edge.source = playerId;
+      child.data.musicParentPlayerNodeId = playerId;
+      if (isObject(player.data) && typeof player.data.musicJobId === "string") child.data.musicJobId = player.data.musicJobId;
+    }
+
+    for (const key of Object.keys(takeMusicJobData(musicNode.data))) delete musicNode.data[key];
+  }
+
+  return {
+    version: 3,
+    nodes,
+    edges,
+    viewport: value.viewport as CanvasSnapshotPayload["viewport"],
+    updatedAt: value.updatedAt as string,
+  };
+}
+
+function takeMusicJobData(data: JsonObject) {
+  const keys = [
+    "musicJobId", "musicJobStatus", "musicProgress", "musicStage", "musicStageLabel",
+    "musicRetryable", "musicError", "musicDuration", "musicWaveform", "musicWaveformVersion",
+    "musicWarnings", "musicJobCreatedAt", "musicJobStartedAt", "musicJobCompletedAt",
+    "musicJobElapsedMs", "musicJobDurationMs",
+  ];
+  return Object.fromEntries(keys.flatMap((key) => data[key] === undefined ? [] : [[key, data[key]]]));
+}
+
+function takeAnalysisJobData(data: JsonObject) {
+  const keys = [
+    "musicJobId", "musicJobStatus", "musicProgress", "musicStage", "musicStageLabel",
+    "musicRetryable", "musicError",
+    "musicWarnings", "musicJobCreatedAt", "musicJobStartedAt", "musicJobCompletedAt",
+    "musicJobElapsedMs", "musicJobDurationMs",
+  ];
+  return Object.fromEntries(keys.flatMap((key) => data[key] === undefined ? [] : [[key, data[key]]]));
+}
+
+function stripLegacyPlayerSuffix(value: unknown) {
+  return (typeof value === "string" ? value : "音乐").replace(/\s*·\s*播放器$/, "");
+}
+
+function ensureEdge(edges: unknown[], id: string, source: string, target: string) {
+  if (edges.some((edge) => isObject(edge) && edge.source === source && edge.target === target)) return;
+  edges.push({ id, source, target });
 }

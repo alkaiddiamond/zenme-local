@@ -27,6 +27,7 @@ export function createTextCanvasNode(input: {
   codeLanguage?: string;
   height?: number;
   id: string;
+  model?: string;
   plainText?: string;
   position: { x: number; y: number };
   richTextHtml?: string;
@@ -50,6 +51,7 @@ export function createTextCanvasNode(input: {
       codeContent: input.textMode === "code" ? (input.plainText ?? "") : undefined,
       codeLanguage: input.codeLanguage,
       textMode: input.textMode ?? "plain",
+      textGenerationModel: input.model,
     },
   };
 }
@@ -427,6 +429,10 @@ export function createConnectedPlaceholderCanvasNode(input: {
       title: input.kind === "agent" ? "Agent 输出占位" : "文本",
       richTextHtml: input.kind === "text" ? "" : undefined,
       plainText: input.kind === "text" ? "" : undefined,
+      textGenerationModel:
+        input.kind === "text" || input.kind === "agent"
+          ? input.model
+          : undefined,
       uploadStatus: "pending",
     },
   };

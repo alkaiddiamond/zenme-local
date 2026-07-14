@@ -6,6 +6,7 @@ import {
   touchLocalProject,
   updateLocalProjectName,
 } from "@/lib/local/project-repository";
+import { musicServiceRequest } from "@/lib/music/service-client";
 
 export async function GET(
   _request: Request,
@@ -53,6 +54,9 @@ export async function DELETE(
 ) {
   try {
     const { projectId } = await params;
+    await musicServiceRequest(`/v1/projects/${encodeURIComponent(projectId)}/jobs`, {
+      method: "DELETE",
+    }).catch(() => undefined);
     await deleteLocalProject(projectId);
     return NextResponse.json({ ok: true });
   } catch {

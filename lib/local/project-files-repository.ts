@@ -90,6 +90,25 @@ export async function getLocalProjectFile(input: {
   projectId: string;
   variant: "original" | "preview";
 }, dataDir = getZenmeDataDir()) {
+  const source = await getLocalProjectFileSource(input, dataDir);
+  if (!source) {
+    return null;
+  }
+
+  const bytes = await fs.readFile(source.absolutePath);
+  return {
+    bytes,
+    fileName: source.fileName,
+    mimeType: source.mimeType,
+    record: source.record,
+  };
+}
+
+export async function getLocalProjectFileSource(input: {
+  fileId: string;
+  projectId: string;
+  variant: "original" | "preview";
+}, dataDir = getZenmeDataDir()) {
   assertSafePathSegment(input.projectId, "projectId");
   assertSafePathSegment(input.fileId, "fileId");
   const index = await readProjectFilesIndex(input.projectId, dataDir);
@@ -105,9 +124,8 @@ export async function getLocalProjectFile(input: {
   }
 
   const absolutePath = resolveInside(getProjectDir(input.projectId, dataDir), relativePath);
-  const bytes = await fs.readFile(absolutePath);
   return {
-    bytes,
+    absolutePath,
     fileName: record.fileName,
     mimeType:
       input.variant === "preview"
@@ -230,4 +248,3 @@ function normalizeProjectFileRecord(value: unknown): LocalProjectFileRecord | nu
     createdAt: file.createdAt,
   };
 }
-

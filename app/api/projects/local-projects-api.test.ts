@@ -49,7 +49,7 @@ describe("local projects API", () => {
     expect(projectResponse.status).toBe(200);
 
     const snapshot = {
-      version: 2,
+      version: 3,
       nodes: [{ id: "node-1" }],
       edges: [],
       viewport: { x: 0, y: 0, zoom: 1 },

@@ -7,6 +7,7 @@ import { Loader2, Send, Sparkles } from "lucide-react";
 import type { CanvasNodeData } from "@/components/zenme/node-types";
 import {
   createModelOption,
+  rememberAiModelPreference,
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
 import {
@@ -25,6 +26,7 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
     nodeData.textGenerationModel ?? modelOptions[0],
   );
   const configuredModels = useAiModelOptions();
+  const preferredModel = configuredModels[0]?.id ?? modelOptions[0];
   const pickerModels = configuredModels.some((option) => option.id === model)
     ? configuredModels
     : [createModelOption(model), ...configuredModels];
@@ -36,8 +38,8 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
   }, [nodeData.textGenerationPrompt]);
 
   useEffect(() => {
-    setModel(nodeData.textGenerationModel ?? modelOptions[0]);
-  }, [nodeData.textGenerationModel]);
+    setModel(nodeData.textGenerationModel ?? preferredModel);
+  }, [nodeData.textGenerationModel, preferredModel]);
 
   function syncPrompt() {
     nodeData.onUpdateTextGenerationNode?.(id, {
@@ -130,6 +132,7 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
               models={pickerModels}
               onChange={(nextModel) => {
                 setModel(nextModel);
+                void rememberAiModelPreference("text", nextModel);
                 nodeData.onUpdateTextGenerationNode?.(id, {
                   textGenerationModel: nextModel,
                   textGenerationPrompt: prompt,

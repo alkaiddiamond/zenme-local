@@ -74,7 +74,7 @@ export async function createLocalProject(input: {
   await saveLocalCanvasSnapshot({
     projectId: project.id,
     snapshot: {
-      version: 2,
+      version: 3,
       nodes: [],
       edges: [],
       viewport: { x: 0, y: 0, zoom: 1 },
@@ -148,7 +148,7 @@ export async function getLocalCanvasSnapshot(projectId: string, dataDir = getZen
         value.snapshot &&
         typeof value.snapshot === "object" &&
         "version" in value.snapshot &&
-        value.snapshot.version === 1
+        value.snapshot.version !== 3
       ) {
         migrated = true;
       }

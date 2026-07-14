@@ -43,6 +43,7 @@ yarn-error.log*
 next-env.d.ts
 
 # local dev logs
+/.logs/
 .next-dev*.log
 .codex-next-dev-*.log
 .next-local-dev*.log

@@ -155,7 +155,7 @@ export function MarkdownNode({ data, id, selected }: NodeProps) {
         {!isEditing ? (
           <div
             aria-hidden
-            className="zenme-markdown-preview pointer-events-none absolute inset-0 overflow-auto px-6 py-5 text-base leading-7"
+            className="zenme-markdown-preview pointer-events-none absolute inset-0 overflow-auto px-6 pb-10 pt-5 text-base leading-7"
             ref={markdownPreviewRef}
           >
             {markdown.trim() ? (
@@ -169,7 +169,7 @@ export function MarkdownNode({ data, id, selected }: NodeProps) {
         ) : null}
         <textarea
           aria-label="Markdown 文本"
-          className={`zenme-markdown-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-6 py-5 text-base leading-7 caret-zinc-950 outline-none ${
+          className={`zenme-markdown-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-6 pb-10 pt-5 text-base leading-7 caret-zinc-950 outline-none ${
             isEditing ? "text-zinc-800" : "text-transparent"
           }`}
           onBlur={() => {
@@ -188,10 +188,15 @@ export function MarkdownNode({ data, id, selected }: NodeProps) {
               return;
             }
 
-            markdownPreviewRef.current.scrollLeft =
-              event.currentTarget.scrollLeft;
-            markdownPreviewRef.current.scrollTop =
-              event.currentTarget.scrollTop;
+            const editor = event.currentTarget;
+            const preview = markdownPreviewRef.current;
+            const editorMaxScrollTop = editor.scrollHeight - editor.clientHeight;
+            const previewMaxScrollTop = preview.scrollHeight - preview.clientHeight;
+
+            preview.scrollLeft = editor.scrollLeft;
+            preview.scrollTop = editorMaxScrollTop > 0
+              ? (editor.scrollTop / editorMaxScrollTop) * previewMaxScrollTop
+              : 0;
           }}
           ref={editorRef}
           spellCheck={false}

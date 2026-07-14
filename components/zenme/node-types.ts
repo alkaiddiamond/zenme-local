@@ -1,9 +1,55 @@
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 
+export type MusicJobStatus =
+  | "queued"
+  | "preparing"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+export type MusicJobSnapshot = {
+  id: string;
+  status: MusicJobStatus;
+  progress: number;
+  stage: string;
+  stageLabel: string;
+  createdAt?: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  elapsedMs?: number;
+  durationMs?: number | null;
+  retryable: boolean;
+  error: { message?: string } | null;
+  plannedStages?: Array<{
+    adapterId?: string;
+    device?: string;
+    provides?: string[];
+    requires?: string[];
+    stageId?: string;
+  }>;
+  completedStages?: string[];
+};
+
+export type MusicChildNodeKind = "lyrics" | "musicAnalysis" | "sunoPrompt";
+
+export type MusicLyricLine = {
+  end?: number;
+  id?: string;
+  section?: string;
+  start: number;
+  text: string;
+};
+
 export type CanvasNodeData = {
   kind:
     | "image"
     | "file"
+    | "music"
+    | "musicPlayer"
+    | "lyrics"
+    | "musicAnalysis"
+    | "sunoPrompt"
     | "code"
     | "markdown"
     | "text"
@@ -31,6 +77,51 @@ export type CanvasNodeData = {
   previewUrl?: string;
   originalUrl?: string;
   mimeType?: string;
+  musicJobId?: string;
+  musicJobStatus?: MusicJobStatus;
+  musicProgress?: number;
+  musicStage?: string;
+  musicStageLabel?: string;
+  musicRetryable?: boolean;
+  musicError?: string;
+  musicWarnings?: string[];
+  musicJobCreatedAt?: string;
+  musicJobStartedAt?: string;
+  musicJobCompletedAt?: string;
+  musicJobElapsedMs?: number;
+  musicJobDurationMs?: number;
+  musicAnalysisResult?: Record<string, unknown>;
+  musicDuration?: number;
+  musicCurrentTime?: number;
+  musicIsPlaying?: boolean;
+  musicLoop?: boolean;
+  musicMuted?: boolean;
+  musicPlaybackRate?: number;
+  musicVolume?: number;
+  musicWaveform?: number[];
+  musicWaveformVersion?: number;
+  musicLyrics?: MusicLyricLine[];
+  musicPlayerNodeId?: string;
+  musicParentPlayerNodeId?: string;
+  sunoPromptZh?: string;
+  sunoPromptEn?: string;
+  onMusicAnalysisComplete?: (nodeId: string, jobId: string, result: Record<string, unknown>) => void;
+  onEnsureMusicWaveform?: (playerNodeId: string) => Promise<void>;
+  onMusicJobUpdate?: (nodeId: string, job: MusicJobSnapshot) => void;
+  onCreateMusicPlayerNode?: (musicNodeId: string) => void;
+  onLocateMusicPlayerNode?: (musicNodeId: string, playerNodeId: string) => void;
+  onToggleMusicPlayback?: (playerNodeId: string, playing: boolean) => void;
+  onSeekMusicPlayer?: (playerNodeId: string, seconds: number) => void;
+  onCancelMusicAnalysis?: (playerNodeId: string, jobId: string) => Promise<void> | void;
+  onRetryMusicAnalysis?: (playerNodeId: string, jobId: string) => Promise<void> | void;
+  onCreateMusicChildNode?: (playerNodeId: string, kind: MusicChildNodeKind) => void;
+  onUpdateMusicNode?: (nodeId: string, updates: { title?: string }) => void;
+  onUpdateMusicPlayback?: (playerNodeId: string, updates: {
+    loop?: boolean;
+    muted?: boolean;
+    playbackRate?: number;
+    volume?: number;
+  }) => void;
   imageGenerated?: boolean;
   imageOperation?: "edit" | "generate";
   imageHeight?: number;

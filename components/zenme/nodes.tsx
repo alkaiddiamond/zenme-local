@@ -11,6 +11,11 @@ import { NoteNode } from "@/components/zenme/nodes/note-node";
 import { ReaderNode } from "@/components/zenme/nodes/reader-node";
 import { TextNode } from "@/components/zenme/nodes/text-node";
 import { TextGenerationNode } from "@/components/zenme/nodes/text-generation-node";
+import { MusicNode } from "@/components/zenme/nodes/music-node";
+import { MusicPlayerNode } from "@/components/zenme/nodes/music-player-node";
+import { LyricsNode } from "@/components/zenme/nodes/lyrics-node";
+import { MusicAnalysisNode } from "@/components/zenme/nodes/music-analysis-node";
+import { SunoPromptNode } from "@/components/zenme/nodes/suno-prompt-node";
 
 export type { CanvasNodeData } from "@/components/zenme/node-types";
 export {
@@ -23,6 +28,11 @@ export const nodeTypes = {
   image: memo(ImageNode),
   imageGeneration: memo(ImageGenerationNode),
   file: memo(FileNode),
+  music: memo(MusicNode),
+  musicPlayer: memo(MusicPlayerNode),
+  lyrics: memo(LyricsNode),
+  musicAnalysis: memo(MusicAnalysisNode),
+  sunoPrompt: memo(SunoPromptNode),
   book: memo(BookNode),
   code: memo(TextNode),
   markdown: memo(TextNode),

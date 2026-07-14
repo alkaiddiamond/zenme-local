@@ -104,6 +104,13 @@ describe("canvas node factories", () => {
       },
     });
     expect(
+      createTextCanvasNode({
+        id: "text-with-model",
+        model: "gpt-5.6-sol",
+        position: { x: 1, y: 2 },
+      }).data.textGenerationModel,
+    ).toBe("gpt-5.6-sol");
+    expect(
       createMarkdownCanvasNode({
         id: "md-1",
         markdown: "# 标题",

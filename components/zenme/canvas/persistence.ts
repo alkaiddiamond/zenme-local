@@ -1,6 +1,6 @@
 import type React from "react";
 import type { Edge } from "@xyflow/react";
-import { toBlob } from "html-to-image";
+import { toCanvas } from "html-to-image";
 
 import {
   refreshFileSignedUrlsFromApi,
@@ -80,8 +80,8 @@ export async function createCanvasThumbnail(element: HTMLElement | null) {
   }
 
   try {
-    return await measureCanvasPerfAsync("thumbnail toBlob", () =>
-      toBlob(element, {
+    return await measureCanvasPerfAsync("thumbnail toBlob", async () => {
+      const canvas = await toCanvas(element, {
         cacheBust: true,
         filter: (node) => {
           if (!(node instanceof Element)) {
@@ -105,11 +105,23 @@ export async function createCanvasThumbnail(element: HTMLElement | null) {
         },
         pixelRatio: 0.5,
         backgroundColor: "#ffffff",
-      }),
-    );
+      });
+
+      return canvasToWebpBlob(canvas);
+    });
   } catch {
     return null;
   }
+}
+
+export function canvasToWebpBlob(canvas: HTMLCanvasElement) {
+  return new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(
+      (blob) => resolve(blob?.type === "image/webp" ? blob : null),
+      "image/webp",
+      0.82,
+    );
+  });
 }
 
 export async function saveCanvasSnapshot(input: {
@@ -123,7 +135,7 @@ export async function saveCanvasSnapshot(input: {
     "save snapshot build",
     () =>
       ({
-        version: 2,
+        version: 3,
         nodes: getPersistableCanvasNodes(input.nodes),
         edges: input.edges,
         viewport: input.viewport,
@@ -176,6 +188,7 @@ export function getPersistableCanvasNodes(nodes: CanvasNode[]) {
         ([key, value]) =>
           key !== "hasIncomingEdge" &&
           key !== "hasOutgoingEdge" &&
+          key !== "musicAnalysisResult" &&
           typeof value !== "function",
       ),
     ) as CanvasNode["data"];

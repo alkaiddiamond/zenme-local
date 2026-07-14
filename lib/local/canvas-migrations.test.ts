@@ -35,7 +35,7 @@ describe("migrateCanvasSnapshot", () => {
 
     expect(result?.migrated).toBe(true);
     expect(result?.snapshot).toMatchObject({
-      version: 2,
+      version: 3,
       nodes: [
         { id: "source", type: "image" },
         {
@@ -61,9 +61,9 @@ describe("migrateCanvasSnapshot", () => {
     expect(result?.snapshot.nodes[1]).not.toHaveProperty("data.imageEditPrompt");
   });
 
-  it("leaves current snapshots untouched", () => {
+  it("leaves current snapshots without player jobs untouched", () => {
     const snapshot = {
-      version: 2,
+      version: 3,
       nodes: [],
       edges: [],
       viewport: { x: 0, y: 0, zoom: 1 },
@@ -73,5 +73,56 @@ describe("migrateCanvasSnapshot", () => {
       migrated: false,
       snapshot,
     });
+  });
+
+  it("moves legacy analysis state from a player into an analysis node", () => {
+    const result = migrateCanvasSnapshot({
+      version: 3,
+      nodes: [{
+        id: "player-1",
+        type: "musicPlayer",
+        position: { x: 100, y: 200 },
+        data: {
+          kind: "musicPlayer",
+          title: "Song · 播放器",
+          musicDuration: 120,
+          musicJobId: "job-1",
+          musicJobStatus: "running",
+        },
+      }],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      updatedAt: "2026-07-13T00:00:00.000Z",
+    });
+    expect(result?.migrated).toBe(true);
+    expect(result?.snapshot.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "player-1", data: expect.not.objectContaining({ musicJobId: "job-1" }) }),
+      expect.objectContaining({
+        type: "musicAnalysis",
+        data: expect.objectContaining({ musicJobId: "job-1", musicParentPlayerNodeId: "player-1" }),
+      }),
+    ]));
+  });
+
+  it("migrates music analysis state and child nodes under a player", () => {
+    const result = migrateCanvasSnapshot({
+      version: 2,
+      nodes: [
+        { id: "music-1", type: "music", position: { x: 10, y: 20 }, data: { kind: "music", title: "Song", musicJobId: "job-1", musicJobStatus: "succeeded" } },
+        { id: "analysis-1", type: "musicAnalysis", position: { x: 700, y: 20 }, data: { kind: "musicAnalysis", title: "分析" } },
+      ],
+      edges: [{ id: "old-edge", source: "music-1", target: "analysis-1" }],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      updatedAt: "2026-07-13T00:00:00.000Z",
+    });
+    expect(result?.snapshot.version).toBe(3);
+    expect(result?.snapshot.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "music-player:music-1", data: expect.objectContaining({ kind: "musicPlayer" }) }),
+      expect.objectContaining({ id: "analysis-1", data: expect.objectContaining({ musicJobId: "job-1", musicParentPlayerNodeId: "music-player:music-1" }) }),
+    ]));
+    expect(result?.snapshot.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "music-1", target: "music-player:music-1" }),
+      expect.objectContaining({ source: "music-player:music-1", target: "analysis-1" }),
+    ]));
   });
 });

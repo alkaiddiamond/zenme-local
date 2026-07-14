@@ -62,7 +62,29 @@ describe("local project files API", () => {
       { params: Promise.resolve({ projectId, fileId: upload.fileId }) },
     );
     expect(fileResponse.headers.get("content-type")).toBe("text/plain");
+    expect(fileResponse.headers.get("accept-ranges")).toBe("bytes");
+    expect(fileResponse.headers.get("content-length")).toBe("5");
     await expect(fileResponse.text()).resolves.toBe("hello");
+
+    const rangeResponse = await getFile(
+      new Request(`http://localhost${upload.originalUrl}`, {
+        headers: { range: "bytes=1-3" },
+      }),
+      { params: Promise.resolve({ projectId, fileId: upload.fileId }) },
+    );
+    expect(rangeResponse.status).toBe(206);
+    expect(rangeResponse.headers.get("content-range")).toBe("bytes 1-3/5");
+    expect(rangeResponse.headers.get("content-length")).toBe("3");
+    await expect(rangeResponse.text()).resolves.toBe("ell");
+
+    const invalidRangeResponse = await getFile(
+      new Request(`http://localhost${upload.originalUrl}`, {
+        headers: { range: "bytes=10-20" },
+      }),
+      { params: Promise.resolve({ projectId, fileId: upload.fileId }) },
+    );
+    expect(invalidRangeResponse.status).toBe(416);
+    expect(invalidRangeResponse.headers.get("content-range")).toBe("bytes */5");
 
     const previewResponse = await getPreview(
       new Request(`http://localhost${upload.previewUrl}`),

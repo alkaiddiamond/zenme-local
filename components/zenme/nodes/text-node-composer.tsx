@@ -28,6 +28,7 @@ export function TextNodeComposer({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const configuredModels = useAiModelOptions();
+  const preferredModel = configuredModels[0]?.id ?? modelOptions[0];
   const pickerModels = configuredModels.some((option) => option.id === model)
     ? configuredModels
     : [createModelOption(model), ...configuredModels];
@@ -43,8 +44,8 @@ export function TextNodeComposer({
   }, [nodeData.textGenerationPrompt]);
 
   useEffect(() => {
-    setModel(nodeData.textGenerationModel ?? modelOptions[0]);
-  }, [nodeData.textGenerationModel]);
+    setModel(nodeData.textGenerationModel ?? preferredModel);
+  }, [nodeData.textGenerationModel, preferredModel]);
 
   function syncComposerState(nextState?: {
     model?: string;

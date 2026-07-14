@@ -2,12 +2,16 @@
 
 import {
   BookOpen,
+  BarChart3,
+  FileText,
   Image as ImageIcon,
   ImagePlus,
   MessageSquareText,
+  Music2,
   MousePointer2,
   Type,
   Upload,
+  WandSparkles,
 } from "lucide-react";
 
 import {
@@ -21,6 +25,7 @@ import type {
   CanvasNode,
   NodeActionMenuState,
 } from "@/components/zenme/canvas/types";
+import type { MusicChildNodeKind } from "@/components/zenme/node-types";
 
 type CanvasAddMenuProps = {
   menu: CanvasAddMenuState;
@@ -77,6 +82,8 @@ type NodeActionMenuProps = {
   ) => void;
   onOpenReadingWorkspace: () => void;
   onProcessWithAgent: () => void;
+  onCreateMusicPlayer: () => void;
+  onCreateMusicChild: (kind: MusicChildNodeKind) => void;
 };
 
 export function NodeActionMenu({
@@ -86,10 +93,28 @@ export function NodeActionMenu({
   onCreateConnectedPlaceholder,
   onOpenReadingWorkspace,
   onProcessWithAgent,
+  onCreateMusicPlayer,
+  onCreateMusicChild,
 }: NodeActionMenuProps) {
   return (
     <FloatingMenu left={menu.x + 12} top={menu.y - 8}>
       <FloatingMenuHeader onClose={onClose} title="引用该节点生成" />
+      {actionNode?.data.kind === "music" ? (
+        <FloatingMenuItem
+          disabled={Boolean(actionNode.data.musicPlayerNodeId)}
+          icon={Music2}
+          onClick={onCreateMusicPlayer}
+          primary
+          title={actionNode.data.musicPlayerNodeId ? "播放器已创建" : "创建播放器"}
+        />
+      ) : null}
+      {actionNode?.data.kind === "musicPlayer" ? (
+        <>
+          <FloatingMenuItem icon={FileText} onClick={() => onCreateMusicChild("lyrics")} primary title="歌词与结构" />
+          <FloatingMenuItem icon={BarChart3} onClick={() => onCreateMusicChild("musicAnalysis")} title="综合分析" />
+          <FloatingMenuItem icon={WandSparkles} onClick={() => onCreateMusicChild("sunoPrompt")} title="Suno 提示词" />
+        </>
+      ) : null}
       <FloatingMenuItem
         icon={MessageSquareText}
         onClick={onProcessWithAgent}

@@ -53,7 +53,7 @@ describe("local project repository", () => {
     await saveLocalCanvasSnapshot({
       projectId: project.id,
       snapshot: {
-        version: 2,
+        version: 3,
         nodes: [{ id: "node-1" }],
         edges: [],
         viewport: { x: 1, y: 2, zoom: 1.5 },
@@ -101,7 +101,7 @@ describe("local project repository", () => {
 
     await expect(getLocalCanvasSnapshot(project.id, dataDir)).resolves.toMatchObject({
       snapshot: {
-        version: 2,
+        version: 3,
         nodes: [{
           type: "imageGeneration",
           data: { kind: "imageGeneration", title: "图片生成" },
@@ -109,7 +109,7 @@ describe("local project repository", () => {
       },
     });
     const persisted = JSON.parse(await fs.readFile(snapshotPath, "utf8"));
-    expect(persisted.snapshot.version).toBe(2);
+    expect(persisted.snapshot.version).toBe(3);
     expect(JSON.stringify(persisted)).not.toContain("imageEdit\"");
   });
 });
