@@ -44,7 +44,9 @@ import {
 } from "@/components/zenme/canvas/menus";
 import {
   createNodeActionMenuFromConnectEnd,
+  isCanvasConnectionValid,
   normalizeCanvasConnection,
+  normalizePersistedCanvasEdges,
 } from "@/components/zenme/canvas/connections";
 import { CanvasProjectStatus } from "@/components/zenme/canvas/project-status";
 import { nodeTypes } from "@/components/zenme/nodes";
@@ -122,8 +124,11 @@ import {
   getCanvasNodeContextText,
 } from "@/components/zenme/canvas/text-generation-context";
 import {
+  createConnectedEdge,
   createConnectedPlaceholderCanvasNode,
   createImageGenerationCanvasNode,
+  createManagedTextCanvasNode,
+  createTaskCanvasNode,
   createPendingImageResultChildCanvasNode,
   createDroppedReadingNoteCanvasNode,
   createAiResponseChildCanvasNode,
@@ -135,6 +140,9 @@ import {
   createImageGenerationNodeDataUpdate,
   createTextGenerationNodeDataUpdate,
   createTextNodeDataUpdate,
+  createTaskChildrenVisibilityUpdate,
+  createTaskNodeDataUpdate,
+  createProjectTagUpdate,
 } from "@/components/zenme/canvas/node-updates";
 import { createCanvasAddMenuFromPaneDoubleClick } from "@/components/zenme/canvas/pane-menu";
 import {
@@ -194,8 +202,10 @@ import {
 import { getImageDimensions } from "@/components/zenme/canvas/files";
 import {
   NODE_CONTEXT_HANDLE_ID,
+  type CanvasNodeData,
   type MusicChildNodeKind,
   type MusicJobSnapshot,
+  type ProjectTagAction,
 } from "@/components/zenme/node-types";
 
 type CanvasClientProps = {
@@ -287,6 +297,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const reactFlowRef = useRef<ReactFlowInstance<CanvasNode, Edge> | null>(null);
   const fileUploadInputRef = useRef<HTMLInputElement | null>(null);
   const pendingUploadPosition = useRef<{ x: number; y: number } | null>(null);
+  const pendingUploadSourceNodeId = useRef<string | null>(null);
   const lastCanvasPointer = useRef<{ x: number; y: number } | null>(null);
   const nodeClipboard = useRef<{
     marker: string;
@@ -501,6 +512,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             !change.dimensions ||
             (node.data.kind !== "reader" &&
               node.data.kind !== "text" &&
+              node.data.kind !== "managedText" &&
+              node.data.kind !== "task" &&
               node.data.kind !== "agent" &&
               node.data.kind !== "textGeneration" &&
               node.data.kind !== "musicAnalysis" &&
@@ -810,11 +823,15 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           const restoredNodes = recoverInterruptedImageTasks(
             normalizeGroupNodeRelations(restored.nodes),
           );
+          const restoredEdges = normalizePersistedCanvasEdges(
+            restored.edges,
+            restoredNodes,
+          );
           setNodes(restoredNodes);
-          setEdges(restored.edges);
+          setEdges(restoredEdges);
           resetCanvasHistory(
             restoredNodes,
-            restored.edges,
+            restoredEdges,
             snapshot.viewport ?? canvasViewportStateRef.current,
           );
           setLastSavedAt(snapshot.updatedAt ?? remoteSnapshot.updated_at);
@@ -1603,8 +1620,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       updates: {
         codeContent?: string;
         codeLanguage?: string;
+        name?: string;
         plainText?: string;
         richTextHtml?: string;
+        tags?: string[];
         textMode?: "code" | "markdown" | "plain";
         title?: string;
       },
@@ -1637,6 +1656,59 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodeId,
         nodes: currentNodes,
         updates,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const updateTaskNode = useCallback(
+    (
+      nodeId: string,
+      updates: Parameters<
+        NonNullable<CanvasNodeData["onUpdateTaskNode"]>
+      >[1],
+    ) => {
+      const update = createTaskNodeDataUpdate({
+        nodeId,
+        nodes: nodesRef.current,
+        updates,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const toggleTaskChildren = useCallback(
+    (nodeId: string, expanded: boolean, collapsedHeight: number) => {
+      const update = createTaskChildrenVisibilityUpdate({
+        collapsedHeight,
+        expanded,
+        nodeId,
+        nodes: nodesRef.current,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const updateProjectTag = useCallback(
+    (action: ProjectTagAction) => {
+      const update = createProjectTagUpdate({
+        action,
+        nodes: nodesRef.current,
       });
       if (!update) return;
 
@@ -2041,10 +2113,54 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
   function openUploadPickerAt(position: { x: number; y: number }) {
     pendingUploadPosition.current = position;
+    pendingUploadSourceNodeId.current = null;
     if (fileUploadInputRef.current) {
       fileUploadInputRef.current.value = "";
       fileUploadInputRef.current.click();
     }
+    setCanvasAddMenu(null);
+  }
+
+  function openConnectedUploadPicker() {
+    if (!actionNode || !nodeActionMenu) {
+      return;
+    }
+
+    pendingUploadPosition.current = nodeActionMenu.flowPosition;
+    pendingUploadSourceNodeId.current = actionNode.id;
+    if (fileUploadInputRef.current) {
+      fileUploadInputRef.current.value = "";
+      fileUploadInputRef.current.click();
+    }
+    setNodeActionMenu(null);
+  }
+
+  function createManagedTextNodeAt(position: { x: number; y: number }) {
+    const nextNode = createManagedTextCanvasNode({
+      id: crypto.randomUUID(),
+      model: defaultTextModel,
+      position,
+    });
+
+    appendCanvasItems({
+      currentEdges: edges,
+      currentNodes: nodes,
+      nodes: [nextNode],
+    });
+    setCanvasAddMenu(null);
+  }
+
+  function createTaskNodeAt(position: { x: number; y: number }) {
+    const nextNode = createTaskCanvasNode({
+      id: crypto.randomUUID(),
+      position,
+    });
+
+    appendCanvasItems({
+      currentEdges: edges,
+      currentNodes: nodes,
+      nodes: [nextNode],
+    });
     setCanvasAddMenu(null);
   }
 
@@ -2096,11 +2212,14 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
     if (files.length === 0) {
       pendingUploadPosition.current = null;
+      pendingUploadSourceNodeId.current = null;
       return;
     }
 
     const position = pendingUploadPosition.current ?? { x: 0, y: 0 };
+    const sourceNodeId = pendingUploadSourceNodeId.current;
     pendingUploadPosition.current = null;
+    pendingUploadSourceNodeId.current = null;
 
     const createdNodes = await createDroppedFileCanvasNodes({
       files,
@@ -2109,9 +2228,19 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       projectId,
     });
 
+    const currentEdges = reactFlow?.getEdges() ?? edges;
+    const currentNodes = reactFlow?.getNodes() ?? nodes;
+    const sourceNodeExists = sourceNodeId
+      ? currentNodes.some((node) => node.id === sourceNodeId)
+      : false;
+
     appendCanvasItems({
-      currentEdges: reactFlow?.getEdges() ?? edges,
-      currentNodes: reactFlow?.getNodes() ?? nodes,
+      currentEdges,
+      currentNodes,
+      edges:
+        sourceNodeId && sourceNodeExists
+          ? createdNodes.map((node) => createConnectedEdge(sourceNodeId, node.id))
+          : [],
       nodes: createdNodes,
     });
   }
@@ -2530,7 +2659,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }
 
   function createConnectedPlaceholder(
-    kind: "text" | "agent" | "textGeneration" | "imageGeneration",
+    kind:
+      | "text"
+      | "agent"
+      | "managedText"
+      | "task"
+      | "textGeneration"
+      | "imageGeneration",
   ) {
     if (!actionNode) {
       return;
@@ -3018,6 +3153,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         onUpdateImageNode: updateImageGenerationNode,
         onUpdateTextGenerationNode: updateTextGenerationNode,
         onUpdateTextNode: updateTextNode,
+        onUpdateTaskNode: updateTaskNode,
+        onToggleTaskChildren: toggleTaskChildren,
+        onUpdateProjectTag: updateProjectTag,
         projectId,
         toggleReaderCollapse,
       }),
@@ -3046,6 +3184,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       updateImageGenerationNode,
       updateTextGenerationNode,
       updateTextNode,
+      updateTaskNode,
+      toggleTaskChildren,
+      updateProjectTag,
     ],
   );
 
@@ -3088,6 +3229,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           nodeTypes={nodeTypes}
           nodes={renderedNodes}
           connectionRadius={120}
+          isValidConnection={isCanvasConnectionValid}
           onConnect={onConnect}
           onConnectEnd={(event) => {
             const sourceNodeId = connectingNodeId.current;
@@ -3237,6 +3379,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             menu={canvasAddMenu}
             onClose={() => setCanvasAddMenu(null)}
             onCreateImageGenerationNode={createImageGenerationNodeAt}
+            onCreateManagedTextNode={createManagedTextNodeAt}
+            onCreateTaskNode={createTaskNodeAt}
             onCreateTextNode={createTextNodeAt}
             onUploadFiles={openUploadPickerAt}
           />
@@ -3248,6 +3392,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             menu={nodeActionMenu}
             onClose={() => setNodeActionMenu(null)}
             onCreateConnectedPlaceholder={createConnectedPlaceholder}
+            onUploadConnectedFiles={openConnectedUploadPicker}
             onOpenReadingWorkspace={openReadingWorkspace}
             onCreateMusicPlayer={() => {
               if (!actionNode || actionNode.data.kind !== "music") return;

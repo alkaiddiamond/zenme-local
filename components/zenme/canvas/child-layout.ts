@@ -6,6 +6,8 @@ import type { CanvasNode } from "./types";
 const CONNECTED_PLACEHOLDER_SIZE = {
   agent: { height: 180, width: 320 },
   imageGeneration: { height: 260, width: 520 },
+  managedText: { height: 380, width: 560 },
+  task: { height: 460, width: 560 },
   text: { height: 260, width: 520 },
   textGeneration: { height: 180, width: 560 },
 };
@@ -46,7 +48,13 @@ export function getNextConnectedChildNodePosition(input: {
 
 export function getConnectedPlaceholderPosition(input: {
   flowPosition?: { x: number; y: number };
-  kind: "agent" | "imageGeneration" | "text" | "textGeneration";
+  kind:
+    | "agent"
+    | "imageGeneration"
+    | "managedText"
+    | "task"
+    | "text"
+    | "textGeneration";
 }) {
   if (!input.flowPosition) {
     return undefined;

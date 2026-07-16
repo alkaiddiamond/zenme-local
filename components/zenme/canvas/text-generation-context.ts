@@ -10,6 +10,7 @@ const TEXT_GENERATION_CONTEXT_NODE_KINDS = new Set([
   "note",
   "reader",
   "text",
+  "managedText",
 ]);
 
 export function collectTextGenerationContext(input: {
@@ -83,6 +84,17 @@ export function getCanvasNodeContextText(node: CanvasNode) {
     }
 
     return `文本节点「${title}」\n${text}`;
+  }
+
+  if (node.data.kind === "managedText") {
+    const text = node.data.plainText?.trim();
+    if (!text) {
+      return "";
+    }
+
+    const name = node.data.name?.trim() || "未命名节点";
+    const tags = node.data.tags?.length ? `\n标签：${node.data.tags.join("、")}` : "";
+    return `强管理节点「${name}」${tags}\n${text}`;
   }
 
   if (node.data.kind === "markdown") {

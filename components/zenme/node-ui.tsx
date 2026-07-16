@@ -5,6 +5,7 @@ import {
   NODE_ACTION_HANDLE_ID,
   NODE_CONTEXT_HANDLE_ID,
   NODE_CONTEXT_TARGET_HANDLE_ID,
+  NODE_LEFT_HANDLE_ID,
   NODE_RIGHT_HANDLE_ID,
   type CanvasNodeData,
 } from "@/components/zenme/node-types";
@@ -88,7 +89,7 @@ export function NodeEdgeSourceHandle({
     <Handle
       className={`zenme-node-connection-handle !z-20 !h-3 !w-3 !shadow-sm ${className} ${
         visible
-          ? "!border-zinc-300 !bg-white !opacity-100"
+          ? "zenme-connected-source-handle !border-zinc-300 !bg-white !opacity-0"
           : "!border-transparent !bg-transparent !opacity-0"
       }`}
       id={NODE_RIGHT_HANDLE_ID}
@@ -100,29 +101,36 @@ export function NodeEdgeSourceHandle({
 
 export function NodeTargetHandle({
   className = "!top-1/2",
+  id,
+  largeHitArea = false,
   revealOnHover = true,
   visible = false,
 }: {
   className?: string;
+  id?: string;
+  largeHitArea?: boolean;
   revealOnHover?: boolean;
   visible?: boolean;
 }) {
   return (
     <Handle
-      className={`zenme-node-connection-handle zenme-target-handle !absolute !-left-1.5 ${className} !z-20 !flex !size-3 !-translate-y-1/2 !items-center !justify-center !border-0 !bg-transparent !shadow-none`}
+      className={`zenme-node-connection-handle zenme-target-handle !absolute ${largeHitArea ? "!-left-5 !size-10" : "!-left-1.5 !size-3"} ${className} !z-20 !flex !-translate-y-1/2 !items-center !justify-center !border-0 !bg-transparent !shadow-none`}
+      id={id}
       position={Position.Left}
       type="target"
     >
       <span
         className={`zenme-target-handle-dot block size-3 rounded-full border border-zinc-300 bg-white shadow-sm transition ${
           visible
-            ? "opacity-100"
+            ? "zenme-connected-target-handle-dot opacity-0"
             : `opacity-0 ${revealOnHover ? "group-hover:opacity-100" : ""}`
         }`}
       />
     </Handle>
   );
 }
+
+export const STANDARD_NODE_TARGET_HANDLE_ID = NODE_LEFT_HANDLE_ID;
 
 export function NodeContextTargetHandle({
   revealOnHover = false,

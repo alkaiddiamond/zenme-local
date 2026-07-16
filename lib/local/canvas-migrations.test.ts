@@ -75,6 +75,53 @@ describe("migrateCanvasSnapshot", () => {
     });
   });
 
+  it("normalizes legacy task metadata and fills the new defaults", () => {
+    const result = migrateCanvasSnapshot({
+      version: 3,
+      nodes: [
+        {
+          id: "legacy-task",
+          type: "task",
+          position: { x: 0, y: 0 },
+          data: {
+            kind: "task",
+            taskStatus: "archived",
+            taskUrgency: "urgent",
+          },
+        },
+        {
+          id: "empty-task",
+          type: "task",
+          position: { x: 100, y: 0 },
+          data: { kind: "task" },
+        },
+      ],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      updatedAt: "2026-07-17T00:00:00.000Z",
+    });
+
+    expect(result?.migrated).toBe(true);
+    expect(result?.snapshot.nodes).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({
+          taskComplexity: "simple",
+          taskPriority: "P3",
+          taskStatus: "paused",
+          taskUrgency: "run",
+        }),
+      }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          taskComplexity: "simple",
+          taskPriority: "P3",
+          taskStatus: "inProgress",
+          taskUrgency: "stand",
+        }),
+      }),
+    ]);
+  });
+
   it("moves legacy analysis state from a player into an analysis node", () => {
     const result = migrateCanvasSnapshot({
       version: 3,

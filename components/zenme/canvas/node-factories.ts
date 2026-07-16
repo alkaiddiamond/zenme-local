@@ -12,6 +12,9 @@ import { readNodeSize } from "./geometry";
 import type { CanvasNode } from "./types";
 
 const TEXT_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
+const MANAGED_TEXT_NODE_DEFAULT_SIZE = { height: 380, width: 560 };
+const TASK_NODE_COLLAPSED_SIZE = { height: 176, width: 560 };
+const TASK_NODE_DEFAULT_EXPANDED_HEIGHT = 460;
 const CODE_NODE_DEFAULT_SIZE = { height: 420, width: 720 };
 const MARKDOWN_NODE_DEFAULT_SIZE = { height: 320, width: 560 };
 export const NANO_BANANA_2_IMAGE_MODEL =
@@ -52,6 +55,64 @@ export function createTextCanvasNode(input: {
       codeLanguage: input.codeLanguage,
       textMode: input.textMode ?? "plain",
       textGenerationModel: input.model,
+    },
+  };
+}
+
+export function createManagedTextCanvasNode(input: {
+  createdAt?: string;
+  id: string;
+  model?: string;
+  name?: string;
+  plainText?: string;
+  position: { x: number; y: number };
+  tags?: string[];
+}): CanvasNode {
+  return {
+    id: input.id,
+    type: "managedText",
+    position: input.position,
+    style: MANAGED_TEXT_NODE_DEFAULT_SIZE,
+    data: {
+      kind: "managedText",
+      title: "强管理节点",
+      name: input.name ?? "",
+      tags: input.tags ?? [],
+      createdAt: input.createdAt ?? new Date().toISOString(),
+      plainText: input.plainText ?? "",
+      richTextHtml: "",
+      textMode: "plain",
+      textGenerationModel: input.model,
+    },
+  };
+}
+
+export function createTaskCanvasNode(input: {
+  createdAt?: string;
+  id: string;
+  name?: string;
+  position: { x: number; y: number };
+  tags?: string[];
+}): CanvasNode {
+  const createdAt = input.createdAt ?? new Date().toISOString();
+  return {
+    id: input.id,
+    type: "task",
+    position: input.position,
+    style: TASK_NODE_COLLAPSED_SIZE,
+    data: {
+      kind: "task",
+      title: "任务",
+      name: input.name ?? "",
+      tags: input.tags ?? [],
+      createdAt,
+      updatedAt: createdAt,
+      taskStatus: "inProgress",
+      taskPriority: "P3",
+      taskComplexity: "simple",
+      taskUrgency: "stand",
+      taskChildrenExpanded: false,
+      taskExpandedHeight: TASK_NODE_DEFAULT_EXPANDED_HEIGHT,
     },
   };
 }
@@ -421,7 +482,13 @@ export function createReaderCanvasNode(input: {
 export function createConnectedPlaceholderCanvasNode(input: {
   aspectRatio?: string;
   id: string;
-  kind: "text" | "agent" | "textGeneration" | "imageGeneration";
+  kind:
+    | "text"
+    | "agent"
+    | "managedText"
+    | "task"
+    | "textGeneration"
+    | "imageGeneration";
   model?: string;
   position?: { x: number; y: number };
   quality?: string;
@@ -450,6 +517,33 @@ export function createConnectedPlaceholderCanvasNode(input: {
 
   if (input.kind === "imageGeneration") {
     return createReferencedImageGenerationCanvasNode(input);
+  }
+
+  if (input.kind === "task") {
+    return {
+      edge: createConnectedEdge(input.sourceNode.id, input.id),
+      node: createTaskCanvasNode({
+        id: input.id,
+        position: input.position ?? {
+          x: input.sourceNode.position.x + sourceSize.width + 80,
+          y: input.sourceNode.position.y,
+        },
+      }),
+    };
+  }
+
+  if (input.kind === "managedText") {
+    return {
+      edge: createConnectedEdge(input.sourceNode.id, input.id),
+      node: createManagedTextCanvasNode({
+        id: input.id,
+        model: input.model,
+        position: input.position ?? {
+          x: input.sourceNode.position.x + sourceSize.width + 80,
+          y: input.sourceNode.position.y,
+        },
+      }),
+    };
   }
 
   const node: CanvasNode = {
@@ -598,7 +692,7 @@ export function createDroppedReadingNoteCanvasNode(input: {
   };
 }
 
-function createConnectedEdge(sourceId: string, targetId: string): Edge {
+export function createConnectedEdge(sourceId: string, targetId: string): Edge {
   return {
     id: `edge-${sourceId}-${targetId}`,
     source: sourceId,

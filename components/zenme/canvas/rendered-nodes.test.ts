@@ -63,6 +63,113 @@ describe("rendered canvas nodes", () => {
       });
   });
 
+  it("shares project tag options across managed text nodes", () => {
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [],
+      nodes: [
+        node({
+          data: {
+            kind: "managedText",
+            tagColors: { 产品: "blue" },
+            tags: ["产品", "灵感"],
+          },
+          id: "managed-a",
+          type: "managedText",
+        }),
+        node({
+          data: { kind: "managedText", tags: ["产品", "待办"] },
+          id: "managed-b",
+          type: "managedText",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    expect(renderedNodes[0].data.projectTags).toEqual(["产品", "待办", "灵感"]);
+    expect(renderedNodes[1].data.projectTags).toEqual(["产品", "待办", "灵感"]);
+    expect(renderedNodes[0].data.projectTagColors).toEqual({ 产品: "blue" });
+    expect(renderedNodes[1].data.projectTagColors).toEqual({ 产品: "blue" });
+  });
+
+  it("derives direct task children, progress and shared project tags", () => {
+    const onUpdateTaskNode = vi.fn();
+    const onToggleTaskChildren = vi.fn();
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [
+        { source: "parent", target: "done-child" },
+        { source: "parent", target: "active-child" },
+        { source: "parent", target: "plain-text" },
+        { source: "parent", target: "image" },
+        { source: "parent", target: "managed-text" },
+      ],
+      nodes: [
+        node({
+          data: { kind: "task", tags: ["迭代"], taskStatus: "inProgress" },
+          id: "parent",
+          type: "task",
+        }),
+        node({
+          data: {
+            kind: "task",
+            name: "完成项",
+            taskStatus: "completed",
+          },
+          id: "done-child",
+          type: "task",
+        }),
+        node({
+          data: {
+            kind: "task",
+            name: "进行项",
+            taskStatus: "inProgress",
+          },
+          id: "active-child",
+          type: "task",
+        }),
+        node({ id: "plain-text" }),
+        node({
+          data: { kind: "image", title: "任务参考图" },
+          id: "image",
+          type: "image",
+        }),
+        node({
+          data: { kind: "managedText", name: "任务说明" },
+          id: "managed-text",
+          type: "managedText",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTaskNode,
+      onToggleTaskChildren,
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    const parent = renderedNodes.find((item) => item.id === "parent");
+    expect(parent?.data.taskChildren).toEqual([
+      { id: "done-child", name: "完成项", status: "completed" },
+      { id: "active-child", name: "进行项", status: "inProgress" },
+    ]);
+    expect(parent?.data.taskProgress).toBe(0.5);
+    expect(parent?.data.projectTags).toEqual(["迭代"]);
+    expect(parent?.data.onUpdateTaskNode).toBe(onUpdateTaskNode);
+    expect(parent?.data.onToggleTaskChildren).toBe(onToggleTaskChildren);
+  });
+
   it("derives image-generation references from incoming image edges", () => {
     const renderedNodes = getRenderedCanvasNodes({
       createNoteNode: vi.fn(),

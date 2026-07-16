@@ -41,6 +41,56 @@ export type MusicLyricLine = {
   text: string;
 };
 
+export type CanvasTagColor =
+  | "gray"
+  | "brown"
+  | "orange"
+  | "yellow"
+  | "green"
+  | "blue"
+  | "purple"
+  | "pink"
+  | "red";
+
+export type ProjectTagAction =
+  | { type: "delete"; tag: string }
+  | { type: "color"; tag: string; color: CanvasTagColor };
+
+export type TaskStatus = "inProgress" | "paused" | "completed";
+
+export type TaskPriority = "P1" | "P2" | "P3";
+export type TaskComplexity = "complex" | "medium" | "simple";
+export type TaskUrgency = "stand" | "walk" | "run";
+
+export function normalizeTaskStatus(value: unknown): TaskStatus {
+  if (value === "paused" || value === "abandoned" || value === "archived") {
+    return "paused";
+  }
+  if (value === "completed") return "completed";
+  return "inProgress";
+}
+
+export function normalizeTaskPriority(value: unknown): TaskPriority {
+  return value === "P1" || value === "P2" ? value : "P3";
+}
+
+export function normalizeTaskComplexity(value: unknown): TaskComplexity {
+  if (value === "complex" || value === "medium") return value;
+  return "simple";
+}
+
+export function normalizeTaskUrgency(value: unknown): TaskUrgency {
+  if (value === "run" || value === "urgent") return "run";
+  if (value === "walk") return "walk";
+  return "stand";
+}
+
+export type TaskChildSummary = {
+  id: string;
+  name: string;
+  status: TaskStatus;
+};
+
 export type CanvasNodeData = {
   kind:
     | "image"
@@ -53,6 +103,8 @@ export type CanvasNodeData = {
     | "code"
     | "markdown"
     | "text"
+    | "managedText"
+    | "task"
     | "textGeneration"
     | "imageGeneration"
     | "agent"
@@ -61,6 +113,22 @@ export type CanvasNodeData = {
     | "reader"
     | "group";
   title: string;
+  name?: string;
+  tags?: string[];
+  tagColors?: Partial<Record<string, CanvasTagColor>>;
+  projectTags?: string[];
+  projectTagColors?: Partial<Record<string, CanvasTagColor>>;
+  createdAt?: string;
+  updatedAt?: string;
+  completedAt?: string;
+  taskStatus?: TaskStatus;
+  taskPriority?: TaskPriority;
+  taskComplexity?: TaskComplexity;
+  taskUrgency?: TaskUrgency;
+  taskChildren?: TaskChildSummary[];
+  taskProgress?: number;
+  taskChildrenExpanded?: boolean;
+  taskExpandedHeight?: number;
   projectId?: string;
   fileId?: string;
   readingAssetId?: string;
@@ -168,6 +236,26 @@ export type CanvasNodeData = {
   hasIncomingEdge?: boolean;
   hasOutgoingEdge?: boolean;
   hasRunningGenerationChild?: boolean;
+  onUpdateProjectTag?: (action: ProjectTagAction) => void;
+  onUpdateTaskNode?: (
+    nodeId: string,
+    updates: Partial<
+      Pick<
+        CanvasNodeData,
+        | "name"
+        | "tags"
+        | "taskStatus"
+        | "taskPriority"
+        | "taskComplexity"
+        | "taskUrgency"
+      >
+    >,
+    ) => void;
+  onToggleTaskChildren?: (
+    nodeId: string,
+    expanded: boolean,
+    collapsedHeight: number,
+  ) => void;
   onResolveImageDimensions?: (
     nodeId: string,
     dimensions: { height: number; width: number },
@@ -199,6 +287,8 @@ export type CanvasNodeData = {
         | "richTextHtml"
         | "textMode"
         | "title"
+        | "name"
+        | "tags"
       >
     >,
   ) => void;
@@ -244,6 +334,7 @@ export type CanvasNodeData = {
 };
 
 export const NODE_RIGHT_HANDLE_ID = "node-right";
+export const NODE_LEFT_HANDLE_ID = "node-left";
 export const NODE_ACTION_HANDLE_ID = "node-action";
 export const NODE_CONTEXT_HANDLE_ID = "node-context";
 export const NODE_CONTEXT_TARGET_HANDLE_ID = "node-context-target";

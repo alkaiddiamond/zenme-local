@@ -34,4 +34,16 @@ describe("rendered canvas edge states", () => {
     expect(edge.selected).toBe(true);
     expect(edge.className).toContain("zenme-edge-node-related");
   });
+
+  it("anchors legacy task targets to the task node left handle", () => {
+    const [edge] = getRenderedCanvasEdges(
+      new Map([
+        ["source", "text" as const],
+        ["target", "task" as const],
+      ]),
+      [{ id: "edge", source: "source", target: "target" }],
+    );
+
+    expect(edge.targetHandle).toBe("node-left");
+  });
 });

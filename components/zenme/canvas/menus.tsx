@@ -6,9 +6,11 @@ import {
   FileText,
   Image as ImageIcon,
   ImagePlus,
+  ListTodo,
   MessageSquareText,
   Music2,
   MousePointer2,
+  NotebookTabs,
   Type,
   Upload,
   WandSparkles,
@@ -31,14 +33,71 @@ type CanvasAddMenuProps = {
   menu: CanvasAddMenuState;
   onClose: () => void;
   onCreateImageGenerationNode: (position: { x: number; y: number }) => void;
+  onCreateManagedTextNode: (position: { x: number; y: number }) => void;
+  onCreateTaskNode: (position: { x: number; y: number }) => void;
   onCreateTextNode: (position: { x: number; y: number }) => void;
   onUploadFiles: (position: { x: number; y: number }) => void;
 };
+
+type NodeCreationMenuItemsProps = {
+  onCreateImageGenerationNode: () => void;
+  onCreateManagedTextNode: () => void;
+  onCreateTaskNode: () => void;
+  onCreateTextNode: () => void;
+  onUploadFiles: () => void;
+};
+
+function NodeCreationMenuItems({
+  onCreateImageGenerationNode,
+  onCreateManagedTextNode,
+  onCreateTaskNode,
+  onCreateTextNode,
+  onUploadFiles,
+}: NodeCreationMenuItemsProps) {
+  return (
+    <>
+      <FloatingMenuItem
+        description="记录、脚本、想法和说明"
+        icon={Type}
+        onClick={onCreateTextNode}
+        primary
+        title="文本"
+      />
+      <FloatingMenuItem
+        description="带名称、标签和创建时间的文本"
+        icon={NotebookTabs}
+        onClick={onCreateManagedTextNode}
+        title="强管理节点"
+      />
+      <FloatingMenuItem
+        description="跟踪状态、优先级、进度和子任务"
+        icon={ListTodo}
+        onClick={onCreateTaskNode}
+        title="任务"
+      />
+      <FloatingMenuItem
+        description="根据提示词创建图片"
+        icon={ImagePlus}
+        onClick={onCreateImageGenerationNode}
+        title="图片生成"
+      />
+      <FloatingMenuSectionLabel>资源</FloatingMenuSectionLabel>
+      <FloatingMenuItem
+        description="从系统选择图片、书籍或文件"
+        icon={Upload}
+        onClick={onUploadFiles}
+        title="上传"
+      />
+    </>
+  );
+}
 
 export function CanvasAddMenu({
   menu,
   onClose,
   onCreateImageGenerationNode,
+  onCreateManagedTextNode,
+  onCreateTaskNode,
   onCreateTextNode,
   onUploadFiles,
 }: CanvasAddMenuProps) {
@@ -49,25 +108,16 @@ export function CanvasAddMenu({
       top={menu.y - 8}
     >
       <FloatingMenuHeader onClose={onClose} title="添加节点" />
-      <FloatingMenuItem
-        description="记录、脚本、想法和说明"
-        icon={Type}
-        onClick={() => onCreateTextNode(menu.flowPosition)}
-        primary
-        title="文本"
-      />
-      <FloatingMenuItem
-        description="根据提示词创建图片"
-        icon={ImagePlus}
-        onClick={() => onCreateImageGenerationNode(menu.flowPosition)}
-        title="图片生成"
-      />
-      <FloatingMenuSectionLabel>资源</FloatingMenuSectionLabel>
-      <FloatingMenuItem
-        description="从系统选择图片、书籍或文件"
-        icon={Upload}
-        onClick={() => onUploadFiles(menu.flowPosition)}
-        title="上传"
+      <NodeCreationMenuItems
+        onCreateImageGenerationNode={() =>
+          onCreateImageGenerationNode(menu.flowPosition)
+        }
+        onCreateManagedTextNode={() =>
+          onCreateManagedTextNode(menu.flowPosition)
+        }
+        onCreateTaskNode={() => onCreateTaskNode(menu.flowPosition)}
+        onCreateTextNode={() => onCreateTextNode(menu.flowPosition)}
+        onUploadFiles={() => onUploadFiles(menu.flowPosition)}
       />
     </FloatingMenu>
   );
@@ -78,8 +128,15 @@ type NodeActionMenuProps = {
   menu: NodeActionMenuState;
   onClose: () => void;
   onCreateConnectedPlaceholder: (
-    kind: "text" | "agent" | "textGeneration" | "imageGeneration",
+    kind:
+      | "text"
+      | "agent"
+      | "managedText"
+      | "task"
+      | "textGeneration"
+      | "imageGeneration",
   ) => void;
+  onUploadConnectedFiles: () => void;
   onOpenReadingWorkspace: () => void;
   onProcessWithAgent: () => void;
   onCreateMusicPlayer: () => void;
@@ -91,11 +148,31 @@ export function NodeActionMenu({
   menu,
   onClose,
   onCreateConnectedPlaceholder,
+  onUploadConnectedFiles,
   onOpenReadingWorkspace,
   onProcessWithAgent,
   onCreateMusicPlayer,
   onCreateMusicChild,
 }: NodeActionMenuProps) {
+  if (actionNode?.data.kind === "task") {
+    return (
+      <FloatingMenu left={menu.x + 12} top={menu.y - 8}>
+        <FloatingMenuHeader onClose={onClose} title="添加节点" />
+        <NodeCreationMenuItems
+          onCreateImageGenerationNode={() =>
+            onCreateConnectedPlaceholder("imageGeneration")
+          }
+          onCreateManagedTextNode={() =>
+            onCreateConnectedPlaceholder("managedText")
+          }
+          onCreateTaskNode={() => onCreateConnectedPlaceholder("task")}
+          onCreateTextNode={() => onCreateConnectedPlaceholder("text")}
+          onUploadFiles={onUploadConnectedFiles}
+        />
+      </FloatingMenu>
+    );
+  }
+
   return (
     <FloatingMenu left={menu.x + 12} top={menu.y - 8}>
       <FloatingMenuHeader onClose={onClose} title="引用该节点生成" />

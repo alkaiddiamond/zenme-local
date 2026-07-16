@@ -4,12 +4,15 @@ import { describe, expect, it } from "vitest";
 import {
   NODE_ACTION_HANDLE_ID,
   NODE_CONTEXT_HANDLE_ID,
+  NODE_CONTEXT_TARGET_HANDLE_ID,
   NODE_RIGHT_HANDLE_ID,
 } from "@/components/zenme/node-types";
 
 import {
   createNodeActionMenuFromConnectEnd,
+  isCanvasConnectionValid,
   normalizeCanvasConnection,
+  normalizePersistedCanvasEdges,
 } from "./connections";
 import {
   createCanvasItemsHistoryEntry,
@@ -209,6 +212,62 @@ describe("canvas state and context helpers", () => {
     });
   });
 
+  it("only lets forward context connections snap to dedicated context targets", () => {
+    expect(
+      isCanvasConnectionValid({
+        source: "text-a",
+        sourceHandle: NODE_CONTEXT_HANDLE_ID,
+        target: "text-b",
+        targetHandle: NODE_CONTEXT_TARGET_HANDLE_ID,
+      }),
+    ).toBe(true);
+    expect(
+      isCanvasConnectionValid({
+        source: "text-a",
+        sourceHandle: NODE_CONTEXT_HANDLE_ID,
+        target: "text-b",
+        targetHandle: null,
+      }),
+    ).toBe(false);
+    expect(
+      isCanvasConnectionValid({
+        source: "text-a",
+        sourceHandle: NODE_RIGHT_HANDLE_ID,
+        target: "text-b",
+        targetHandle: NODE_CONTEXT_TARGET_HANDLE_ID,
+      }),
+    ).toBe(false);
+  });
+
+  it("includes managed text names and tags in generation context", () => {
+    const managedText = canvasNode({
+      data: {
+        kind: "managedText",
+        name: "世界杯选题",
+        plainText: "整理可能的冷门故事",
+        tags: ["体育", "采访"],
+        title: "强管理节点",
+      },
+      id: "managed-text",
+      type: "managedText",
+    });
+    const generator = canvasNode({
+      data: { kind: "textGeneration", title: "生成" },
+      id: "generator",
+      type: "textGeneration",
+    });
+
+    expect(
+      collectTextGenerationContext({
+        edges: [edge("managed-text", "generator")],
+        nodeId: "generator",
+        nodes: [managedText, generator],
+      }),
+    ).toContain(
+      "强管理节点「世界杯选题」\n标签：体育、采访\n整理可能的冷门故事",
+    );
+  });
+
   it("normalizes text node context handles into readable edge direction", () => {
     const source = canvasNode({
       data: { kind: "note", title: "笔记", comment: "上游内容" },
@@ -257,6 +316,120 @@ describe("canvas state and context helpers", () => {
         [source, target],
       ),
     ).toMatchObject({ sourceHandle: NODE_RIGHT_HANDLE_ID });
+  });
+
+  it("keeps task connections to arbitrary node kinds as task relations", () => {
+    const task = canvasNode({
+      data: { kind: "task", name: "发布任务" },
+      id: "task",
+      type: "task",
+    });
+    const image = canvasNode({
+      data: { kind: "image", title: "发布素材" },
+      id: "image",
+      type: "image",
+    });
+    const connection: Connection = {
+      source: "task",
+      sourceHandle: NODE_ACTION_HANDLE_ID,
+      target: "image",
+      targetHandle: null,
+    };
+
+    expect(normalizeCanvasConnection(connection, [task, image])).toEqual({
+      ...connection,
+      sourceHandle: NODE_RIGHT_HANDLE_ID,
+    });
+  });
+
+  it("treats a task selected from a text node's forward handle as its parent", () => {
+    const text = canvasNode({
+      data: { kind: "text", plainText: "任务输入", title: "文本" },
+      id: "text",
+      type: "text",
+    });
+    const task = canvasNode({
+      data: { kind: "task", name: "发布任务" },
+      id: "task",
+      type: "task",
+    });
+    const connection: Connection = {
+      source: "text",
+      sourceHandle: NODE_CONTEXT_HANDLE_ID,
+      target: "task",
+      targetHandle: null,
+    };
+
+    expect(normalizeCanvasConnection(connection, [text, task])).toEqual({
+      source: "task",
+      sourceHandle: NODE_RIGHT_HANDLE_ID,
+      target: "text",
+      targetHandle: null,
+    });
+  });
+
+  it("uses task borders after connecting a task to its parent through the forward plus", () => {
+    const childTask = canvasNode({
+      data: { kind: "task", name: "子任务" },
+      id: "child-task",
+      type: "task",
+    });
+    const parentTask = canvasNode({
+      data: { kind: "task", name: "父任务" },
+      id: "parent-task",
+      type: "task",
+    });
+    const connection: Connection = {
+      source: "child-task",
+      sourceHandle: NODE_CONTEXT_HANDLE_ID,
+      target: "parent-task",
+      targetHandle: NODE_CONTEXT_TARGET_HANDLE_ID,
+    };
+
+    expect(
+      normalizeCanvasConnection(connection, [childTask, parentTask]),
+    ).toEqual({
+      source: "parent-task",
+      sourceHandle: NODE_RIGHT_HANDLE_ID,
+      target: "child-task",
+      targetHandle: null,
+    });
+  });
+
+  it("migrates persisted plus-to-plus task edges onto node borders", () => {
+    const childTask = canvasNode({
+      data: { kind: "task", name: "子任务" },
+      id: "child-task",
+      type: "task",
+    });
+    const parentTask = canvasNode({
+      data: { kind: "task", name: "父任务" },
+      id: "parent-task",
+      type: "task",
+    });
+
+    expect(
+      normalizePersistedCanvasEdges(
+        [
+          {
+            id: "legacy-task-edge",
+            source: "child-task",
+            sourceHandle: NODE_CONTEXT_HANDLE_ID,
+            target: "parent-task",
+            targetHandle: NODE_CONTEXT_TARGET_HANDLE_ID,
+          },
+        ],
+        [childTask, parentTask],
+      ),
+    ).toEqual([
+      {
+        id: "legacy-task-edge",
+        source: "parent-task",
+        sourceHandle: NODE_RIGHT_HANDLE_ID,
+        target: "child-task",
+        targetHandle: null,
+      },
+    ]);
   });
 
   it("creates node action menus only for unfinished non-context connections", () => {

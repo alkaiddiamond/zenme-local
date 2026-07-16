@@ -1,4 +1,10 @@
 import type { CanvasSnapshotPayload } from "@/lib/zenme";
+import {
+  normalizeTaskComplexity,
+  normalizeTaskPriority,
+  normalizeTaskStatus,
+  normalizeTaskUrgency,
+} from "@/components/zenme/node-types";
 
 type JsonObject = Record<string, unknown>;
 
@@ -71,6 +77,27 @@ function splitPlayerAnalysisJobs(value: JsonObject): CanvasMigrationResult {
     }
     for (const key of Object.keys(takeAnalysisJobData(rawPlayer.data))) delete rawPlayer.data[key];
     migrated = true;
+  }
+
+  for (const rawNode of nodes) {
+    if (!isObject(rawNode) || !isObject(rawNode.data) || rawNode.data.kind !== "task") {
+      continue;
+    }
+    const nextTaskMetadata = {
+      taskStatus: normalizeTaskStatus(rawNode.data.taskStatus),
+      taskPriority: normalizeTaskPriority(rawNode.data.taskPriority),
+      taskComplexity: normalizeTaskComplexity(rawNode.data.taskComplexity),
+      taskUrgency: normalizeTaskUrgency(rawNode.data.taskUrgency),
+    };
+    if (
+      rawNode.data.taskStatus !== nextTaskMetadata.taskStatus ||
+      rawNode.data.taskPriority !== nextTaskMetadata.taskPriority ||
+      rawNode.data.taskComplexity !== nextTaskMetadata.taskComplexity ||
+      rawNode.data.taskUrgency !== nextTaskMetadata.taskUrgency
+    ) {
+      Object.assign(rawNode.data, nextTaskMetadata);
+      migrated = true;
+    }
   }
 
   return {

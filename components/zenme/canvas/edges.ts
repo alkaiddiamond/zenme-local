@@ -1,6 +1,9 @@
 import type { Edge } from "@xyflow/react";
 
-import { NODE_RIGHT_HANDLE_ID } from "@/components/zenme/node-types";
+import {
+  NODE_LEFT_HANDLE_ID,
+  NODE_RIGHT_HANDLE_ID,
+} from "@/components/zenme/node-types";
 import type { CanvasNodeData } from "@/components/zenme/node-types";
 
 const RIGHT_HANDLE_NODE_KINDS = new Set([
@@ -24,6 +27,7 @@ export function getRenderedCanvasEdges(
 ) {
   return edges.map((edge) => {
     const sourceNodeKind = nodeKindById.get(edge.source);
+    const targetNodeKind = nodeKindById.get(edge.target);
     const isNodeRelated =
       selectedNodeIds.has(edge.source) || selectedNodeIds.has(edge.target);
     const preservedClassNames = edge.className
@@ -39,6 +43,10 @@ export function getRenderedCanvasEdges(
       preservedClassNames,
       isNodeRelated ? "zenme-edge-node-related" : "zenme-edge-idle",
     ].filter(Boolean).join(" ");
+    const renderedEdge =
+      targetNodeKind === "task" && !edge.targetHandle
+        ? { ...edge, targetHandle: NODE_LEFT_HANDLE_ID }
+        : edge;
 
     if (
       sourceNodeKind &&
@@ -46,7 +54,7 @@ export function getRenderedCanvasEdges(
       RIGHT_HANDLE_NODE_KINDS.has(sourceNodeKind)
     ) {
       return {
-        ...edge,
+        ...renderedEdge,
         className,
         sourceHandle: NODE_RIGHT_HANDLE_ID,
         type: "default",
@@ -55,12 +63,14 @@ export function getRenderedCanvasEdges(
 
     if (edge.type === "smoothstep") {
       return {
-        ...edge,
+        ...renderedEdge,
         className,
         type: "default",
       };
     }
 
-    return edge.className === className ? edge : { ...edge, className };
+    return renderedEdge.className === className
+      ? renderedEdge
+      : { ...renderedEdge, className };
   });
 }

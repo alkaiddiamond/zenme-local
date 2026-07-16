@@ -350,6 +350,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
         />
         <NodeEdgeSourceHandle visible={Boolean(nodeData.hasOutgoingEdge)} />
         <NodeContextHandle selected={Boolean(selected)} />
+        <NodeContextTargetHandle />
         <EditableNodeTitle
           displayFallback="请输入标题"
           fallbackTitle="文本"

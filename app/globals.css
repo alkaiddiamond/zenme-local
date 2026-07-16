@@ -332,11 +332,15 @@
 }
 
 .zenme-canvas .react-flow__node-text,
+.zenme-canvas .react-flow__node-managedText,
+.zenme-canvas .react-flow__node-task,
 .zenme-canvas .react-flow__node-agent,
 .zenme-canvas .react-flow__node-code,
 .zenme-canvas .react-flow__node-markdown,
 .zenme-canvas .react-flow__node-textGeneration,
 .zenme-canvas .react-flow__node-text *,
+.zenme-canvas .react-flow__node-managedText *,
+.zenme-canvas .react-flow__node-task *,
 .zenme-canvas .react-flow__node-agent *,
 .zenme-canvas .react-flow__node-code *,
 .zenme-canvas .react-flow__node-markdown *,
@@ -347,6 +351,10 @@
 
 .zenme-canvas .react-flow__node-text.selected,
 .zenme-canvas .react-flow__node-text:focus-within,
+.zenme-canvas .react-flow__node-managedText.selected,
+.zenme-canvas .react-flow__node-managedText:focus-within,
+.zenme-canvas .react-flow__node-task.selected,
+.zenme-canvas .react-flow__node-task:focus-within,
 .zenme-canvas .react-flow__node-agent.selected,
 .zenme-canvas .react-flow__node-agent:focus-within,
 .zenme-canvas .react-flow__node-code.selected,
@@ -367,6 +375,34 @@
 
 .zenme-canvas .zenme-text-node-editor {
   caret-color: currentColor !important;
+}
+
+.zenme-canvas .zenme-managed-text-editor {
+  caret-color: #18181b !important;
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-canvas .zenme-managed-name-input {
+  caret-color: #18181b !important;
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-canvas .zenme-task-name-input {
+  caret-color: #18181b !important;
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-managed-tag-input {
+  caret-color: #18181b !important;
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
 }
 
 .zenme-canvas .zenme-text-ai-input {
@@ -510,6 +546,30 @@
 
 .zenme-canvas .zenme-target-handle {
   cursor: crosshair !important;
+}
+
+.zenme-canvas
+  .react-flow__node:hover
+  .zenme-connected-source-handle,
+.zenme-canvas
+  .react-flow__node.selected
+  .zenme-connected-source-handle,
+.zenme-canvas
+  .react-flow__node:focus-within
+  .zenme-connected-source-handle {
+  opacity: 1 !important;
+}
+
+.zenme-canvas
+  .react-flow__node:hover
+  .zenme-connected-target-handle-dot,
+.zenme-canvas
+  .react-flow__node.selected
+  .zenme-connected-target-handle-dot,
+.zenme-canvas
+  .react-flow__node:focus-within
+  .zenme-connected-target-handle-dot {
+  opacity: 1 !important;
 }
 
 .zenme-canvas.zenme-context-connecting .zenme-node-action-handle {

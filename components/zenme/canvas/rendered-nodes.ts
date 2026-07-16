@@ -54,13 +54,18 @@ type RenderedCanvasNodeInput = {
         CanvasNodeData,
         | "codeContent"
         | "codeLanguage"
+        | "name"
         | "plainText"
         | "richTextHtml"
+        | "tags"
         | "textMode"
         | "title"
       >
     >,
   ) => void;
+  onUpdateTaskNode?: NonNullable<CanvasNodeData["onUpdateTaskNode"]>;
+  onToggleTaskChildren?: NonNullable<CanvasNodeData["onToggleTaskChildren"]>;
+  onUpdateProjectTag?: NonNullable<CanvasNodeData["onUpdateProjectTag"]>;
   onSubmitTextGenerationNode: (
     nodeId: string,
     input?: { model?: string; prompt?: string },
@@ -109,6 +114,9 @@ type RenderedNodeCacheEntry = {
   onUpdateTextGenerationNode?: RenderedCanvasNodeInput["onUpdateTextGenerationNode"];
   onUpdateImageNode?: RenderedCanvasNodeInput["onUpdateImageNode"];
   onUpdateTextNode?: RenderedCanvasNodeInput["onUpdateTextNode"];
+  onUpdateTaskNode?: RenderedCanvasNodeInput["onUpdateTaskNode"];
+  onToggleTaskChildren?: RenderedCanvasNodeInput["onToggleTaskChildren"];
+  onUpdateProjectTag?: RenderedCanvasNodeInput["onUpdateProjectTag"];
   projectId?: string;
   toggleReaderCollapse?: RenderedCanvasNodeInput["toggleReaderCollapse"];
 };
@@ -138,11 +146,38 @@ export function getRenderedCanvasNodes({
   onUpdateImageNode,
   onUpdateTextGenerationNode,
   onUpdateTextNode,
+  onUpdateTaskNode,
+  onToggleTaskChildren,
+  onUpdateProjectTag,
   projectId,
   toggleReaderCollapse,
 }: RenderedCanvasNodeInput) {
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const projectTags = Array.from(
+    new Set(
+      nodes.flatMap((node) =>
+        node.data.kind === "managedText" || node.data.kind === "task"
+          ? (node.data.tags ?? [])
+          : [],
+      ),
+    ),
+  ).sort((left, right) => left.localeCompare(right, "zh-CN"));
+  const projectTagColors = nodes.reduce<
+    NonNullable<CanvasNodeData["projectTagColors"]>
+  >((colors, node) => {
+    if (node.data.kind !== "managedText" && node.data.kind !== "task") {
+      return colors;
+    }
+    for (const [tag, color] of Object.entries(node.data.tagColors ?? {})) {
+      if (color && colors[tag] === undefined) colors[tag] = color;
+    }
+    return colors;
+  }, {});
   const musicPlayerIdByMusicId = new Map<string, string>();
+  const taskChildrenBySourceId = new Map<
+    string,
+    NonNullable<CanvasNodeData["taskChildren"]>
+  >();
   const musicSourceByPlayerId = new Map<string, CanvasNode>();
   const playerByChildId = new Map<string, CanvasNode>();
   for (const edge of edges) {
@@ -151,6 +186,15 @@ export function getRenderedCanvasNodes({
     if (source?.data.kind === "music" && target?.data.kind === "musicPlayer") {
       musicPlayerIdByMusicId.set(source.id, target.id);
       musicSourceByPlayerId.set(target.id, source);
+    }
+    if (source?.data.kind === "task" && target?.data.kind === "task") {
+      const children = taskChildrenBySourceId.get(source.id) ?? [];
+      children.push({
+        id: target.id,
+        name: target.data.name?.trim() || "未命名任务",
+        status: target.data.taskStatus ?? "inProgress",
+      });
+      taskChildrenBySourceId.set(source.id, children);
     }
     if (source?.data.kind === "musicPlayer" && target && (
       target.data.kind === "lyrics" ||
@@ -331,7 +375,36 @@ export function getRenderedCanvasNodes({
     }
 
     if (
+      nodeWithConnectionState.data.kind === "task"
+    ) {
+      const taskChildren = taskChildrenBySourceId.get(nodeWithConnectionState.id) ?? [];
+      const completedChildren = taskChildren.filter(
+        (child) => child.status === "completed",
+      ).length;
+      const taskProgress = taskChildren.length
+        ? completedChildren / taskChildren.length
+        : nodeWithConnectionState.data.taskStatus === "completed"
+          ? 1
+          : 0;
+
+      return {
+        ...nodeWithConnectionState,
+        data: {
+          ...nodeWithConnectionState.data,
+          onUpdateProjectTag,
+          onUpdateTaskNode,
+          onToggleTaskChildren,
+          projectTagColors,
+          projectTags,
+          taskChildren,
+          taskProgress,
+        },
+      };
+    }
+
+    if (
       nodeWithConnectionState.data.kind === "text" ||
+      nodeWithConnectionState.data.kind === "managedText" ||
       nodeWithConnectionState.data.kind === "markdown" ||
       nodeWithConnectionState.data.kind === "code"
     ) {
@@ -353,6 +426,9 @@ export function getRenderedCanvasNodes({
         ...nodeWithConnectionState,
         data: {
           ...nodeWithConnectionState.data,
+          ...(nodeWithConnectionState.data.kind === "managedText"
+            ? { onUpdateProjectTag, projectTagColors, projectTags }
+            : {}),
           onCreateTextChildNode,
           onSubmitTextGenerationNode,
           onUpdateTextGenerationNode,
