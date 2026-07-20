@@ -1,5 +1,6 @@
 "use client";
 
+import type { ImageCameraControl } from "@/components/zenme/image-edit-options";
 import type { CanvasSnapshotPayload, ZenmeProject } from "@/lib/zenme";
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -110,6 +111,7 @@ export async function refreshFileSignedUrlsFromApi(_fileId: string) {
 
 export async function generateOrEditImage(input: {
   aspectRatio?: string;
+  cameraControl?: ImageCameraControl;
   imageDataUrl?: string;
   imageDataUrls?: string[];
   model: string;

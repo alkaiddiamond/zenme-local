@@ -406,6 +406,7 @@ export function createImageGenerationNodeDataUpdate(input: {
     Pick<
       CanvasNodeData,
       | "fileId"
+      | "imageCameraControl"
       | "imageOutputAspectRatio"
       | "imageError"
       | "imageModel"
@@ -425,6 +426,7 @@ export function createImageGenerationNodeDataUpdate(input: {
     ...input,
     changedKeys: [
       "fileId",
+      "imageCameraControl",
       "imageOutputAspectRatio",
       "imageError",
       "imageModel",

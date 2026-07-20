@@ -426,13 +426,52 @@
   transition: opacity 120ms ease !important;
 }
 
+.zenme-canvas .zenme-node-handle-hit-area {
+  opacity: 1 !important;
+  transition: none !important;
+}
+
+.zenme-canvas .zenme-node-handle-plus {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: opacity, transform;
+}
+
+.zenme-canvas .zenme-node-handle-plus-right {
+  transform: translate3d(-24px, 0, 0);
+}
+
+.zenme-canvas .zenme-node-handle-plus-left {
+  transform: translate3d(24px, 0, 0);
+}
+
+.zenme-canvas .zenme-node-handle-plus-visible,
+.zenme-canvas
+  .react-flow__node:hover
+  .zenme-node-handle-plus,
+.zenme-canvas
+  .react-flow__node:focus-within
+  .zenme-node-handle-plus {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0);
+}
+
 .zenme-canvas .zenme-node-renaming .zenme-node-floating-control,
 .zenme-canvas .zenme-node-renaming .zenme-node-inline-control,
 .zenme-canvas .zenme-node-renaming .zenme-node-connection-handle,
+.zenme-canvas .zenme-node-renaming .zenme-node-handle-hit-area,
 .zenme-canvas .zenme-node-renaming .react-flow__resize-control,
 .zenme-canvas-node-dragging .zenme-node-floating-control,
 .zenme-canvas-node-dragging .zenme-node-inline-control,
 .zenme-canvas-node-dragging .zenme-node-connection-handle,
+.zenme-canvas-node-dragging .zenme-node-handle-hit-area,
 .zenme-canvas-node-dragging .react-flow__resize-control {
   opacity: 0 !important;
   pointer-events: none !important;
@@ -807,4 +846,55 @@
   flex-shrink: 0;
   overflow: hidden;
   width: 100%;
+}
+
+@keyframes zenme-camera-wheel-next {
+  from {
+    opacity: 0.35;
+    transform: translate3d(0, 14px, 0) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes zenme-camera-wheel-previous {
+  from {
+    opacity: 0.35;
+    transform: translate3d(0, -14px, 0) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.zenme-camera-wheel-transition,
+.zenme-camera-wheel-label {
+  backface-visibility: hidden;
+  will-change: opacity, transform;
+}
+
+.zenme-camera-wheel-transition[data-direction='next'],
+.zenme-camera-wheel-label[data-direction='next'] {
+  animation: zenme-camera-wheel-next 220ms cubic-bezier(0.22, 1, 0.36, 1)
+    both;
+}
+
+.zenme-camera-wheel-transition[data-direction='previous'],
+.zenme-camera-wheel-label[data-direction='previous'] {
+  animation: zenme-camera-wheel-previous 220ms
+    cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zenme-camera-wheel-transition,
+  .zenme-camera-wheel-label,
+  .zenme-node-handle-plus {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
 }

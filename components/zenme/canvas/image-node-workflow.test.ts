@@ -9,6 +9,10 @@ const imageGenerationNodeSource = readFileSync(
   new URL("../nodes/image-edit-node.tsx", import.meta.url),
   "utf8",
 );
+const imageCameraControlSource = readFileSync(
+  new URL("../nodes/image-camera-control-picker.tsx", import.meta.url),
+  "utf8",
+);
 const canvasClientSource = readFileSync(
   new URL("../canvas-client.tsx", import.meta.url),
   "utf8",
@@ -44,9 +48,9 @@ describe("direct image editing workflow", () => {
     );
   });
 
-  it("keeps the generated-image model picker interactive outside the canvas node", () => {
+  it("keeps generated-image option pickers interactive outside the canvas node", () => {
     expect(imageNodeSource).toContain(
-      "(selected || isModelPickerOpen)",
+      "(selected || isModelPickerOpen || isCameraPickerOpen)",
     );
     expect(imageNodeSource).toContain(
       "onOpenChange={setIsModelPickerOpen}",
@@ -56,6 +60,21 @@ describe("direct image editing workflow", () => {
     );
     expect(visualComponentsSource).toContain(
       "onPointerDown={(event) => event.stopPropagation()}",
+    );
+  });
+
+  it("switches the hovered camera-control column with a throttled mouse wheel", () => {
+    expect(imageCameraControlSource).toContain("onWheel={handleWheel}");
+    expect(imageCameraControlSource).toContain("event.preventDefault()");
+    expect(imageCameraControlSource).toContain("event.stopPropagation()");
+    expect(imageCameraControlSource).toContain(
+      "now - lastWheelAt.current < 100",
+    );
+    expect(imageCameraControlSource).toContain(
+      "cameraControlImagesPreloaded = true",
+    );
+    expect(imageCameraControlSource).toContain(
+      "zenme-camera-wheel-transition",
     );
   });
 

@@ -1,4 +1,5 @@
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
+import type { ImageCameraControl } from "@/components/zenme/image-edit-options";
 
 export type MusicJobStatus =
   | "queued"
@@ -225,6 +226,7 @@ export type CanvasNodeData = {
   textGenerationModel?: string;
   imagePrompt?: string;
   imageModel?: string;
+  imageCameraControl?: ImageCameraControl;
   imageOutputAspectRatio?: string;
   imageQuality?: string;
   imageStatus?: "idle" | "editing" | "done" | "failed";
@@ -340,6 +342,7 @@ export type CanvasNodeData = {
       Pick<
         CanvasNodeData,
         | "fileId"
+        | "imageCameraControl"
         | "imageOutputAspectRatio"
         | "imageError"
         | "imageModel"
@@ -357,7 +360,13 @@ export type CanvasNodeData = {
   ) => void;
   onSubmitImageNode?: (
     nodeId: string,
-    input?: { aspectRatio?: string; model?: string; prompt?: string; quality?: string },
+    input?: {
+      aspectRatio?: string;
+      cameraControl?: ImageCameraControl;
+      model?: string;
+      prompt?: string;
+      quality?: string;
+    },
   ) => Promise<void> | void;
 };
 

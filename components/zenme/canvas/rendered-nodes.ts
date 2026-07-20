@@ -85,7 +85,7 @@ type RenderedCanvasNodeInput = {
   ) => Promise<void> | void;
   onSubmitImageNode: (
     nodeId: string,
-    input?: { aspectRatio?: string; model?: string; prompt?: string; quality?: string },
+    input?: Parameters<NonNullable<CanvasNodeData["onSubmitImageNode"]>>[1],
   ) => Promise<void> | void;
   onUpdateImageNode: (
     nodeId: string,
@@ -93,6 +93,7 @@ type RenderedCanvasNodeInput = {
       Pick<
         CanvasNodeData,
         | "fileId"
+        | "imageCameraControl"
         | "imageOutputAspectRatio"
         | "imageError"
         | "imageModel"

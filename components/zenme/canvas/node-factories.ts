@@ -5,6 +5,7 @@ import {
   DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
   DEFAULT_IMAGE_EDIT_QUALITY,
   getImageEditResultNodeSize,
+  type ImageCameraControl,
 } from "@/components/zenme/image-edit-options";
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 
@@ -386,6 +387,7 @@ export function createAiResponseChildCanvasNode(input: {
 
 export function createPendingImageResultChildCanvasNode(input: {
   aspectRatio?: string;
+  cameraControl?: ImageCameraControl;
   id: string;
   model?: string;
   position: { x: number; y: number };
@@ -407,6 +409,7 @@ export function createPendingImageResultChildCanvasNode(input: {
       title: "图片生成",
       imageOperation: "generate",
       imageGenerationResult: true,
+      imageCameraControl: input.cameraControl,
       imageModel: input.model ?? NANO_BANANA_2_IMAGE_MODEL,
       imageOutputAspectRatio: input.aspectRatio ?? DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
       imagePrompt: input.prompt,

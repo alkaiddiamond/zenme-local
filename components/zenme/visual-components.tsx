@@ -72,6 +72,7 @@ export function ZenmeControlButton({
 }
 
 type ZenmeModelPickerProps = {
+  compact?: boolean;
   icon: ReactNode;
   model: string;
   models: AiModelOption[];
@@ -80,6 +81,7 @@ type ZenmeModelPickerProps = {
 };
 
 export function ZenmeModelPicker({
+  compact = false,
   icon,
   model,
   models,
@@ -94,14 +96,31 @@ export function ZenmeModelPicker({
       <DropdownMenuTrigger asChild>
         <button
           aria-label="选择模型"
-          className="inline-flex h-9 min-w-0 max-w-[220px] flex-1 items-center rounded-full border border-zinc-200 bg-white px-3 text-sm text-zinc-800 shadow-sm transition hover:bg-zinc-50"
+          className={cn(
+            "inline-flex min-w-0 flex-1 items-center rounded-full border border-zinc-200 bg-white px-3 text-zinc-800 shadow-sm transition hover:bg-zinc-50",
+            compact
+              ? "h-[30px] max-w-[180px] text-xs"
+              : "h-9 max-w-[220px] text-sm",
+          )}
           type="button"
         >
-          <span className="mr-2 shrink-0 text-zinc-500">{icon}</span>
+          <span
+            className={cn(
+              "shrink-0 text-zinc-500",
+              compact ? "mr-1.5" : "mr-2",
+            )}
+          >
+            {icon}
+          </span>
           <span className="min-w-0 flex-1 truncate text-left font-medium">
             {activeLabel}
           </span>
-          <ChevronDown className="ml-2 size-4 shrink-0 text-zinc-500" />
+          <ChevronDown
+            className={cn(
+              "shrink-0 text-zinc-500",
+              compact ? "ml-1.5 size-3.5" : "ml-2 size-4",
+            )}
+          />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

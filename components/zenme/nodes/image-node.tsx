@@ -34,6 +34,7 @@ import {
 } from "@/components/zenme/nodes/image-edit-node";
 import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
 import { ImageTaskTiming } from "@/components/zenme/nodes/image-task-timing";
+import { ImageCameraControlPicker } from "@/components/zenme/nodes/image-camera-control-picker";
 import {
   createModelOption,
   useAiModelOptions,
@@ -62,6 +63,9 @@ export function ImageNode({ data, id, selected }: NodeProps) {
       nodeData.imageQuality ?? rememberedPreferences.quality,
     ).value,
   );
+  const [cameraControl, setCameraControl] = useState(
+    nodeData.imageCameraControl,
+  );
   const [model, setModel] = useState(
     nodeData.imageModel ??
       rememberedPreferences.modelId ??
@@ -71,6 +75,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
+  const [isCameraPickerOpen, setIsCameraPickerOpen] = useState(false);
   const [referencePickerRequest, setReferencePickerRequest] = useState(0);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [detectedAspectRatio, setDetectedAspectRatio] = useState<number | undefined>(
@@ -114,6 +119,10 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   }, [nodeData.imageQuality]);
 
   useEffect(() => {
+    setCameraControl(nodeData.imageCameraControl);
+  }, [nodeData.imageCameraControl]);
+
+  useEffect(() => {
     if (nodeData.imageAspectRatio) setDetectedAspectRatio(nodeData.imageAspectRatio);
   }, [nodeData.imageAspectRatio]);
 
@@ -149,6 +158,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
 
   function syncPrompt() {
     nodeData.onUpdateImageNode?.(id, {
+      imageCameraControl: cameraControl,
       imageOutputAspectRatio: aspectRatio,
       imageModel: model,
       imagePrompt: prompt,
@@ -165,6 +175,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
 
     setIsSubmitting(true);
     nodeData.onUpdateImageNode?.(id, {
+      imageCameraControl: cameraControl,
       imageOutputAspectRatio: aspectRatio,
       imageModel: model,
       imagePrompt: nextPrompt,
@@ -174,6 +185,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
     try {
       await nodeData.onSubmitImageNode?.(id, {
         aspectRatio,
+        cameraControl,
         model,
         prompt: nextPrompt,
         quality,
@@ -276,7 +288,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
             ) : null}
             <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-white/10" />
           </div>
-          {(selected || isModelPickerOpen) &&
+          {(selected || isModelPickerOpen || isCameraPickerOpen) &&
           !nodeData.isMultiSelection &&
           !isRenaming ? (
             <div
@@ -339,6 +351,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
               <div className="mt-auto flex items-end justify-between gap-3 pt-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <ZenmeModelPicker
+                    compact
                     icon={<Sparkles className="size-3.5" />}
                     model={model}
                     models={
@@ -384,6 +397,16 @@ export function ImageNode({ data, id, selected }: NodeProps) {
                     }}
                     quality={qualityOption.value}
                     qualityLabel={qualityOption.label}
+                  />
+                  <ImageCameraControlPicker
+                    onChange={(nextCameraControl) => {
+                      setCameraControl(nextCameraControl);
+                      nodeData.onUpdateImageNode?.(id, {
+                        imageCameraControl: nextCameraControl,
+                      });
+                    }}
+                    onOpenChange={setIsCameraPickerOpen}
+                    value={cameraControl}
                   />
                 </div>
                 <button

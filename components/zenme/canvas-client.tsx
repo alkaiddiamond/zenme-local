@@ -211,6 +211,7 @@ import {
   DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
   DEFAULT_IMAGE_EDIT_QUALITY,
   getImageDisplaySize,
+  type ImageCameraControl,
 } from "@/components/zenme/image-edit-options";
 import {
   getImageEditPreferences,
@@ -1878,6 +1879,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       nodeId: string,
       updates: {
         fileId?: string;
+        imageCameraControl?: ImageCameraControl;
         imageOutputAspectRatio?: string;
         imageError?: string;
         imageModel?: string;
@@ -2042,7 +2044,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const submitImageGenerationNode = useCallback(
     async (
       nodeId: string,
-      input?: { aspectRatio?: string; model?: string; prompt?: string; quality?: string },
+      input?: {
+        aspectRatio?: string;
+        cameraControl?: ImageCameraControl;
+        model?: string;
+        prompt?: string;
+        quality?: string;
+      },
     ) => {
       const currentNodes = reactFlow?.getNodes() ?? nodesRef.current;
       const currentEdges = reactFlow?.getEdges() ?? edgesRef.current;
@@ -2070,6 +2078,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         input?.quality ??
         sourceNode?.data.imageQuality ??
         DEFAULT_IMAGE_EDIT_QUALITY;
+      const cameraControl =
+        input && Object.prototype.hasOwnProperty.call(input, "cameraControl")
+          ? input.cameraControl
+          : sourceNode?.data.imageCameraControl;
       const standaloneImageUrl = sourceNode?.data.kind === "imageGeneration"
         ? undefined
         : sourceNode?.data.originalUrl ?? sourceNode?.data.previewUrl;
@@ -2109,6 +2121,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       const { edge: resultEdge, node: resultNode } =
         createPendingImageResultChildCanvasNode({
           aspectRatio,
+          cameraControl,
           id: crypto.randomUUID(),
           model,
           position,
@@ -2131,6 +2144,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         );
         const edited = await generateOrEditImage({
           aspectRatio,
+          cameraControl,
           imageDataUrls,
           model,
           operation,
@@ -2164,6 +2178,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
                 data: {
                   ...node.data,
                   fileId: upload.fileId,
+                  imageCameraControl: cameraControl,
                   imageOutputAspectRatio: aspectRatio,
                   imageError: undefined,
                   imagePrompt: prompt,

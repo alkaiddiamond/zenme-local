@@ -5,6 +5,8 @@ import {
   buildImageEditSystemPrompt,
   buildImageGenerationSystemPrompt,
   getImageEditAspectRatioOption,
+  normalizeImageCameraControl,
+  type ImageCameraControl,
 } from "@/components/zenme/image-edit-options";
 import { readOpenAiImageGenerationStream } from "@/lib/ai/openai-image-generation";
 import { getVolcengineSeedreamSize } from "@/lib/ai/volcengine-image-size";
@@ -38,6 +40,7 @@ class ImageApiError extends Error {
 
 type ImageRequestBody = {
   aspectRatio?: string;
+  cameraControl?: Partial<ImageCameraControl>;
   imageDataUrl?: string;
   imageDataUrls?: string[];
   model?: string;
@@ -63,6 +66,7 @@ export async function POST(request: Request) {
       ...(body.imageDataUrls ?? []),
     ].map((value) => value.trim()).filter(Boolean).slice(0, 8);
     const model = body.model?.trim();
+    const cameraControl = normalizeImageCameraControl(body.cameraControl);
 
     if (!prompt) return NextResponse.json({ error: "缺少图片生成或编辑指令" }, { status: 400 });
     if (!model) return NextResponse.json({ error: "缺少图片模型" }, { status: 400 });
@@ -77,6 +81,7 @@ export async function POST(request: Request) {
     const result = provider.apiFormat === "openai_oauth"
       ? await generateWithChatGpt({
           aspectRatio: body.aspectRatio,
+          cameraControl,
           imageDataUrls,
           model,
           operation,
@@ -87,6 +92,7 @@ export async function POST(request: Request) {
       : provider.apiFormat === "volcengine_agent_plan"
         ? await generateWithVolcengineAgentPlan({
             aspectRatio: body.aspectRatio,
+            cameraControl,
             imageDataUrls,
             model,
             operation,
@@ -96,6 +102,7 @@ export async function POST(request: Request) {
           })
       : await generateWithOpenRouter({
           aspectRatio: body.aspectRatio,
+          cameraControl,
           imageDataUrls,
           model,
           operation,
@@ -136,6 +143,7 @@ export async function POST(request: Request) {
 
 async function generateWithVolcengineAgentPlan(input: {
   aspectRatio?: string;
+  cameraControl?: ImageCameraControl;
   imageDataUrls: string[];
   model: string;
   operation: "edit" | "generate";
@@ -214,6 +222,7 @@ async function generateWithVolcengineAgentPlan(input: {
 
 async function generateWithChatGpt(input: {
   aspectRatio?: string;
+  cameraControl?: ImageCameraControl;
   imageDataUrls: string[];
   model: string;
   operation: "edit" | "generate";
@@ -270,6 +279,7 @@ async function generateWithChatGpt(input: {
 
 async function generateWithOpenRouter(input: {
   aspectRatio?: string;
+  cameraControl?: ImageCameraControl;
   imageDataUrls: string[];
   model: string;
   operation: "edit" | "generate";

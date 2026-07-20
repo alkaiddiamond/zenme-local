@@ -45,6 +45,7 @@ import {
 import { ZenmeModelPicker } from "@/components/zenme/visual-components";
 import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
 import { ImageTaskTiming } from "@/components/zenme/nodes/image-task-timing";
+import { ImageCameraControlPicker } from "@/components/zenme/nodes/image-camera-control-picker";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -65,6 +66,9 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
     getImageEditQualityOption(
       nodeData.imageQuality ?? rememberedPreferences.quality,
     ).value,
+  );
+  const [cameraControl, setCameraControl] = useState(
+    nodeData.imageCameraControl,
   );
   const [model, setModel] = useState(
     nodeData.imageModel ??
@@ -102,6 +106,10 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
   }, [nodeData.imageQuality]);
 
   useEffect(() => {
+    setCameraControl(nodeData.imageCameraControl);
+  }, [nodeData.imageCameraControl]);
+
+  useEffect(() => {
     const nextModel =
       nodeData.imageModel ??
       getImageEditPreferences().modelId ??
@@ -111,6 +119,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
 
   function syncPrompt() {
     nodeData.onUpdateImageNode?.(id, {
+      imageCameraControl: cameraControl,
       imageOutputAspectRatio: aspectRatio,
       imageModel: model,
       imagePrompt: prompt,
@@ -127,6 +136,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
 
     setIsSubmitting(true);
     nodeData.onUpdateImageNode?.(id, {
+      imageCameraControl: cameraControl,
       imageOutputAspectRatio: aspectRatio,
       imageModel: model,
       imagePrompt: nextPrompt,
@@ -136,6 +146,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
     try {
       await nodeData.onSubmitImageNode?.(id, {
         aspectRatio,
+        cameraControl,
         model,
         prompt: nextPrompt,
         quality,
@@ -258,6 +269,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
             <div className="nodrag nowheel mt-auto flex items-end justify-between gap-3 pt-2">
               <div className="flex min-w-0 items-center gap-2">
                 <ZenmeModelPicker
+                  compact
                   icon={<Sparkles className="size-3.5" />}
                   model={model}
                   models={
@@ -302,6 +314,15 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
                   }}
                   quality={qualityOption.value}
                   qualityLabel={qualityOption.label}
+                />
+                <ImageCameraControlPicker
+                  onChange={(nextCameraControl) => {
+                    setCameraControl(nextCameraControl);
+                    nodeData.onUpdateImageNode?.(id, {
+                      imageCameraControl: nextCameraControl,
+                    });
+                  }}
+                  value={cameraControl}
                 />
               </div>
               <button

@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildImageEditSystemPrompt,
   buildImageGenerationSystemPrompt,
+  DEFAULT_IMAGE_CAMERA_CONTROL,
   getImageDisplaySize,
   getImageEditResultNodeSize,
+  normalizeImageCameraControl,
 } from "@/components/zenme/image-edit-options";
 
 describe("image canvas display size", () => {
@@ -46,6 +48,33 @@ describe("image system prompts", () => {
     expect(prompt).toContain("最终输出画布必须严格符合 16:9 宽高比");
     expect(prompt).toContain("不得通过黑边、白边、透明边或空白留边");
     expect(prompt).toContain("2K 清晰度");
+  });
+
+  it("adds saved camera direction to generation prompts", () => {
+    const prompt = buildImageGenerationSystemPrompt({
+      aspectRatio: "16:9",
+      cameraControl: DEFAULT_IMAGE_CAMERA_CONTROL,
+      quality: "2K",
+    });
+
+    expect(prompt).toContain("摄影机与镜头指导");
+    expect(prompt).toContain("Sony Venice");
+    expect(prompt).toContain("Zeiss Ultra Prime");
+    expect(prompt).toContain("125mm");
+    expect(prompt).toContain("ƒ/11");
+    expect(prompt).toContain("视角、透视压缩");
+  });
+
+  it("drops incomplete or unknown camera controls", () => {
+    expect(normalizeImageCameraControl(DEFAULT_IMAGE_CAMERA_CONTROL)).toEqual(
+      DEFAULT_IMAGE_CAMERA_CONTROL,
+    );
+    expect(
+      normalizeImageCameraControl({
+        ...DEFAULT_IMAGE_CAMERA_CONTROL,
+        camera: "unknown-camera" as typeof DEFAULT_IMAGE_CAMERA_CONTROL.camera,
+      }),
+    ).toBeUndefined();
   });
 
   it("forces editing while preserving the reference subject", () => {
