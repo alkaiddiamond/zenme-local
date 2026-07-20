@@ -11,7 +11,7 @@ import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 import { readNodeSize } from "./geometry";
 import type { CanvasNode } from "./types";
 
-const TEXT_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
+const TEXT_NODE_DEFAULT_SIZE = { height: 176, width: 560 };
 const MANAGED_TEXT_NODE_DEFAULT_SIZE = { height: 380, width: 560 };
 const TASK_NODE_COLLAPSED_SIZE = { height: 176, width: 560 };
 const TASK_NODE_DEFAULT_EXPANDED_HEIGHT = 460;
@@ -19,8 +19,9 @@ const CODE_NODE_DEFAULT_SIZE = { height: 420, width: 720 };
 const MARKDOWN_NODE_DEFAULT_SIZE = { height: 320, width: 560 };
 export const NANO_BANANA_2_IMAGE_MODEL =
   "google/gemini-3.1-flash-image-preview";
-const IMAGE_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
-const TEXT_NODE_MIN_HEIGHT = 180;
+const IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
+const IMAGE_RESULT_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
+const TEXT_NODE_MIN_HEIGHT = 176;
 const TEXT_NODE_MAX_GENERATED_HEIGHT = 560;
 const TEXT_NODE_VERTICAL_PADDING = 56;
 const TEXT_NODE_LINE_HEIGHT = 30;
@@ -209,8 +210,8 @@ export function createReferencedImageGenerationCanvasNode(input: {
         y: input.sourceNode.position.y,
       },
     style: {
-      height: IMAGE_NODE_DEFAULT_SIZE.height,
-      width: IMAGE_NODE_DEFAULT_SIZE.width,
+      height: IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE.height,
+      width: IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE.width,
     },
     data: {
       kind: "imageGeneration",
@@ -244,8 +245,8 @@ export function createImageGenerationCanvasNode(input: {
     type: "imageGeneration",
     position: input.position,
     style: {
-      height: IMAGE_NODE_DEFAULT_SIZE.height,
-      width: IMAGE_NODE_DEFAULT_SIZE.width,
+      height: IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE.height,
+      width: IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE.width,
     },
     data: {
       kind: "imageGeneration",
@@ -274,8 +275,8 @@ export function createEditedImageChildCanvasNode(input: {
   title?: string;
 }): { edge: Edge; node: CanvasNode } {
   const sourceSize = readNodeSize(input.sourceNode, {
-    height: IMAGE_NODE_DEFAULT_SIZE.height,
-    width: IMAGE_NODE_DEFAULT_SIZE.width,
+    height: IMAGE_RESULT_NODE_DEFAULT_SIZE.height,
+    width: IMAGE_RESULT_NODE_DEFAULT_SIZE.width,
   });
   const resultSize = getImageEditResultNodeSize(input.aspectRatio);
   const node: CanvasNode = {
@@ -398,8 +399,8 @@ export function createPendingImageResultChildCanvasNode(input: {
     type: "imageGeneration",
     position: input.position,
     style: {
-      height: IMAGE_NODE_DEFAULT_SIZE.height,
-      width: IMAGE_NODE_DEFAULT_SIZE.width,
+      height: IMAGE_RESULT_NODE_DEFAULT_SIZE.height,
+      width: IMAGE_RESULT_NODE_DEFAULT_SIZE.width,
     },
     data: {
       kind: "imageGeneration",
@@ -495,8 +496,8 @@ export function createConnectedPlaceholderCanvasNode(input: {
   sourceNode: CanvasNode;
 }): { edge: Edge; node: CanvasNode } {
   const sourceSize = readNodeSize(input.sourceNode, {
-    height: 260,
-    width: 520,
+    height: TEXT_NODE_DEFAULT_SIZE.height,
+    width: TEXT_NODE_DEFAULT_SIZE.width,
   });
   if (input.kind === "textGeneration") {
     const { edge, node } = createTextGenerationCanvasNode({
@@ -520,15 +521,25 @@ export function createConnectedPlaceholderCanvasNode(input: {
   }
 
   if (input.kind === "task") {
+    const taskNode = createTaskCanvasNode({
+      id: input.id,
+      position: input.position ?? {
+        x: input.sourceNode.position.x + sourceSize.width + 80,
+        y: input.sourceNode.position.y,
+      },
+    });
     return {
       edge: createConnectedEdge(input.sourceNode.id, input.id),
-      node: createTaskCanvasNode({
-        id: input.id,
-        position: input.position ?? {
-          x: input.sourceNode.position.x + sourceSize.width + 80,
-          y: input.sourceNode.position.y,
-        },
-      }),
+      node:
+        input.sourceNode.data.kind === "task"
+          ? {
+              ...taskNode,
+              data: {
+                ...taskNode.data,
+                taskParentId: input.sourceNode.id,
+              },
+            }
+          : taskNode,
     };
   }
 
@@ -555,10 +566,7 @@ export function createConnectedPlaceholderCanvasNode(input: {
     },
     style:
       input.kind === "text"
-        ? {
-            height: 260,
-            width: 520,
-          }
+        ? TEXT_NODE_DEFAULT_SIZE
         : undefined,
     data: {
       kind: input.kind,

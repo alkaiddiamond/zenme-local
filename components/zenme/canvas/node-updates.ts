@@ -14,6 +14,27 @@ type NodeUpdateResult = {
   nextNodes: CanvasNode[];
 };
 
+export const AI_RESPONSE_READING_PANEL_SIZE = {
+  height: 1123,
+  width: 794,
+};
+export const AI_RESPONSE_DEFAULT_SIZE = {
+  height: 260,
+  width: 620,
+};
+export const TEXT_NODE_DEFAULT_SIZE = {
+  height: 176,
+  width: 560,
+};
+export const TASK_NODE_DEFAULT_SIZE = {
+  height: 176,
+  width: 560,
+};
+export const MUSIC_CHILD_DEFAULT_SIZE = {
+  height: 176,
+  width: 560,
+};
+
 export function createProjectTagUpdate(input: {
   action: ProjectTagAction;
   nodes: CanvasNode[];
@@ -150,8 +171,8 @@ export function createTaskNodeDataUpdate(input: {
 }
 
 export function createTaskChildrenVisibilityUpdate(input: {
-  collapsedHeight: number;
   expanded: boolean;
+  expandedContentHeight: number;
   nodeId: string;
   nodes: CanvasNode[];
 }): NodeUpdateResult | null {
@@ -161,15 +182,29 @@ export function createTaskChildrenVisibilityUpdate(input: {
   if (!sourceNode) return null;
 
   const currentSize = readNodeSize(sourceNode, { height: 460, width: 560 });
+  const contentHeight = Math.max(
+    Math.ceil(input.expandedContentHeight),
+    TASK_NODE_DEFAULT_SIZE.height,
+  );
   const expandedHeight = input.expanded
-    ? Math.max(sourceNode.data.taskExpandedHeight ?? 460, 360)
-    : Math.max(currentSize.height, 360);
+    ? contentHeight
+    : Math.max(currentSize.height, contentHeight);
   const nextSize = {
     height: input.expanded
       ? expandedHeight
-      : Math.max(Math.ceil(input.collapsedHeight), 120),
-    width: currentSize.width,
+      : TASK_NODE_DEFAULT_SIZE.height,
+    width: input.expanded
+      ? currentSize.width
+      : TASK_NODE_DEFAULT_SIZE.width,
   };
+  if (
+    Boolean(sourceNode.data.taskChildrenExpanded) === input.expanded &&
+    currentSize.height === nextSize.height &&
+    currentSize.width === nextSize.width &&
+    sourceNode.data.taskExpandedHeight === expandedHeight
+  ) {
+    return null;
+  }
 
   return {
     beforeNodeSnapshots: new Map([
@@ -190,6 +225,139 @@ export function createTaskChildrenVisibilityUpdate(input: {
               ...node.data,
               taskChildrenExpanded: input.expanded,
               taskExpandedHeight: expandedHeight,
+            },
+          }
+        : node,
+    ),
+  };
+}
+
+export function createAiResponseExpansionUpdate(input: {
+  expanded: boolean;
+  nodeId: string;
+  nodes: CanvasNode[];
+}): NodeUpdateResult | null {
+  const sourceNode = input.nodes.find(
+    (node) =>
+      node.id === input.nodeId &&
+      node.data.kind === "agent" &&
+      Boolean(node.data.aiPrompt || node.data.aiResponse || node.data.aiStatus),
+  );
+  if (!sourceNode || Boolean(sourceNode.data.aiResponseExpanded) === input.expanded) {
+    return null;
+  }
+
+  const nextSize = input.expanded
+    ? AI_RESPONSE_READING_PANEL_SIZE
+    : AI_RESPONSE_DEFAULT_SIZE;
+
+  return {
+    beforeNodeSnapshots: new Map([
+      [input.nodeId, createCanvasHistoryNodeSnapshot(sourceNode)],
+    ]),
+    nextNodes: input.nodes.map((node) =>
+      node.id === input.nodeId
+        ? {
+            ...node,
+            height: nextSize.height,
+            measured: { ...nextSize },
+            style: {
+              ...(node.style ?? {}),
+              ...nextSize,
+            },
+            width: nextSize.width,
+            data: {
+              ...node.data,
+              aiResponseExpanded: input.expanded,
+            },
+          }
+        : node,
+    ),
+  };
+}
+
+export function createTextNodeExpansionUpdate(input: {
+  expanded: boolean;
+  nodeId: string;
+  nodes: CanvasNode[];
+}): NodeUpdateResult | null {
+  const sourceNode = input.nodes.find(
+    (node) => node.id === input.nodeId && node.data.kind === "text",
+  );
+  if (!sourceNode || Boolean(sourceNode.data.textExpanded) === input.expanded) {
+    return null;
+  }
+
+  const nextSize = input.expanded
+    ? AI_RESPONSE_READING_PANEL_SIZE
+    : TEXT_NODE_DEFAULT_SIZE;
+
+  return {
+    beforeNodeSnapshots: new Map([
+      [input.nodeId, createCanvasHistoryNodeSnapshot(sourceNode)],
+    ]),
+    nextNodes: input.nodes.map((node) =>
+      node.id === input.nodeId
+        ? {
+            ...node,
+            height: nextSize.height,
+            measured: { ...nextSize },
+            style: {
+              ...(node.style ?? {}),
+              ...nextSize,
+            },
+            width: nextSize.width,
+            data: {
+              ...node.data,
+              textExpanded: input.expanded,
+            },
+          }
+        : node,
+    ),
+  };
+}
+
+export function createMusicChildExpansionUpdate(input: {
+  expanded: boolean;
+  nodeId: string;
+  nodes: CanvasNode[];
+}): NodeUpdateResult | null {
+  const sourceNode = input.nodes.find(
+    (node) =>
+      node.id === input.nodeId &&
+      (node.data.kind === "lyrics" ||
+        node.data.kind === "musicAnalysis" ||
+        node.data.kind === "sunoPrompt"),
+  );
+  if (
+    !sourceNode ||
+    Boolean(sourceNode.data.musicChildExpanded) === input.expanded
+  ) {
+    return null;
+  }
+
+  const nextSize = input.expanded
+    ? AI_RESPONSE_READING_PANEL_SIZE
+    : MUSIC_CHILD_DEFAULT_SIZE;
+
+  return {
+    beforeNodeSnapshots: new Map([
+      [input.nodeId, createCanvasHistoryNodeSnapshot(sourceNode)],
+    ]),
+    nextNodes: input.nodes.map((node) =>
+      node.id === input.nodeId
+        ? {
+            ...node,
+            height: nextSize.height,
+            measured: { ...nextSize },
+            style: {
+              ...(node.style ?? {}),
+              ...nextSize,
+            },
+            width: nextSize.width,
+            data: {
+              ...node.data,
+              musicChildExpanded: input.expanded,
             },
           }
         : node,

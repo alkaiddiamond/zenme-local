@@ -220,11 +220,7 @@ export function createMusicChildUpdate(input: {
       x: input.position?.x ?? input.playerNode.position.x + offset.x,
       y: input.position?.y ?? input.playerNode.position.y + offset.y,
     },
-    ...(input.kind === "musicAnalysis"
-      ? { style: { height: 720, width: 620 } }
-      : input.kind === "sunoPrompt"
-        ? { style: { height: 360, width: 520 } }
-        : {}),
+    style: { height: 176, width: 560 },
     data,
   };
   const edge: Edge = {

@@ -522,6 +522,21 @@
   width: 0;
 }
 
+.zenme-canvas .zenme-node-title-bar,
+.zenme-canvas .zenme-node-title-bar * {
+  cursor: grab !important;
+}
+
+.zenme-canvas .zenme-node-title-bar:active,
+.zenme-canvas .zenme-node-title-bar:active * {
+  cursor: grabbing !important;
+}
+
+.zenme-canvas .zenme-node-title-bar input,
+.zenme-canvas .zenme-node-title-bar input * {
+  cursor: text !important;
+}
+
 .zenme-canvas .zenme-node-title-icon-hitbox {
   align-items: center;
   cursor: grab !important;
@@ -533,15 +548,7 @@
 }
 
 .zenme-canvas .zenme-node-title-icon-hitbox * {
-  cursor: grab !important;
-}
-
-.zenme-canvas .zenme-node-title-icon-hitbox:active {
-  cursor: grabbing !important;
-}
-
-.zenme-canvas .zenme-node-title-icon-hitbox:active * {
-  cursor: grabbing !important;
+  cursor: inherit !important;
 }
 
 .zenme-canvas .zenme-target-handle {

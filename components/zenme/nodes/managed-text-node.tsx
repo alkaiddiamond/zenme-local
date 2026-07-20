@@ -187,7 +187,7 @@ export function ManagedTextNode({ data, id, selected }: NodeProps) {
       <NodeContextHandle selected={Boolean(selected)} />
       <NodeContextTargetHandle />
 
-      <div className="absolute -top-8 left-1 flex h-5 items-center gap-2 text-xs font-medium text-zinc-500">
+      <div className="zenme-node-title-bar absolute -top-8 left-1 flex h-5 items-center gap-2 text-xs font-medium text-zinc-500">
         <span className="zenme-node-title-icon-hitbox">
           <FileText className="size-4" />
         </span>
@@ -413,7 +413,9 @@ export function ManagedTextNode({ data, id, selected }: NodeProps) {
         />
       </div>
 
-      {selected ? <TextNodeComposer nodeData={nodeData} nodeId={id} /> : null}
+      {selected && !nodeData.isMultiSelection ? (
+        <TextNodeComposer nodeData={nodeData} nodeId={id} />
+      ) : null}
       <NodeResizer
         color="#a1a1aa"
         handleClassName="zenme-text-resize-handle"

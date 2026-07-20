@@ -5,6 +5,7 @@ import http, { type Server } from "node:http";
 import { getZenmeDataDir } from "@/lib/local/data-dir";
 import { getProxyFetchOptions } from "@/lib/api/proxy-fetch";
 import { resolveInside } from "@/lib/local/path-safety";
+import { mergeSyncedOpenAiModels } from "@/lib/ai/openai-model-sync";
 import {
   CHATGPT_IMAGE_MODEL_IDS,
   CHATGPT_PROVIDER_ID,
@@ -105,6 +106,7 @@ async function writeTokens(tokens: StoredTokens) {
 }
 
 async function requestTokens(body: URLSearchParams) {
+  const networkProxy = await getChatGptNetworkProxy();
   const response = await fetch(`${AUTH_ISSUER}/oauth/token`, {
     method: "POST",
     headers: {
@@ -112,7 +114,7 @@ async function requestTokens(body: URLSearchParams) {
     },
     body: body.toString(),
     signal: AbortSignal.timeout(30_000),
-    ...getProxyFetchOptions(`${AUTH_ISSUER}/oauth/token`),
+    ...getProxyFetchOptions(`${AUTH_ISSUER}/oauth/token`, networkProxy),
   });
   if (!response.ok) {
     const responseBody = await response.text().catch(() => "");
@@ -225,19 +227,27 @@ function parseModels(payload: unknown): ModelConfig[] {
 export async function syncOpenAiModels() {
   const tokens = await ensureFreshOpenAiTokens();
   if (!tokens) throw new Error("请先登录 ChatGPT");
+  const networkProxy = await getChatGptNetworkProxy();
   const response = await fetch(MODELS_URL, {
     headers: {
       ...createOpenAiAuthHeaders(tokens),
       ...(tokens.modelsEtag ? { "If-None-Match": tokens.modelsEtag } : {}),
     },
     signal: AbortSignal.timeout(30_000),
-    ...getProxyFetchOptions(MODELS_URL),
+    ...getProxyFetchOptions(MODELS_URL, networkProxy),
   });
   if (response.status === 304) return (await getLocalSettings()).modelProviders.find((p) => p.id === CHATGPT_PROVIDER_ID)?.models ?? [];
   if (!response.ok) throw new Error(`拉取 ChatGPT 模型失败（${response.status}）`);
-  const models = parseModels(await response.json());
-  if (!models.length) throw new Error("ChatGPT 未返回可用模型");
+  const syncedModels = parseModels(await response.json());
+  if (!syncedModels.length) throw new Error("ChatGPT 未返回可用模型");
   const settings = await getLocalSettings();
+  const currentProvider = settings.modelProviders.find(
+    (provider) => provider.id === CHATGPT_PROVIDER_ID,
+  );
+  const models = mergeSyncedOpenAiModels(
+    syncedModels,
+    currentProvider?.models ?? [],
+  );
   await updateLocalSettings({
     modelProviders: settings.modelProviders.map((provider) => provider.id !== CHATGPT_PROVIDER_ID ? provider : {
       ...provider,
@@ -252,6 +262,13 @@ export async function syncOpenAiModels() {
   if (etag !== tokens.modelsEtag) await writeTokens({ ...tokens, modelsEtag: etag });
   delete (globalThis as OAuthGlobal).__zenmeOpenAiOAuthError;
   return models;
+}
+
+async function getChatGptNetworkProxy() {
+  const settings = await getLocalSettings();
+  return settings.modelProviders.find(
+    (provider) => provider.id === CHATGPT_PROVIDER_ID,
+  )?.networkProxy;
 }
 
 function html(title: string, message: string, success: boolean) {

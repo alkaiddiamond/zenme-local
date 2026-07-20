@@ -52,11 +52,18 @@ describe("task node metadata controls", () => {
     expect(source).toContain('aria-label={isChildrenExpanded ? "收起子任务" : "展开子任务"}');
     expect(source).toContain("<ChevronUp");
     expect(source).toContain("<ChevronDown");
-    expect(source).toContain("headerRef.current?.getBoundingClientRect().height");
-    expect(source).toContain("nodeData.onToggleTaskChildren");
-    expect(source).toContain("getBoundingClientRect().height ?? 0) + 36");
+    expect(source).toContain("readTaskContentSizes");
+    expect(source).toContain("headerRef.current");
+    expect(source).toContain("childrenPanelRef.current");
+    expect(source).toContain("childrenContentRef.current");
+    expect(source).toContain("estimatedPanelHeight");
+    expect(source).toContain("childrenPanel.scrollHeight");
+    expect(source).toContain("new ResizeObserver(measure)");
+    expect(source).toContain("observer.observe(childrenContentRef.current)");
+    expect(source).toContain("onToggleTaskChildren");
     expect(source).toContain('isVisible={Boolean(selected)}');
-    expect(source).toContain("minHeight={isChildrenExpanded ? 360 : 176}");
+    expect(source).toContain("minHeight={176}");
+    expect(source).not.toContain('isChildrenExpanded ? "min-h-[360px]"');
   });
 
   it("uses the same inset header surface as managed nodes", () => {
@@ -70,5 +77,19 @@ describe("task node metadata controls", () => {
     expect(source).toContain("activeOptionMenu");
     expect(source).toContain("if (!selected) setActiveOptionMenu(null)");
     expect(source).toContain("<DropdownMenu onOpenChange={onOpenChange} open={open}>");
+  });
+
+  it("shows task timestamps outside and replaces the inline time fields with a parent menu", () => {
+    expect(source).toContain('<TaskTimestamp label="创建"');
+    expect(source).toContain('<TaskTimestamp label="修改"');
+    expect(source).toContain('className="absolute -top-8 right-1');
+    expect(source).toContain("<TaskParentMenu");
+    expect(source).toContain('open={activeOptionMenu === "parent"}');
+    expect(source).not.toContain("<TimeValue");
+  });
+
+  it("allows locating a child task from the child list", () => {
+    expect(source).toContain("nodeData.onLocateTaskNode?.(child.id)");
+    expect(source).toContain("定位到子任务");
   });
 });

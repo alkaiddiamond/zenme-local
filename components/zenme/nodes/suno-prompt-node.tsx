@@ -9,6 +9,7 @@ import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title"
 import { NodeFrame } from "@/components/zenme/nodes/node-frame";
 import { NodeActionHandle, NodeEdgeSourceHandle, NodeTargetHandle } from "@/components/zenme/node-ui";
 import { MusicJobStatus, useMusicJob } from "@/components/zenme/nodes/use-music-job";
+import { MusicChildExpandButton } from "@/components/zenme/nodes/music-child-expand-button";
 
 export function SunoPromptNode({ data, selected, id }: NodeProps) {
   const node = data as CanvasNodeData;
@@ -16,7 +17,8 @@ export function SunoPromptNode({ data, selected, id }: NodeProps) {
   useMusicJob(id, node);
 
   return (
-    <NodeFrame className={`flex h-full min-h-[280px] w-full min-w-[420px] flex-col p-4 ${isRenaming ? "zenme-node-renaming" : ""}`} selected={Boolean(selected)}>
+    <NodeFrame className={`flex h-full min-h-[176px] w-full min-w-[420px] flex-col p-4 ${isRenaming ? "zenme-node-renaming" : ""}`} selected={Boolean(selected)}>
+      <MusicChildExpandButton node={node} nodeId={id} />
       <EditableNodeTitle fallbackTitle="Suno 提示词" icon={<WandSparkles className="size-4" />} onCommit={(title) => node.onUpdateMusicNode?.(id, { title })} onEditingChange={setIsRenaming} title={node.title} />
       <NodeTargetHandle visible={Boolean(node.hasIncomingEdge || node.musicParentPlayerNodeId)} />
       <NodeEdgeSourceHandle visible={Boolean(node.hasOutgoingEdge)} />
@@ -37,7 +39,7 @@ export function SunoPromptNode({ data, selected, id }: NodeProps) {
         handleClassName="zenme-text-resize-handle"
         isVisible={Boolean(selected)}
         lineClassName="zenme-text-resize-line"
-        minHeight={280}
+        minHeight={176}
         minWidth={420}
       />
       <NodeActionHandle selected={Boolean(selected)} />

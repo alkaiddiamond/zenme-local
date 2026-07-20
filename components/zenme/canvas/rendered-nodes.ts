@@ -12,6 +12,10 @@ import {
 } from "./geometry";
 import type { CanvasNode } from "./types";
 import { extractMusicLyrics } from "./music-workflow";
+import {
+  deriveTaskRelationships,
+  getTaskParentOptions,
+} from "./task-relationships";
 
 type RenderedCanvasNodeInput = {
   createNoteNode: (
@@ -64,7 +68,16 @@ type RenderedCanvasNodeInput = {
     >,
   ) => void;
   onUpdateTaskNode?: NonNullable<CanvasNodeData["onUpdateTaskNode"]>;
+  onSetTaskParent?: NonNullable<CanvasNodeData["onSetTaskParent"]>;
+  onLocateTaskNode?: NonNullable<CanvasNodeData["onLocateTaskNode"]>;
   onToggleTaskChildren?: NonNullable<CanvasNodeData["onToggleTaskChildren"]>;
+  onToggleAiResponseExpanded?: NonNullable<
+    CanvasNodeData["onToggleAiResponseExpanded"]
+  >;
+  onToggleTextExpanded?: NonNullable<CanvasNodeData["onToggleTextExpanded"]>;
+  onToggleMusicChildExpanded?: NonNullable<
+    CanvasNodeData["onToggleMusicChildExpanded"]
+  >;
   onUpdateProjectTag?: NonNullable<CanvasNodeData["onUpdateProjectTag"]>;
   onSubmitTextGenerationNode: (
     nodeId: string,
@@ -115,7 +128,12 @@ type RenderedNodeCacheEntry = {
   onUpdateImageNode?: RenderedCanvasNodeInput["onUpdateImageNode"];
   onUpdateTextNode?: RenderedCanvasNodeInput["onUpdateTextNode"];
   onUpdateTaskNode?: RenderedCanvasNodeInput["onUpdateTaskNode"];
+  onSetTaskParent?: RenderedCanvasNodeInput["onSetTaskParent"];
+  onLocateTaskNode?: RenderedCanvasNodeInput["onLocateTaskNode"];
   onToggleTaskChildren?: RenderedCanvasNodeInput["onToggleTaskChildren"];
+  onToggleAiResponseExpanded?: RenderedCanvasNodeInput["onToggleAiResponseExpanded"];
+  onToggleTextExpanded?: RenderedCanvasNodeInput["onToggleTextExpanded"];
+  onToggleMusicChildExpanded?: RenderedCanvasNodeInput["onToggleMusicChildExpanded"];
   onUpdateProjectTag?: RenderedCanvasNodeInput["onUpdateProjectTag"];
   projectId?: string;
   toggleReaderCollapse?: RenderedCanvasNodeInput["toggleReaderCollapse"];
@@ -147,7 +165,12 @@ export function getRenderedCanvasNodes({
   onUpdateTextGenerationNode,
   onUpdateTextNode,
   onUpdateTaskNode,
+  onSetTaskParent,
+  onLocateTaskNode,
   onToggleTaskChildren,
+  onToggleAiResponseExpanded,
+  onToggleTextExpanded,
+  onToggleMusicChildExpanded,
   onUpdateProjectTag,
   projectId,
   toggleReaderCollapse,
@@ -174,10 +197,7 @@ export function getRenderedCanvasNodes({
     return colors;
   }, {});
   const musicPlayerIdByMusicId = new Map<string, string>();
-  const taskChildrenBySourceId = new Map<
-    string,
-    NonNullable<CanvasNodeData["taskChildren"]>
-  >();
+  const taskRelationships = deriveTaskRelationships(nodes, edges);
   const musicSourceByPlayerId = new Map<string, CanvasNode>();
   const playerByChildId = new Map<string, CanvasNode>();
   for (const edge of edges) {
@@ -186,15 +206,6 @@ export function getRenderedCanvasNodes({
     if (source?.data.kind === "music" && target?.data.kind === "musicPlayer") {
       musicPlayerIdByMusicId.set(source.id, target.id);
       musicSourceByPlayerId.set(target.id, source);
-    }
-    if (source?.data.kind === "task" && target?.data.kind === "task") {
-      const children = taskChildrenBySourceId.get(source.id) ?? [];
-      children.push({
-        id: target.id,
-        name: target.data.name?.trim() || "未命名任务",
-        status: target.data.taskStatus ?? "inProgress",
-      });
-      taskChildrenBySourceId.set(source.id, children);
     }
     if (source?.data.kind === "musicPlayer" && target && (
       target.data.kind === "lyrics" ||
@@ -215,6 +226,8 @@ export function getRenderedCanvasNodes({
       outgoing: new Set<string>(),
     },
   );
+  const hasMultipleSelectedNodes =
+    nodes.filter((node) => node.selected).length > 1;
   const runningGenerationSourceIds = new Set<string>();
   for (const edge of edges) {
     const target = nodeById.get(edge.target);
@@ -257,6 +270,8 @@ export function getRenderedCanvasNodes({
         ...nodeWithoutGroupDragLimit.data,
         hasIncomingEdge: connectedNodeIdsByDirection.incoming.has(node.id),
         hasOutgoingEdge: connectedNodeIdsByDirection.outgoing.has(node.id),
+        isMultiSelection:
+          hasMultipleSelectedNodes && Boolean(node.selected),
         hasRunningGenerationChild: runningGenerationSourceIds.has(node.id),
         ...(
           nodeWithoutGroupDragLimit.data.kind === "imageGeneration" ||
@@ -269,7 +284,19 @@ export function getRenderedCanvasNodes({
                   imageReferenceCandidates: candidates,
                   imageReferences: selectedIds === undefined
                     ? candidates
-                    : candidates.filter((reference) => selectedIds.includes(reference.nodeId)),
+                    : selectedIds
+                        .map((selectedId) =>
+                          candidates.find(
+                            (reference) => reference.nodeId === selectedId,
+                          ),
+                        )
+                        .filter(
+                          (
+                            reference,
+                          ): reference is NonNullable<
+                            CanvasNodeData["imageReferences"]
+                          >[number] => Boolean(reference),
+                        ),
                 };
               })()
             : {}
@@ -330,23 +357,11 @@ export function getRenderedCanvasNodes({
       const sunoPrompt = analysisResult?.sunoPrompt as { en?: string; zh?: string } | undefined;
       return {
         ...nodeWithConnectionState,
-        ...(nodeWithConnectionState.data.kind === "musicAnalysis"
-          ? {
-              style: {
-                height: 720,
-                width: 620,
-                ...(nodeWithConnectionState.style ?? {}),
-              },
-            }
-          : nodeWithConnectionState.data.kind === "sunoPrompt"
-          ? {
-              style: {
-                height: 360,
-                width: 520,
-                ...(nodeWithConnectionState.style ?? {}),
-              },
-            }
-          : {}),
+        style: {
+          height: 176,
+          width: 560,
+          ...(nodeWithConnectionState.style ?? {}),
+        },
         data: {
           ...nodeWithConnectionState.data,
           musicCurrentTime: player?.data.musicCurrentTime,
@@ -369,6 +384,7 @@ export function getRenderedCanvasNodes({
           onMusicAnalysisComplete,
           onMusicJobUpdate,
           onRetryMusicAnalysis,
+          onToggleMusicChildExpanded,
           onUpdateMusicNode,
         },
       };
@@ -377,7 +393,8 @@ export function getRenderedCanvasNodes({
     if (
       nodeWithConnectionState.data.kind === "task"
     ) {
-      const taskChildren = taskChildrenBySourceId.get(nodeWithConnectionState.id) ?? [];
+      const taskChildren =
+        taskRelationships.childrenByParentId.get(nodeWithConnectionState.id) ?? [];
       const completedChildren = taskChildren.filter(
         (child) => child.status === "completed",
       ).length;
@@ -391,12 +408,21 @@ export function getRenderedCanvasNodes({
         ...nodeWithConnectionState,
         data: {
           ...nodeWithConnectionState.data,
+          onLocateTaskNode,
+          onSetTaskParent,
           onUpdateProjectTag,
           onUpdateTaskNode,
           onToggleTaskChildren,
           projectTagColors,
           projectTags,
           taskChildren,
+          taskParentId:
+            taskRelationships.parentIdByChildId.get(nodeWithConnectionState.id),
+          taskParentOptions: getTaskParentOptions({
+            edges,
+            nodeId: nodeWithConnectionState.id,
+            nodes,
+          }),
           taskProgress,
         },
       };
@@ -413,6 +439,7 @@ export function getRenderedCanvasNodes({
       if (
         cached?.onCreateTextChildNode === onCreateTextChildNode &&
         cached.onSubmitTextGenerationNode === onSubmitTextGenerationNode &&
+        cached.onToggleTextExpanded === onToggleTextExpanded &&
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
         cached.onUpdateTextNode === onUpdateTextNode &&
         cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
@@ -431,6 +458,7 @@ export function getRenderedCanvasNodes({
             : {}),
           onCreateTextChildNode,
           onSubmitTextGenerationNode,
+          onToggleTextExpanded,
           onUpdateTextGenerationNode,
           onUpdateTextNode,
         },
@@ -440,6 +468,7 @@ export function getRenderedCanvasNodes({
         node: renderedTextNode,
         onCreateTextChildNode,
         onSubmitTextGenerationNode,
+        onToggleTextExpanded,
         onUpdateTextGenerationNode,
         onUpdateTextNode,
       });
@@ -600,7 +629,7 @@ export function getRenderedCanvasNodes({
 
       const renderedNoteNode = {
         ...nodeWithConnectionState,
-        dragHandle: ".zenme-note-node-drag-handle",
+        dragHandle: ".zenme-node-title-bar",
         data: {
           ...nodeWithConnectionState.data,
           onSubmitTextGenerationNode,
@@ -622,6 +651,7 @@ export function getRenderedCanvasNodes({
 
       if (
         cached?.onSubmitTextGenerationNode === onSubmitTextGenerationNode &&
+        cached.onToggleAiResponseExpanded === onToggleAiResponseExpanded &&
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
         cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
         cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
@@ -634,6 +664,7 @@ export function getRenderedCanvasNodes({
         ...nodeWithConnectionState,
         data: {
           ...nodeWithConnectionState.data,
+          onToggleAiResponseExpanded,
           onSubmitTextGenerationNode,
           onUpdateTextGenerationNode,
         },
@@ -641,6 +672,7 @@ export function getRenderedCanvasNodes({
 
       renderedNodeCache.set(nodeWithConnectionState, {
         node: renderedAgentNode,
+        onToggleAiResponseExpanded,
         onSubmitTextGenerationNode,
         onUpdateTextGenerationNode,
       });

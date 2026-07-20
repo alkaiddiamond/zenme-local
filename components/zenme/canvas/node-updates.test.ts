@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AI_RESPONSE_DEFAULT_SIZE,
+  AI_RESPONSE_READING_PANEL_SIZE,
+  createAiResponseExpansionUpdate,
   createCodeNodeDataUpdate,
+  createMusicChildExpansionUpdate,
   createProjectTagUpdate,
   createTaskChildrenVisibilityUpdate,
+  createTextNodeExpansionUpdate,
   createTextGenerationNodeDataUpdate,
   createTextNodeDataUpdate,
   createTaskNodeDataUpdate,
@@ -28,6 +33,106 @@ function node(input: {
 }
 
 describe("canvas node data update helpers", () => {
+  it("expands a music result node to an A4 panel and collapses to 560 × 176", () => {
+    const lyrics = node({
+      data: { kind: "lyrics" },
+      id: "lyrics",
+      type: "lyrics",
+    });
+    lyrics.style = { height: 560, width: 460 };
+
+    const expanded = createMusicChildExpansionUpdate({
+      expanded: true,
+      nodeId: "lyrics",
+      nodes: [lyrics],
+    });
+
+    expect(expanded?.nextNodes[0]).toMatchObject({
+      style: AI_RESPONSE_READING_PANEL_SIZE,
+      data: { musicChildExpanded: true },
+    });
+
+    const collapsed = createMusicChildExpansionUpdate({
+      expanded: false,
+      nodeId: "lyrics",
+      nodes: expanded?.nextNodes ?? [],
+    });
+
+    expect(collapsed?.nextNodes[0]).toMatchObject({
+      style: { height: 176, width: 560 },
+      data: { musicChildExpanded: false },
+    });
+  });
+
+  it("expands a text node to an A4 panel and collapses to its creation size", () => {
+    const text = node({
+      data: { kind: "text", plainText: "正文" },
+      id: "text",
+    });
+    text.style = { height: 480, width: 700 };
+
+    const expanded = createTextNodeExpansionUpdate({
+      expanded: true,
+      nodeId: "text",
+      nodes: [text],
+    });
+
+    expect(expanded?.nextNodes[0]).toMatchObject({
+      style: AI_RESPONSE_READING_PANEL_SIZE,
+      data: { textExpanded: true },
+    });
+
+    const collapsed = createTextNodeExpansionUpdate({
+      expanded: false,
+      nodeId: "text",
+      nodes: expanded?.nextNodes ?? [],
+    });
+
+    expect(collapsed?.nextNodes[0]).toMatchObject({
+      style: { height: 176, width: 560 },
+      data: { textExpanded: false },
+    });
+  });
+
+  it("expands an AI response to an A4 panel and collapses to its creation size", () => {
+    const response = node({
+      data: {
+        aiResponse: "一段很长的回复",
+        aiStatus: "done",
+        kind: "agent",
+      },
+      id: "response",
+      type: "agent",
+    });
+    response.style = { height: 300, width: 620 };
+
+    const expanded = createAiResponseExpansionUpdate({
+      expanded: true,
+      nodeId: "response",
+      nodes: [response],
+    });
+
+    expect(expanded?.nextNodes[0]).toMatchObject({
+      style: AI_RESPONSE_READING_PANEL_SIZE,
+      data: {
+        aiResponseExpanded: true,
+      },
+    });
+
+    const collapsed = createAiResponseExpansionUpdate({
+      expanded: false,
+      nodeId: "response",
+      nodes: expanded?.nextNodes ?? [],
+    });
+
+    expect(collapsed?.nextNodes[0]).toMatchObject({
+      style: AI_RESPONSE_DEFAULT_SIZE,
+      data: {
+        aiResponseExpanded: false,
+      },
+    });
+  });
+
   it("updates text and markdown nodes while preserving history snapshots", () => {
     const text = node({
       data: { kind: "text", plainText: "old", richTextHtml: "<p>old</p>" },
@@ -188,7 +293,7 @@ describe("canvas node data update helpers", () => {
     );
   });
 
-  it("synchronizes every React Flow size field when task children collapse", () => {
+  it("collapses to the header and re-expands to the measured content height", () => {
     const task: CanvasNode = {
       ...node({
         data: {
@@ -206,16 +311,16 @@ describe("canvas node data update helpers", () => {
     };
 
     const collapsed = createTaskChildrenVisibilityUpdate({
-      collapsedHeight: 236,
       expanded: false,
+      expandedContentHeight: 680,
       nodeId: "task",
       nodes: [task],
     });
     expect(collapsed?.nextNodes[0]).toMatchObject({
-      height: 236,
-      measured: { height: 236, width: 640 },
-      style: { height: 236, width: 640 },
-      width: 640,
+      height: 176,
+      measured: { height: 176, width: 560 },
+      style: { height: 176, width: 560 },
+      width: 560,
       data: {
         taskChildrenExpanded: false,
         taskExpandedHeight: 720,
@@ -223,19 +328,73 @@ describe("canvas node data update helpers", () => {
     });
 
     const expanded = createTaskChildrenVisibilityUpdate({
-      collapsedHeight: 236,
       expanded: true,
+      expandedContentHeight: 680,
       nodeId: "task",
       nodes: collapsed?.nextNodes ?? [],
     });
     expect(expanded?.nextNodes[0]).toMatchObject({
-      height: 720,
-      measured: { height: 720, width: 640 },
-      style: { height: 720, width: 640 },
-      width: 640,
+      height: 680,
+      measured: { height: 680, width: 560 },
+      style: { height: 680, width: 560 },
+      width: 560,
       data: {
         taskChildrenExpanded: true,
-        taskExpandedHeight: 720,
+        taskExpandedHeight: 680,
+      },
+    });
+  });
+
+  it("grows an expanded task to fit its child content", () => {
+    const task = node({
+      data: {
+        kind: "task",
+        taskChildrenExpanded: false,
+        taskExpandedHeight: 460,
+      },
+      id: "task",
+      type: "task",
+    });
+
+    const expanded = createTaskChildrenVisibilityUpdate({
+      expanded: true,
+      expandedContentHeight: 940,
+      nodeId: "task",
+      nodes: [task],
+    });
+
+    expect(expanded?.nextNodes[0]).toMatchObject({
+      style: { height: 940 },
+      data: {
+        taskChildrenExpanded: true,
+        taskExpandedHeight: 940,
+      },
+    });
+  });
+
+  it("does not force short expanded task content to 360px", () => {
+    const task = node({
+      data: {
+        kind: "task",
+        taskChildrenExpanded: false,
+      },
+      id: "task",
+      type: "task",
+    });
+
+    const expanded = createTaskChildrenVisibilityUpdate({
+      expanded: true,
+      expandedContentHeight: 274,
+      nodeId: "task",
+      nodes: [task],
+    });
+
+    expect(expanded?.nextNodes[0]).toMatchObject({
+      height: 274,
+      style: { height: 274 },
+      data: {
+        taskChildrenExpanded: true,
+        taskExpandedHeight: 274,
       },
     });
   });

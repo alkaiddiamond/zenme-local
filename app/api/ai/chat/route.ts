@@ -10,7 +10,7 @@ import { openAiResponsesToChatStream } from "@/lib/ai/openai-responses-stream";
 import { normalizeStreamTokenUsage } from "@/lib/ai/openai-responses-stream";
 import { observeChatUsageStream } from "@/lib/ai/chat-usage-stream";
 import { checkRateLimit, getClientIp } from "@/lib/api/rate-limit";
-import { normalizeProviderBaseUrl } from "@/lib/api/provider-url";
+import { normalizeProviderApiBaseUrl } from "@/lib/api/provider-url";
 import { getProxyFetchOptions } from "@/lib/api/proxy-fetch";
 import {
   getEnabledProviderModels,
@@ -113,7 +113,10 @@ export async function POST(request: Request) {
       }).catch(() => undefined);
 
     let responseBody: ReadableStream<Uint8Array>;
-    if (providerConfig.apiFormat === "openai_oauth") {
+    if (
+      providerConfig.apiFormat === "openai_oauth" ||
+      providerConfig.apiFormat === "volcengine_agent_plan"
+    ) {
       responseBody = openAiResponsesToChatStream(upstream.body, { onUsage: recordUsage });
     } else if (providerConfig.apiFormat === "anthropic") {
       const usage = normalizeStreamTokenUsage(
@@ -149,6 +152,7 @@ type ChatProviderConfig =
       baseUrl: string;
       model: string;
       name: string;
+      networkProxy: ModelProviderConfig["networkProxy"];
     }
   | { error: string };
 
@@ -167,15 +171,15 @@ function resolveChatProviderConfig(
   const providerBaseUrl = provider?.baseUrl?.trim();
   const providerApiKey = provider?.apiKey?.trim();
   const providerName = provider?.name?.trim() || "所选模型服务商";
-  const baseUrl = normalizeProviderBaseUrl(
+  const baseUrl = normalizeProviderApiBaseUrl(
     getProviderEnvBaseUrl(provider) ||
       providerBaseUrl ||
       "https://open.bigmodel.cn/api/paas/v4",
+    provider?.apiFormat,
   );
-  const apiKey =
-    process.env.ZHIPU_API_KEY?.trim() ||
-    providerApiKey ||
-    getProviderEnvApiKey(provider);
+  const apiKey = provider
+    ? providerApiKey || getProviderEnvApiKey(provider)
+    : process.env.ZHIPU_API_KEY?.trim();
 
   if (!baseUrl) {
     return { error: `缺少 ${providerName} 的接口地址，请到设置 > 模型配置中补全。` };
@@ -195,6 +199,11 @@ function resolveChatProviderConfig(
     baseUrl,
     model,
     name: providerName,
+    networkProxy: provider?.networkProxy ?? {
+      mode: "environment",
+      url: "",
+      noProxy: "localhost,127.0.0.1,::1",
+    },
   };
 }
 
@@ -224,12 +233,18 @@ function getProviderEnvApiKey(provider?: ModelProviderConfig) {
   if (provider.apiFormat === "zhipu") {
     return process.env.ZHIPU_API_KEY?.trim();
   }
+  if (provider.apiFormat === "volcengine_agent_plan") {
+    return process.env.VOLCENGINE_AGENT_PLAN_API_KEY?.trim();
+  }
   return undefined;
 }
 
 function getProviderEnvBaseUrl(provider?: ModelProviderConfig) {
   if (provider?.apiFormat === "zhipu") {
     return process.env.ZHIPU_BASE_URL?.trim();
+  }
+  if (provider?.apiFormat === "volcengine_agent_plan") {
+    return process.env.VOLCENGINE_AGENT_PLAN_BASE_URL?.trim();
   }
   return undefined;
 }
@@ -267,7 +282,10 @@ async function fetchProviderChatCompletion(input: {
           ...createOpenAiAuthHeaders(tokens),
         },
         body: JSON.stringify(createOpenAiOAuthRequestBody(input)),
-        ...getProxyFetchOptions(RESPONSES_URL),
+        ...getProxyFetchOptions(
+          RESPONSES_URL,
+          input.provider.networkProxy,
+        ),
       });
     }
 
@@ -286,6 +304,10 @@ async function fetchProviderChatCompletion(input: {
           stream: false,
           system: input.systemContent,
         }),
+        ...getProxyFetchOptions(
+          input.provider.baseUrl,
+          input.provider.networkProxy,
+        ),
       });
       if (!response.ok) return response;
       const payload = (await response.json()) as {
@@ -297,6 +319,20 @@ async function fetchProviderChatCompletion(input: {
         .map((item) => item.text)
         .join("");
       return createTextSseResponse(content, payload.usage);
+    }
+
+    if (input.provider.apiFormat === "volcengine_agent_plan") {
+      return await fetch(`${input.provider.baseUrl}/responses`, {
+        method: "POST",
+        headers: createProviderHeaders(input.provider),
+        body: JSON.stringify(
+          createVolcengineAgentPlanResponsesRequestBody(input),
+        ),
+        ...getProxyFetchOptions(
+          input.provider.baseUrl,
+          input.provider.networkProxy,
+        ),
+      });
     }
 
     return await fetch(`${input.provider.baseUrl}/chat/completions`, {
@@ -311,6 +347,10 @@ async function fetchProviderChatCompletion(input: {
         stream: true,
         stream_options: { include_usage: true },
       }),
+      ...getProxyFetchOptions(
+        input.provider.baseUrl,
+        input.provider.networkProxy,
+      ),
     });
   } catch (error) {
     console.warn("[Zenme AI] provider request threw", {
@@ -323,6 +363,26 @@ async function fetchProviderChatCompletion(input: {
       error: `${input.provider.name} 调用 ${input.provider.model} 失败，无法连接服务商，请检查接口地址或网络。`,
     };
   }
+}
+
+export function createVolcengineAgentPlanResponsesRequestBody(input: {
+  messages: ChatMessage[];
+  provider: { model: string };
+  systemContent: string;
+}) {
+  return {
+    model: input.provider.model,
+    instructions: input.systemContent,
+    input: input.messages
+      .filter((message) => message.role !== "system")
+      .map((message) => ({
+        type: "message",
+        role: message.role,
+        content: message.content,
+      })),
+    stream: true,
+    store: false,
+  };
 }
 
 export function createOpenAiOAuthRequestBody(input: {

@@ -1,16 +1,20 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowUp, Box } from "lucide-react";
+import { Loader2, Send, Sparkles } from "lucide-react";
 import Link from "next/link";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   CreateProjectCard,
   ProjectCard,
   ProjectGrid,
 } from "@/components/zenme/project-card";
+import {
+  createModelOption,
+  rememberAiModelPreference,
+  useAiModelOptions,
+} from "@/components/zenme/use-ai-model-options";
+import { ZenmeModelPicker } from "@/components/zenme/visual-components";
 import {
   createProjectInApi,
   listProjectsFromApi,
@@ -27,6 +31,15 @@ export function DashboardClient() {
   const [model, setModel] = useState(modelOptions[0]);
   const [projects, setProjects] = useState<ZenmeProject[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const configuredModels = useAiModelOptions();
+  const preferredModel = configuredModels[0]?.id ?? modelOptions[0];
+  const pickerModels = configuredModels.some((option) => option.id === model)
+    ? configuredModels
+    : [createModelOption(model), ...configuredModels];
+
+  useEffect(() => {
+    setModel(preferredModel);
+  }, [preferredModel]);
 
   const createProject = useCallback(
     async (projectPrompt: string) => {
@@ -100,6 +113,11 @@ export function DashboardClient() {
     await createProject(prompt);
   }
 
+  function handleModelChange(nextModel: string) {
+    setModel(nextModel);
+    void rememberAiModelPreference("text", nextModel);
+  }
+
   return (
     <div className="zenme-dashboard-shell min-h-full bg-[var(--color-surface)] px-20 py-10">
       <section className="mx-auto flex min-h-[54vh] max-w-3xl flex-col items-center justify-center pt-6">
@@ -108,38 +126,47 @@ export function DashboardClient() {
         </p>
 
         <form
-          className="relative h-[104px] w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] px-6 py-5"
+          className="flex min-h-[180px] w-full flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] p-4"
           onSubmit={handleSubmit}
         >
-          <Input
-            className="h-10 w-[calc(100%-96px)] border-0 bg-transparent px-0 text-base text-[var(--color-text-primary)] shadow-none placeholder:text-[var(--color-text-tertiary)] focus-visible:ring-0"
+          <textarea
+            aria-label="项目提示词"
+            className="min-h-24 flex-1 resize-none bg-transparent px-1 py-1 text-base leading-7 text-[var(--color-text-primary)] caret-zinc-950 outline-none"
             onChange={(event) => setPrompt(event.target.value)}
-            placeholder="placeholder"
+            onKeyDown={(event) => {
+              if (
+                event.key !== "Enter" ||
+                event.shiftKey ||
+                event.nativeEvent.isComposing
+              ) {
+                return;
+              }
+
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }}
             value={prompt}
           />
-          <select
-            aria-label="选择模型"
-            className="absolute bottom-5 right-16 h-9 w-9 cursor-pointer appearance-none rounded-full bg-transparent text-[0px] outline-none"
-            onChange={(event) => setModel(event.target.value)}
-            title={model}
-            value={model}
-          >
-            {modelOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-          <Box className="absolute bottom-[30px] right-[70px] size-5 text-[var(--color-text-secondary)]" />
-          <Button
-            className="absolute bottom-4 right-4 size-10 rounded-full bg-[var(--color-run)] p-0 text-white shadow-none hover:bg-[var(--color-run-hover)]"
-            disabled={isSubmitting}
-            size="icon"
-            title="创建本地项目"
-            type="submit"
-          >
-            <ArrowUp className="size-5" />
-          </Button>
+          <div className="mt-auto flex items-end justify-between gap-3 pt-3">
+            <ZenmeModelPicker
+              icon={<Sparkles className="size-4" />}
+              model={model}
+              models={pickerModels}
+              onChange={handleModelChange}
+            />
+            <button
+              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+              disabled={isSubmitting}
+              title="创建本地项目"
+              type="submit"
+            >
+              {isSubmitting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
+              )}
+            </button>
+          </div>
         </form>
       </section>
 

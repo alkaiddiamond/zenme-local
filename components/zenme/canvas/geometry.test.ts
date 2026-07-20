@@ -6,6 +6,7 @@ import {
   createCanvasHistoryEntry,
   getAbsoluteNodePosition,
   getNodeBounds,
+  getNodeSizeFallback,
   isNodeCenterInsideBounds,
   normalizeGroupNodeRelations,
   numericSize,
@@ -43,6 +44,34 @@ function node(input: {
     ...(input.measured ? { measured: input.measured } : {}),
   } as CanvasNode;
 }
+
+describe("node size fallbacks", () => {
+  it("uses a compact request size and a separate pending-result size", () => {
+    const requestNode = node({
+      data: { kind: "imageGeneration", title: "图片生成" },
+      id: "image-request",
+      type: "imageGeneration",
+    });
+    const resultNode = node({
+      data: {
+        imageGenerationResult: true,
+        kind: "imageGeneration",
+        title: "图片生成",
+      },
+      id: "image-result",
+      type: "imageGeneration",
+    });
+
+    expect(getNodeSizeFallback(requestNode)).toEqual({
+      height: 260,
+      width: 520,
+    });
+    expect(getNodeSizeFallback(resultNode)).toEqual({
+      height: 260,
+      width: 520,
+    });
+  });
+});
 
 describe("canvas geometry helpers", () => {
   it("parses numeric sizes and ignores invalid values", () => {

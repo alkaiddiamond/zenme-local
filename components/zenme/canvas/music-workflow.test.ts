@@ -124,6 +124,7 @@ describe("music workflow", () => {
     });
     expect(first.createdEdges[0]).toMatchObject({ source: "player-1", target: first.focusNodeId });
     expect(first.createdNodes[0].data.musicParentPlayerNodeId).toBe("player-1");
+    expect(first.createdNodes[0].style).toMatchObject({ height: 176, width: 560 });
 
     const repeated = createMusicChildUpdate({
       edges: first.createdEdges,
@@ -151,7 +152,7 @@ describe("music workflow", () => {
       projectId: "project-1",
     });
 
-    expect(update.createdNodes[0].style).toMatchObject({ height: 360, width: 520 });
+    expect(update.createdNodes[0].style).toMatchObject({ height: 176, width: 560 });
   });
 
   it("creates a resizable comprehensive analysis node with the documented default size", () => {
@@ -169,7 +170,7 @@ describe("music workflow", () => {
       projectId: "project-1",
     });
 
-    expect(update.createdNodes[0].style).toMatchObject({ height: 720, width: 620 });
+    expect(update.createdNodes[0].style).toMatchObject({ height: 176, width: 560 });
   });
 
   it("assigns lyric lines to analyzed structure sections", () => {

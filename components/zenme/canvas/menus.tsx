@@ -4,7 +4,6 @@ import {
   BookOpen,
   BarChart3,
   FileText,
-  Image as ImageIcon,
   ImagePlus,
   ListTodo,
   MessageSquareText,
@@ -40,6 +39,7 @@ type CanvasAddMenuProps = {
 };
 
 type NodeCreationMenuItemsProps = {
+  includeUpload?: boolean;
   onCreateImageGenerationNode: () => void;
   onCreateManagedTextNode: () => void;
   onCreateTaskNode: () => void;
@@ -48,6 +48,7 @@ type NodeCreationMenuItemsProps = {
 };
 
 function NodeCreationMenuItems({
+  includeUpload = true,
   onCreateImageGenerationNode,
   onCreateManagedTextNode,
   onCreateTaskNode,
@@ -64,10 +65,16 @@ function NodeCreationMenuItems({
         title="文本"
       />
       <FloatingMenuItem
-        description="带名称、标签和创建时间的文本"
+        description="根据提示词创建图片"
+        icon={ImagePlus}
+        onClick={onCreateImageGenerationNode}
+        title="图片"
+      />
+      <FloatingMenuItem
+        description="带名称、标签和创建时间的强管理节点"
         icon={NotebookTabs}
         onClick={onCreateManagedTextNode}
-        title="强管理节点"
+        title="管理"
       />
       <FloatingMenuItem
         description="跟踪状态、优先级、进度和子任务"
@@ -75,19 +82,17 @@ function NodeCreationMenuItems({
         onClick={onCreateTaskNode}
         title="任务"
       />
-      <FloatingMenuItem
-        description="根据提示词创建图片"
-        icon={ImagePlus}
-        onClick={onCreateImageGenerationNode}
-        title="图片生成"
-      />
-      <FloatingMenuSectionLabel>资源</FloatingMenuSectionLabel>
-      <FloatingMenuItem
-        description="从系统选择图片、书籍或文件"
-        icon={Upload}
-        onClick={onUploadFiles}
-        title="上传"
-      />
+      {includeUpload ? (
+        <>
+          <FloatingMenuSectionLabel>资源</FloatingMenuSectionLabel>
+          <FloatingMenuItem
+            description="从系统选择图片、书籍或文件"
+            icon={Upload}
+            onClick={onUploadFiles}
+            title="上传"
+          />
+        </>
+      ) : null}
     </>
   );
 }
@@ -154,6 +159,26 @@ export function NodeActionMenu({
   onCreateMusicPlayer,
   onCreateMusicChild,
 }: NodeActionMenuProps) {
+  if (actionNode?.data.kind === "text") {
+    return (
+      <FloatingMenu left={menu.x + 12} top={menu.y - 8}>
+        <FloatingMenuHeader onClose={onClose} title="添加节点" />
+        <NodeCreationMenuItems
+          includeUpload={false}
+          onCreateImageGenerationNode={() =>
+            onCreateConnectedPlaceholder("imageGeneration")
+          }
+          onCreateManagedTextNode={() =>
+            onCreateConnectedPlaceholder("managedText")
+          }
+          onCreateTaskNode={() => onCreateConnectedPlaceholder("task")}
+          onCreateTextNode={() => onCreateConnectedPlaceholder("text")}
+          onUploadFiles={onUploadConnectedFiles}
+        />
+      </FloatingMenu>
+    );
+  }
+
   if (actionNode?.data.kind === "task") {
     return (
       <FloatingMenu left={menu.x + 12} top={menu.y - 8}>
@@ -210,15 +235,6 @@ export function NodeActionMenu({
         icon={MousePointer2}
         onClick={() => onCreateConnectedPlaceholder("text")}
         title="创建关联节点"
-      />
-      <FloatingMenuItem
-        disabled={
-          actionNode?.data.kind !== "image" ||
-          (!actionNode.data.originalUrl && !actionNode.data.previewUrl)
-        }
-        icon={ImageIcon}
-        onClick={() => onCreateConnectedPlaceholder("imageGeneration")}
-        title="图片生成"
       />
     </FloatingMenu>
   );

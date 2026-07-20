@@ -9,6 +9,7 @@ import {
   CircleCheck,
   CirclePause,
   Clock3,
+  ListTree,
   ListTodo,
   Pause,
   Play,
@@ -29,6 +30,7 @@ import type {
   CanvasTagColor,
   TaskComplexity,
   TaskPriority,
+  TaskParentOption,
   TaskStatus,
   TaskUrgency,
 } from "@/components/zenme/node-types";
@@ -52,6 +54,8 @@ const MAX_TAG_LENGTH = 24;
 
 export function TaskNode({ data, id, selected }: NodeProps) {
   const nodeData = data as CanvasNodeData;
+  const childrenContentRef = useRef<HTMLElement | null>(null);
+  const childrenPanelRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
   const tagInputRef = useRef<HTMLInputElement | null>(null);
   const [draftName, setDraftName] = useState(nodeData.name ?? "");
@@ -62,6 +66,7 @@ export function TaskNode({ data, id, selected }: NodeProps) {
   const tags = nodeData.tags ?? [];
   const projectTags = nodeData.projectTags ?? [];
   const children = nodeData.taskChildren ?? [];
+  const parentOptions = nodeData.taskParentOptions ?? [];
   const completedChildrenCount = children.filter(
     (child) => normalizeTaskStatus(child.status) === "completed",
   ).length;
@@ -71,6 +76,7 @@ export function TaskNode({ data, id, selected }: NodeProps) {
   const taskComplexity = normalizeTaskComplexity(nodeData.taskComplexity);
   const taskUrgency = normalizeTaskUrgency(nodeData.taskUrgency);
   const isChildrenExpanded = nodeData.taskChildrenExpanded !== false;
+  const onToggleTaskChildren = nodeData.onToggleTaskChildren;
   const matchingProjectTags = projectTags.filter((tag) =>
     tag.toLocaleLowerCase().includes(draftTag.trim().toLocaleLowerCase()),
   );
@@ -94,6 +100,45 @@ export function TaskNode({ data, id, selected }: NodeProps) {
     if (!selected) setActiveOptionMenu(null);
   }, [selected]);
 
+  useEffect(() => {
+    if (!isChildrenExpanded) return;
+
+    let frame = 0;
+    const measure = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        const sizes = readTaskContentSizes(
+          headerRef.current,
+          childrenPanelRef.current,
+          children.length,
+        );
+        onToggleTaskChildren?.(
+          id,
+          true,
+          sizes.expandedHeight,
+        );
+      });
+    };
+    const observer = new ResizeObserver(measure);
+    if (headerRef.current) observer.observe(headerRef.current);
+    if (childrenContentRef.current) {
+      observer.observe(childrenContentRef.current);
+    }
+    measure();
+
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [
+    children.length,
+    id,
+    isChildrenExpanded,
+    onToggleTaskChildren,
+    tags.length,
+  ]);
+
   function update(
     updates: Parameters<NonNullable<CanvasNodeData["onUpdateTaskNode"]>>[1],
   ) {
@@ -106,12 +151,15 @@ export function TaskNode({ data, id, selected }: NodeProps) {
   }
 
   function toggleChildren() {
-    const collapsedHeight =
-      Math.ceil(headerRef.current?.getBoundingClientRect().height ?? 0) + 36;
-    nodeData.onToggleTaskChildren?.(
+    const sizes = readTaskContentSizes(
+      headerRef.current,
+      childrenPanelRef.current,
+      children.length,
+    );
+    onToggleTaskChildren?.(
       id,
       !isChildrenExpanded,
-      collapsedHeight,
+      sizes.expandedHeight,
     );
   }
 
@@ -179,15 +227,19 @@ export function TaskNode({ data, id, selected }: NodeProps) {
       <NodeContextHandle selected={Boolean(selected)} />
       <NodeContextTargetHandle />
 
-      <div className="absolute -top-8 left-1 flex h-5 items-center gap-2 text-xs font-medium text-zinc-500">
-        <ListTodo className="size-4" />
+      <div className="zenme-node-title-bar absolute -top-8 left-1 flex h-5 items-center gap-2 text-xs font-medium text-zinc-500">
+        <span className="zenme-node-title-icon-hitbox">
+          <ListTodo className="size-4" />
+        </span>
         <span>任务</span>
+      </div>
+      <div className="absolute -top-8 right-1 flex h-5 items-center gap-3 text-[11px] text-zinc-400">
+        <TaskTimestamp label="创建" value={nodeData.createdAt} />
+        <TaskTimestamp label="修改" value={nodeData.updatedAt} />
       </div>
 
       <div
-        className={`zenme-shadow-node flex h-full w-full flex-col overflow-hidden rounded-xl border bg-white text-zinc-950 ${
-          isChildrenExpanded ? "min-h-[360px]" : "min-h-0"
-        } ${
+        className={`zenme-shadow-node flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border bg-white text-zinc-950 ${
           selected ? "border-zinc-900" : "border-zinc-200"
         }`}
       >
@@ -260,10 +312,16 @@ export function TaskNode({ data, id, selected }: NodeProps) {
               options={URGENCY_OPTIONS}
               value={taskUrgency}
             />
-            <TimeValue label="创建时间" value={nodeData.createdAt} />
-            <TimeValue
-              label={nodeData.completedAt ? "完成时间" : "修改时间"}
-              value={nodeData.completedAt ?? nodeData.updatedAt}
+            <TaskParentMenu
+              onChange={(parentId) =>
+                nodeData.onSetTaskParent?.(id, parentId)
+              }
+              onOpenChange={(open) =>
+                setActiveOptionMenu(open ? "parent" : null)
+              }
+              open={activeOptionMenu === "parent"}
+              options={parentOptions}
+              parentId={nodeData.taskParentId}
             />
             <span
               aria-label={`已完成 ${completedChildrenCount} 个子任务，共 ${children.length} 个`}
@@ -452,8 +510,11 @@ export function TaskNode({ data, id, selected }: NodeProps) {
         </header>
 
         {isChildrenExpanded ? (
-          <div className="nowheel min-h-0 flex-1 overflow-y-auto px-5 py-4">
-            <section>
+          <div
+            className="nowheel min-h-0 flex-1 overflow-y-auto px-5 py-4"
+            ref={childrenPanelRef}
+          >
+            <section ref={childrenContentRef}>
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium text-zinc-700">子任务</h3>
                 <span className="text-xs text-zinc-400">{children.length} 项</span>
@@ -461,29 +522,34 @@ export function TaskNode({ data, id, selected }: NodeProps) {
               {children.length ? (
                 <ul className="mt-2 divide-y divide-zinc-100 rounded-lg border border-zinc-200">
                   {children.map((child) => (
-                    <li
-                      className="flex items-center gap-2 px-3 py-2.5"
-                      key={child.id}
-                    >
-                      {normalizeTaskStatus(child.status) === "completed" ? (
-                        <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
-                      ) : normalizeTaskStatus(child.status) === "paused" ? (
-                        <CirclePause className="size-4 shrink-0 text-amber-600" />
-                      ) : (
-                        <span className="size-4 shrink-0 rounded-full border border-zinc-300" />
-                      )}
-                      <span className="min-w-0 flex-1 truncate text-sm text-zinc-800">
-                        {child.name}
-                      </span>
-                      <span className="shrink-0 text-xs text-zinc-400">
-                        {statusLabel(normalizeTaskStatus(child.status))}
-                      </span>
+                    <li key={child.id}>
+                      <button
+                        aria-label={`定位子任务 ${child.name}`}
+                        className="nodrag nowheel flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-50"
+                        onClick={() => nodeData.onLocateTaskNode?.(child.id)}
+                        title={`定位到子任务：${child.name}`}
+                        type="button"
+                      >
+                        {normalizeTaskStatus(child.status) === "completed" ? (
+                          <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+                        ) : normalizeTaskStatus(child.status) === "paused" ? (
+                          <CirclePause className="size-4 shrink-0 text-amber-600" />
+                        ) : (
+                          <span className="size-4 shrink-0 rounded-full border border-zinc-300" />
+                        )}
+                        <span className="min-w-0 flex-1 truncate text-sm text-zinc-800">
+                          {child.name}
+                        </span>
+                        <span className="shrink-0 text-xs text-zinc-400">
+                          {statusLabel(normalizeTaskStatus(child.status))}
+                        </span>
+                      </button>
                     </li>
                   ))}
                 </ul>
               ) : (
                 <div className="mt-2 rounded-lg border border-dashed border-zinc-200 px-4 py-8 text-center text-sm text-zinc-400">
-                  从右侧连接菜单创建子任务
+                  其他任务选择当前任务为父任务后，将显示在这里
                 </div>
               )}
             </section>
@@ -496,12 +562,35 @@ export function TaskNode({ data, id, selected }: NodeProps) {
         handleClassName="zenme-text-resize-handle"
         isVisible={Boolean(selected)}
         lineClassName="zenme-text-resize-line"
-        minHeight={isChildrenExpanded ? 360 : 176}
+        minHeight={176}
         minWidth={420}
       />
       <NodeActionHandle selected={Boolean(selected)} />
     </div>
   );
+}
+
+function readTaskContentSizes(
+  header: HTMLElement | null,
+  childrenPanel: HTMLElement | null,
+  childCount: number,
+) {
+  const headerHeight = Math.ceil(header?.getBoundingClientRect().height ?? 0);
+  const estimatedPanelHeight =
+    32 + 20 + 8 + (childCount > 0 ? 2 + childCount * 41 : 86);
+  const renderedPanelHeight = childrenPanel
+    ? Math.ceil(childrenPanel.scrollHeight)
+    : 0;
+
+  return {
+    expandedHeight: Math.max(
+      176,
+      12 +
+        headerHeight +
+        Math.max(estimatedPanelHeight, renderedPanelHeight) +
+        2,
+    ),
+  };
 }
 
 function TaskProgressRing({ value }: { value: number }) {
@@ -622,17 +711,86 @@ function TaskOptionMenu({
   );
 }
 
-function TimeValue({ label, value }: { label: string; value?: string }) {
+function TaskTimestamp({ label, value }: { label: string; value?: string }) {
   const formattedValue = formatTime(value);
   return (
     <span
       aria-label={`${label} ${formattedValue}`}
-      className="flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 truncate rounded-md border border-zinc-100 bg-zinc-50 px-2 text-[11px] text-zinc-500"
+      className="flex items-center gap-1 whitespace-nowrap"
       title={`${label}：${formattedValue}`}
     >
-      <Clock3 className="size-3.5 shrink-0 text-zinc-400" />
-      {formattedValue}
+      <Clock3 className="size-3 shrink-0" />
+      <span>{label} {formattedValue}</span>
     </span>
+  );
+}
+
+function TaskParentMenu({
+  onChange,
+  onOpenChange,
+  open,
+  options,
+  parentId,
+}: {
+  onChange: (parentId?: string) => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  options: TaskParentOption[];
+  parentId?: string;
+}) {
+  const selectedParent = options.find((option) => option.id === parentId);
+
+  return (
+    <DropdownMenu onOpenChange={onOpenChange} open={open}>
+      <DropdownMenuTrigger asChild>
+        <button
+          aria-label={`父任务：${selectedParent?.name ?? "无父任务"}`}
+          className="nodrag nowheel flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50 px-2 text-left text-xs text-zinc-600 transition-colors hover:border-zinc-300 hover:bg-white"
+          title={`父任务：${selectedParent?.name ?? "无父任务"}`}
+          type="button"
+        >
+          <ListTree className="size-3.5 shrink-0 text-zinc-400" />
+          <span className="min-w-0 flex-1 truncate">
+            {selectedParent?.name ?? "选择父任务"}
+          </span>
+          <ChevronDown className="size-3.5 shrink-0 text-zinc-400" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="nodrag nowheel max-h-72 w-64 overflow-y-auto rounded-lg p-1.5"
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        sideOffset={6}
+      >
+        <DropdownMenuItem
+          className="cursor-pointer"
+          onSelect={() => {
+            onChange(undefined);
+            onOpenChange(false);
+          }}
+        >
+          <span className="truncate text-zinc-500">无父任务</span>
+        </DropdownMenuItem>
+        {options.map((option) => (
+          <DropdownMenuItem
+            className="cursor-pointer"
+            key={option.id}
+            onSelect={() => {
+              onChange(option.id);
+              onOpenChange(false);
+            }}
+          >
+            <span className="min-w-0 flex-1 truncate">{option.name}</span>
+            {option.id === parentId ? (
+              <CheckCircle2 className="ml-2 size-4 shrink-0 text-emerald-600" />
+            ) : null}
+          </DropdownMenuItem>
+        ))}
+        {options.length === 0 ? (
+          <p className="px-2 py-2 text-xs text-zinc-400">暂无其他可选任务</p>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

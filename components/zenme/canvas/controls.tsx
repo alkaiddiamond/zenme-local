@@ -5,14 +5,12 @@ import {
   Bot,
   Crosshair,
   EyeOff,
-  Folder,
   Grid3X3,
   Group as GroupIcon,
-  History,
   Map as MapIcon,
   MessageSquareText,
-  Plus,
-  SlidersHorizontal,
+  Save,
+  Sparkles,
   X,
 } from "lucide-react";
 
@@ -51,44 +49,30 @@ export function CanvasSelectionToolbar({
 }
 
 type CanvasSideToolbarProps = {
+  onArrange: () => void;
   onOpenAgent: () => void;
   onSave: () => void;
-  onZoomIn: () => void;
 };
 
 export function CanvasSideToolbar({
+  onArrange,
   onOpenAgent,
   onSave,
-  onZoomIn,
 }: CanvasSideToolbarProps) {
   return (
     <div
       className="zenme-shadow-canvas absolute left-3 top-1/2 z-20 flex w-[53px] -translate-y-1/2 flex-col items-center gap-2 rounded-full border border-zinc-200 bg-white/95 py-3 backdrop-blur"
       data-thumbnail-hidden="true"
     >
-      <ZenmeIconButton active onClick={onZoomIn} title="放大画布">
-        <Plus className="size-6" />
-      </ZenmeIconButton>
-      <ZenmeIconButton className="relative" title="项目文件">
-        <Folder className="size-5" />
-        <span className="absolute -right-1 -top-1 size-2 rounded-full bg-sky-400" />
-      </ZenmeIconButton>
-      <ZenmeIconButton title="项目侧栏占位">
-        <SlidersHorizontal className="size-5" />
+      <ZenmeIconButton onClick={onArrange} title="快速整理画布">
+        <Sparkles className="size-5" />
       </ZenmeIconButton>
       <ZenmeIconButton onClick={onOpenAgent} title="开启 Agent 对话">
         <MessageSquareText className="size-5" />
       </ZenmeIconButton>
       <ZenmeIconButton onClick={onSave} title="手动保存">
-        <History className="size-5" />
+        <Save className="size-5" />
       </ZenmeIconButton>
-      <div className="h-px w-10 bg-zinc-200" />
-      <button
-        className="flex size-9 items-center justify-center rounded-full bg-zinc-100 text-base font-medium text-zinc-700"
-        type="button"
-      >
-        A
-      </button>
     </div>
   );
 }

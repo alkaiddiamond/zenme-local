@@ -63,4 +63,17 @@ describe("image system prompts", () => {
     expect(prompt).toContain("保持参考图片的真实宽高比");
     expect(prompt).toContain("不得改用模型默认比例");
   });
+
+  it("binds multi-image edit roles to the input order", () => {
+    const prompt = buildImageEditSystemPrompt({
+      aspectRatio: "3:4",
+      quality: "1K",
+      referenceCount: 2,
+    });
+
+    expect(prompt).toContain("图片编号严格按照接口输入顺序");
+    expect(prompt).toContain("第一张图片是主体底图");
+    expect(prompt).toContain("第二张图片只提供被指定替换的局部元素");
+    expect(prompt).toContain("不得融合、平均或互换不同参考图中的人物身份");
+  });
 });

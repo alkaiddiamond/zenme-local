@@ -91,6 +91,11 @@ export type TaskChildSummary = {
   status: TaskStatus;
 };
 
+export type TaskParentOption = {
+  id: string;
+  name: string;
+};
+
 export type CanvasNodeData = {
   kind:
     | "image"
@@ -125,6 +130,8 @@ export type CanvasNodeData = {
   taskPriority?: TaskPriority;
   taskComplexity?: TaskComplexity;
   taskUrgency?: TaskUrgency;
+  taskParentId?: string;
+  taskParentOptions?: TaskParentOption[];
   taskChildren?: TaskChildSummary[];
   taskProgress?: number;
   taskChildrenExpanded?: boolean;
@@ -169,6 +176,7 @@ export type CanvasNodeData = {
   musicWaveform?: number[];
   musicWaveformVersion?: number;
   musicLyrics?: MusicLyricLine[];
+  musicChildExpanded?: boolean;
   musicPlayerNodeId?: string;
   musicParentPlayerNodeId?: string;
   sunoPromptZh?: string;
@@ -203,6 +211,7 @@ export type CanvasNodeData = {
   codeContent?: string;
   codeLanguage?: string;
   textMode?: "code" | "markdown" | "plain";
+  textExpanded?: boolean;
   aiPrompt?: string;
   aiResponse?: string;
   aiModel?: string;
@@ -211,6 +220,7 @@ export type CanvasNodeData = {
   aiError?: string;
   aiTaskStartedAt?: string;
   aiTaskDurationMs?: number;
+  aiResponseExpanded?: boolean;
   textGenerationPrompt?: string;
   textGenerationModel?: string;
   imagePrompt?: string;
@@ -235,6 +245,7 @@ export type CanvasNodeData = {
   imageReferenceNodeIds?: string[];
   hasIncomingEdge?: boolean;
   hasOutgoingEdge?: boolean;
+  isMultiSelection?: boolean;
   hasRunningGenerationChild?: boolean;
   onUpdateProjectTag?: (action: ProjectTagAction) => void;
   onUpdateTaskNode?: (
@@ -251,10 +262,27 @@ export type CanvasNodeData = {
       >
     >,
     ) => void;
+  onSetTaskParent?: (
+    nodeId: string,
+    parentId?: string,
+  ) => void;
+  onLocateTaskNode?: (nodeId: string) => void;
   onToggleTaskChildren?: (
     nodeId: string,
     expanded: boolean,
-    collapsedHeight: number,
+    expandedContentHeight: number,
+  ) => void;
+  onToggleAiResponseExpanded?: (
+    nodeId: string,
+    expanded: boolean,
+  ) => void;
+  onToggleTextExpanded?: (
+    nodeId: string,
+    expanded: boolean,
+  ) => void;
+  onToggleMusicChildExpanded?: (
+    nodeId: string,
+    expanded: boolean,
   ) => void;
   onResolveImageDimensions?: (
     nodeId: string,

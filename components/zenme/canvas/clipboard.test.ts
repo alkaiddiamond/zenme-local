@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createCanvasNodeClipboardPayload,
   createPastedCanvasNodes,
+  getClipboardImageFiles,
   parseCanvasNodeClipboardPayload,
 } from "./clipboard";
 import type { CanvasNode } from "./types";
@@ -54,8 +55,84 @@ describe("canvas clipboard", () => {
     expect(pasted[1].position).toEqual({ x: 20, y: 30 });
   });
 
+  it("remaps copied task parent ids and clears parents outside the copied set", () => {
+    const parent = node({
+      data: { kind: "task", name: "父任务", title: "任务" },
+      id: "task-parent",
+      selected: true,
+      type: "task",
+    });
+    const child = node({
+      data: {
+        kind: "task",
+        name: "子任务",
+        taskParentId: "task-parent",
+        title: "任务",
+      },
+      id: "task-child",
+      selected: true,
+      type: "task",
+    });
+    let id = 0;
+    const payload = createCanvasNodeClipboardPayload([parent, child]);
+    const pasted = createPastedCanvasNodes({
+      anchor: { x: 0, y: 0 },
+      createId: () => `copy-${++id}`,
+      payload: payload!,
+    });
+
+    expect(pasted[1].data.taskParentId).toBe(pasted[0].id);
+
+    const childOnlyPayload = createCanvasNodeClipboardPayload([
+      { ...child, selected: true },
+    ]);
+    expect(childOnlyPayload?.nodes[0].data.taskParentId).toBeUndefined();
+  });
+
   it("rejects malformed clipboard payloads", () => {
     expect(parseCanvasNodeClipboardPayload("not-json")).toBeNull();
     expect(parseCanvasNodeClipboardPayload('{"version":2,"nodes":[]}')).toBeNull();
+  });
+
+  it("reads image files from clipboard items and files without duplicates", () => {
+    const image = new File(["image"], "photo.png", { type: "image/png" });
+    const files = getClipboardImageFiles({
+      files: [image] as unknown as FileList,
+      items: [
+        {
+          getAsFile: () => image,
+          kind: "file",
+          type: "image/png",
+        },
+      ] as unknown as DataTransferItemList,
+    });
+
+    expect(files).toEqual([image]);
+  });
+
+  it("normalizes clipboard images that omit their MIME type and filename", () => {
+    const image = new File(["image"], "", { type: "" });
+    const files = getClipboardImageFiles({
+      files: [] as unknown as FileList,
+      items: [
+        {
+          getAsFile: () => image,
+          kind: "file",
+          type: "",
+        },
+      ] as unknown as DataTransferItemList,
+    });
+
+    expect(files).toHaveLength(1);
+    expect(files[0].type).toBe("image/png");
+    expect(files[0].name).toMatch(/^clipboard-\d+-1\.png$/);
+  });
+
+  it("ignores non-image clipboard files", () => {
+    const document = new File(["text"], "notes.txt", { type: "text/plain" });
+    expect(getClipboardImageFiles({
+      files: [document] as unknown as FileList,
+      items: [] as unknown as DataTransferItemList,
+    })).toEqual([]);
   });
 });

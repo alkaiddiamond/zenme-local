@@ -75,6 +75,41 @@ describe("migrateCanvasSnapshot", () => {
     });
   });
 
+  it("restores the former compact image request default without changing custom sizes", () => {
+    const result = migrateCanvasSnapshot({
+      version: 3,
+      nodes: [
+        {
+          id: "default-request",
+          type: "imageGeneration",
+          position: { x: 0, y: 0 },
+          style: { height: 176, width: 560 },
+          data: { kind: "imageGeneration", title: "图片生成" },
+        },
+        {
+          id: "custom-request",
+          type: "imageGeneration",
+          position: { x: 600, y: 0 },
+          style: { height: 300, width: 700 },
+          data: { kind: "imageGeneration", title: "图片生成" },
+        },
+      ],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      updatedAt: "2026-07-20T00:00:00.000Z",
+    });
+
+    expect(result?.migrated).toBe(true);
+    expect(result?.snapshot.nodes[0].style).toEqual({
+      height: 260,
+      width: 520,
+    });
+    expect(result?.snapshot.nodes[1].style).toEqual({
+      height: 300,
+      width: 700,
+    });
+  });
+
   it("normalizes legacy task metadata and fills the new defaults", () => {
     const result = migrateCanvasSnapshot({
       version: 3,
@@ -120,6 +155,36 @@ describe("migrateCanvasSnapshot", () => {
         }),
       }),
     ]);
+  });
+
+  it("persists legacy task edges as parent task ids", () => {
+    const result = migrateCanvasSnapshot({
+      version: 3,
+      nodes: [
+        {
+          id: "parent",
+          type: "task",
+          position: { x: 0, y: 0 },
+          data: { kind: "task", name: "父任务" },
+        },
+        {
+          id: "child",
+          type: "task",
+          position: { x: 600, y: 0 },
+          data: { kind: "task", name: "子任务" },
+        },
+      ],
+      edges: [{ id: "task-edge", source: "parent", target: "child" }],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      updatedAt: "2026-07-20T00:00:00.000Z",
+    });
+
+    expect(result?.migrated).toBe(true);
+    expect(result?.snapshot.nodes[1]).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({ taskParentId: "parent" }),
+      }),
+    );
   });
 
   it("moves legacy analysis state from a player into an analysis node", () => {

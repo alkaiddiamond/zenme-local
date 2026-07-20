@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { checkRateLimit, getClientIp } from "@/lib/api/rate-limit";
-import { normalizeProviderBaseUrl } from "@/lib/api/provider-url";
+import { normalizeProviderApiBaseUrl } from "@/lib/api/provider-url";
+import { getProxyFetchOptions } from "@/lib/api/proxy-fetch";
+import { createVolcengineAgentPlanProvider } from "@/lib/ai/provider-presets";
 import type { ModelProviderConfig } from "@/lib/local/settings";
 
 type ModelsResponse = {
@@ -46,7 +48,18 @@ export async function POST(request: Request) {
       );
     }
 
-    const baseUrl = normalizeProviderBaseUrl(provider.baseUrl ?? "");
+    if (provider.apiFormat === "volcengine_agent_plan") {
+      return NextResponse.json({
+        data: createVolcengineAgentPlanProvider().models.map(({ id }) => ({
+          id,
+        })),
+      });
+    }
+
+    const baseUrl = normalizeProviderApiBaseUrl(
+      provider.baseUrl ?? "",
+      provider.apiFormat,
+    );
 
     const apiKey = resolveProviderApiKey(provider);
     if (!apiKey && provider.authType !== "none") {
@@ -56,6 +69,7 @@ export async function POST(request: Request) {
     const upstream = await fetch(`${baseUrl}/models`, {
       headers: createProviderHeaders(provider, apiKey),
       method: "GET",
+      ...getProxyFetchOptions(baseUrl, provider.networkProxy),
     });
     const payload = (await upstream.json().catch(() => null)) as
       | ModelsResponse
@@ -105,6 +119,13 @@ function createProviderHeaders(
 function resolveProviderApiKey(provider: ModelProviderConfig) {
   if (provider.apiFormat === "zhipu") {
     return provider.apiKey?.trim() || process.env.ZHIPU_API_KEY?.trim() || "";
+  }
+  if (provider.apiFormat === "volcengine_agent_plan") {
+    return (
+      provider.apiKey?.trim() ||
+      process.env.VOLCENGINE_AGENT_PLAN_API_KEY?.trim() ||
+      ""
+    );
   }
   return provider.apiKey?.trim() || process.env.ZENME_PROVIDER_API_KEY?.trim() || "";
 }

@@ -83,7 +83,7 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
       <NodeTargetHandle visible={Boolean(nodeData.hasIncomingEdge)} />
       <NodeEdgeSourceHandle visible={Boolean(nodeData.hasOutgoingEdge)} />
       <NodeContextHandle selected={Boolean(selected)} />
-      <div className="absolute -top-8 left-1 flex h-5 max-w-full items-center gap-2 text-xs font-medium text-zinc-500">
+      <div className="zenme-node-title-bar absolute -top-8 left-1 flex h-5 max-w-full items-center gap-2 text-xs font-medium text-zinc-500">
         <span className="zenme-node-title-icon-hitbox">
           <Sparkles className="size-4" />
         </span>

@@ -155,11 +155,36 @@ async function readRedactedSettings(filePath: string) {
       parsed.modelProviders = parsed.modelProviders.map((provider) => ({
         ...provider,
         apiKey: "",
+        networkProxy: redactNetworkProxy(provider.networkProxy),
       }));
     }
     return Buffer.from(`${JSON.stringify(parsed, null, 2)}\n`, "utf-8");
   } catch {
     return Buffer.from("{}\n", "utf-8");
+  }
+}
+
+function redactNetworkProxy(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+  const networkProxy = value as Record<string, unknown>;
+  return {
+    ...networkProxy,
+    url: redactProxyCredentials(networkProxy.url),
+  };
+}
+
+function redactProxyCredentials(value: unknown) {
+  if (typeof value !== "string" || !value) return value;
+  try {
+    const url = new URL(value);
+    if (!url.username && !url.password) return value;
+    url.username = "";
+    url.password = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return "";
   }
 }
 

@@ -4,6 +4,23 @@ import { getPersistableCanvasNodes } from "@/components/zenme/canvas/persistence
 import type { CanvasNode } from "@/components/zenme/canvas/types";
 
 describe("music analysis canvas persistence", () => {
+  it("removes transient multi-selection state from canvas snapshots", () => {
+    const node: CanvasNode = {
+      id: "text-1",
+      type: "text",
+      position: { x: 0, y: 0 },
+      data: {
+        isMultiSelection: true,
+        kind: "text",
+        title: "文本",
+      },
+    };
+
+    const [persisted] = getPersistableCanvasNodes([node]);
+
+    expect(persisted.data.isMultiSelection).toBeUndefined();
+  });
+
   it("persists the job reference without duplicating the full analysis result", () => {
     const node: CanvasNode = {
       id: "analysis-job-1",

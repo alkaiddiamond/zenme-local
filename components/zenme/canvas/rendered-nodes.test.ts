@@ -21,7 +21,37 @@ function node(input: {
 }
 
 describe("rendered canvas nodes", () => {
+  it("marks selected nodes when the canvas has a multi-selection", () => {
+    const first = node({ id: "first" });
+    const second = node({ id: "second" });
+    first.selected = true;
+    second.selected = true;
+
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [],
+      nodes: [first, second, node({ id: "unselected" })],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    expect(renderedNodes.find((item) => item.id === "first")?.data)
+      .toMatchObject({ isMultiSelection: true });
+    expect(renderedNodes.find((item) => item.id === "second")?.data)
+      .toMatchObject({ isMultiSelection: true });
+    expect(renderedNodes.find((item) => item.id === "unselected")?.data)
+      .toMatchObject({ isMultiSelection: false });
+  });
+
   it("injects text composer update handlers into text-like nodes", () => {
+    const onToggleAiResponseExpanded = vi.fn();
+    const onToggleTextExpanded = vi.fn();
     const onUpdateTextGenerationNode = vi.fn();
     const renderedNodes = getRenderedCanvasNodes({
       createNoteNode: vi.fn(),
@@ -42,6 +72,8 @@ describe("rendered canvas nodes", () => {
       onCreateTextChildNode: vi.fn(),
       onSubmitImageNode: vi.fn(),
       onSubmitTextGenerationNode: vi.fn(),
+      onToggleAiResponseExpanded,
+      onToggleTextExpanded,
       onUpdateImageNode: vi.fn(),
       onUpdateTextGenerationNode,
       onUpdateTextNode: vi.fn(),
@@ -51,6 +83,7 @@ describe("rendered canvas nodes", () => {
 
     expect(renderedNodes.find((item) => item.id === "text")?.data)
       .toMatchObject({
+        onToggleTextExpanded,
         onUpdateTextGenerationNode,
       });
     expect(renderedNodes.find((item) => item.id === "note")?.data)
@@ -59,6 +92,7 @@ describe("rendered canvas nodes", () => {
       });
     expect(renderedNodes.find((item) => item.id === "agent")?.data)
       .toMatchObject({
+        onToggleAiResponseExpanded,
         onUpdateTextGenerationNode,
       });
   });
@@ -100,13 +134,13 @@ describe("rendered canvas nodes", () => {
   });
 
   it("derives direct task children, progress and shared project tags", () => {
+    const onLocateTaskNode = vi.fn();
+    const onSetTaskParent = vi.fn();
     const onUpdateTaskNode = vi.fn();
     const onToggleTaskChildren = vi.fn();
     const renderedNodes = getRenderedCanvasNodes({
       createNoteNode: vi.fn(),
       edges: [
-        { source: "parent", target: "done-child" },
-        { source: "parent", target: "active-child" },
         { source: "parent", target: "plain-text" },
         { source: "parent", target: "image" },
         { source: "parent", target: "managed-text" },
@@ -121,6 +155,7 @@ describe("rendered canvas nodes", () => {
           data: {
             kind: "task",
             name: "完成项",
+            taskParentId: "parent",
             taskStatus: "completed",
           },
           id: "done-child",
@@ -130,6 +165,7 @@ describe("rendered canvas nodes", () => {
           data: {
             kind: "task",
             name: "进行项",
+            taskParentId: "parent",
             taskStatus: "inProgress",
           },
           id: "active-child",
@@ -151,6 +187,8 @@ describe("rendered canvas nodes", () => {
       onSubmitImageNode: vi.fn(),
       onSubmitTextGenerationNode: vi.fn(),
       onUpdateImageNode: vi.fn(),
+      onLocateTaskNode,
+      onSetTaskParent,
       onUpdateTaskNode,
       onToggleTaskChildren,
       onUpdateTextGenerationNode: vi.fn(),
@@ -166,6 +204,9 @@ describe("rendered canvas nodes", () => {
     ]);
     expect(parent?.data.taskProgress).toBe(0.5);
     expect(parent?.data.projectTags).toEqual(["迭代"]);
+    expect(parent?.data.taskParentOptions).toEqual([]);
+    expect(parent?.data.onLocateTaskNode).toBe(onLocateTaskNode);
+    expect(parent?.data.onSetTaskParent).toBe(onSetTaskParent);
     expect(parent?.data.onUpdateTaskNode).toBe(onUpdateTaskNode);
     expect(parent?.data.onToggleTaskChildren).toBe(onToggleTaskChildren);
   });
@@ -223,7 +264,7 @@ describe("rendered canvas nodes", () => {
         node({ data: { kind: "image", previewUrl: "/b.webp" }, id: "image-b", type: "image" }),
         node({
           data: {
-            imageReferenceNodeIds: ["image-b"],
+            imageReferenceNodeIds: ["image-b", "image-a"],
             kind: "imageGeneration",
           },
           id: "generation",
@@ -241,7 +282,10 @@ describe("rendered canvas nodes", () => {
     });
     const generation = renderedNodes.find((item) => item.id === "generation");
     expect(generation?.data.imageReferenceCandidates).toHaveLength(2);
-    expect(generation?.data.imageReferences?.map((item) => item.nodeId)).toEqual(["image-b"]);
+    expect(generation?.data.imageReferences?.map((item) => item.nodeId)).toEqual([
+      "image-b",
+      "image-a",
+    ]);
   });
 
   it("locks a source while one of its generation children is running", () => {

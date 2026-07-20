@@ -27,7 +27,7 @@ function textNode(input?: Partial<CanvasNode>): CanvasNode {
   return {
     id: "source",
     position: { x: 100, y: 200 },
-    style: { height: 260, width: 520 },
+    style: { height: 176, width: 560 },
     type: "text",
     data: {
       kind: "text",
@@ -90,7 +90,7 @@ describe("canvas node factories", () => {
       id: "text-1",
       type: "text",
       position: { x: 1, y: 2 },
-      style: { height: 260, width: 520 },
+      style: { height: 176, width: 560 },
       data: { kind: "text", title: "文本", plainText: "", richTextHtml: "" },
     });
     expect(
@@ -190,8 +190,8 @@ describe("canvas node factories", () => {
 
     expect(edge).toEqual(expectedEdge("source", "agent-1"));
     expect(node).toMatchObject({
-      position: { x: 700, y: 248 },
-      style: { height: 264, width: 620 },
+      position: { x: 740, y: 248 },
+      style: { height: 260, width: 620 },
       type: "agent",
       data: {
         aiCreatedAt: "2026-06-28T03:00:00.000Z",
@@ -301,6 +301,7 @@ describe("canvas node factories", () => {
       imageStatus: "editing",
       kind: "imageGeneration",
     });
+    expect(result.node.style).toEqual({ height: 260, width: 520 });
   });
 
   it("creates a standalone image generation node without a source image", () => {
@@ -345,6 +346,7 @@ describe("canvas node factories", () => {
     });
 
     expect(result.node).toMatchObject({
+      style: { height: 260, width: 520 },
       type: "imageGeneration",
       data: {
         imageOperation: "generate",
@@ -376,7 +378,7 @@ describe("canvas node factories", () => {
     });
     expect(placeholder.edge).toEqual(expectedEdge("source", "placeholder-1"));
     expect(placeholder.node).toMatchObject({
-      position: { x: 700, y: 320 },
+      position: { x: 740, y: 320 },
       data: { kind: "agent", title: "Agent 输出占位", uploadStatus: "pending" },
     });
 
@@ -390,7 +392,7 @@ describe("canvas node factories", () => {
       expectedEdge("source", "managed-text-child"),
     );
     expect(managedText.node).toMatchObject({
-      position: { x: 700, y: 200 },
+      position: { x: 740, y: 200 },
       type: "managedText",
       data: {
         kind: "managedText",
@@ -405,10 +407,21 @@ describe("canvas node factories", () => {
     });
     expect(task.edge).toEqual(expectedEdge("source", "task-child"));
     expect(task.node).toMatchObject({
-      position: { x: 700, y: 200 },
+      position: { x: 740, y: 200 },
       type: "task",
       data: { kind: "task", taskStatus: "inProgress" },
     });
+
+    const childTask = createConnectedPlaceholderCanvasNode({
+      id: "nested-task",
+      kind: "task",
+      sourceNode: textNode({
+        data: { kind: "task", name: "父任务", title: "任务" },
+        id: "parent-task",
+        type: "task",
+      }),
+    });
+    expect(childTask.node.data.taskParentId).toBe("parent-task");
   });
 
   it("places reading note nodes after existing reader children", () => {

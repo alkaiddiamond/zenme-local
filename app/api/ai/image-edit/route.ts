@@ -4,8 +4,10 @@ import {
   buildImageEditPrompt,
   buildImageEditSystemPrompt,
   buildImageGenerationSystemPrompt,
+  getImageEditAspectRatioOption,
 } from "@/components/zenme/image-edit-options";
 import { readOpenAiImageGenerationStream } from "@/lib/ai/openai-image-generation";
+import { getVolcengineSeedreamSize } from "@/lib/ai/volcengine-image-size";
 import {
   createOpenAiAuthHeaders,
   ensureFreshOpenAiTokens,
@@ -13,7 +15,10 @@ import {
 } from "@/lib/ai/openai-oauth";
 import { normalizeStreamTokenUsage } from "@/lib/ai/openai-responses-stream";
 import { getProxyFetchOptions } from "@/lib/api/proxy-fetch";
-import { normalizeProviderBaseUrl } from "@/lib/api/provider-url";
+import {
+  normalizeProviderApiBaseUrl,
+  normalizeProviderBaseUrl,
+} from "@/lib/api/provider-url";
 import {
   getEnabledProviderModels,
   getLocalSettings,
@@ -76,8 +81,19 @@ export async function POST(request: Request) {
           model,
           operation,
           prompt,
+          provider,
           quality: body.quality,
         })
+      : provider.apiFormat === "volcengine_agent_plan"
+        ? await generateWithVolcengineAgentPlan({
+            aspectRatio: body.aspectRatio,
+            imageDataUrls,
+            model,
+            operation,
+            prompt,
+            provider,
+            quality: body.quality,
+          })
       : await generateWithOpenRouter({
           aspectRatio: body.aspectRatio,
           imageDataUrls,
@@ -118,19 +134,101 @@ export async function POST(request: Request) {
   }
 }
 
+async function generateWithVolcengineAgentPlan(input: {
+  aspectRatio?: string;
+  imageDataUrls: string[];
+  model: string;
+  operation: "edit" | "generate";
+  prompt: string;
+  provider: ModelProviderConfig;
+  quality?: string;
+}) {
+  if (input.operation === "edit" || input.imageDataUrls.length > 0) {
+    throw new ImageApiError(
+      "火山方舟 Agent Plan 当前仅接入 Seedream 文生图，暂不支持参考图编辑",
+    );
+  }
+
+  const apiKey =
+    input.provider.apiKey?.trim() ||
+    process.env.VOLCENGINE_AGENT_PLAN_API_KEY?.trim();
+  if (!apiKey) {
+    throw new ImageApiError(
+      "缺少火山方舟 Agent Plan API 密钥，请到设置 > 模型配置中填写",
+    );
+  }
+
+  const fullPrompt =
+    `${buildImageGenerationSystemPrompt(input)}\n\n用户生成指令：\n${input.prompt}`;
+  const upstream = await fetch(
+    `${normalizeProviderApiBaseUrl(
+      input.provider.baseUrl,
+      input.provider.apiFormat,
+    )}/images/generations`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: input.model,
+        prompt: fullPrompt,
+        response_format: "b64_json",
+        sequential_image_generation: "disabled",
+        size: getVolcengineSeedreamSize(input),
+        n: 1,
+      }),
+      signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS),
+      ...getProxyFetchOptions(
+        input.provider.baseUrl,
+        input.provider.networkProxy,
+      ),
+    },
+  );
+  const payload = (await upstream.json().catch(() => null)) as
+    | OpenRouterImageResponse
+    | null;
+  if (!upstream.ok) {
+    throw new ImageApiError(
+      formatUpstreamError(
+        "火山方舟 Agent Plan 图片调用失败",
+        upstream.status,
+      ),
+    );
+  }
+  const image = payload?.data?.[0];
+  if (!image?.b64_json) {
+    throw new ImageApiError(
+      "火山方舟 Agent Plan 未返回可用图片，请检查 Seedream 模型权限",
+    );
+  }
+
+  return {
+    b64Json: image.b64_json,
+    mediaType: image.media_type ?? "image/png",
+    revisedPrompt: undefined,
+    usage: normalizeStreamTokenUsage(payload?.usage),
+  };
+}
+
 async function generateWithChatGpt(input: {
   aspectRatio?: string;
   imageDataUrls: string[];
   model: string;
   operation: "edit" | "generate";
   prompt: string;
+  provider: ModelProviderConfig;
   quality?: string;
 }) {
   const tokens = await ensureFreshOpenAiTokens();
   if (!tokens) throw new ImageApiError("ChatGPT 登录已失效，请到设置 > 模型配置中重新登录");
 
   const instructions = input.operation === "edit"
-    ? buildImageEditSystemPrompt(input)
+    ? buildImageEditSystemPrompt({
+        ...input,
+        referenceCount: input.imageDataUrls.length,
+      })
     : buildImageGenerationSystemPrompt(input);
   const content: Array<Record<string, string>> = [
     { type: "input_text", text: input.prompt },
@@ -155,7 +253,7 @@ async function generateWithChatGpt(input: {
       store: false,
     }),
     signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS),
-    ...getProxyFetchOptions(RESPONSES_URL),
+    ...getProxyFetchOptions(RESPONSES_URL, input.provider.networkProxy),
   });
 
   if (!upstream.ok || !upstream.body) {
@@ -183,8 +281,12 @@ async function generateWithOpenRouter(input: {
   if (!apiKey) throw new ImageApiError("缺少 OpenRouter API 密钥，请到设置 > 模型配置中填写");
 
   const fullPrompt = input.operation === "edit"
-    ? buildImageEditPrompt(input)
+    ? buildImageEditPrompt({
+        ...input,
+        referenceCount: input.imageDataUrls.length,
+      })
     : `${buildImageGenerationSystemPrompt(input)}\n\n用户生成指令：\n${input.prompt}`;
+  const aspectRatio = getImageEditAspectRatioOption(input.aspectRatio).value;
   const upstream = await fetch(`${normalizeProviderBaseUrl(input.provider.baseUrl || DEFAULT_OPENROUTER_BASE_URL)}/images`, {
     method: "POST",
     headers: {
@@ -199,10 +301,16 @@ async function generateWithOpenRouter(input: {
       ...(input.imageDataUrls.length
         ? { input_references: input.imageDataUrls.map((url) => ({ type: "image_url", image_url: { url } })) }
         : {}),
+      ...(aspectRatio === "auto" ? {} : { aspect_ratio: aspectRatio }),
+      resolution: getOpenRouterImageResolution(input.quality),
       output_format: "png",
       n: 1,
     }),
     signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS),
+    ...getProxyFetchOptions(
+      input.provider.baseUrl || DEFAULT_OPENROUTER_BASE_URL,
+      input.provider.networkProxy,
+    ),
   });
   const payload = (await upstream.json().catch(() => null)) as OpenRouterImageResponse | null;
   if (!upstream.ok) {
@@ -217,6 +325,10 @@ async function generateWithOpenRouter(input: {
     revisedPrompt: undefined,
     usage: normalizeStreamTokenUsage(payload?.usage),
   };
+}
+
+function getOpenRouterImageResolution(quality?: string) {
+  return quality === "512P" ? "512" : quality ?? "1K";
 }
 
 async function resolveImageProvider(model: string) {

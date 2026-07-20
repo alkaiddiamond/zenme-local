@@ -1,6 +1,6 @@
 "use client";
 
-import type { NodeProps } from "@xyflow/react";
+import { NodeResizer, type NodeProps } from "@xyflow/react";
 import { FileText } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -9,6 +9,7 @@ import { NodeFrame } from "@/components/zenme/nodes/node-frame";
 import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
 import { NodeActionHandle, NodeEdgeSourceHandle, NodeTargetHandle } from "@/components/zenme/node-ui";
 import { MusicJobStatus, MusicJobTiming, useMusicJob } from "@/components/zenme/nodes/use-music-job";
+import { MusicChildExpandButton } from "@/components/zenme/nodes/music-child-expand-button";
 
 export function groupLyrics(lines: MusicLyricLine[]) {
   return lines.reduce<Array<{ label: string; lines: MusicLyricLine[] }>>((groups, line) => {
@@ -35,7 +36,8 @@ export function LyricsNode({ data, selected, id }: NodeProps) {
     activeLineRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [activeLineKey]);
   return (
-    <NodeFrame className={`flex h-[560px] w-[460px] flex-col p-4 ${isRenaming ? "zenme-node-renaming" : ""}`} selected={Boolean(selected)}>
+    <NodeFrame className={`flex h-full min-h-[176px] w-full min-w-[420px] flex-col p-4 ${isRenaming ? "zenme-node-renaming" : ""}`} selected={Boolean(selected)}>
+      <MusicChildExpandButton node={node} nodeId={id} />
       <EditableNodeTitle fallbackTitle="歌词与结构" icon={<FileText className="size-4" />} onCommit={(title) => node.onUpdateMusicNode?.(id, { title })} onEditingChange={setIsRenaming} title={node.title} />
       <MusicJobTiming node={node} />
       <NodeTargetHandle visible={Boolean(node.hasIncomingEdge)} />
@@ -48,6 +50,14 @@ export function LyricsNode({ data, selected, id }: NodeProps) {
         })}</div></section>)}
         {!lines.length ? <p className="py-10 text-center text-xs text-zinc-400">{node.musicWarnings?.[0] || (node.musicJobStatus === "failed" ? node.musicError : "等待歌词分析结果")}</p> : null}
       </div>
+      <NodeResizer
+        color="#a1a1aa"
+        handleClassName="zenme-text-resize-handle"
+        isVisible={Boolean(selected)}
+        lineClassName="zenme-text-resize-line"
+        minHeight={176}
+        minWidth={420}
+      />
       <NodeActionHandle selected={Boolean(selected)} />
     </NodeFrame>
   );

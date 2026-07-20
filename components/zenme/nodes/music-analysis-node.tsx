@@ -11,6 +11,7 @@ import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title"
 import { NodeActionHandle, NodeEdgeSourceHandle, NodeTargetHandle } from "@/components/zenme/node-ui";
 import { renderMarkdown } from "@/components/zenme/nodes/renderers/markdown";
 import { MusicJobStatus, useMusicJob } from "@/components/zenme/nodes/use-music-job";
+import { MusicChildExpandButton } from "@/components/zenme/nodes/music-child-expand-button";
 
 type Segment = { start?: number; end?: number; label?: string };
 type Analysis = {
@@ -67,7 +68,8 @@ export function MusicAnalysisNode({ data, selected, id }: NodeProps) {
   const loudness = result.summary?.loudness?.value as { integratedLufs?: number } | undefined;
   const displayedWaveform = downsampleWaveform(result.waveform ?? [], 180);
   return (
-    <NodeFrame className={`flex h-full min-h-[420px] w-full min-w-[480px] flex-col p-4 ${isRenaming ? "zenme-node-renaming" : ""}`} selected={Boolean(selected)}>
+    <NodeFrame className={`flex h-full min-h-[176px] w-full min-w-[420px] flex-col p-4 ${isRenaming ? "zenme-node-renaming" : ""}`} selected={Boolean(selected)}>
+      <MusicChildExpandButton node={node} nodeId={id} />
       <EditableNodeTitle fallbackTitle="综合分析" icon={<BarChart3 className="size-4" />} onCommit={(title) => node.onUpdateMusicNode?.(id, { title })} onEditingChange={setIsRenaming} title={node.title} />
       <NodeTargetHandle visible={Boolean(node.hasIncomingEdge || node.musicParentPlayerNodeId)} />
       <NodeEdgeSourceHandle visible={Boolean(node.hasOutgoingEdge)} />
@@ -115,8 +117,8 @@ export function MusicAnalysisNode({ data, selected, id }: NodeProps) {
         handleClassName="zenme-text-resize-handle"
         isVisible={Boolean(selected)}
         lineClassName="zenme-text-resize-line"
-        minHeight={420}
-        minWidth={480}
+        minHeight={176}
+        minWidth={420}
       />
       <NodeActionHandle selected={Boolean(selected)} />
     </NodeFrame>

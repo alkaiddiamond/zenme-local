@@ -188,6 +188,7 @@ export function getPersistableCanvasNodes(nodes: CanvasNode[]) {
         ([key, value]) =>
           key !== "hasIncomingEdge" &&
           key !== "hasOutgoingEdge" &&
+          key !== "isMultiSelection" &&
           key !== "musicAnalysisResult" &&
           typeof value !== "function",
       ),

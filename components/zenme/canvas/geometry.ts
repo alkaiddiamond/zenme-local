@@ -50,7 +50,12 @@ export function getNodeSizeFallback(node: CanvasNode) {
   if (node.data.kind === "note") return { height: 180, width: 320 };
   if (node.data.kind === "image") return { height: 370, width: 280 };
   if (node.data.kind === "file") return { height: 68, width: 256 };
-  if (node.data.kind === "text") return { height: 260, width: 520 };
+  if (node.data.kind === "text") return { height: 176, width: 560 };
+  if (node.data.kind === "imageGeneration") {
+    return node.data.imageGenerationResult
+      ? { height: 260, width: 520 }
+      : { height: 260, width: 520 };
+  }
   if (node.data.kind === "managedText") return { height: 380, width: 560 };
   if (node.data.kind === "task") return { height: 460, width: 560 };
   return { height: 110, width: 288 };

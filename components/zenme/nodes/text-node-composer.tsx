@@ -67,7 +67,7 @@ export function TextNodeComposer({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextPrompt = prompt.trim();
-    if (!nextPrompt || isGenerating) {
+    if (isGenerating) {
       return;
     }
 
@@ -127,7 +127,7 @@ export function TextNodeComposer({
         />
         <button
           className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-          disabled={isGenerating || !prompt.trim()}
+          disabled={isGenerating}
           title="提交"
           type="submit"
         >

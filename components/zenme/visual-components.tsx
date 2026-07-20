@@ -76,6 +76,7 @@ type ZenmeModelPickerProps = {
   model: string;
   models: AiModelOption[];
   onChange: (model: string) => void;
+  onOpenChange?: (open: boolean) => void;
 };
 
 export function ZenmeModelPicker({
@@ -83,12 +84,13 @@ export function ZenmeModelPicker({
   model,
   models,
   onChange,
+  onOpenChange,
 }: ZenmeModelPickerProps) {
   const activeModel = models.find((option) => option.id === model);
   const activeLabel = activeModel?.label ?? model;
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <button
           aria-label="选择模型"
@@ -104,7 +106,9 @@ export function ZenmeModelPicker({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="zenme-shadow-dropdown w-[var(--radix-dropdown-menu-trigger-width)] rounded-lg border-zinc-200 bg-white p-1.5"
+        className="nodrag nopan nowheel zenme-shadow-dropdown w-[var(--radix-dropdown-menu-trigger-width)] rounded-lg border-zinc-200 bg-white p-1.5"
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
         side="top"
         sideOffset={8}
       >

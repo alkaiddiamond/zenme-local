@@ -8,7 +8,7 @@ const CONNECTED_PLACEHOLDER_SIZE = {
   imageGeneration: { height: 260, width: 520 },
   managedText: { height: 380, width: 560 },
   task: { height: 460, width: 560 },
-  text: { height: 260, width: 520 },
+  text: { height: 176, width: 560 },
   textGeneration: { height: 180, width: 560 },
 };
 

@@ -57,7 +57,7 @@ export function EditableNodeTitle({
   }
 
   return (
-    <div className="absolute -top-8 left-1 flex h-5 max-w-full items-center gap-2 text-xs font-medium text-zinc-500">
+    <div className="zenme-node-title-bar absolute -top-8 left-1 flex h-5 max-w-full items-center gap-2 text-xs font-medium text-zinc-500">
       <span
         className={`zenme-node-title-icon-hitbox${iconClassName ? ` ${iconClassName}` : ""}`}
       >
@@ -86,7 +86,7 @@ export function EditableNodeTitle({
         />
       ) : (
         <button
-          className="nodrag max-w-52 truncate rounded-sm text-left hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-zinc-300"
+          className="max-w-52 truncate rounded-sm text-left hover:text-zinc-700 focus-visible:ring-2 focus-visible:ring-zinc-300"
           onDoubleClick={(event) => {
             event.preventDefault();
             event.stopPropagation();

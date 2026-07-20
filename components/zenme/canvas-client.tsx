@@ -23,6 +23,7 @@ import {
   useEdgesState,
   useNodesState,
 } from "@xyflow/react";
+import { Loader2 } from "lucide-react";
 import { AgentPanel } from "@/components/zenme/agent-panel";
 import type { AgentMessage } from "@/components/zenme/agent-types";
 import { useAiModelOptions } from "@/components/zenme/use-ai-model-options";
@@ -65,6 +66,7 @@ import { createDroppedFileCanvasNodes } from "@/components/zenme/canvas/drop-fil
 import {
   createCanvasNodeClipboardPayload,
   createPastedCanvasNodes,
+  getClipboardImageFiles,
   parseCanvasNodeClipboardPayload,
   type CanvasNodeClipboardPayload,
   ZENME_NODE_CLIPBOARD_MIME,
@@ -84,7 +86,10 @@ import {
   saveAgentSessionSnapshot,
 } from "@/components/zenme/canvas/agent-session";
 import { createAgentContextFromActionNode } from "@/components/zenme/canvas/agent-context";
-import { requestTextGenerationResponse } from "@/components/zenme/canvas/text-generation-request";
+import {
+  requestTextGenerationResponse,
+  resolveTextGenerationPrompt,
+} from "@/components/zenme/canvas/text-generation-request";
 import { getRenderedCanvasEdges } from "@/components/zenme/canvas/edges";
 import {
   createCanvasHistoryEntry,
@@ -106,6 +111,12 @@ import {
   releaseGroupedNodeDragExtent,
   type GroupDragPosition,
 } from "@/components/zenme/canvas/groups";
+import {
+  canSetTaskParent,
+  createTaskConnectionNodeUpdate,
+  createTaskParentSelectionUpdate,
+} from "@/components/zenme/canvas/task-relationships";
+import { createQuickArrangeUpdate } from "@/components/zenme/canvas/quick-arrange";
 import {
   createCanvasDeleteSelection,
   isDeleteKeyboardShortcut,
@@ -137,8 +148,15 @@ import {
   createTextCanvasNode,
 } from "@/components/zenme/canvas/node-factories";
 import {
+  getImageRequestReferenceUrls,
+  getOrderedImageReferenceUrls,
+} from "@/components/zenme/canvas/image-reference-order";
+import {
+  createAiResponseExpansionUpdate,
   createImageGenerationNodeDataUpdate,
+  createMusicChildExpansionUpdate,
   createTextGenerationNodeDataUpdate,
+  createTextNodeExpansionUpdate,
   createTextNodeDataUpdate,
   createTaskChildrenVisibilityUpdate,
   createTaskNodeDataUpdate,
@@ -151,7 +169,6 @@ import {
   clampCanvasZoom,
   createCanvasZoomViewport,
   createCanvasZoomViewportAtPoint,
-  getNextCanvasZoom,
 } from "@/components/zenme/canvas/viewport";
 import type {
   CanvasAddMenuState,
@@ -749,7 +766,18 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       edges?: Edge[];
       nodes?: CanvasNode[];
     }) => {
-      const createdNodes = input.nodes ?? [];
+      const createdAt = Date.now();
+      const createdNodes = (input.nodes ?? []).map((node, index) =>
+        node.data.createdAt
+          ? node
+          : {
+              ...node,
+              data: {
+                ...node.data,
+                createdAt: new Date(createdAt + index).toISOString(),
+              },
+            },
+      );
       const createdEdges = input.edges ?? [];
 
       if (createdNodes.length === 0 && createdEdges.length === 0) {
@@ -982,8 +1010,26 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     }
 
     async function handlePaste(event: ClipboardEvent) {
-      if (isEditableTarget(event.target) || !event.clipboardData) return;
+      if (!event.clipboardData) return;
       const clipboardData = event.clipboardData;
+      const imageFiles = getClipboardImageFiles(clipboardData);
+      if (imageFiles.length > 0) {
+        event.preventDefault();
+        const pastedImages = await createDroppedFileCanvasNodes({
+          files: imageFiles,
+          onReadingError: setCanvasNotice,
+          position: getClipboardPastePosition(),
+          projectId,
+        });
+        appendCanvasItems({
+          currentEdges: edgesRef.current,
+          currentNodes: nodesRef.current,
+          nodes: pastedImages,
+        });
+        return;
+      }
+
+      if (isEditableTarget(event.target)) return;
       const customPayload = parseCanvasNodeClipboardPayload(
         clipboardData.getData(ZENME_NODE_CLIPBOARD_MIME),
       );
@@ -1006,33 +1052,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           currentEdges: edgesRef.current,
           currentNodes: nodesRef.current,
           nodes: pastedNodes,
-        });
-        return;
-      }
-
-      const imageFiles = Array.from(clipboardData.items)
-        .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-        .map((item) => item.getAsFile())
-        .filter((file): file is File => Boolean(file))
-        .map((file, index) => file.name
-          ? file
-          : new File(
-              [file],
-              `clipboard-${Date.now()}-${index + 1}.${getClipboardImageExtension(file.type)}`,
-              { type: file.type },
-            ));
-      if (imageFiles.length > 0) {
-        event.preventDefault();
-        const pastedImages = await createDroppedFileCanvasNodes({
-          files: imageFiles,
-          onReadingError: setCanvasNotice,
-          position,
-          projectId,
-        });
-        appendCanvasItems({
-          currentEdges: edgesRef.current,
-          currentNodes: nodesRef.current,
-          nodes: pastedImages,
         });
         return;
       }
@@ -1559,25 +1578,74 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         return;
       }
 
-      const nextEdges = addEdge(normalizedConnection, edges);
-      const previousEdgeIds = new Set(edges.map((edge) => edge.id));
+      const sourceNode = nodes.find(
+        (node) => node.id === normalizedConnection.source,
+      );
+      const targetNode = nodes.find(
+        (node) => node.id === normalizedConnection.target,
+      );
+      const isTaskConnection =
+        sourceNode?.data.kind === "task" &&
+        targetNode?.data.kind === "task";
+      if (
+        isTaskConnection &&
+        !canSetTaskParent({
+          childId: targetNode.id,
+          edges,
+          nodes,
+          parentId: sourceNode.id,
+        })
+      ) {
+        setCanvasNotice("不能将当前任务或其子任务设为父任务");
+        return;
+      }
+
+      const deletedEdges = isTaskConnection
+        ? edges.filter((edge) => {
+            const edgeSource = nodes.find((node) => node.id === edge.source);
+            return (
+              edge.target === targetNode.id &&
+              edgeSource?.data.kind === "task" &&
+              edge.source !== sourceNode.id
+            );
+          })
+        : [];
+      const retainedEdges = deletedEdges.length
+        ? edges.filter((edge) => !deletedEdges.includes(edge))
+        : edges;
+      const nextEdges = addEdge(normalizedConnection, retainedEdges);
+      const previousEdgeIds = new Set(retainedEdges.map((edge) => edge.id));
       const createdEdges = nextEdges.filter(
         (edge) => !previousEdgeIds.has(edge.id),
       );
+      const taskNodeUpdate = isTaskConnection
+        ? createTaskConnectionNodeUpdate({
+            childId: targetNode.id,
+            nodes,
+            parentId: sourceNode.id,
+          })
+        : { nextNodes: nodes, nodeUpdates: [] };
 
-      if (createdEdges.length === 0) {
+      if (
+        createdEdges.length === 0 &&
+        deletedEdges.length === 0 &&
+        taskNodeUpdate.nodeUpdates.length === 0
+      ) {
         return;
       }
 
       skipNextHistoryEntryCount.current += 1;
+      setNodes(taskNodeUpdate.nextNodes);
       setEdges(nextEdges);
-      pushCreateHistory({
+      pushMutateHistory({
         afterEdges: nextEdges,
-        afterNodes: nodes,
-        edges: createdEdges,
+        afterNodes: taskNodeUpdate.nextNodes,
+        createdEdges,
+        deletedEdges,
+        nodeUpdates: taskNodeUpdate.nodeUpdates,
       });
     },
-    [edges, nodes, pushCreateHistory, setEdges],
+    [edges, nodes, pushMutateHistory, setEdges, setNodes],
   );
 
   function setCanvasZoom(value: number) {
@@ -1687,10 +1755,85 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     [pushNodeUpdateHistory, setNodes],
   );
 
+  const setTaskParent = useCallback(
+    (nodeId: string, parentId?: string) => {
+      const update = createTaskParentSelectionUpdate({
+        edges: edgesRef.current,
+        nodeId,
+        nodes: nodesRef.current,
+        parentId,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      setEdges(update.nextEdges);
+      pushMutateHistory({
+        afterEdges: update.nextEdges,
+        afterNodes: update.nextNodes,
+        deletedEdges: update.deletedEdges,
+        nodeUpdates: update.nodeUpdates,
+      });
+    },
+    [pushMutateHistory, setEdges, setNodes],
+  );
+
   const toggleTaskChildren = useCallback(
-    (nodeId: string, expanded: boolean, collapsedHeight: number) => {
+    (
+      nodeId: string,
+      expanded: boolean,
+      expandedContentHeight: number,
+    ) => {
       const update = createTaskChildrenVisibilityUpdate({
-        collapsedHeight,
+        expanded,
+        expandedContentHeight,
+        nodeId,
+        nodes: nodesRef.current,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const toggleAiResponseExpanded = useCallback(
+    (nodeId: string, expanded: boolean) => {
+      const update = createAiResponseExpansionUpdate({
+        expanded,
+        nodeId,
+        nodes: nodesRef.current,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const toggleTextExpanded = useCallback(
+    (nodeId: string, expanded: boolean) => {
+      const update = createTextNodeExpansionUpdate({
+        expanded,
+        nodeId,
+        nodes: nodesRef.current,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const toggleMusicChildExpanded = useCallback(
+    (nodeId: string, expanded: boolean) => {
+      const update = createMusicChildExpansionUpdate({
         expanded,
         nodeId,
         nodes: nodesRef.current,
@@ -1803,14 +1946,15 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       const currentNodes = reactFlow?.getNodes() ?? nodesRef.current;
       const currentEdges = reactFlow?.getEdges() ?? edges;
       const sourceNode = currentNodes.find((node) => node.id === nodeId);
-      const prompt =
+      const prompt = resolveTextGenerationPrompt(
         input?.prompt?.trim() ??
         sourceNode?.data.textGenerationPrompt?.trim() ??
-        "";
+        "",
+      );
       const model =
         input?.model ?? sourceNode?.data.textGenerationModel ?? defaultTextModel;
 
-      if (!sourceNode || !prompt) {
+      if (!sourceNode) {
         return;
       }
 
@@ -1913,7 +2057,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
         return (
           node.data.kind === "image" &&
-          Boolean(node.data.imageGenerated || node.data.imagePrompt)
+          Boolean(node.data.originalUrl || node.data.previewUrl)
         );
       });
       const prompt =
@@ -1930,24 +2074,16 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         ? undefined
         : sourceNode?.data.originalUrl ?? sourceNode?.data.previewUrl;
       const selectedReferenceNodeIds = sourceNode?.data.imageReferenceNodeIds;
-      const connectedReferenceImageUrls = currentEdges
-            .filter((edge) => edge.target === nodeId)
-            .map((edge) => currentNodes.find((node) => node.id === edge.source))
-            .filter((node): node is CanvasNode => node?.data.kind === "image")
-            .filter((node) =>
-              selectedReferenceNodeIds === undefined ||
-              selectedReferenceNodeIds.includes(node.id),
-            )
-            .map((node) => node.data.originalUrl ?? node.data.previewUrl)
-            .filter((url): url is string => Boolean(url))
-            .slice(0, 8);
-      const isStandaloneUploadedImage =
-        sourceNode?.data.kind === "image" && !sourceNode.data.imageGenerated;
-      const referenceImageUrls = isStandaloneUploadedImage && standaloneImageUrl
-        ? [standaloneImageUrl]
-        : connectedReferenceImageUrls.length > 0
-          ? connectedReferenceImageUrls
-          : [];
+      const connectedReferenceImageUrls = getOrderedImageReferenceUrls({
+        edges: currentEdges,
+        nodes: currentNodes,
+        selectedNodeIds: selectedReferenceNodeIds,
+        targetNodeId: nodeId,
+      });
+      const referenceImageUrls = getImageRequestReferenceUrls({
+        connectedReferenceImageUrls,
+        currentImageUrl: standaloneImageUrl,
+      });
       const operation = referenceImageUrls.length > 0
         ? "edit" as const
         : "generate" as const;
@@ -2134,6 +2270,32 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     }
     setNodeActionMenu(null);
   }
+
+  const quickArrangeCanvas = useCallback(() => {
+    const update = createQuickArrangeUpdate({
+      edges: edgesRef.current,
+      nodes: nodesRef.current,
+    });
+    if (!update) return;
+
+    skipNextHistoryEntryCount.current += 1;
+    setNodes(update.nextNodes);
+    setEdges(update.nextEdges);
+    pushMutateHistory({
+      afterEdges: update.nextEdges,
+      afterNodes: update.nextNodes,
+      edgeUpdates: update.edgeUpdates,
+      nodeUpdates: update.nodeUpdates,
+    });
+    setNodeActionMenu(null);
+    setCanvasAddMenu(null);
+    window.requestAnimationFrame(() => {
+      void reactFlowRef.current?.fitView({
+        duration: 300,
+        padding: 0.16,
+      });
+    });
+  }, [pushMutateHistory, setEdges, setNodes]);
 
   function createManagedTextNodeAt(position: { x: number; y: number }) {
     const nextNode = createManagedTextCanvasNode({
@@ -2727,7 +2889,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     [setNodes],
   );
 
-  const focusMusicWorkflowNode = useCallback((nodeId: string) => {
+  const focusCanvasNode = useCallback((nodeId: string) => {
     setNodes((current) => current.map((node) => ({
       ...node,
       selected: node.id === nodeId,
@@ -2761,8 +2923,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodes: createdNodes,
       });
     }
-    focusMusicWorkflowNode(update.focusNodeId);
-  }, [appendCanvasItems, focusMusicWorkflowNode, projectId]);
+    focusCanvasNode(update.focusNodeId);
+  }, [appendCanvasItems, focusCanvasNode, projectId]);
 
   const toggleMusicPlayback = useCallback((playerNodeId: string, playing: boolean) => {
     const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
@@ -3110,11 +3272,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodes: update.createdNodes,
       });
     }
-    focusMusicWorkflowNode(update.focusNodeId);
+    focusCanvasNode(update.focusNodeId);
     window.setTimeout(() => {
       void submitMusicChildAnalysis(update.focusNodeId, playerNodeId, kind);
     }, 0);
-  }, [appendCanvasItems, focusMusicWorkflowNode, projectId, submitMusicChildAnalysis]);
+  }, [appendCanvasItems, focusCanvasNode, projectId, submitMusicChildAnalysis]);
 
   const cancelMusicAnalysis = useCallback((playerNodeId: string, jobId: string) => {
     void performMusicJobAction(playerNodeId, jobId, "cancel");
@@ -3125,8 +3287,12 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }, [performMusicJobAction]);
 
   const locateMusicPlayer = useCallback((_musicNodeId: string, playerNodeId: string) => {
-    focusMusicWorkflowNode(playerNodeId);
-  }, [focusMusicWorkflowNode]);
+    focusCanvasNode(playerNodeId);
+  }, [focusCanvasNode]);
+
+  const locateTaskNode = useCallback((nodeId: string) => {
+    focusCanvasNode(nodeId);
+  }, [focusCanvasNode]);
 
   const renderedNodes = useMemo(
     () =>
@@ -3154,7 +3320,12 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         onUpdateTextGenerationNode: updateTextGenerationNode,
         onUpdateTextNode: updateTextNode,
         onUpdateTaskNode: updateTaskNode,
+        onSetTaskParent: setTaskParent,
+        onLocateTaskNode: locateTaskNode,
         onToggleTaskChildren: toggleTaskChildren,
+        onToggleAiResponseExpanded: toggleAiResponseExpanded,
+        onToggleTextExpanded: toggleTextExpanded,
+        onToggleMusicChildExpanded: toggleMusicChildExpanded,
         onUpdateProjectTag: updateProjectTag,
         projectId,
         toggleReaderCollapse,
@@ -3185,10 +3356,28 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       updateTextGenerationNode,
       updateTextNode,
       updateTaskNode,
+      setTaskParent,
+      locateTaskNode,
       toggleTaskChildren,
+      toggleAiResponseExpanded,
+      toggleTextExpanded,
+      toggleMusicChildExpanded,
       updateProjectTag,
     ],
   );
+
+  if (!canvasHydrated) {
+    return (
+      <div
+        aria-live="polite"
+        className="flex h-full items-center justify-center bg-white text-sm text-zinc-500"
+        role="status"
+      >
+        <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+        正在加载画布...
+      </div>
+    );
+  }
 
   return (
     <div className={`zenme-canvas-shell h-full overflow-hidden bg-white text-zinc-950 ${isNodeDragging ? "zenme-canvas-node-dragging" : ""}`}>
@@ -3283,6 +3472,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           }}
           panOnDrag={[1]}
           panOnScroll={false}
+          proOptions={{ hideAttribution: true }}
           selectionOnDrag
           selectionKeyCode={null}
           onlyRenderVisibleElements
@@ -3331,9 +3521,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         ) : null}
 
         <CanvasSideToolbar
+          onArrange={quickArrangeCanvas}
           onOpenAgent={() => setIsAgentOpen(true)}
           onSave={() => void saveCanvas({ includeThumbnail: true })}
-          onZoomIn={() => setCanvasZoom(getNextCanvasZoom(zoomLevel, 0.1))}
         />
 
         <CanvasBottomControls
@@ -3440,13 +3630,6 @@ function blobToDataUrl(blob: Blob) {
     };
     reader.readAsDataURL(blob);
   });
-}
-
-function getClipboardImageExtension(mimeType: string) {
-  if (mimeType === "image/jpeg") return "jpg";
-  if (mimeType === "image/webp") return "webp";
-  if (mimeType === "image/gif") return "gif";
-  return "png";
 }
 
 function dataUrlToFile(dataUrl: string, fileName: string) {

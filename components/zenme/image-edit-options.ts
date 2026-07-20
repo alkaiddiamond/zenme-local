@@ -106,6 +106,7 @@ export function buildImageEditPrompt(input: {
   aspectRatio?: string;
   prompt: string;
   quality?: string;
+  referenceCount?: number;
 }) {
   return [
     buildImageEditSystemPrompt(input),
@@ -141,6 +142,7 @@ export function buildImageGenerationSystemPrompt(input: {
 export function buildImageEditSystemPrompt(input: {
   aspectRatio?: string;
   quality?: string;
+  referenceCount?: number;
 }) {
   const aspectRatio = getImageEditAspectRatioOption(input.aspectRatio);
   const quality = getImageEditQualityOption(input.quality);
@@ -154,6 +156,16 @@ export function buildImageEditSystemPrompt(input: {
     "- 基于参考重新生成时，应提取用户所指的主体、外观、风格、构图或细节特征，并按用户的新要求组织画面。",
     "- 多张参考图可能承担不同作用，应结合用户指令判断每张图用于主体、造型、风格、场景或构图参考。",
     "- 除非用户明确要求，不要无故丢失参考图中的核心主体和可识别特征。",
+    ...(input.referenceCount && input.referenceCount > 1
+      ? [
+          "",
+          "多参考图编号与角色约束：",
+          `- 当前请求包含 ${input.referenceCount} 张参考图片；图片编号严格按照接口输入顺序，从“第一张图片”开始依次编号，不得交换、重排或混淆。`,
+          "- 用户提到“第一张、第二张、图一、图二”等编号时，必须严格对应上述输入顺序。",
+          "- 当用户要求把第一张图片中的服装、配饰或其他局部元素替换为第二张图片的对应元素时：第一张图片是主体底图，必须保留第一张人物的身份、面部、发型、年龄、体型、姿态、构图和背景；第二张图片只提供被指定替换的局部元素，不得把第二张人物的身份、面部、发型、年龄、姿态或整体构图复制到结果中。",
+          "- 不得融合、平均或互换不同参考图中的人物身份。若用户未明确要求更换人物，最终人物身份必须来自主体底图。",
+        ]
+      : []),
     "",
     "输出尺寸与分辨率要求：",
     ...getAspectRatioPromptLines(aspectRatio.value, "edit"),

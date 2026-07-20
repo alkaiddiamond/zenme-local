@@ -44,6 +44,47 @@ function splitPlayerAnalysisJobs(value: JsonObject): CanvasMigrationResult {
     : node);
   const edges = (value.edges as unknown[]).map((edge) => isObject(edge) ? { ...edge } : edge);
   let migrated = false;
+  const taskIds = new Set(
+    nodes.flatMap((node) =>
+      isObject(node) &&
+      typeof node.id === "string" &&
+      isObject(node.data) &&
+      node.data.kind === "task"
+        ? [node.id]
+        : [],
+    ),
+  );
+  const legacyTaskParentByChildId = new Map<string, string>();
+  for (const edge of edges) {
+    if (
+      isObject(edge) &&
+      typeof edge.source === "string" &&
+      typeof edge.target === "string" &&
+      edge.source !== edge.target &&
+      taskIds.has(edge.source) &&
+      taskIds.has(edge.target) &&
+      !(
+        edge.sourceHandle === "node-context" &&
+        edge.targetHandle === "node-context-target"
+      ) &&
+      !legacyTaskParentByChildId.has(edge.target)
+    ) {
+      legacyTaskParentByChildId.set(edge.target, edge.source);
+    }
+    if (
+      isObject(edge) &&
+      typeof edge.source === "string" &&
+      typeof edge.target === "string" &&
+      edge.source !== edge.target &&
+      taskIds.has(edge.source) &&
+      taskIds.has(edge.target) &&
+      edge.sourceHandle === "node-context" &&
+      edge.targetHandle === "node-context-target" &&
+      !legacyTaskParentByChildId.has(edge.source)
+    ) {
+      legacyTaskParentByChildId.set(edge.source, edge.target);
+    }
+  }
 
   for (const rawPlayer of [...nodes]) {
     if (!isObject(rawPlayer) || !isObject(rawPlayer.data) || rawPlayer.data.kind !== "musicPlayer" || typeof rawPlayer.id !== "string") continue;
@@ -80,8 +121,38 @@ function splitPlayerAnalysisJobs(value: JsonObject): CanvasMigrationResult {
   }
 
   for (const rawNode of nodes) {
-    if (!isObject(rawNode) || !isObject(rawNode.data) || rawNode.data.kind !== "task") {
+    if (!isObject(rawNode) || !isObject(rawNode.data)) {
       continue;
+    }
+    if (
+      rawNode.data.kind === "imageGeneration" &&
+      !rawNode.data.imageGenerationResult &&
+      isObject(rawNode.style) &&
+      rawNode.style.height === 176 &&
+      rawNode.style.width === 560
+    ) {
+      rawNode.style = {
+        ...rawNode.style,
+        height: 260,
+        width: 520,
+      };
+      if (rawNode.height === 176) rawNode.height = 260;
+      if (rawNode.width === 560) rawNode.width = 520;
+      delete rawNode.measured;
+      migrated = true;
+    }
+    if (rawNode.data.kind !== "task") {
+      continue;
+    }
+    if (
+      typeof rawNode.id === "string" &&
+      typeof rawNode.data.taskParentId !== "string"
+    ) {
+      const legacyParentId = legacyTaskParentByChildId.get(rawNode.id);
+      if (legacyParentId) {
+        rawNode.data.taskParentId = legacyParentId;
+        migrated = true;
+      }
     }
     const nextTaskMetadata = {
       taskStatus: normalizeTaskStatus(rawNode.data.taskStatus),
