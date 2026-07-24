@@ -1,9 +1,0 @@
-<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">zenme exponent logo</title>
-  <desc id="desc">A minimal black and white zenme logo using me as the base and zen as an exponent.</desc>
-  <rect width="1024" height="1024" fill="white"/>
-  <g fill="#080808" font-family="'Inter Tight', Inter, Avenir Next, Helvetica Neue, Arial, sans-serif">
-    <text x="284" y="602" font-size="244" font-weight="560" letter-spacing="-20">me</text>
-    <text x="540" y="424" font-size="76" font-weight="520" letter-spacing="-1" transform="rotate(-5 540 424)">zen</text>
-  </g>
-</svg>

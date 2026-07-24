@@ -1,0 +1,45 @@
+name: Bug 报告
+description: 报告可复现的 Zenme Local 问题
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: 请勿上传 API Key、Token、真实业务文件或完整数据目录。安全漏洞请按 SECURITY.md 私密报告。
+  - type: input
+    id: version
+    attributes:
+      label: Zenme 版本
+      placeholder: 例如 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 操作系统
+      options:
+        - Windows x64
+        - macOS Intel x64
+        - 其他或未支持平台
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请提供最小、稳定的复现步骤。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果与脱敏日志
+    validations:
+      required: true

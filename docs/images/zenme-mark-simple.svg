@@ -1,9 +1,0 @@
-<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">zenme simplified mark</title>
-  <desc id="desc">Simplified black and white zenme symbol showing a calm point activating the self.</desc>
-  <rect width="512" height="512" fill="white"/>
-  <path d="M132 268C182 210 244 210 286 256C323 296 369 300 416 244" stroke="#0A0A0A" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="132" cy="268" r="14" fill="#0A0A0A"/>
-  <circle cx="286" cy="256" r="19" fill="white" stroke="#0A0A0A" stroke-width="10"/>
-  <circle cx="416" cy="244" r="28" fill="#0A0A0A"/>
-</svg>

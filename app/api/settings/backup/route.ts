@@ -9,7 +9,7 @@ import {
 export async function GET() {
   try {
     const backup = await createLocalDataBackup();
-    return new Response(backup, {
+    return new Response(Uint8Array.from(backup), {
       headers: {
         "content-disposition": `attachment; filename="zenme-backup-${new Date()
           .toISOString()

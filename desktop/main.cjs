@@ -9,6 +9,7 @@ const SERVER_HOST = "127.0.0.1";
 const STARTUP_TIMEOUT_MS = 45_000;
 const APP_NAME = "Zenme";
 const APP_ID = "local.zenme.desktop";
+const IS_SMOKE_TEST = process.argv.includes("--smoke-test");
 
 let mainWindow = null;
 let serverProcess = null;
@@ -46,6 +47,42 @@ function getDefaultDataDir() {
 
 function getLegacyElectronDataDir() {
   return path.join(app.getPath("appData"), "Electron", "data");
+}
+
+function configureApplicationMenu() {
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    {
+      label: APP_NAME,
+      submenu: [
+        { role: "about" },
+        { type: "separator" },
+        { role: "services" },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    },
+    { role: "editMenu" },
+    {
+      label: "显示",
+      submenu: [
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    { role: "windowMenu" },
+  ]));
 }
 
 function hasLocalProjects(dataDir) {
@@ -292,6 +329,10 @@ async function createWindow() {
   });
 
   await mainWindow.loadURL(nextServerUrl);
+
+  if (IS_SMOKE_TEST) {
+    setTimeout(() => app.quit(), 1_000);
+  }
 }
 
 function registerIpcHandlers() {
@@ -361,7 +402,7 @@ function registerIpcHandlers() {
 
 app.whenReady().then(async () => {
   try {
-    Menu.setApplicationMenu(null);
+    configureApplicationMenu();
     registerIpcHandlers();
     await createWindow();
   } catch (error) {

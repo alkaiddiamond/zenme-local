@@ -23,7 +23,15 @@
 
 # misc
 .DS_Store
+Thumbs.db
+Desktop.ini
 *.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.dmp
 
 # debug
 npm-debug.log*
@@ -31,9 +39,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*.local
-.env
+# env files
+.env*
+!.env.example
 
 # vercel
 .vercel
