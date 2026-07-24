@@ -50,33 +50,8 @@ type SettingsPayload = {
   settings: ZenmeLocalSettings;
 };
 
-type MusicServiceDesktopConfiguration = {
-  configured: boolean;
-  source: "environment" | "desktop-config" | "none" | "explicit";
-  environmentManaged: boolean;
-  baseUrl: string | null;
-  tokenConfigured: boolean;
-  error?: string | null;
-};
-
-type MusicServiceDesktopStatus = {
-  status: string;
-  available: boolean;
-  configured: boolean;
-  version?: string | null;
-  error?: string | null;
-  errorCode?: string | null;
-};
-
 type ZenmeDesktopApi = {
-  clearMusicServiceApiConfiguration: () => Promise<MusicServiceDesktopConfiguration>;
-  configureMusicServiceApi: (input: {
-    baseUrl: string;
-    token?: string;
-  }) => Promise<MusicServiceDesktopConfiguration>;
   getDataDir: () => Promise<string>;
-  getMusicServiceConfiguration: () => Promise<MusicServiceDesktopConfiguration>;
-  getMusicServiceStatus: () => Promise<MusicServiceDesktopStatus>;
   openDataDir: () => Promise<string>;
   openExternal: (url: string) => Promise<boolean>;
   selectDataDir: () => Promise<{
@@ -86,7 +61,7 @@ type ZenmeDesktopApi = {
   }>;
 };
 
-type SettingsTab = "models" | "usage" | "music" | "local" | "save";
+type SettingsTab = "models" | "usage" | "local" | "save";
 
 type TokenUsagePayload = {
   summary: {
@@ -447,12 +422,6 @@ export function SettingsClient() {
               onClick={() => setActiveTab("models")}
             />
             <SettingsNavButton
-              active={activeTab === "music"}
-              icon={<Server className="size-5" />}
-              label="音乐分析"
-              onClick={() => setActiveTab("music")}
-            />
-            <SettingsNavButton
               active={activeTab === "local"}
               icon={<HardDrive className="size-5" />}
               label="本地数据"
@@ -514,7 +483,6 @@ export function SettingsClient() {
           ) : null}
 
           {activeTab === "usage" ? <TokenUsageSettings /> : null}
-          {activeTab === "music" ? <MusicAnalysisSettings /> : null}
 
           {activeTab === "save" ? (
             <SavePolicySettings
@@ -542,189 +510,6 @@ export function SettingsClient() {
         />
       ) : null}
     </div>
-  );
-}
-
-type MusicCapabilities = {
-  analyzers: Array<{ id: string; version: string; installed: boolean; capabilities: string[] }>;
-  modelPackages?: Array<{ id: string; version: string; installed: boolean; selected?: boolean; purpose: string; license: string; weightsLicense?: string; distributionRestricted?: boolean; downloadSizeBytes: number; diskRequiredBytes: number }>;
-};
-
-function formatBytes(value: number) {
-  if (!value) return "按需获取";
-  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)} GB`;
-  return `${(value / 1024 ** 2).toFixed(0)} MB`;
-}
-
-function MusicAnalysisSettings() {
-  const desktopApiAvailable = typeof window !== "undefined" && Boolean(window.zenmeDesktop);
-  const [health, setHealth] = useState<{ status: string; gpu?: { available: boolean; name?: string | null } } | null>(null);
-  const [capabilities, setCapabilities] = useState<MusicCapabilities | null>(null);
-  const [desktopStatus, setDesktopStatus] = useState<MusicServiceDesktopStatus | null>(null);
-  const [configuration, setConfiguration] = useState<MusicServiceDesktopConfiguration | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [cache, setCache] = useState<{ fileCount: number; sizeBytes: number } | null>(null);
-  const [installing, setInstalling] = useState("");
-  const [installMessage, setInstallMessage] = useState("");
-  const [configuring, setConfiguring] = useState("");
-  const [serviceBaseUrl, setServiceBaseUrl] = useState("");
-  const [serviceToken, setServiceToken] = useState("");
-  const [configurationMessage, setConfigurationMessage] = useState("");
-  async function refresh() {
-    setLoading(true);
-    try {
-      const desktopApi = window.zenmeDesktop;
-      if (desktopApi) {
-        const [nextStatus, nextConfiguration] = await Promise.all([
-          desktopApi.getMusicServiceStatus(),
-          desktopApi.getMusicServiceConfiguration(),
-        ]);
-        setDesktopStatus(nextStatus);
-        setConfiguration(nextConfiguration);
-        setServiceBaseUrl(nextConfiguration.baseUrl ?? "");
-      }
-      const [healthResponse, capabilityResponse, cacheResponse] = await Promise.all([
-        fetch("/api/music/health", { cache: "no-store" }),
-        fetch("/api/music/capabilities", { cache: "no-store" }),
-        fetch("/api/music/cache", { cache: "no-store" }),
-      ]);
-      setHealth(await healthResponse.json());
-      setCapabilities(capabilityResponse.ok ? await capabilityResponse.json() : null);
-      setCache(cacheResponse.ok ? await cacheResponse.json() : null);
-    } finally { setLoading(false); }
-  }
-  useEffect(() => { void refresh(); }, []);
-  async function saveExternalApiConnection() {
-    const desktopApi = window.zenmeDesktop;
-    if (!desktopApi) return;
-    setConfiguring("save");
-    setConfigurationMessage("");
-    try {
-      const nextConfiguration = await desktopApi.configureMusicServiceApi({
-        baseUrl: serviceBaseUrl,
-        ...(serviceToken ? { token: serviceToken } : {}),
-      });
-      setConfiguration(nextConfiguration);
-      setServiceToken("");
-    } catch (error) {
-      setConfigurationMessage(error instanceof Error ? error.message : "连接配置保存失败");
-    } finally {
-      setConfiguring("");
-    }
-  }
-  async function clearExternalService() {
-    const desktopApi = window.zenmeDesktop;
-    if (!desktopApi || !window.confirm("清除 Zenme 保存的外部音乐分析 API 连接？不会停止或修改外部服务。")) return;
-    setConfiguring("clear");
-    setConfigurationMessage("");
-    try {
-      setConfiguration(await desktopApi.clearMusicServiceApiConfiguration());
-      setServiceBaseUrl("");
-      setServiceToken("");
-    } catch (error) {
-      setConfigurationMessage(error instanceof Error ? error.message : "连接配置清除失败");
-    } finally {
-      setConfiguring("");
-    }
-  }
-  async function installModel(item: NonNullable<MusicCapabilities["modelPackages"]>[number]) {
-    const restriction = item.distributionRestricted
-      ? "\n注意：该组件存在发行限制，不应随商业安装包分发。"
-      : "";
-    const warning = `安装 ${item.purpose}（${item.id} ${item.version}）？\n代码许可证：${item.license}\n权重许可证：${item.weightsLicense || "未单独声明"}\n下载：${formatBytes(item.downloadSizeBytes)}\n磁盘需求：${formatBytes(item.diskRequiredBytes)}${restriction}\n模型只保存在本机。`;
-    if (!window.confirm(warning)) return;
-    setInstalling(`${item.id}:${item.version}`); setInstallMessage("");
-    try {
-      const response = await fetch("/api/music/models/install", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ analyzerId: item.id, modelVersion: item.version,
-          licenseAccepted: true, download: true }),
-      });
-      const result = await response.json() as { detail?: { message?: string }; status?: string };
-      if (!response.ok) throw new Error(result.detail?.message || "模型安装失败");
-      setInstallMessage(result.status === "ready" ? "模型安装完成" : "模型已加入安装队列");
-      await refresh();
-    } catch (error) {
-      setInstallMessage(error instanceof Error ? error.message : "模型安装失败");
-    } finally { setInstalling(""); }
-  }
-  return (
-    <section className="mx-auto max-w-[1000px] space-y-8">
-      <header className="flex items-start justify-between gap-6">
-        <div><h2 className="text-xl font-medium text-[var(--color-text-primary)]">音乐分析</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">默认通过 stdio MCP 使用独立安装的音乐分析组件；HTTP API 作为兼容连接。</p></div>
-        <Button disabled={loading} onClick={() => void refresh()} variant="outline"><RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />刷新</Button>
-      </header>
-      <section className="space-y-3 rounded-md border border-[var(--color-border)] bg-white p-5">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h3 className="text-base font-medium">兼容 HTTP API</h3>
-            <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">仅在 MCP 组件不可用或连接远程部署时需要配置。</p>
-          </div>
-          {(configuration?.baseUrl || configuration?.tokenConfigured) && !configuration.environmentManaged ? (
-            <Button disabled={Boolean(configuring)} onClick={() => void clearExternalService()} variant="outline">清除连接</Button>
-          ) : null}
-        </div>
-        {configuration?.environmentManaged ? (
-          <p className="rounded-md bg-[var(--color-surface-container-low)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">当前配置由环境变量管理；桌面设置不会覆盖环境变量。</p>
-        ) : null}
-        <div className="grid gap-4">
-          <label className="grid gap-2 text-sm">
-            <span>API Base URL</span>
-            <Input
-              autoComplete="off"
-              disabled={!desktopApiAvailable || configuration?.environmentManaged || Boolean(configuring)}
-              onChange={(event) => setServiceBaseUrl(event.target.value)}
-              placeholder="http://127.0.0.1:8000"
-              value={serviceBaseUrl}
-            />
-          </label>
-          <label className="grid gap-2 text-sm">
-            <span>访问 Token</span>
-            <Input
-              autoComplete="new-password"
-              disabled={!desktopApiAvailable || configuration?.environmentManaged || Boolean(configuring)}
-              onChange={(event) => setServiceToken(event.target.value)}
-              placeholder={configuration?.tokenConfigured ? "已保存；留空保持不变" : "输入外部服务 Token"}
-              type="password"
-              value={serviceToken}
-            />
-          </label>
-          <div className="flex flex-col gap-3 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs text-[var(--color-text-tertiary)]">仅允许 `http://127.0.0.1`、`localhost` 或 `[::1]`；Token 不会返回给页面或写入日志。</p>
-              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">修改地址或 Token 后，请保存并重新连接服务。</p>
-            </div>
-            <Button
-              className="min-w-[132px] shrink-0"
-              disabled={!desktopApiAvailable || configuration?.environmentManaged || Boolean(configuring) || !serviceBaseUrl.trim()}
-              onClick={() => void saveExternalApiConnection()}
-              type="button"
-            >
-              <Save className="size-4" />
-              {configuring === "save" ? "连接中" : "保存并连接"}
-            </Button>
-          </div>
-        </div>
-        {configurationMessage || configuration?.error ? <p className="text-sm text-red-600">{configurationMessage || configuration?.error}</p> : null}
-      </section>
-      <div className="rounded-md border border-[var(--color-border)] bg-white p-5">
-        <div className="flex items-center justify-between"><span>服务状态</span><span className="text-sm text-[var(--color-text-secondary)]">{health?.status === "ok" ? "已连接" : desktopStatus?.status === "failed" ? "连接失败" : "不可用"}</span></div>
-        <div className="mt-3 flex items-center justify-between"><span>GPU</span><span className="text-sm text-[var(--color-text-secondary)]">{health?.gpu?.available ? health.gpu.name || "可用" : "未检测到"}</span></div>
-        {desktopStatus?.error ? <p className="mt-3 text-xs text-[var(--color-text-tertiary)]">{desktopStatus.error}</p> : null}
-      </div>
-      <section className="space-y-3"><h3 className="text-base font-medium">分析能力</h3>
-        {(capabilities?.analyzers ?? []).map((item) => <div className="rounded-md border border-[var(--color-border)] p-4" key={`${item.id}-${item.version}`}><div>{item.id} {item.version}</div><p className="mt-1 text-xs text-[var(--color-text-tertiary)]">{item.capabilities.join("、")}</p></div>)}
-      </section>
-      <section className="space-y-3"><h3 className="text-base font-medium">模型包</h3>
-        {installMessage ? <p className="text-sm text-[var(--color-text-secondary)]">{installMessage}</p> : null}
-        {(capabilities?.modelPackages ?? []).map((item) => <div className="flex items-center justify-between gap-4 rounded-md border border-[var(--color-border)] p-4" key={`${item.id}-${item.version}`}><div><div>{item.purpose}</div><p className="text-xs text-[var(--color-text-tertiary)]">{item.id} {item.version} · 代码 {item.license} · 权重 {item.weightsLicense || "未声明"}</p><p className="mt-1 text-xs text-[var(--color-text-tertiary)]">下载 {formatBytes(item.downloadSizeBytes)} · 磁盘 {formatBytes(item.diskRequiredBytes)}{item.distributionRestricted ? " · 限制发行" : ""}</p></div>{item.installed ? <span className="shrink-0 text-xs">已安装</span> : <Button className="shrink-0" disabled={installing === `${item.id}:${item.version}`} onClick={() => void installModel(item)} variant="outline">{installing === `${item.id}:${item.version}` ? "安装中" : item.selected ? "继续安装" : "安装"}</Button>}</div>)}
-      </section>
-      <section className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-white p-5">
-        <div><h3 className="text-base font-medium">分析缓存</h3><p className="mt-1 text-xs text-[var(--color-text-tertiary)]">{cache ? `${cache.fileCount} 个文件 · ${(cache.sizeBytes / 1024 / 1024).toFixed(1)} MB` : "不可用"}</p></div>
-        <Button disabled={!cache || loading} onClick={async () => { if (!window.confirm("删除所有可重新生成的音乐分析缓存？原始音乐不会被删除。")) return; await fetch("/api/music/cache", { method: "DELETE" }); await refresh(); }} variant="outline"><Trash2 className="size-4" />清理缓存</Button>
-      </section>
-    </section>
   );
 }
 

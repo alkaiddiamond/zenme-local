@@ -4,11 +4,6 @@ const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
-const {
-  resolveMusicServiceConfiguration,
-  updateMusicServiceConfiguration,
-} = require("./music-service-config.cjs");
-const { MusicServiceConnection } = require("./music-service-connection.cjs");
 
 const SERVER_HOST = "127.0.0.1";
 const STARTUP_TIMEOUT_MS = 45_000;
@@ -18,7 +13,6 @@ const APP_ID = "local.zenme.desktop";
 let mainWindow = null;
 let serverProcess = null;
 let serverUrl = null;
-let musicServiceConnection = null;
 
 app.setName(APP_NAME);
 if (process.platform === "win32") {
@@ -108,6 +102,13 @@ function writeDesktopConfig(config) {
   );
 }
 
+function removeLegacyMusicServiceConfiguration() {
+  const config = readDesktopConfig();
+  if (!("musicService" in config)) return;
+  delete config.musicService;
+  writeDesktopConfig(config);
+}
+
 function getDataDir() {
   const configured = readDesktopConfig().dataDir;
   if (configured && typeof configured === "string") {
@@ -116,27 +117,6 @@ function getDataDir() {
 
   migrateLegacyDefaultDataDirIfNeeded();
   return getDefaultDataDir();
-}
-
-function getMusicServiceConfiguration() {
-  return resolveMusicServiceConfiguration({
-    desktopConfig: readDesktopConfig(),
-    env: process.env,
-  });
-}
-
-function createMusicServiceConnection() {
-  const configuration = getMusicServiceConfiguration();
-  return new MusicServiceConnection({
-    baseUrl: configuration.baseUrl,
-    token: configuration.token,
-    configurationError: configuration.error,
-    configurationSource: configuration.source,
-  });
-}
-
-function saveMusicServiceConfiguration(updates) {
-  writeDesktopConfig(updateMusicServiceConfiguration(readDesktopConfig(), updates));
 }
 
 function getAppIconPath() {
@@ -153,17 +133,8 @@ function getAppIconPath() {
 async function startLocalServer() {
   const dataDir = getDataDir();
   fs.mkdirSync(dataDir, { recursive: true });
+  removeLegacyMusicServiceConfiguration();
 
-  musicServiceConnection = createMusicServiceConnection();
-  if (musicServiceConnection.configuration().configured) {
-    try {
-      await musicServiceConnection.connect();
-    } catch (error) {
-      console.error(`[music-service] unavailable: ${error instanceof Error ? error.message : error}`);
-    }
-  } else {
-    console.log("[music-service] stdio MCP will start on the first music request");
-  }
   const port = await findAvailablePort();
   const nextServerUrl = `http://${SERVER_HOST}:${port}`;
   spawnNextServer(port, dataDir);
@@ -184,8 +155,6 @@ function spawnNextServer(port, dataDir) {
     ...process.env,
     ZENME_DATA_DIR: dataDir,
     ZENME_DESKTOP: "1",
-    ZENME_MUSIC_MCP_ENABLED: "1",
-    ...(musicServiceConnection?.serverEnvironment() || {}),
   };
   if (app.isPackaged) {
     env.ELECTRON_RUN_AS_NODE = "1";
@@ -225,8 +194,6 @@ function spawnNextServer(port, dataDir) {
 }
 
 function stopLocalServer() {
-  musicServiceConnection?.clear();
-  musicServiceConnection = null;
   if (!serverProcess) return;
   const child = serverProcess;
   serverProcess = null;
@@ -327,47 +294,6 @@ async function createWindow() {
   await mainWindow.loadURL(nextServerUrl);
 }
 
-function getMusicServiceConfigurationForRenderer() {
-  const resolvedConfiguration = getMusicServiceConfiguration();
-  const effective = musicServiceConnection?.configuration()
-    || createMusicServiceConnection().configuration();
-  return {
-    ...effective,
-    environmentManaged: resolvedConfiguration.source === "environment",
-    error: resolvedConfiguration.error,
-  };
-}
-
-async function configureMusicServiceApi(input) {
-  const current = getMusicServiceConfigurationForRenderer();
-  if (current.environmentManaged) {
-    throw new Error("音乐分析 API 当前由环境变量管理");
-  }
-  if (!input || typeof input !== "object") {
-    throw new Error("音乐分析 API 配置无效");
-  }
-  const baseUrl = typeof input.baseUrl === "string" ? input.baseUrl : "";
-  if (baseUrl.length > 2_048) throw new Error("音乐分析 API Base URL 过长");
-  const updates = { baseUrl };
-  if (typeof input.token === "string" && input.token.trim()) {
-    if (input.token.length > 4_096) throw new Error("音乐分析 API Token 过长");
-    updates.token = input.token;
-  }
-  saveMusicServiceConfiguration(updates);
-  await restartLocalServer();
-  return getMusicServiceConfigurationForRenderer();
-}
-
-async function clearMusicServiceApiConfiguration() {
-  const current = getMusicServiceConfigurationForRenderer();
-  if (current.environmentManaged) {
-    throw new Error("音乐分析 API 当前由环境变量管理");
-  }
-  saveMusicServiceConfiguration({ baseUrl: null, token: null });
-  await restartLocalServer();
-  return getMusicServiceConfigurationForRenderer();
-}
-
 function registerIpcHandlers() {
   ipcMain.handle("zenme:get-data-dir", () => getDataDir());
   ipcMain.handle("zenme:write-clipboard-text", (_event, value) => {
@@ -431,24 +357,6 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle("zenme:get-server-url", () => serverUrl);
-  ipcMain.handle("zenme:get-music-service-status", () =>
-    musicServiceConnection?.snapshot() || {
-      status: "not_configured",
-      available: false,
-      configured: false,
-      error: "external API service not configured（未配置外部音乐分析 API）",
-      errorCode: "external_api_not_configured",
-    },
-  );
-  ipcMain.handle("zenme:get-music-service-configuration", () =>
-    getMusicServiceConfigurationForRenderer(),
-  );
-  ipcMain.handle("zenme:configure-music-service-api", (_event, input) =>
-    configureMusicServiceApi(input),
-  );
-  ipcMain.handle("zenme:clear-music-service-api-configuration", () =>
-    clearMusicServiceApiConfiguration(),
-  );
 }
 
 app.whenReady().then(async () => {

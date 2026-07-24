@@ -3,15 +3,12 @@ import { readFileSync } from "node:fs";
 
 import type { CanvasNode } from "./types";
 import {
-  createMusicChildUpdate,
+  createLyricsNodeUpdate,
   createMusicPlayerUpdate,
   getMusicApiErrorMessage,
   downsampleWaveform,
   extractMusicLyrics,
   findLyricsNodesNeedingRecovery,
-  musicCapabilitiesFor,
-  musicJobRequestFor,
-  musicPlayerPreviewRequest,
   normalizeMusicPlaybackTimes,
   resolveMusicSourceNode,
 } from "./music-workflow";
@@ -24,7 +21,7 @@ const musicNode: CanvasNode = {
 };
 
 describe("music workflow", () => {
-  it("creates music analysis nodes without changing the current canvas zoom", () => {
+  it("creates lyrics nodes without changing the current canvas zoom", () => {
     const canvasClientSource = readFileSync(
       new URL("../canvas-client.tsx", import.meta.url),
       "utf8",
@@ -32,7 +29,7 @@ describe("music workflow", () => {
     const createMusicChildSource = canvasClientSource.slice(
       canvasClientSource.indexOf("const createMusicChild = useCallback"),
       canvasClientSource.indexOf(
-        "const cancelMusicAnalysis = useCallback",
+        "const locateMusicPlayer = useCallback",
       ),
     );
 
@@ -51,7 +48,7 @@ describe("music workflow", () => {
     expect(getMusicApiErrorMessage({ error: "服务未配置" })).toBe(
       "服务未配置",
     );
-    expect(getMusicApiErrorMessage(null)).toBe("无法创建分析任务");
+    expect(getMusicApiErrorMessage(null)).toBe("未找到同步歌词");
   });
 
   it("creates one deterministic player for a music asset", () => {
@@ -117,38 +114,7 @@ describe("music workflow", () => {
     });
   });
 
-  it("requests only the capabilities required by each child node", () => {
-    expect(musicCapabilitiesFor("lyrics")).toEqual([]);
-    expect(musicCapabilitiesFor("musicAnalysis")).toContain("instruments");
-    expect(musicCapabilitiesFor("musicAnalysis")).not.toContain("lyrics");
-    expect(musicCapabilitiesFor("sunoPrompt")).toContain("suno_prompt");
-  });
-
-  it("uses product profiles without exposing their internal dependencies", () => {
-    const capabilities = {
-      profiles: [
-        { id: "player-preview" },
-        { id: "comprehensive-analysis" },
-        { id: "suno-prompt" },
-      ],
-    };
-    expect(musicPlayerPreviewRequest(capabilities)).toEqual({
-      capabilities: ["metadata", "waveform"],
-      profile: "player-preview",
-    });
-    expect(() => musicJobRequestFor("lyrics", capabilities)).toThrow(/直接获取/);
-    expect(musicJobRequestFor("sunoPrompt", capabilities)).toEqual({
-      capabilities: ["suno_prompt"],
-      profile: "suno-prompt",
-    });
-  });
-
-  it("falls back to the legacy explicit capability contract", () => {
-    expect(() => musicJobRequestFor("lyrics", { profiles: [] })).toThrow(/直接获取/);
-    expect(musicPlayerPreviewRequest(null).profile).toBe("complete");
-  });
-
-  it("creates a new analysis child for every pulled operation", () => {
+  it("creates a new lyrics child for every pulled operation", () => {
     const player: CanvasNode = {
       id: "player-1",
       type: "musicPlayer",
@@ -156,68 +122,26 @@ describe("music workflow", () => {
       data: {
         kind: "musicPlayer",
         title: "测试歌曲 · 播放器",
-        musicJobId: "job-1",
-        musicJobStatus: "succeeded",
       },
     };
-    const first = createMusicChildUpdate({
-      edges: [], kind: "lyrics", nodes: [player], playerNode: player, projectId: "project-1",
+    const first = createLyricsNodeUpdate({
+      playerNode: player, projectId: "project-1",
     });
     expect(first.createdEdges[0]).toMatchObject({ source: "player-1", target: first.focusNodeId });
     expect(first.createdNodes[0].data.musicParentPlayerNodeId).toBe("player-1");
     expect(first.createdNodes[0].style).toMatchObject({ height: 176, width: 560 });
 
-    const repeated = createMusicChildUpdate({
-      edges: first.createdEdges,
-      kind: "lyrics",
-      nodes: [player, ...first.createdNodes],
-      playerNode: player,
-      projectId: "project-1",
+    const repeated = createLyricsNodeUpdate({
+      playerNode: player, projectId: "project-1",
     });
     expect(repeated.createdNodes).toHaveLength(1);
     expect(repeated.focusNodeId).not.toBe(first.focusNodeId);
   });
 
-  it("creates a resizable Suno prompt node with the documented default size", () => {
-    const player: CanvasNode = {
-      id: "player-1",
-      type: "musicPlayer",
-      position: { x: 500, y: 200 },
-      data: { kind: "musicPlayer", title: "测试歌曲 · 播放器" },
-    };
-    const update = createMusicChildUpdate({
-      edges: [],
-      kind: "sunoPrompt",
-      nodes: [player],
-      playerNode: player,
-      projectId: "project-1",
-    });
-
-    expect(update.createdNodes[0].style).toMatchObject({ height: 176, width: 560 });
-  });
-
-  it("creates a resizable comprehensive analysis node with the documented default size", () => {
-    const player: CanvasNode = {
-      id: "player-1",
-      type: "musicPlayer",
-      position: { x: 500, y: 200 },
-      data: { kind: "musicPlayer", title: "测试歌曲 · 播放器" },
-    };
-    const update = createMusicChildUpdate({
-      edges: [],
-      kind: "musicAnalysis",
-      nodes: [player],
-      playerNode: player,
-      projectId: "project-1",
-    });
-
-    expect(update.createdNodes[0].style).toMatchObject({ height: 176, width: 560 });
-  });
-
   it("keeps locally fetched lyric lines without requiring structure sections", () => {
     expect(extractMusicLyrics({
       lyrics: [{ start: 21, end: 24, text: "第一句" }],
-    })).toEqual([expect.objectContaining({ section: undefined, text: "第一句" })]);
+    })).toEqual([expect.objectContaining({ text: "第一句" })]);
   });
 
   it("finds succeeded historical lyric nodes whose persisted lines were lost", () => {
@@ -227,7 +151,7 @@ describe("music workflow", () => {
       position: { x: 0, y: 0 },
       data: {
         kind: "lyrics",
-        musicJobStatus: "succeeded",
+        lyricsFetchStatus: "succeeded",
         musicLyrics: [],
         musicParentPlayerNodeId: "player-1",
         title: "歌词",

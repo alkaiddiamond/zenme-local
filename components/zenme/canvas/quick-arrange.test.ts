@@ -100,15 +100,15 @@ describe("quick canvas arrange", () => {
       },
       {
         ...node({
-          id: "analysis",
-          kind: "musicAnalysis",
+          id: "lyrics",
+          kind: "lyrics",
           height: 1123,
           width: 794,
         }),
         data: {
-          kind: "musicAnalysis",
+          kind: "lyrics",
           musicChildExpanded: false,
-          title: "分析",
+          title: "歌词",
         },
       },
     ];
@@ -130,7 +130,7 @@ describe("quick canvas arrange", () => {
       width: 620,
       data: { aiResponseExpanded: false },
     });
-    expect(byId.get("analysis")).toMatchObject({
+    expect(byId.get("lyrics")).toMatchObject({
       height: 176,
       width: 560,
       data: { musicChildExpanded: false },

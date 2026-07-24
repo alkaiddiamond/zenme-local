@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { createCanvasHistoryNodeSnapshot } from "./geometry";
-import { createAltDragCopyUpdate } from "./alt-drag-copy";
+import {
+  createAltDragCopyUpdate,
+  createAltDragPreviewNodes,
+  isAltDragPreviewNode,
+} from "./alt-drag-copy";
 import type { CanvasNode } from "./types";
 
 function node(input: {
@@ -32,6 +36,39 @@ function snapshots(nodes: CanvasNode[]) {
 }
 
 describe("Alt-drag node copy", () => {
+  it("creates a non-interactive source preview while the copy is dragged", () => {
+    const before = [node({ id: "source", x: 20, y: 40 })];
+    const [preview] = createAltDragPreviewNodes({
+      beforeNodeSnapshots: snapshots(before),
+      draggedNodeId: "source",
+    });
+
+    expect(preview).toMatchObject({
+      className: "zenme-alt-drag-source-preview",
+      connectable: false,
+      draggable: false,
+      position: { x: 20, y: 40 },
+      selectable: false,
+    });
+    expect(isAltDragPreviewNode(preview)).toBe(true);
+  });
+
+  it("remaps grouped preview ownership", () => {
+    const before = [
+      node({ id: "group", kind: "group", x: 0, y: 0 }),
+      node({ groupId: "group", id: "child", parentId: "group", x: 20, y: 30 }),
+    ];
+    const previews = createAltDragPreviewNodes({
+      beforeNodeSnapshots: snapshots(before),
+      draggedNodeId: "group",
+    });
+
+    expect(previews[1]).toMatchObject({
+      data: { groupId: "alt-drag-preview:group" },
+      parentId: "alt-drag-preview:group",
+    });
+  });
+
   it("restores the source and creates a selected copy at the drop position", () => {
     const before = [node({ id: "source", x: 20, y: 40 })];
     const update = createAltDragCopyUpdate({

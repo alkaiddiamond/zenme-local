@@ -336,7 +336,7 @@ describe("rendered canvas nodes", () => {
         node({
           data: {
             kind: "lyrics",
-            musicJobStatus: "succeeded",
+            lyricsFetchStatus: "succeeded",
             musicLyrics: persistedLyrics,
           },
           id: "lyrics",

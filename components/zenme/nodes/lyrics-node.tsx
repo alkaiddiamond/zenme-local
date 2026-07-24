@@ -13,7 +13,6 @@ import {
   NodeEdgeSourceHandle,
   NodeTargetHandle,
 } from "@/components/zenme/node-ui";
-import { MusicJobStatus, MusicJobTiming, useMusicJob } from "@/components/zenme/nodes/use-music-job";
 import { MusicChildExpandButton } from "@/components/zenme/nodes/music-child-expand-button";
 import { writeTextToClipboard } from "@/lib/clipboard";
 
@@ -45,7 +44,6 @@ export function LyricsNode({ data, selected, id }: NodeProps) {
   const activeLineKey = activeLine?.id ?? activeLine?.start;
   const activeLineRef = useRef<HTMLButtonElement | null>(null);
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useMusicJob(id, node);
   useEffect(() => {
     activeLineRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [activeLineKey]);
@@ -89,17 +87,29 @@ export function LyricsNode({ data, selected, id }: NodeProps) {
         )}
       </button>
       <EditableNodeTitle fallbackTitle="歌词" icon={<FileText className="size-4" />} onCommit={(title) => node.onUpdateMusicNode?.(id, { title })} onEditingChange={setIsRenaming} title={node.title} />
-      <MusicJobTiming node={node} />
+      {node.lyricsFetchDurationMs !== undefined ? (
+        <span className="pointer-events-none absolute -top-8 right-1 h-5 text-xs tabular-nums text-zinc-400">
+          {formatCompactDuration(node.lyricsFetchDurationMs)}
+        </span>
+      ) : null}
       <NodeTargetHandle visible={Boolean(node.hasIncomingEdge)} />
       <NodeEdgeSourceHandle visible={Boolean(node.hasOutgoingEdge)} />
       <NodeContextTargetHandle />
-      <MusicJobStatus hideDuration hideSucceeded node={node} nodeId={id} />
+      {node.lyricsFetchStatus === "failed" ? (
+        <div className="nodrag mb-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600" aria-live="polite">
+          {node.musicError || "歌词获取失败"}
+        </div>
+      ) : node.lyricsWarnings?.length ? (
+        <div className="nodrag mb-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800" aria-live="polite">
+          {node.lyricsWarnings[0]}
+        </div>
+      ) : null}
       <div className="nodrag nowheel min-h-0 flex-1 space-y-4 overflow-auto pr-1">
         {groupLyrics(lines).map((group, groupIndex) => <section key={`${group.label}-${groupIndex}`}><p className={`sticky top-0 bg-white py-1 text-[11px] font-medium ${activeLine?.section === group.label ? "text-zinc-950" : "text-zinc-400"}`}>{group.label}</p><div className="space-y-0.5">{group.lines.map((line, index) => {
           const active = activeTime >= line.start && activeTime < (line.end ?? Number.POSITIVE_INFINITY);
           return <button className={`flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left text-sm ${active ? "bg-zinc-100 text-zinc-950" : "text-zinc-600 hover:bg-zinc-50"}`} key={line.id || `${line.start}-${index}`} onClick={() => node.musicParentPlayerNodeId && node.onSeekMusicPlayer?.(node.musicParentPlayerNodeId, line.start)} ref={active ? activeLineRef : undefined} type="button"><span className="w-10 shrink-0 pt-0.5 font-mono text-[10px] text-zinc-400">{formatTime(line.start)}</span><span>{line.text}</span></button>;
         })}</div></section>)}
-        {!lines.length ? <p className="py-10 text-center text-xs text-zinc-400">{node.musicWarnings?.[0] || (node.musicJobStatus === "failed" ? node.musicError : "正在获取同步歌词")}</p> : null}
+        {!lines.length ? <p className="py-10 text-center text-xs text-zinc-400">{node.lyricsWarnings?.[0] || (node.lyricsFetchStatus === "failed" ? node.musicError : "正在获取同步歌词")}</p> : null}
       </div>
       <NodeResizer
         color="#a1a1aa"
@@ -115,3 +125,10 @@ export function LyricsNode({ data, selected, id }: NodeProps) {
 }
 
 function formatTime(seconds: number) { const safe = Math.max(0, seconds); return `${Math.floor(safe / 60)}:${Math.floor(safe % 60).toString().padStart(2, "0")}`; }
+
+export function formatCompactDuration(milliseconds: number) {
+  const totalSeconds = Math.max(0, Math.round(milliseconds / 1_000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}

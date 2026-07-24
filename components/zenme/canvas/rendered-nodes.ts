@@ -11,7 +11,6 @@ import {
   READER_DEFAULT_SIZE,
 } from "./geometry";
 import type { CanvasNode } from "./types";
-import { extractMusicLyrics } from "./music-workflow";
 import {
   deriveTaskRelationships,
   getTaskParentOptions,
@@ -35,15 +34,11 @@ type RenderedCanvasNodeInput = {
     },
   ) => void;
   nodes: CanvasNode[];
-  onMusicAnalysisComplete?: NonNullable<CanvasNodeData["onMusicAnalysisComplete"]>;
   onEnsureMusicPlayback?: NonNullable<CanvasNodeData["onEnsureMusicPlayback"]>;
   onEnsureMusicWaveform?: NonNullable<CanvasNodeData["onEnsureMusicWaveform"]>;
-  onCancelMusicAnalysis?: NonNullable<CanvasNodeData["onCancelMusicAnalysis"]>;
   onCreateMusicChildNode?: NonNullable<CanvasNodeData["onCreateMusicChildNode"]>;
   onCreateMusicPlayerNode?: NonNullable<CanvasNodeData["onCreateMusicPlayerNode"]>;
-  onMusicJobUpdate?: NonNullable<CanvasNodeData["onMusicJobUpdate"]>;
   onLocateMusicPlayerNode?: NonNullable<CanvasNodeData["onLocateMusicPlayerNode"]>;
-  onRetryMusicAnalysis?: NonNullable<CanvasNodeData["onRetryMusicAnalysis"]>;
   onSeekMusicPlayer?: NonNullable<CanvasNodeData["onSeekMusicPlayer"]>;
   onToggleMusicPlayback?: NonNullable<CanvasNodeData["onToggleMusicPlayback"]>;
   onUpdateMusicNode?: NonNullable<CanvasNodeData["onUpdateMusicNode"]>;
@@ -149,15 +144,11 @@ export function getRenderedCanvasNodes({
   nodes,
   onResolveImageDimensions,
   onCreateTextChildNode,
-  onMusicAnalysisComplete,
   onEnsureMusicPlayback,
   onEnsureMusicWaveform,
-  onCancelMusicAnalysis,
   onCreateMusicChildNode,
   onCreateMusicPlayerNode,
-  onMusicJobUpdate,
   onLocateMusicPlayerNode,
-  onRetryMusicAnalysis,
   onSeekMusicPlayer,
   onToggleMusicPlayback,
   onUpdateMusicNode,
@@ -210,11 +201,7 @@ export function getRenderedCanvasNodes({
       musicPlayerIdByMusicId.set(source.id, target.id);
       musicSourceByPlayerId.set(target.id, source);
     }
-    if (source?.data.kind === "musicPlayer" && target && (
-      target.data.kind === "lyrics" ||
-      target.data.kind === "musicAnalysis" ||
-      target.data.kind === "sunoPrompt"
-    )) {
+    if (source?.data.kind === "musicPlayer" && target?.data.kind === "lyrics") {
       playerByChildId.set(target.id, source);
     }
   }
@@ -336,13 +323,9 @@ export function getRenderedCanvasNodes({
           mimeType: source?.data.mimeType,
           originalUrl: source?.data.originalUrl,
           previewUrl: source?.data.previewUrl,
-          onCancelMusicAnalysis,
           onCreateMusicChildNode,
           onEnsureMusicPlayback,
           onEnsureMusicWaveform,
-          onMusicAnalysisComplete,
-          onMusicJobUpdate,
-          onRetryMusicAnalysis,
           onSeekMusicPlayer,
           onToggleMusicPlayback,
           onUpdateMusicNode,
@@ -351,15 +334,8 @@ export function getRenderedCanvasNodes({
       };
     }
 
-    if (
-      nodeWithConnectionState.data.kind === "lyrics" ||
-      nodeWithConnectionState.data.kind === "musicAnalysis" ||
-      nodeWithConnectionState.data.kind === "sunoPrompt"
-    ) {
+    if (nodeWithConnectionState.data.kind === "lyrics") {
       const player = playerByChildId.get(nodeWithConnectionState.id);
-      const analysisResult = nodeWithConnectionState.data.musicAnalysisResult;
-      const lyricsFromResult = extractMusicLyrics(analysisResult);
-      const sunoPrompt = analysisResult?.sunoPrompt as { en?: string; zh?: string } | undefined;
       return {
         ...nodeWithConnectionState,
         style: {
@@ -370,29 +346,9 @@ export function getRenderedCanvasNodes({
         data: {
           ...nodeWithConnectionState.data,
           musicCurrentTime: player?.data.musicCurrentTime,
-          musicJobId: nodeWithConnectionState.data.musicJobId,
           musicParentPlayerNodeId: player?.id ?? nodeWithConnectionState.data.musicParentPlayerNodeId,
-          ...(nodeWithConnectionState.data.kind === "lyrics"
-            ? {
-                musicLyrics: lyricsFromResult.length > 0
-                  ? lyricsFromResult
-                  : nodeWithConnectionState.data.musicLyrics ?? [],
-              }
-            : {}),
-          ...(nodeWithConnectionState.data.kind === "musicAnalysis"
-            ? { musicAnalysisResult: analysisResult }
-            : {}),
-          ...(nodeWithConnectionState.data.kind === "sunoPrompt"
-            ? {
-                sunoPromptEn: sunoPrompt?.en ?? nodeWithConnectionState.data.sunoPromptEn,
-                sunoPromptZh: sunoPrompt?.zh ?? nodeWithConnectionState.data.sunoPromptZh,
-              }
-            : {}),
+          musicLyrics: nodeWithConnectionState.data.musicLyrics ?? [],
           onSeekMusicPlayer,
-          onCancelMusicAnalysis,
-          onMusicAnalysisComplete,
-          onMusicJobUpdate,
-          onRetryMusicAnalysis,
           onToggleMusicChildExpanded,
           onUpdateMusicNode,
         },

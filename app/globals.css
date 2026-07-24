@@ -539,12 +539,6 @@
   white-space: pre-wrap;
 }
 
-.zenme-canvas .zenme-suno-prompt-text {
-  cursor: text !important;
-  -webkit-user-select: text !important;
-  user-select: text !important;
-}
-
 .zenme-canvas .react-flow__node-note,
 .zenme-canvas .react-flow__node-note * {
   cursor: default !important;
@@ -555,6 +549,15 @@
   cursor: text !important;
   -webkit-user-select: text !important;
   user-select: text !important;
+}
+
+.zenme-canvas .react-flow__node.zenme-alt-drag-source-preview {
+  pointer-events: none !important;
+}
+
+.zenme-canvas .react-flow__node.zenme-alt-drag-copy-preview {
+  opacity: 0.46 !important;
+  pointer-events: none !important;
 }
 
 .zenme-canvas .zenme-text-node-editor code {

@@ -9,6 +9,58 @@ export type AltDragCopyUpdate = {
   nextNodes: CanvasNode[];
 };
 
+export const ALT_DRAG_PREVIEW_ID_PREFIX = "alt-drag-preview:";
+
+export function createAltDragPreviewNodes(input: {
+  beforeNodeSnapshots: Map<string, CanvasNode>;
+  draggedNodeId: string;
+}) {
+  const draggedNode = input.beforeNodeSnapshots.get(input.draggedNodeId);
+  if (!draggedNode) return [];
+
+  const copiedNodeIds = collectAltDragNodeIds(
+    input.beforeNodeSnapshots,
+    draggedNode,
+  );
+  const previewIdBySourceId = new Map(
+    [...copiedNodeIds].map((id) => [id, `${ALT_DRAG_PREVIEW_ID_PREFIX}${id}`]),
+  );
+
+  return [...input.beforeNodeSnapshots.values()].flatMap((node) => {
+    if (!copiedNodeIds.has(node.id)) return [];
+    const previewId = previewIdBySourceId.get(node.id)!;
+    const parentId = node.parentId
+      ? previewIdBySourceId.get(node.parentId)
+      : undefined;
+    const groupId = node.data.groupId
+      ? previewIdBySourceId.get(node.data.groupId)
+      : undefined;
+
+    return [{
+      ...node,
+      className: [node.className, "zenme-alt-drag-source-preview"]
+        .filter(Boolean)
+        .join(" "),
+      connectable: false,
+      data: {
+        ...node.data,
+        ...(groupId ? { groupId } : {}),
+      },
+      deletable: false,
+      draggable: false,
+      focusable: false,
+      id: previewId,
+      parentId,
+      selectable: false,
+      selected: false,
+    } satisfies CanvasNode];
+  });
+}
+
+export function isAltDragPreviewNode(node: Pick<CanvasNode, "id">) {
+  return node.id.startsWith(ALT_DRAG_PREVIEW_ID_PREFIX);
+}
+
 export function createAltDragCopyUpdate(input: {
   beforeNodeSnapshots: Map<string, CanvasNode>;
   createId: () => string;

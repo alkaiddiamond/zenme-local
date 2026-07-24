@@ -2,7 +2,6 @@
 
 import {
   BookOpen,
-  BarChart3,
   FileText,
   ImagePlus,
   ListTodo,
@@ -12,7 +11,6 @@ import {
   NotebookTabs,
   Type,
   Upload,
-  WandSparkles,
 } from "lucide-react";
 
 import {
@@ -211,11 +209,7 @@ export function NodeActionMenu({
         />
       ) : null}
       {actionNode?.data.kind === "musicPlayer" ? (
-        <>
-          <FloatingMenuItem icon={FileText} onClick={() => onCreateMusicChild("lyrics")} primary title="歌词" />
-          <FloatingMenuItem icon={BarChart3} onClick={() => onCreateMusicChild("musicAnalysis")} title="综合分析" />
-          <FloatingMenuItem icon={WandSparkles} onClick={() => onCreateMusicChild("sunoPrompt")} title="Suno 提示词" />
-        </>
+        <FloatingMenuItem icon={FileText} onClick={() => onCreateMusicChild("lyrics")} primary title="歌词" />
       ) : null}
       <FloatingMenuItem
         icon={MessageSquareText}

@@ -76,7 +76,12 @@ import {
 } from "@/components/zenme/canvas/clipboard";
 import { parseDroppedReadingNotePayload } from "@/components/zenme/canvas/drop-payload";
 import { shouldPreventNativeCanvasAuxClick } from "@/components/zenme/canvas/pointer";
-import { createAltDragCopyUpdate } from "@/components/zenme/canvas/alt-drag-copy";
+import {
+  ALT_DRAG_PREVIEW_ID_PREFIX,
+  createAltDragCopyUpdate,
+  createAltDragPreviewNodes,
+  isAltDragPreviewNode,
+} from "@/components/zenme/canvas/alt-drag-copy";
 import {
   canPrepareReadingAsset,
   getActionNode,
@@ -204,14 +209,12 @@ import { createOpenReadingWorkspaceUpdate } from "@/components/zenme/canvas/read
 import { createReaderCollapseUpdate } from "@/components/zenme/canvas/reader-collapse";
 import { getRenderedCanvasNodes } from "@/components/zenme/canvas/rendered-nodes";
 import {
-  createMusicChildUpdate,
+  createLyricsNodeUpdate,
   createMusicPlayerUpdate,
   extractMusicLyrics,
   findLyricsNodesNeedingRecovery,
   getMusicApiErrorMessage,
   MUSIC_WAVEFORM_VERSION,
-  musicJobRequestFor,
-  type MusicServiceCapabilities,
   resolveMusicSourceNode,
 } from "@/components/zenme/canvas/music-workflow";
 import { generateLocalAudioWaveform } from "@/components/zenme/canvas/local-audio-waveform";
@@ -231,7 +234,6 @@ import {
   NODE_CONTEXT_HANDLE_ID,
   type CanvasNodeData,
   type MusicChildNodeKind,
-  type MusicJobSnapshot,
   type ProjectTagAction,
 } from "@/components/zenme/node-types";
 
@@ -249,17 +251,6 @@ const DEFAULT_EDGE_OPTIONS = {
 const MINI_MAP_CLASS =
   "zenme-shadow-canvas !bottom-[66px] !left-3 !right-auto !top-auto !m-0 !h-[150px] !w-[200px] !overflow-hidden !rounded-xl !border !border-zinc-200 !bg-white/95 !backdrop-blur";
 
-async function fetchMusicServiceCapabilities(): Promise<MusicServiceCapabilities | null> {
-  try {
-    const response = await fetch("/api/music/capabilities", { cache: "no-store" });
-    if (!response.ok) return null;
-    const body = await response.json() as MusicServiceCapabilities;
-    return body && typeof body === "object" ? body : null;
-  } catch {
-    return null;
-  }
-}
-
 export function CanvasClient({ projectId }: CanvasClientProps) {
   const [nodes, setNodes, onNodesChange] =
     useNodesState<CanvasNode>([]);
@@ -269,6 +260,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const [showMiniMap, setShowMiniMap] = useState(true);
   const [isMiniMapSuspended, setIsMiniMapSuspended] = useState(false);
   const [isNodeDragging, setIsNodeDragging] = useState(false);
+  const [altDragPreviewNodes, setAltDragPreviewNodes] = useState<CanvasNode[]>([]);
+  const [altDragMovingNodeIds, setAltDragMovingNodeIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [canvasViewport, setCanvasViewport] = useState<Viewport>({
@@ -556,8 +551,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
               node.data.kind !== "task" &&
               node.data.kind !== "agent" &&
               node.data.kind !== "textGeneration" &&
-              node.data.kind !== "musicAnalysis" &&
-              node.data.kind !== "sunoPrompt")
+              node.data.kind !== "lyrics")
           ) {
             return node;
           }
@@ -2635,13 +2629,29 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           nodes: currentNodes.length,
         },
       );
-      dragStartNodeSnapshots.current = new Map(
+      const beforeNodeSnapshots = new Map(
         currentNodes.map((node) => [
           node.id,
           createCanvasHistoryNodeSnapshot(node),
         ]),
       );
+      dragStartNodeSnapshots.current = beforeNodeSnapshots;
       altDragSourceNodeId.current = duplicateOnDrop ? draggedNode.id : null;
+      if (duplicateOnDrop) {
+        const previewNodes = createAltDragPreviewNodes({
+          beforeNodeSnapshots,
+          draggedNodeId: draggedNode.id,
+        });
+        setAltDragPreviewNodes(previewNodes);
+        setAltDragMovingNodeIds(new Set(
+          previewNodes.map((node) =>
+            node.id.slice(ALT_DRAG_PREVIEW_ID_PREFIX.length),
+          ),
+        ));
+      } else {
+        setAltDragPreviewNodes([]);
+        setAltDragMovingNodeIds(new Set());
+      }
 
       if (draggedNode.data.kind === "group") {
         groupDragPosition.current = {
@@ -2690,8 +2700,12 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       isCanvasInteractionActive.current = false;
       setIsMiniMapSuspended(false);
       setIsNodeDragging(false);
+      setAltDragPreviewNodes([]);
+      setAltDragMovingNodeIds(new Set());
       tickCanvasInteractionSample(dragInteractionSample.current);
-      const currentNodes = reactFlow?.getNodes() ?? nodes;
+      const currentNodes = (reactFlow?.getNodes() ?? nodes).filter(
+        (node) => !isAltDragPreviewNode(node),
+      );
       const duplicateSourceNodeId = altDragSourceNodeId.current;
       altDragSourceNodeId.current = null;
 
@@ -3011,30 +3025,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     setNodeActionMenu(null);
   }
 
-  const updateMusicJob = useCallback(
-    (nodeId: string, job: MusicJobSnapshot) => {
-      setNodes((current) => current.map((node) => node.id === nodeId ? {
-        ...node,
-        data: {
-          ...node.data,
-          musicError: job.error?.message,
-          musicJobCompletedAt: job.completedAt ?? node.data.musicJobCompletedAt,
-          musicJobCreatedAt: job.createdAt ?? node.data.musicJobCreatedAt,
-          musicJobDurationMs: job.durationMs ?? node.data.musicJobDurationMs,
-          musicJobElapsedMs: job.elapsedMs ?? node.data.musicJobElapsedMs,
-          musicJobId: job.id,
-          musicJobStartedAt: job.startedAt ?? node.data.musicJobStartedAt,
-          musicJobStatus: job.status,
-          musicProgress: job.progress,
-          musicRetryable: job.retryable,
-          musicStage: job.stage,
-          musicStageLabel: job.stageLabel,
-        },
-      } : node));
-    },
-    [setNodes],
-  );
-
   const focusCanvasNode = useCallback((
     nodeId: string,
     options?: { preserveZoom?: boolean },
@@ -3256,10 +3246,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     return task;
   }, [setNodes]);
 
-  const submitMusicChildAnalysis = useCallback(async (
+  const fetchLyrics = useCallback(async (
     childNodeId: string,
     playerNodeId: string,
-    kind: MusicChildNodeKind,
   ) => {
     const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
     const sourceNode = resolveMusicSourceNode({
@@ -3270,118 +3259,41 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     const fileId = playerNode?.data.fileId ?? sourceNode?.data.fileId;
     if (!playerNode || !fileId) {
       setNodes((current) => current.map((node) => node.id === childNodeId
-        ? { ...node, data: { ...node.data, musicError: "播放器没有可分析的上游音乐文件", musicJobStatus: "failed" as const } }
+        ? { ...node, data: { ...node.data, musicError: "播放器没有可获取歌词的上游音乐文件", lyricsFetchStatus: "failed" as const } }
         : node));
       return;
     }
     try {
-      if (kind === "lyrics") {
-        const startedAt = Date.now();
-        const response = await fetch("/api/music/lyrics", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ projectId, fileId }),
-        });
-        const result = await response.json().catch(() => null) as Record<string, unknown> | null;
-        if (!response.ok) {
-          throw new Error(getMusicApiErrorMessage(result, "未找到同步歌词"));
-        }
-        const warnings = Array.isArray(result?.warnings)
-          ? result.warnings.filter((warning): warning is string => typeof warning === "string")
-          : [];
-        setNodes((current) => current.map((node) => node.id === childNodeId
-          ? {
-              ...node,
-              data: {
-                ...node.data,
-                musicAnalysisResult: result ?? undefined,
-                musicError: undefined,
-                musicJobCompletedAt: new Date().toISOString(),
-                musicJobDurationMs: Date.now() - startedAt,
-                musicJobElapsedMs: Date.now() - startedAt,
-                musicJobStatus: "succeeded" as const,
-                musicLyrics: extractMusicLyrics(result ?? undefined),
-                musicProgress: 1,
-                musicStage: "completed",
-                musicStageLabel: result?.source === "netease-unofficial"
-                  ? "歌词来自网易云"
-                  : "歌词来自 LRCLIB",
-                musicWarnings: warnings,
-              },
-            }
-          : node));
-        return;
-      }
-      if (kind === "sunoPrompt") {
-        const cachedAnalysis = nodesRef.current.find((node) =>
-          node.data.kind === "musicAnalysis" &&
-          node.data.musicParentPlayerNodeId === playerNodeId &&
-          node.data.musicJobStatus === "succeeded" &&
-          node.data.musicJobId,
-        );
-        if (cachedAnalysis?.data.musicJobId) {
-          const cachedResponse = await fetch(
-            `/api/music/jobs/${encodeURIComponent(cachedAnalysis.data.musicJobId)}/suno-prompt`,
-            { method: "POST" },
-          );
-          if (cachedResponse.ok) {
-            const prompt = await cachedResponse.json() as Record<string, unknown>;
-            setNodes((current) => current.map((node) => node.id === childNodeId
-              ? {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    musicAnalysisResult: { sunoPrompt: prompt },
-                    musicError: undefined,
-                    musicJobId: cachedAnalysis.data.musicJobId,
-                    musicJobStatus: "succeeded" as const,
-                    musicProgress: 1,
-                    musicStage: "completed",
-                    musicStageLabel: "已复用分析缓存",
-                    sunoPromptEn: typeof prompt.promptEn === "string"
-                      ? prompt.promptEn
-                      : typeof prompt.en === "string" ? prompt.en : undefined,
-                    sunoPromptZh: typeof prompt.promptZh === "string"
-                      ? prompt.promptZh
-                      : typeof prompt.zh === "string" ? prompt.zh : undefined,
-                  },
-                }
-              : node));
-            return;
-          }
-        }
-      }
-      const serviceCapabilities = await fetchMusicServiceCapabilities();
-      const requestContract = musicJobRequestFor(kind, serviceCapabilities);
-      const response = await fetch("/api/music/jobs", {
+      const startedAt = Date.now();
+      const response = await fetch("/api/music/lyrics", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          fileId,
-          ...requestContract,
-          options: {
-            language: "auto",
-            keepStems: true,
-            requiredCapabilities: [],
-          },
-        }),
+        body: JSON.stringify({ projectId, fileId }),
       });
-      if (response.ok) {
-        updateMusicJob(childNodeId, await response.json() as MusicJobSnapshot);
-        return;
-      }
-      const body = await response.json().catch(() => null);
-      const errorMessage = getMusicApiErrorMessage(body);
+      const result = await response.json().catch(() => null) as Record<string, unknown> | null;
+      if (!response.ok) throw new Error(getMusicApiErrorMessage(result));
+      const warnings = Array.isArray(result?.warnings)
+        ? result.warnings.filter((warning): warning is string => typeof warning === "string")
+        : [];
       setNodes((current) => current.map((node) => node.id === childNodeId
-        ? { ...node, data: { ...node.data, musicError: errorMessage, musicJobStatus: "failed" as const } }
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              musicError: undefined,
+              lyricsFetchDurationMs: Date.now() - startedAt,
+              lyricsFetchStatus: "succeeded" as const,
+              musicLyrics: extractMusicLyrics(result ?? undefined),
+              lyricsWarnings: warnings,
+            },
+          }
         : node));
     } catch (error) {
       setNodes((current) => current.map((node) => node.id === childNodeId
-        ? { ...node, data: { ...node.data, musicError: error instanceof Error ? error.message : "音乐分析服务不可用", musicJobStatus: "failed" as const } }
+        ? { ...node, data: { ...node.data, musicError: error instanceof Error ? error.message : "歌词获取失败", lyricsFetchStatus: "failed" as const } }
         : node));
     }
-  }, [projectId, setNodes, updateMusicJob]);
+  }, [projectId, setNodes]);
 
   useEffect(() => {
     const recoveries = findLyricsNodesNeedingRecovery(nodes).filter(
@@ -3390,76 +3302,21 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     );
     for (const recovery of recoveries) {
       recoveringLyricsNodeIdsRef.current.add(recovery.childNodeId);
-      void submitMusicChildAnalysis(
+      void fetchLyrics(
         recovery.childNodeId,
         recovery.playerNodeId,
-        "lyrics",
       );
     }
-  }, [nodes, submitMusicChildAnalysis]);
-
-  const performMusicJobAction = useCallback(async (
-    playerNodeId: string,
-    jobId: string,
-    action: "cancel" | "retry",
-  ) => {
-    const response = await fetch(`/api/music/jobs/${encodeURIComponent(jobId)}/${action}`, {
-      method: "POST",
-    });
-    if (response.ok) {
-      updateMusicJob(playerNodeId, await response.json() as MusicJobSnapshot);
-      return;
-    }
-    setNodes((current) => current.map((node) => node.id === playerNodeId
-      ? { ...node, data: { ...node.data, musicError: action === "cancel" ? "无法取消分析任务" : "无法重试分析任务" } }
-      : node));
-  }, [setNodes, updateMusicJob]);
-
-  const completeMusicAnalysis = useCallback(
-    (playerNodeId: string, jobId: string, result: Record<string, unknown>) => {
-      const warnings = Array.isArray(result.warnings)
-        ? result.warnings.flatMap((warning) => {
-            if (!warning || typeof warning !== "object") return [];
-            const message = (warning as { message?: unknown }).message;
-            return typeof message === "string" ? [message] : [];
-          })
-        : [];
-      setNodes((current) => current.map((node) => node.id === playerNodeId ? {
-        ...node,
-        data: {
-          ...node.data,
-          musicAnalysisResult: result,
-          musicError: undefined,
-          musicWarnings: warnings,
-          musicJobId: jobId,
-          musicJobStatus: "succeeded" as const,
-          musicProgress: 1,
-          musicRetryable: false,
-          musicStage: "completed",
-          musicStageLabel: "分析完成",
-          musicWaveform: Array.isArray(result.waveform)
-            ? result.waveform.filter((value): value is number => typeof value === "number")
-            : node.data.musicWaveform,
-          musicWaveformVersion: Array.isArray(result.waveform)
-            ? MUSIC_WAVEFORM_VERSION
-            : node.data.musicWaveformVersion,
-        },
-      } : node));
-    },
-    [setNodes],
-  );
+  }, [fetchLyrics, nodes]);
 
   const createMusicChild = useCallback((
     playerNodeId: string,
-    kind: MusicChildNodeKind,
+    _kind: MusicChildNodeKind,
     position?: { x: number; y: number },
   ) => {
     const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
     if (!playerNode || playerNode.data.kind !== "musicPlayer") return;
-    const update = createMusicChildUpdate({
-      edges: edgesRef.current,
-      kind,
-      nodes: nodesRef.current,
+    const update = createLyricsNodeUpdate({
       playerNode,
       position,
       projectId,
@@ -3474,17 +3331,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     }
     focusCanvasNode(update.focusNodeId, { preserveZoom: true });
     window.setTimeout(() => {
-      void submitMusicChildAnalysis(update.focusNodeId, playerNodeId, kind);
+      void fetchLyrics(update.focusNodeId, playerNodeId);
     }, 0);
-  }, [appendCanvasItems, focusCanvasNode, projectId, submitMusicChildAnalysis]);
-
-  const cancelMusicAnalysis = useCallback((playerNodeId: string, jobId: string) => {
-    void performMusicJobAction(playerNodeId, jobId, "cancel");
-  }, [performMusicJobAction]);
-
-  const retryMusicAnalysis = useCallback((playerNodeId: string, jobId: string) => {
-    void performMusicJobAction(playerNodeId, jobId, "retry");
-  }, [performMusicJobAction]);
+  }, [appendCanvasItems, fetchLyrics, focusCanvasNode, projectId]);
 
   const locateMusicPlayer = useCallback((_musicNodeId: string, playerNodeId: string) => {
     focusCanvasNode(playerNodeId);
@@ -3500,15 +3349,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         createNoteNode,
         edges,
         nodes,
-        onCancelMusicAnalysis: cancelMusicAnalysis,
         onCreateMusicChildNode: createMusicChild,
         onCreateMusicPlayerNode: createMusicPlayer,
         onEnsureMusicPlayback: ensureMusicPlayback,
         onEnsureMusicWaveform: ensureMusicWaveform,
         onLocateMusicPlayerNode: locateMusicPlayer,
-        onMusicAnalysisComplete: completeMusicAnalysis,
-        onMusicJobUpdate: updateMusicJob,
-        onRetryMusicAnalysis: retryMusicAnalysis,
         onSeekMusicPlayer: seekMusicPlayer,
         onToggleMusicPlayback: toggleMusicPlayback,
         onUpdateMusicNode: updateMusicNode,
@@ -3533,7 +3378,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }),
     [
       createNoteNode,
-      cancelMusicAnalysis,
       createMusicChild,
       createMusicPlayer,
       ensureMusicPlayback,
@@ -3541,12 +3385,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       createTextChildNode,
       edges,
       nodes,
-      completeMusicAnalysis,
       locateMusicPlayer,
-      retryMusicAnalysis,
       seekMusicPlayer,
       toggleMusicPlayback,
-      updateMusicJob,
       updateMusicNode,
       updateMusicPlayback,
       projectId,
@@ -3566,6 +3407,23 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       toggleMusicChildExpanded,
       updateProjectTag,
     ],
+  );
+
+  const displayedNodes = useMemo(
+    () => [
+      ...altDragPreviewNodes,
+      ...renderedNodes.map((node) =>
+        altDragMovingNodeIds.has(node.id)
+          ? {
+              ...node,
+              className: [node.className, "zenme-alt-drag-copy-preview"]
+                .filter(Boolean)
+                .join(" "),
+            }
+          : node,
+      ),
+    ],
+    [altDragMovingNodeIds, altDragPreviewNodes, renderedNodes],
   );
 
   if (!canvasHydrated) {
@@ -3645,7 +3503,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           edges={renderedEdges}
           elementsSelectable
           nodeTypes={nodeTypes}
-          nodes={renderedNodes}
+          nodes={displayedNodes}
           connectionRadius={120}
           isValidConnection={isCanvasConnectionValid}
           onConnect={onConnect}

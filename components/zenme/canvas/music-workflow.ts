@@ -1,40 +1,8 @@
 import type { Edge } from "@xyflow/react";
 
-import type {
-  CanvasNodeData,
-  MusicChildNodeKind,
-  MusicLyricLine,
-} from "@/components/zenme/node-types";
+import type { CanvasNodeData, MusicLyricLine } from "@/components/zenme/node-types";
 
 import type { CanvasNode } from "./types";
-
-const CHILD_OFFSETS: Record<MusicChildNodeKind, { x: number; y: number }> = {
-  lyrics: { x: 600, y: -360 },
-  musicAnalysis: { x: 600, y: 120 },
-  sunoPrompt: { x: 600, y: 760 },
-};
-
-const PRODUCT_PROFILES = {
-  musicAnalysis: "comprehensive-analysis",
-  sunoPrompt: "suno-prompt",
-} as const;
-
-const LEGACY_CAPABILITIES: Record<MusicChildNodeKind, string[]> = {
-  lyrics: [],
-  musicAnalysis: [
-    "metadata", "waveform", "stems", "structure", "key", "chords", "rhythm",
-    "genre", "mood", "instruments", "notes", "downbeats", "meter", "stem_rhythm",
-    "arrangement", "mix", "vocal_features",
-  ],
-  sunoPrompt: [
-    "metadata", "structure", "key", "chords", "rhythm", "genre", "mood",
-    "instruments", "arrangement", "mix", "vocal_features", "lyrics", "suno_prompt",
-  ],
-};
-
-export type MusicServiceCapabilities = {
-  profiles?: Array<{ id?: unknown }>;
-};
 
 export const MUSIC_WAVEFORM_VERSION = 3;
 
@@ -62,8 +30,8 @@ export function musicPlayerNodeId(musicNodeId: string) {
   return `music-player:${musicNodeId}`;
 }
 
-export function musicChildNodeId(playerNodeId: string, kind: MusicChildNodeKind) {
-  return `music-child:${playerNodeId}:${kind}`;
+export function musicChildNodeId(playerNodeId: string) {
+  return `music-child:${playerNodeId}:lyrics`;
 }
 
 export function resolveMusicSourceNode(input: {
@@ -100,81 +68,24 @@ export function downsampleWaveform(values: number[], targetPoints = 160) {
   return output.map((value) => Math.min(1, value / scale));
 }
 
-export function musicCapabilitiesFor(kind: MusicChildNodeKind) {
-  if (kind === "lyrics") {
-    return [];
-  }
-  if (kind === "sunoPrompt") {
-    return ["suno_prompt"];
-  }
-  return [
-    "structure", "key", "chords", "rhythm",
-    "genre", "mood", "instruments", "notes", "downbeats", "meter", "stem_rhythm",
-    "arrangement", "mix", "vocal_features",
-  ];
-}
-
-export function musicJobRequestFor(
-  kind: MusicChildNodeKind,
-  serviceCapabilities?: MusicServiceCapabilities | null,
-) {
-  if (kind === "lyrics") {
-    throw new Error("歌词由 Zenme Local 直接获取，不创建音乐分析任务");
-  }
-  const profile = PRODUCT_PROFILES[kind];
-  if (serviceSupportsProfile(serviceCapabilities, profile)) {
-    return { capabilities: musicCapabilitiesFor(kind), profile };
-  }
-  return { capabilities: [...LEGACY_CAPABILITIES[kind]], profile: "complete" };
-}
-
 export function getMusicApiErrorMessage(
   body: unknown,
-  fallback = "无法创建分析任务",
+  fallback = "未找到同步歌词",
 ) {
-  if (!body || typeof body !== "object") {
-    return fallback;
-  }
-
-  const response = body as {
-    detail?: unknown;
-    error?: unknown;
-    message?: unknown;
-  };
-  const detailMessage =
-    response.detail && typeof response.detail === "object"
-      ? (response.detail as { message?: unknown }).message
-      : undefined;
-  const candidates = [
+  if (!body || typeof body !== "object") return fallback;
+  const response = body as { detail?: unknown; error?: unknown; message?: unknown };
+  const detailMessage = response.detail && typeof response.detail === "object"
+    ? (response.detail as { message?: unknown }).message
+    : undefined;
+  for (const candidate of [
     typeof response.detail === "string" ? response.detail : undefined,
     detailMessage,
     response.message,
     response.error,
-  ];
-
-  for (const candidate of candidates) {
-    if (typeof candidate === "string" && candidate.trim()) {
-      return candidate.trim();
-    }
+  ]) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
   }
-
   return fallback;
-}
-
-export function musicPlayerPreviewRequest(
-  serviceCapabilities?: MusicServiceCapabilities | null,
-) {
-  if (serviceSupportsProfile(serviceCapabilities, "player-preview")) {
-    return { capabilities: ["metadata", "waveform"], profile: "player-preview" };
-  }
-  return { capabilities: ["metadata", "waveform"], profile: "complete" };
-}
-
-function serviceSupportsProfile(
-  serviceCapabilities: MusicServiceCapabilities | null | undefined,
-  profile: string,
-) {
-  return serviceCapabilities?.profiles?.some((item) => item.id === profile) === true;
 }
 
 export function createMusicPlayerUpdate(input: {
@@ -186,21 +97,15 @@ export function createMusicPlayerUpdate(input: {
   const id = musicPlayerNodeId(input.musicNode.id);
   const existing = input.nodes.find(
     (node) => node.id === id || (
-      node.data.kind === "musicPlayer" &&
-      node.data.musicPlayerNodeId === id
+      node.data.kind === "musicPlayer" && node.data.musicPlayerNodeId === id
     ),
   );
-  if (existing) {
-    return { createdEdges: [], createdNodes: [], focusNodeId: existing.id };
-  }
+  if (existing) return { createdEdges: [], createdNodes: [], focusNodeId: existing.id };
 
   const node: CanvasNode = {
     id,
     type: "musicPlayer",
-    position: {
-      x: input.musicNode.position.x + 460,
-      y: input.musicNode.position.y,
-    },
+    position: { x: input.musicNode.position.x + 460, y: input.musicNode.position.y },
     data: {
       kind: "musicPlayer",
       title: `${input.musicNode.data.title} · 播放器`,
@@ -220,95 +125,47 @@ export function createMusicPlayerUpdate(input: {
   return { createdEdges: [edge], createdNodes: [node], focusNodeId: id };
 }
 
-export function createMusicChildUpdate(input: {
-  edges: Edge[];
-  kind: MusicChildNodeKind;
-  nodes: CanvasNode[];
+export function createLyricsNodeUpdate(input: {
   playerNode: CanvasNode;
   position?: { x: number; y: number };
   projectId: string;
 }) {
-  const id = `${musicChildNodeId(input.playerNode.id, input.kind)}:${crypto.randomUUID()}`;
-
-  const offset = CHILD_OFFSETS[input.kind];
-  const result = input.playerNode.data.musicAnalysisResult;
-  const prompt = result?.sunoPrompt as {
-    en?: string;
-    promptEn?: string;
-    promptZh?: string;
-    zh?: string;
-  } | undefined;
-  const titleSuffix = {
-    lyrics: "歌词",
-    musicAnalysis: "综合分析",
-    sunoPrompt: "Suno 提示词",
-  }[input.kind];
+  const id = `${musicChildNodeId(input.playerNode.id)}:${crypto.randomUUID()}`;
   const data: CanvasNodeData = {
-    kind: input.kind,
-    title: `${stripPlayerSuffix(input.playerNode.data.title)} · ${titleSuffix}`,
+    kind: "lyrics",
+    title: `${stripPlayerSuffix(input.playerNode.data.title)} · 歌词`,
     projectId: input.projectId,
-    musicJobStatus: "queued",
-    musicProgress: 0,
-    musicStage: "creating",
-    musicStageLabel: input.kind === "lyrics" ? "正在获取同步歌词" : "正在创建分析任务",
-    musicJobCreatedAt: new Date().toISOString(),
-    musicJobStartedAt: new Date().toISOString(),
-    musicJobElapsedMs: 0,
+    lyricsFetchStatus: "fetching",
     musicParentPlayerNodeId: input.playerNode.id,
-    ...(input.kind === "lyrics"
-      ? { musicLyrics: extractMusicLyrics(result) }
-      : {}),
-    ...(input.kind === "musicAnalysis"
-      ? { musicAnalysisResult: result }
-      : {}),
-    ...(input.kind === "sunoPrompt"
-      ? {
-          sunoPromptEn: prompt?.promptEn ?? prompt?.en,
-          sunoPromptZh: prompt?.promptZh ?? prompt?.zh,
-        }
-      : {}),
   };
   const node: CanvasNode = {
     id,
-    type: input.kind,
+    type: "lyrics",
     position: {
-      x: input.position?.x ?? input.playerNode.position.x + offset.x,
-      y: input.position?.y ?? input.playerNode.position.y + offset.y,
+      x: input.position?.x ?? input.playerNode.position.x + 600,
+      y: input.position?.y ?? input.playerNode.position.y - 360,
     },
     style: { height: 176, width: 560 },
     data,
   };
   const edge: Edge = {
-    id: `music-child-edge:${input.playerNode.id}:${input.kind}`,
+    id: `music-child-edge:${input.playerNode.id}:lyrics:${id}`,
     source: input.playerNode.id,
     target: id,
   };
   return { createdEdges: [edge], createdNodes: [node], focusNodeId: id };
 }
 
-export function extractMusicLyrics(
-  result: Record<string, unknown> | undefined,
-): MusicLyricLine[] {
+export function extractMusicLyrics(result: Record<string, unknown> | undefined): MusicLyricLine[] {
   if (!result || !Array.isArray(result.lyrics)) return [];
-  const segments = Array.isArray(result.segments) ? result.segments : [];
   return result.lyrics.flatMap((value, index) => {
     if (!value || typeof value !== "object") return [];
     const line = value as Record<string, unknown>;
     if (typeof line.start !== "number" || typeof line.text !== "string") return [];
-    const start = line.start;
-    const section = segments.find((candidate) => {
-      if (!candidate || typeof candidate !== "object") return false;
-      const segment = candidate as Record<string, unknown>;
-      return typeof segment.start === "number" &&
-        typeof segment.end === "number" &&
-        start >= segment.start &&
-        start < segment.end;
-    }) as Record<string, unknown> | undefined;
     return [{
       end: typeof line.end === "number" ? line.end : undefined,
-      id: typeof line.id === "string" ? line.id : `lyric-${index}-${start}`,
-      section: typeof section?.label === "string" ? section.label : undefined,
-      start,
+      id: typeof line.id === "string" ? line.id : `lyric-${index}-${line.start}`,
+      start: line.start,
       text: line.text,
     }];
   });
@@ -317,13 +174,10 @@ export function extractMusicLyrics(
 export function findLyricsNodesNeedingRecovery(nodes: CanvasNode[]) {
   return nodes.flatMap((node) =>
     node.data.kind === "lyrics" &&
-    node.data.musicJobStatus === "succeeded" &&
+    node.data.lyricsFetchStatus === "succeeded" &&
     !node.data.musicLyrics?.length &&
     node.data.musicParentPlayerNodeId
-      ? [{
-          childNodeId: node.id,
-          playerNodeId: node.data.musicParentPlayerNodeId,
-        }]
+      ? [{ childNodeId: node.id, playerNodeId: node.data.musicParentPlayerNodeId }]
       : [],
   );
 }

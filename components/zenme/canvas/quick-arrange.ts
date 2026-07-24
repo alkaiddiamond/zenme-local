@@ -226,9 +226,7 @@ function collapseExpandableNodes(nodes: CanvasNode[], edges: Edge[]) {
       }
       if (
         (
-          node.data.kind === "lyrics" ||
-          node.data.kind === "musicAnalysis" ||
-          node.data.kind === "sunoPrompt"
+          node.data.kind === "lyrics"
         )
       ) {
         return withCollapsedSize(node, MUSIC_CHILD_DEFAULT_SIZE, {
@@ -385,7 +383,6 @@ function getNodeSortKey(
     node.data.createdAt,
     node.data.aiCreatedAt,
     node.data.imageTaskStartedAt,
-    node.data.musicJobCreatedAt,
   ].find((value) => value && Number.isFinite(Date.parse(value)));
   return timestamp
     ? Date.parse(timestamp)

@@ -325,9 +325,7 @@ export function createMusicChildExpansionUpdate(input: {
   const sourceNode = input.nodes.find(
     (node) =>
       node.id === input.nodeId &&
-      (node.data.kind === "lyrics" ||
-        node.data.kind === "musicAnalysis" ||
-        node.data.kind === "sunoPrompt"),
+      node.data.kind === "lyrics",
   );
   if (
     !sourceNode ||

@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { formatLyricsForClipboard, groupLyrics } from "./lyrics-node";
-import { formatCompactDuration } from "./use-music-job";
+import {
+  formatCompactDuration,
+  formatLyricsForClipboard,
+  groupLyrics,
+} from "./lyrics-node";
 
 const lyricsNodeSource = readFileSync(
   new URL("./lyrics-node.tsx", import.meta.url),

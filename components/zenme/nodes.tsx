@@ -14,8 +14,6 @@ import { TextGenerationNode } from "@/components/zenme/nodes/text-generation-nod
 import { MusicNode } from "@/components/zenme/nodes/music-node";
 import { MusicPlayerNode } from "@/components/zenme/nodes/music-player-node";
 import { LyricsNode } from "@/components/zenme/nodes/lyrics-node";
-import { MusicAnalysisNode } from "@/components/zenme/nodes/music-analysis-node";
-import { SunoPromptNode } from "@/components/zenme/nodes/suno-prompt-node";
 import { ManagedTextNode } from "@/components/zenme/nodes/managed-text-node";
 import { TaskNode } from "@/components/zenme/nodes/task-node";
 
@@ -33,8 +31,6 @@ export const nodeTypes = {
   music: memo(MusicNode),
   musicPlayer: memo(MusicPlayerNode),
   lyrics: memo(LyricsNode),
-  musicAnalysis: memo(MusicAnalysisNode),
-  sunoPrompt: memo(SunoPromptNode),
   book: memo(BookNode),
   code: memo(TextNode),
   markdown: memo(TextNode),

@@ -39,11 +39,30 @@ export function migrateCanvasSnapshot(value: unknown): CanvasMigrationResult | n
 }
 
 function splitPlayerAnalysisJobs(value: JsonObject): CanvasMigrationResult {
-  const nodes = (value.nodes as unknown[]).map((node) => isObject(node) && isObject(node.data)
+  const clonedNodes = (value.nodes as unknown[]).map((node) => isObject(node) && isObject(node.data)
     ? { ...node, data: { ...node.data } }
     : node);
-  const edges = (value.edges as unknown[]).map((edge) => isObject(edge) ? { ...edge } : edge);
-  let migrated = false;
+  const removedNodeIds = new Set(
+    clonedNodes.flatMap((node) =>
+      isObject(node) &&
+      typeof node.id === "string" &&
+      isObject(node.data) &&
+      (node.data.kind === "musicAnalysis" || node.data.kind === "sunoPrompt")
+        ? [node.id]
+        : [],
+    ),
+  );
+  const nodes = clonedNodes.filter((node) =>
+    !isObject(node) || typeof node.id !== "string" || !removedNodeIds.has(node.id),
+  );
+  const edges = (value.edges as unknown[])
+    .map((edge) => isObject(edge) ? { ...edge } : edge)
+    .filter((edge) =>
+      !isObject(edge) ||
+      (typeof edge.source === "string" && !removedNodeIds.has(edge.source) &&
+        typeof edge.target === "string" && !removedNodeIds.has(edge.target)),
+    );
+  let migrated = removedNodeIds.size > 0;
   const taskIds = new Set(
     nodes.flatMap((node) =>
       isObject(node) &&
@@ -86,43 +105,45 @@ function splitPlayerAnalysisJobs(value: JsonObject): CanvasMigrationResult {
     }
   }
 
-  for (const rawPlayer of [...nodes]) {
-    if (!isObject(rawPlayer) || !isObject(rawPlayer.data) || rawPlayer.data.kind !== "musicPlayer" || typeof rawPlayer.id !== "string") continue;
-    const jobId = rawPlayer.data.musicJobId;
-    if (typeof jobId !== "string") continue;
-    const existingOwner = nodes.some((node) =>
-      isObject(node) &&
-      isObject(node.data) &&
-      node.data.musicParentPlayerNodeId === rawPlayer.id &&
-      node.data.musicJobId === jobId,
-    );
-    if (!existingOwner) {
-      const position = isObject(rawPlayer.position) ? rawPlayer.position : {};
-      const analysisId = `legacy-analysis:${rawPlayer.id}:${jobId}`;
-      nodes.push({
-        id: analysisId,
-        type: "musicAnalysis",
-        position: {
-          x: typeof position.x === "number" ? position.x + 600 : 600,
-          y: typeof position.y === "number" ? position.y + 120 : 120,
-        },
-        data: {
-          kind: "musicAnalysis",
-          title: `${stripLegacyPlayerSuffix(rawPlayer.data.title)} · 综合分析`,
-          musicParentPlayerNodeId: rawPlayer.id,
-          projectId: rawPlayer.data.projectId,
-          ...takeAnalysisJobData(rawPlayer.data),
-        },
-      });
-      ensureEdge(edges, `legacy-analysis-edge:${rawPlayer.id}:${jobId}`, rawPlayer.id, analysisId);
+  for (const rawPlayer of nodes) {
+    if (!isObject(rawPlayer) || !isObject(rawPlayer.data) || rawPlayer.data.kind !== "musicPlayer") continue;
+    for (const key of MUSIC_ANALYSIS_STATE_KEYS) {
+      if (rawPlayer.data[key] !== undefined) {
+        delete rawPlayer.data[key];
+        migrated = true;
+      }
     }
-    for (const key of Object.keys(takeAnalysisJobData(rawPlayer.data))) delete rawPlayer.data[key];
-    migrated = true;
   }
 
   for (const rawNode of nodes) {
     if (!isObject(rawNode) || !isObject(rawNode.data)) {
       continue;
+    }
+    if (rawNode.data.kind === "lyrics") {
+      const legacyStatus = rawNode.data.musicJobStatus;
+      if (rawNode.data.lyricsFetchStatus === undefined && typeof legacyStatus === "string") {
+        rawNode.data.lyricsFetchStatus = legacyStatus === "succeeded"
+          ? "succeeded"
+          : legacyStatus === "failed" || legacyStatus === "cancelled"
+            ? "failed"
+            : "fetching";
+        migrated = true;
+      }
+      if (
+        rawNode.data.lyricsFetchDurationMs === undefined &&
+        typeof rawNode.data.musicJobDurationMs === "number"
+      ) {
+        rawNode.data.lyricsFetchDurationMs = rawNode.data.musicJobDurationMs;
+        migrated = true;
+      }
+      if (
+        rawNode.data.lyricsWarnings === undefined &&
+        Array.isArray(rawNode.data.musicWarnings)
+      ) {
+        rawNode.data.lyricsWarnings = rawNode.data.musicWarnings;
+        migrated = true;
+      }
+      for (const key of MUSIC_ANALYSIS_STATE_KEYS) delete rawNode.data[key];
     }
     if (
       rawNode.data.kind === "imageGeneration" &&
@@ -288,7 +309,7 @@ function migrateMusicWorkflow(value: JsonObject): CanvasSnapshotPayload {
           title: `${typeof musicNode.data.title === "string" ? musicNode.data.title : "音乐"} · 播放器`,
           projectId: musicNode.data.projectId,
           musicPlayerNodeId: playerId,
-          ...takeMusicJobData(musicNode.data),
+          ...takeMusicPlayerData(musicNode.data),
         },
       };
       nodes.push(player);
@@ -299,13 +320,13 @@ function migrateMusicWorkflow(value: JsonObject): CanvasSnapshotPayload {
     for (const edge of edges) {
       if (!isObject(edge) || edge.source !== musicNode.id || typeof edge.target !== "string") continue;
       const child = nodeById.get(edge.target);
-      if (!child || !isObject(child.data) || !["lyrics", "musicAnalysis", "sunoPrompt"].includes(String(child.data.kind))) continue;
+      if (!child || !isObject(child.data) || child.data.kind !== "lyrics") continue;
       edge.source = playerId;
       child.data.musicParentPlayerNodeId = playerId;
-      if (isObject(player.data) && typeof player.data.musicJobId === "string") child.data.musicJobId = player.data.musicJobId;
     }
 
-    for (const key of Object.keys(takeMusicJobData(musicNode.data))) delete musicNode.data[key];
+    for (const key of Object.keys(takeMusicPlayerData(musicNode.data))) delete musicNode.data[key];
+    for (const key of MUSIC_ANALYSIS_STATE_KEYS) delete musicNode.data[key];
   }
 
   return {
@@ -317,29 +338,19 @@ function migrateMusicWorkflow(value: JsonObject): CanvasSnapshotPayload {
   };
 }
 
-function takeMusicJobData(data: JsonObject) {
+function takeMusicPlayerData(data: JsonObject) {
   const keys = [
-    "musicJobId", "musicJobStatus", "musicProgress", "musicStage", "musicStageLabel",
-    "musicRetryable", "musicError", "musicDuration", "musicWaveform", "musicWaveformVersion",
-    "musicWarnings", "musicJobCreatedAt", "musicJobStartedAt", "musicJobCompletedAt",
-    "musicJobElapsedMs", "musicJobDurationMs",
+    "musicDuration", "musicWaveform", "musicWaveformVersion",
   ];
   return Object.fromEntries(keys.flatMap((key) => data[key] === undefined ? [] : [[key, data[key]]]));
 }
 
-function takeAnalysisJobData(data: JsonObject) {
-  const keys = [
-    "musicJobId", "musicJobStatus", "musicProgress", "musicStage", "musicStageLabel",
-    "musicRetryable", "musicError",
-    "musicWarnings", "musicJobCreatedAt", "musicJobStartedAt", "musicJobCompletedAt",
-    "musicJobElapsedMs", "musicJobDurationMs",
-  ];
-  return Object.fromEntries(keys.flatMap((key) => data[key] === undefined ? [] : [[key, data[key]]]));
-}
-
-function stripLegacyPlayerSuffix(value: unknown) {
-  return (typeof value === "string" ? value : "音乐").replace(/\s*·\s*播放器$/, "");
-}
+const MUSIC_ANALYSIS_STATE_KEYS = [
+  "musicJobId", "musicJobStatus", "musicProgress", "musicStage", "musicStageLabel",
+  "musicRetryable", "musicAnalysisResult", "sunoPromptZh", "sunoPromptEn",
+  "musicWarnings", "musicJobCreatedAt", "musicJobStartedAt", "musicJobCompletedAt",
+  "musicJobElapsedMs", "musicJobDurationMs",
+] as const;
 
 function ensureEdge(edges: unknown[], id: string, source: string, target: string) {
   if (edges.some((edge) => isObject(edge) && edge.source === source && edge.target === target)) return;

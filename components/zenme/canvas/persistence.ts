@@ -191,7 +191,6 @@ export function getPersistableCanvasNodes(nodes: CanvasNode[]) {
           key !== "isMultiSelection" &&
           key !== "musicCurrentTime" &&
           key !== "musicIsPlaying" &&
-          key !== "musicAnalysisResult" &&
           typeof value !== "function",
       ),
     ) as CanvasNode["data"];

@@ -46,9 +46,9 @@ describe("model provider settings", () => {
     expect(source).toContain("拉取模型");
   });
 
-  it("shows an explicit music API save and reconnect action", () => {
-    expect(source).toContain("修改地址或 Token 后，请保存并重新连接服务。");
-    expect(source).toContain('className="min-w-[132px] shrink-0"');
-    expect(source).toContain("保存并连接");
+  it("does not expose removed music analysis settings", () => {
+    expect(source).not.toContain("音乐分析");
+    expect(source).not.toContain("/api/music/health");
+    expect(source).not.toContain("getMusicServiceStatus");
   });
 });
