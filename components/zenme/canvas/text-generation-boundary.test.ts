@@ -27,4 +27,33 @@ describe("text generation request boundary", () => {
     expect(source).not.toContain("!prompt.trim()");
     expect(source).not.toContain("!nextPrompt || isGenerating");
   });
+
+  it("uses the same compact model picker as image nodes", () => {
+    for (const filePath of [
+      "components/zenme/nodes/text-generation-node.tsx",
+      "components/zenme/nodes/text-node-composer.tsx",
+    ]) {
+      const source = readProjectFile(filePath);
+
+      expect(source).toMatch(/<ZenmeModelPicker\s+compact/);
+      expect(source).toContain('<Sparkles className="size-3.5" />');
+    }
+  });
+
+  it("uses matching arrow and pending-square submit buttons across nodes", () => {
+    for (const filePath of [
+      "components/zenme/nodes/text-generation-node.tsx",
+      "components/zenme/nodes/text-node-composer.tsx",
+      "components/zenme/nodes/image-edit-node.tsx",
+      "components/zenme/nodes/image-node.tsx",
+    ]) {
+      const source = readProjectFile(filePath);
+
+      expect(source).toContain(
+        '<ArrowUp className="size-5" strokeWidth={1.75} />',
+      );
+      expect(source).toContain('className="size-4 rounded-[2px] bg-white"');
+      expect(source).toContain("focus-visible:shadow-[var(--shadow-focus-ring)]");
+    }
+  });
 });

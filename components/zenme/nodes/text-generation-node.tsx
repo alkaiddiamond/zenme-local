@@ -2,7 +2,7 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 import { NodeResizer, type NodeProps } from "@xyflow/react";
-import { Loader2, Send, Sparkles } from "lucide-react";
+import { ArrowUp, Sparkles } from "lucide-react";
 
 import type { CanvasNodeData } from "@/components/zenme/node-types";
 import {
@@ -122,7 +122,8 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
         <div className="mt-auto flex items-end justify-between gap-3 pt-3">
           <div className="min-w-0 max-w-[260px]">
             <ZenmeModelPicker
-              icon={<Sparkles className="size-4" />}
+              compact
+              icon={<Sparkles className="size-3.5" />}
               model={model}
               models={pickerModels}
               onChange={(nextModel) => {
@@ -136,15 +137,21 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
             />
           </div>
           <button
-            className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+            aria-busy={isGenerating}
+            aria-label={isGenerating ? "正在提交" : "提交"}
+            className={`flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition-colors hover:bg-zinc-800 active:bg-black focus-visible:outline-none focus-visible:shadow-[var(--shadow-focus-ring)] ${
+              isGenerating
+                ? "cursor-wait"
+                : "disabled:cursor-not-allowed disabled:bg-zinc-300"
+            }`}
             disabled={isGenerating || !prompt.trim()}
             title="提交"
             type="submit"
           >
             {isGenerating ? (
-              <Loader2 className="size-4 animate-spin" />
+              <span aria-hidden="true" className="size-4 rounded-[2px] bg-white" />
             ) : (
-              <Send className="size-4" />
+              <ArrowUp className="size-5" strokeWidth={1.75} />
             )}
           </button>
         </div>

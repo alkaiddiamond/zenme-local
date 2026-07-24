@@ -4,11 +4,11 @@ import { type CSSProperties, type FormEvent, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { type NodeProps, useUpdateNodeInternals, useViewport } from "@xyflow/react";
 import {
+  ArrowUp,
   Download,
   ImageIcon,
   Loader2,
   Maximize2,
-  Send,
   Sparkles,
   Upload,
   X,
@@ -410,15 +410,27 @@ export function ImageNode({ data, id, selected }: NodeProps) {
                   />
                 </div>
                 <button
-                  className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                  aria-busy={isSubmissionLocked}
+                  aria-label={
+                    isSubmissionLocked
+                      ? "正在编辑图片"
+                      : isGeneratedImage
+                        ? "重新编辑图片"
+                        : "编辑图片"
+                  }
+                  className={`flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition-colors hover:bg-zinc-800 active:bg-black focus-visible:outline-none focus-visible:shadow-[var(--shadow-focus-ring)] ${
+                    isSubmissionLocked
+                      ? "cursor-wait"
+                      : "disabled:cursor-not-allowed disabled:bg-zinc-300"
+                  }`}
                   disabled={isSubmissionLocked || !prompt.trim()}
                   title={isGeneratedImage ? "重新编辑图片" : "编辑图片"}
                   type="submit"
                 >
                   {isSubmissionLocked ? (
-                    <Loader2 className="size-4 animate-spin" />
+                    <span aria-hidden="true" className="size-4 rounded-[2px] bg-white" />
                   ) : (
-                    <Send className="size-4" />
+                    <ArrowUp className="size-5" strokeWidth={1.75} />
                   )}
                 </button>
               </div>

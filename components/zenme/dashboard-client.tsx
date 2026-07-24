@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Send, Sparkles } from "lucide-react";
+import { ArrowUp, Sparkles } from "lucide-react";
 import Link from "next/link";
 
 import {
@@ -155,15 +155,20 @@ export function DashboardClient() {
               onChange={handleModelChange}
             />
             <button
-              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+              aria-busy={isSubmitting}
+              aria-label={isSubmitting ? "正在创建本地项目" : "创建本地项目"}
+              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition-colors hover:bg-zinc-800 active:bg-black focus-visible:outline-none focus-visible:shadow-[var(--shadow-focus-ring)] disabled:cursor-wait"
               disabled={isSubmitting}
               title="创建本地项目"
               type="submit"
             >
               {isSubmitting ? (
-                <Loader2 className="size-4 animate-spin" />
+                <span
+                  aria-hidden="true"
+                  className="size-4 rounded-[2px] bg-white"
+                />
               ) : (
-                <Send className="size-4" />
+                <ArrowUp className="size-5" strokeWidth={1.75} />
               )}
             </button>
           </div>
