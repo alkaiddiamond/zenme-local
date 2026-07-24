@@ -26,4 +26,28 @@ describe("parseMarkdownBlocks", () => {
       { content: "open", key: "code-0", type: "code" },
     ]);
   });
+
+  it("parses GFM pipe tables and column alignments", () => {
+    expect(parseMarkdownBlocks(
+      "| 项目 | 输出 | 备注 |\n|:---|:---:|---:|\n| Essentia | JSON | **推荐** |\n| Demucs | 音轨 | 分离 |",
+    )).toEqual([
+      {
+        alignments: ["left", "center", "right"],
+        content: "",
+        headers: ["项目", "输出", "备注"],
+        key: "table-0",
+        rows: [
+          ["Essentia", "JSON", "**推荐**"],
+          ["Demucs", "音轨", "分离"],
+        ],
+        type: "table",
+      },
+    ]);
+  });
+
+  it("does not treat an isolated pipe row as a table", () => {
+    expect(parseMarkdownBlocks("| 只是 | 普通文本 |")[0]).toMatchObject({
+      type: "p",
+    });
+  });
 });

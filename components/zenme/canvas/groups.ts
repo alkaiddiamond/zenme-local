@@ -117,6 +117,7 @@ export function createGroupedNodeLayout(
     style: groupSize,
     type: "group",
     data: {
+      createdAt: new Date().toISOString(),
       kind: "group",
       title: "新建组",
     },

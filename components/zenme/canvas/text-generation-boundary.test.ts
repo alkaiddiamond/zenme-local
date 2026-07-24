@@ -17,4 +17,14 @@ describe("text generation request boundary", () => {
     expect(source).not.toContain("readAiChatStream(");
     expect(source).not.toContain("没有可用的上游上下文。");
   });
+
+  it("allows the text node composer to submit an empty prompt", () => {
+    const source = readProjectFile(
+      "components/zenme/nodes/text-node-composer.tsx",
+    );
+
+    expect(source).toContain("disabled={isGenerating}");
+    expect(source).not.toContain("!prompt.trim()");
+    expect(source).not.toContain("!nextPrompt || isGenerating");
+  });
 });

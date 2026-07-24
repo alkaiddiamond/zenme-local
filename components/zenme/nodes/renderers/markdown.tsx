@@ -1,9 +1,12 @@
 import type { ReactNode } from "react";
 
 export type MarkdownBlock = {
+  alignments?: Array<"center" | "left" | "right">;
   content: string;
+  headers?: string[];
   key: string;
-  type: "blank" | "code" | "h1" | "h2" | "h3" | "list" | "p" | "quote";
+  rows?: string[][];
+  type: "blank" | "code" | "h1" | "h2" | "h3" | "list" | "p" | "quote" | "table";
 };
 
 export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
@@ -12,7 +15,8 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
   let codeBlock: string[] | null = null;
   let codeBlockIndex = 0;
 
-  lines.forEach((line, index) => {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     if (line.trim().startsWith("```")) {
       if (codeBlock) {
         blocks.push({
@@ -25,15 +29,37 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
       } else {
         codeBlock = [];
       }
-      return;
+      continue;
     }
 
     if (codeBlock) {
       codeBlock.push(line);
-      return;
+      continue;
     }
 
     const trimmed = line.trim();
+    const nextLine = lines[index + 1]?.trim() ?? "";
+    if (isTableRow(trimmed) && isTableSeparator(nextLine)) {
+      const headers = parseTableRow(trimmed);
+      const alignments = parseTableAlignments(nextLine);
+      const rows: string[][] = [];
+      index += 2;
+      while (index < lines.length && isTableRow(lines[index].trim())) {
+        rows.push(parseTableRow(lines[index]));
+        index += 1;
+      }
+      index -= 1;
+      blocks.push({
+        alignments,
+        content: "",
+        headers,
+        key: `table-${index - rows.length - 1}`,
+        rows,
+        type: "table",
+      });
+      continue;
+    }
+
     const heading = /^(#{1,3})\s+(.+)$/.exec(trimmed);
     if (heading) {
       blocks.push({
@@ -41,7 +67,7 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         key: `heading-${index}`,
         type: `h${heading[1].length}` as MarkdownBlock["type"],
       });
-      return;
+      continue;
     }
 
     const quote = /^>\s?(.+)$/.exec(trimmed);
@@ -51,7 +77,7 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         key: `quote-${index}`,
         type: "quote",
       });
-      return;
+      continue;
     }
 
     const listItem = /^[-*]\s+(.+)$/.exec(trimmed);
@@ -61,7 +87,7 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
         key: `list-${index}`,
         type: "list",
       });
-      return;
+      continue;
     }
 
     blocks.push({
@@ -69,7 +95,7 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
       key: `p-${index}`,
       type: trimmed ? "p" : "blank",
     });
-  });
+  }
 
   const remainingCodeBlock = codeBlock as string[] | null;
   if (remainingCodeBlock) {
@@ -97,6 +123,43 @@ export function renderMarkdown(markdown: string) {
         >
           <code>{block.content || " "}</code>
         </pre>
+      );
+    }
+
+    if (block.type === "table") {
+      return (
+        <div className="my-3 max-w-full overflow-x-auto rounded-md border border-zinc-200" key={block.key}>
+          <table className="w-full min-w-max border-collapse text-left text-sm text-zinc-800">
+            <thead className="bg-zinc-100 text-zinc-950">
+              <tr>
+                {block.headers?.map((header, index) => (
+                  <th
+                    className="border-b border-r border-zinc-200 px-3 py-2 font-semibold last:border-r-0"
+                    key={`header-${index}`}
+                    style={{ textAlign: block.alignments?.[index] ?? "left" }}
+                  >
+                    {renderMarkdownInline(header)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows?.map((row, rowIndex) => (
+                <tr className="border-b border-zinc-200 last:border-b-0" key={`row-${rowIndex}`}>
+                  {(block.headers ?? []).map((_, columnIndex) => (
+                    <td
+                      className="border-r border-zinc-200 px-3 py-2 align-top last:border-r-0"
+                      key={`cell-${rowIndex}-${columnIndex}`}
+                      style={{ textAlign: block.alignments?.[columnIndex] ?? "left" }}
+                    >
+                      {renderMarkdownInline(row[columnIndex] ?? "")}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       );
     }
 
@@ -151,6 +214,28 @@ export function renderMarkdown(markdown: string) {
         {renderMarkdownInline(block.content)}
       </p>
     );
+  });
+}
+
+function isTableRow(line: string) {
+  return line.includes("|") && parseTableRow(line).length > 1;
+}
+
+function isTableSeparator(line: string) {
+  const cells = parseTableRow(line);
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function parseTableRow(line: string) {
+  const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return trimmed.split("|").map((cell) => cell.trim());
+}
+
+function parseTableAlignments(line: string): Array<"center" | "left" | "right"> {
+  return parseTableRow(line).map((cell) => {
+    if (cell.startsWith(":") && cell.endsWith(":")) return "center";
+    if (cell.endsWith(":")) return "right";
+    return "left";
   });
 }
 

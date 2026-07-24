@@ -29,6 +29,8 @@ export type CanvasSnapshotRecord = {
   updated_at: string;
 };
 
+const canvasSaveLocks = new Map<string, Promise<boolean>>();
+
 export async function listLocalProjects(dataDir = getZenmeDataDir()) {
   const projectsDir = getProjectsDir(dataDir);
   await fs.mkdir(projectsDir, { recursive: true });
@@ -74,7 +76,7 @@ export async function createLocalProject(input: {
   await saveLocalCanvasSnapshot({
     projectId: project.id,
     snapshot: {
-      version: 2,
+      version: 3,
       nodes: [],
       edges: [],
       viewport: { x: 0, y: 0, zoom: 1 },
@@ -148,7 +150,7 @@ export async function getLocalCanvasSnapshot(projectId: string, dataDir = getZen
         value.snapshot &&
         typeof value.snapshot === "object" &&
         "version" in value.snapshot &&
-        value.snapshot.version === 1
+        value.snapshot.version !== 3
       ) {
         migrated = true;
       }
@@ -171,23 +173,74 @@ export async function saveLocalCanvasSnapshot(input: {
   const projectDir = getProjectDir(input.projectId, dataDir);
   const canvasDir = resolveInside(projectDir, "canvas");
   await fs.mkdir(canvasDir, { recursive: true });
+  const snapshotPath = resolveInside(canvasDir, "latest.json");
+  const previous = canvasSaveLocks.get(snapshotPath) ?? Promise.resolve(false);
+  const next = previous
+    .catch(() => false)
+    .then(async () => {
+      const existing = await readJsonFile<CanvasSnapshotRecord | null>(
+        snapshotPath,
+        {
+          defaultValue: null,
+          normalize: normalizeCanvasRecord,
+        },
+      );
+      if (
+        existing &&
+        Date.parse(existing.updated_at) >= Date.parse(input.snapshot.updatedAt)
+      ) {
+        return false;
+      }
 
-  let thumbnailPath: string | null | undefined;
-  if (input.thumbnail) {
-    const relativeThumbnailPath = path.join("canvas", "thumbnail.webp");
-    await fs.writeFile(resolveInside(projectDir, relativeThumbnailPath), input.thumbnail);
-    thumbnailPath = relativeThumbnailPath.replaceAll("\\", "/");
+      let thumbnailPath: string | null | undefined;
+      if (input.thumbnail) {
+        const relativeThumbnailPath = path.join("canvas", "thumbnail.webp");
+        await fs.writeFile(
+          resolveInside(projectDir, relativeThumbnailPath),
+          input.thumbnail,
+        );
+        thumbnailPath = relativeThumbnailPath.replaceAll("\\", "/");
+      }
+
+      await writeJsonFile(snapshotPath, {
+        snapshot: input.snapshot,
+        updated_at: input.snapshot.updatedAt,
+      } satisfies CanvasSnapshotRecord);
+
+      await touchLocalProject({
+        projectId: input.projectId,
+        lastSavedAt: input.snapshot.updatedAt,
+        thumbnailPath,
+      }, dataDir);
+      return true;
+    });
+  canvasSaveLocks.set(snapshotPath, next);
+
+  try {
+    return await next;
+  } finally {
+    if (canvasSaveLocks.get(snapshotPath) === next) {
+      canvasSaveLocks.delete(snapshotPath);
+    }
   }
+}
 
-  await writeJsonFile(resolveInside(canvasDir, "latest.json"), {
-    snapshot: input.snapshot,
-    updated_at: input.snapshot.updatedAt,
-  } satisfies CanvasSnapshotRecord);
-
+export async function saveLocalProjectThumbnail(input: {
+  projectId: string;
+  thumbnail: Buffer;
+}, dataDir = getZenmeDataDir()) {
+  assertSafePathSegment(input.projectId, "projectId");
+  await readRequiredProject(input.projectId, dataDir);
+  const projectDir = getProjectDir(input.projectId, dataDir);
+  const relativeThumbnailPath = path.join("canvas", "thumbnail.webp");
+  await fs.mkdir(resolveInside(projectDir, "canvas"), { recursive: true });
+  await fs.writeFile(
+    resolveInside(projectDir, relativeThumbnailPath),
+    input.thumbnail,
+  );
   await touchLocalProject({
     projectId: input.projectId,
-    lastSavedAt: input.snapshot.updatedAt,
-    thumbnailPath,
+    thumbnailPath: relativeThumbnailPath.replaceAll("\\", "/"),
   }, dataDir);
 }
 

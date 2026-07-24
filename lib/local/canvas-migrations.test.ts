@@ -35,7 +35,7 @@ describe("migrateCanvasSnapshot", () => {
 
     expect(result?.migrated).toBe(true);
     expect(result?.snapshot).toMatchObject({
-      version: 2,
+      version: 3,
       nodes: [
         { id: "source", type: "image" },
         {
@@ -61,9 +61,9 @@ describe("migrateCanvasSnapshot", () => {
     expect(result?.snapshot.nodes[1]).not.toHaveProperty("data.imageEditPrompt");
   });
 
-  it("leaves current snapshots untouched", () => {
+  it("leaves current snapshots without player jobs untouched", () => {
     const snapshot = {
-      version: 2,
+      version: 3,
       nodes: [],
       edges: [],
       viewport: { x: 0, y: 0, zoom: 1 },
@@ -73,5 +73,168 @@ describe("migrateCanvasSnapshot", () => {
       migrated: false,
       snapshot,
     });
+  });
+
+  it("restores the former compact image request default without changing custom sizes", () => {
+    const result = migrateCanvasSnapshot({
+      version: 3,
+      nodes: [
+        {
+          id: "default-request",
+          type: "imageGeneration",
+          position: { x: 0, y: 0 },
+          style: { height: 176, width: 560 },
+          data: { kind: "imageGeneration", title: "图片生成" },
+        },
+        {
+          id: "custom-request",
+          type: "imageGeneration",
+          position: { x: 600, y: 0 },
+          style: { height: 300, width: 700 },
+          data: { kind: "imageGeneration", title: "图片生成" },
+        },
+      ],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      updatedAt: "2026-07-20T00:00:00.000Z",
+    });
+
+    expect(result?.migrated).toBe(true);
+    expect(result?.snapshot.nodes[0].style).toEqual({
+      height: 260,
+      width: 520,
+    });
+    expect(result?.snapshot.nodes[1].style).toEqual({
+      height: 300,
+      width: 700,
+    });
+  });
+
+  it("normalizes legacy task metadata and fills the new defaults", () => {
+    const result = migrateCanvasSnapshot({
+      version: 3,
+      nodes: [
+        {
+          id: "legacy-task",
+          type: "task",
+          position: { x: 0, y: 0 },
+          data: {
+            kind: "task",
+            taskStatus: "archived",
+            taskUrgency: "urgent",
+          },
+        },
+        {
+          id: "empty-task",
+          type: "task",
+          position: { x: 100, y: 0 },
+          data: { kind: "task" },
+        },
+      ],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      updatedAt: "2026-07-17T00:00:00.000Z",
+    });
+
+    expect(result?.migrated).toBe(true);
+    expect(result?.snapshot.nodes).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({
+          taskComplexity: "simple",
+          taskPriority: "P3",
+          taskStatus: "paused",
+          taskUrgency: "run",
+        }),
+      }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          taskComplexity: "simple",
+          taskPriority: "P3",
+          taskStatus: "inProgress",
+          taskUrgency: "stand",
+        }),
+      }),
+    ]);
+  });
+
+  it("persists legacy task edges as parent task ids", () => {
+    const result = migrateCanvasSnapshot({
+      version: 3,
+      nodes: [
+        {
+          id: "parent",
+          type: "task",
+          position: { x: 0, y: 0 },
+          data: { kind: "task", name: "父任务" },
+        },
+        {
+          id: "child",
+          type: "task",
+          position: { x: 600, y: 0 },
+          data: { kind: "task", name: "子任务" },
+        },
+      ],
+      edges: [{ id: "task-edge", source: "parent", target: "child" }],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      updatedAt: "2026-07-20T00:00:00.000Z",
+    });
+
+    expect(result?.migrated).toBe(true);
+    expect(result?.snapshot.nodes[1]).toEqual(
+      expect.objectContaining({
+        data: expect.objectContaining({ taskParentId: "parent" }),
+      }),
+    );
+  });
+
+  it("removes legacy analysis state from a player", () => {
+    const result = migrateCanvasSnapshot({
+      version: 3,
+      nodes: [{
+        id: "player-1",
+        type: "musicPlayer",
+        position: { x: 100, y: 200 },
+        data: {
+          kind: "musicPlayer",
+          title: "Song · 播放器",
+          musicDuration: 120,
+          musicJobId: "job-1",
+          musicJobStatus: "running",
+        },
+      }],
+      edges: [],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      updatedAt: "2026-07-13T00:00:00.000Z",
+    });
+    expect(result?.migrated).toBe(true);
+    expect(result?.snapshot.nodes).toEqual([
+      expect.objectContaining({ id: "player-1", data: expect.not.objectContaining({ musicJobId: "job-1" }) }),
+    ]);
+  });
+
+  it("removes legacy music analysis nodes and their edges", () => {
+    const result = migrateCanvasSnapshot({
+      version: 2,
+      nodes: [
+        { id: "music-1", type: "music", position: { x: 10, y: 20 }, data: { kind: "music", title: "Song", musicJobId: "job-1", musicJobStatus: "succeeded" } },
+        { id: "analysis-1", type: "musicAnalysis", position: { x: 700, y: 20 }, data: { kind: "musicAnalysis", title: "分析" } },
+      ],
+      edges: [{ id: "old-edge", source: "music-1", target: "analysis-1" }],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      updatedAt: "2026-07-13T00:00:00.000Z",
+    });
+    expect(result?.snapshot.version).toBe(3);
+    expect(result?.snapshot.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "music-player:music-1", data: expect.objectContaining({ kind: "musicPlayer" }) }),
+    ]));
+    expect(result?.snapshot.nodes).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "analysis-1" }),
+    ]));
+    expect(result?.snapshot.edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "music-1", target: "music-player:music-1" }),
+    ]));
+    expect(result?.snapshot.edges).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ target: "analysis-1" }),
+    ]));
   });
 });

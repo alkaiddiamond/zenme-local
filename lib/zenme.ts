@@ -13,7 +13,7 @@ export type ZenmeProject = {
 };
 
 export type CanvasSnapshotPayload = {
-  version: 2;
+  version: 3;
   nodes: unknown[];
   edges: unknown[];
   viewport: {

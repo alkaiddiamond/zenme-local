@@ -7,6 +7,7 @@ import { Loader2, Send, Sparkles } from "lucide-react";
 import type { CanvasNodeData } from "@/components/zenme/node-types";
 import {
   createModelOption,
+  rememberAiModelPreference,
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
 import {
@@ -25,19 +26,21 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
     nodeData.textGenerationModel ?? modelOptions[0],
   );
   const configuredModels = useAiModelOptions();
+  const preferredModel = configuredModels[0]?.id ?? modelOptions[0];
   const pickerModels = configuredModels.some((option) => option.id === model)
     ? configuredModels
     : [createModelOption(model), ...configuredModels];
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isGenerating = isSubmitting || Boolean(nodeData.hasRunningGenerationChild);
 
   useEffect(() => {
     setPrompt(nodeData.textGenerationPrompt ?? "");
   }, [nodeData.textGenerationPrompt]);
 
   useEffect(() => {
-    setModel(nodeData.textGenerationModel ?? modelOptions[0]);
-  }, [nodeData.textGenerationModel]);
+    setModel(nodeData.textGenerationModel ?? preferredModel);
+  }, [nodeData.textGenerationModel, preferredModel]);
 
   function syncPrompt() {
     nodeData.onUpdateTextGenerationNode?.(id, {
@@ -50,7 +53,7 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
     event.preventDefault();
 
     const nextPrompt = prompt.trim();
-    if (!nextPrompt || isSubmitting) {
+    if (!nextPrompt || isGenerating) {
       return;
     }
 
@@ -80,7 +83,7 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
       <NodeTargetHandle visible={Boolean(nodeData.hasIncomingEdge)} />
       <NodeEdgeSourceHandle visible={Boolean(nodeData.hasOutgoingEdge)} />
       <NodeContextHandle selected={Boolean(selected)} />
-      <div className="absolute -top-8 left-1 flex h-5 max-w-full items-center gap-2 text-xs font-medium text-zinc-500">
+      <div className="zenme-node-title-bar absolute -top-8 left-1 flex h-5 max-w-full items-center gap-2 text-xs font-medium text-zinc-500">
         <span className="zenme-node-title-icon-hitbox">
           <Sparkles className="size-4" />
         </span>
@@ -116,12 +119,6 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
             {error}
           </p>
         ) : null}
-        {isSubmitting ? (
-          <div className="mt-2 flex items-center gap-2 px-1 text-xs text-zinc-500">
-            <Loader2 className="size-3.5 animate-spin" />
-            AI 正在生成回复...
-          </div>
-        ) : null}
         <div className="mt-auto flex items-end justify-between gap-3 pt-3">
           <div className="min-w-0 max-w-[260px]">
             <ZenmeModelPicker
@@ -130,6 +127,7 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
               models={pickerModels}
               onChange={(nextModel) => {
                 setModel(nextModel);
+                void rememberAiModelPreference("text", nextModel);
                 nodeData.onUpdateTextGenerationNode?.(id, {
                   textGenerationModel: nextModel,
                   textGenerationPrompt: prompt,
@@ -139,11 +137,11 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
           </div>
           <button
             className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-            disabled={isSubmitting || !prompt.trim()}
+            disabled={isGenerating || !prompt.trim()}
             title="提交"
             type="submit"
           >
-            {isSubmitting ? (
+            {isGenerating ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
               <Send className="size-4" />

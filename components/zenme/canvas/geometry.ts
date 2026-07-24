@@ -50,7 +50,14 @@ export function getNodeSizeFallback(node: CanvasNode) {
   if (node.data.kind === "note") return { height: 180, width: 320 };
   if (node.data.kind === "image") return { height: 370, width: 280 };
   if (node.data.kind === "file") return { height: 68, width: 256 };
-  if (node.data.kind === "text") return { height: 260, width: 520 };
+  if (node.data.kind === "text") return { height: 176, width: 560 };
+  if (node.data.kind === "imageGeneration") {
+    return node.data.imageGenerationResult
+      ? { height: 260, width: 520 }
+      : { height: 260, width: 520 };
+  }
+  if (node.data.kind === "managedText") return { height: 380, width: 560 };
+  if (node.data.kind === "task") return { height: 460, width: 560 };
   return { height: 110, width: 288 };
 }
 
@@ -217,18 +224,29 @@ export function removeLegacyWelcomeNodes(
 }
 
 export function recoverInterruptedImageTasks(nodes: CanvasNode[]) {
-  return nodes.map((node) =>
-    node.data.imageStatus === "editing"
-      ? {
+  return nodes.map((node) => {
+    if (node.data.imageStatus === "editing") {
+      return {
           ...node,
           data: {
             ...node.data,
             imageError: "任务因页面刷新或应用重启而中断，请重新提交",
             imageStatus: "failed" as const,
           },
-        }
-      : node,
-  );
+        };
+    }
+    if (node.data.aiStatus === "generating") {
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          aiError: "任务因页面刷新或应用重启而中断，请重新提交",
+          aiStatus: "failed" as const,
+        },
+      };
+    }
+    return node;
+  });
 }
 
 export function getClientPointFromConnectEnd(event: MouseEvent | TouchEvent) {
@@ -351,6 +369,9 @@ function getSerializableRecord<T extends Record<string, unknown>>(record: T) {
       ([key, value]) =>
         key !== "hasIncomingEdge" &&
         key !== "hasOutgoingEdge" &&
+        key !== "hasRunningGenerationChild" &&
+        key !== "musicCurrentTime" &&
+        key !== "musicIsPlaying" &&
         typeof value !== "function",
     ),
   ) as T;

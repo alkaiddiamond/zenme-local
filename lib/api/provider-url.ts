@@ -23,3 +23,24 @@ export function normalizeProviderBaseUrl(value: string) {
 
   return url.toString().replace(/\/$/, "");
 }
+
+export function normalizeProviderApiBaseUrl(
+  value: string,
+  apiFormat?: string,
+) {
+  const baseUrl = normalizeProviderBaseUrl(value);
+  const url = new URL(baseUrl);
+  const isVolcengineAgentPlan =
+    apiFormat === "volcengine_agent_plan" ||
+    (
+      url.hostname.toLowerCase() === "ark.cn-beijing.volces.com" &&
+      /^\/api\/plan(?:\/v3)?\/?$/i.test(url.pathname)
+    );
+
+  if (!isVolcengineAgentPlan || /\/v3$/i.test(url.pathname)) {
+    return baseUrl;
+  }
+
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/v3`;
+  return url.toString().replace(/\/$/, "");
+}

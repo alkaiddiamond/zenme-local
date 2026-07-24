@@ -11,7 +11,10 @@ import {
   createDroppedReadingNoteCanvasNode,
   createReferencedImageGenerationCanvasNode,
   createImageGenerationCanvasNode,
+  createPendingImageResultChildCanvasNode,
   createMarkdownCanvasNode,
+  createManagedTextCanvasNode,
+  createTaskCanvasNode,
   createReaderCanvasNode,
   createReadingNoteCanvasNode,
   createTextCanvasNode,
@@ -24,7 +27,7 @@ function textNode(input?: Partial<CanvasNode>): CanvasNode {
   return {
     id: "source",
     position: { x: 100, y: 200 },
-    style: { height: 260, width: 520 },
+    style: { height: 176, width: 560 },
     type: "text",
     data: {
       kind: "text",
@@ -87,7 +90,7 @@ describe("canvas node factories", () => {
       id: "text-1",
       type: "text",
       position: { x: 1, y: 2 },
-      style: { height: 260, width: 520 },
+      style: { height: 176, width: 560 },
       data: { kind: "text", title: "文本", plainText: "", richTextHtml: "" },
     });
     expect(
@@ -103,6 +106,13 @@ describe("canvas node factories", () => {
         textMode: "code",
       },
     });
+    expect(
+      createTextCanvasNode({
+        id: "text-with-model",
+        model: "gpt-5.6-sol",
+        position: { x: 1, y: 2 },
+      }).data.textGenerationModel,
+    ).toBe("gpt-5.6-sol");
     expect(
       createMarkdownCanvasNode({
         id: "md-1",
@@ -180,19 +190,118 @@ describe("canvas node factories", () => {
 
     expect(edge).toEqual(expectedEdge("source", "agent-1"));
     expect(node).toMatchObject({
-      position: { x: 700, y: 248 },
-      style: { height: 264, width: 620 },
+      position: { x: 740, y: 248 },
+      style: { height: 260, width: 620 },
       type: "agent",
       data: {
         aiCreatedAt: "2026-06-28T03:00:00.000Z",
         aiModel: "glm-5.1",
         aiPrompt: "解释",
         aiResponse: "回答",
+        aiStatus: "done",
         kind: "agent",
         plainText: "回答",
         textGenerationModel: "glm-5.1",
       },
     });
+  });
+
+  it("creates managed text nodes with searchable metadata", () => {
+    expect(
+      createManagedTextCanvasNode({
+        createdAt: "2026-07-15T02:30:00.000Z",
+        id: "managed-text-1",
+        model: "gpt-5.6-sol",
+        position: { x: 12, y: 24 },
+      }),
+    ).toMatchObject({
+      id: "managed-text-1",
+      position: { x: 12, y: 24 },
+      style: { height: 380, width: 560 },
+      type: "managedText",
+      data: {
+        createdAt: "2026-07-15T02:30:00.000Z",
+        kind: "managedText",
+        name: "",
+        plainText: "",
+        tags: [],
+        textGenerationModel: "gpt-5.6-sol",
+        title: "强管理节点",
+      },
+    });
+  });
+
+  it("creates task nodes with workflow defaults", () => {
+    expect(
+      createTaskCanvasNode({
+        createdAt: "2026-07-16T01:30:00.000Z",
+        id: "task-1",
+        position: { x: 12, y: 24 },
+      }),
+    ).toMatchObject({
+      id: "task-1",
+      position: { x: 12, y: 24 },
+      style: { height: 176, width: 560 },
+      type: "task",
+      data: {
+        createdAt: "2026-07-16T01:30:00.000Z",
+        kind: "task",
+        name: "",
+        tags: [],
+        taskChildrenExpanded: false,
+        taskComplexity: "simple",
+        taskExpandedHeight: 460,
+        taskPriority: "P3",
+        taskStatus: "inProgress",
+        taskUrgency: "stand",
+        title: "任务",
+        updatedAt: "2026-07-16T01:30:00.000Z",
+      },
+    });
+  });
+
+  it("creates a running AI response child before content is available", () => {
+    const { node } = createAiResponseChildCanvasNode({
+      id: "agent-pending",
+      model: "gpt-5.6-sol",
+      prompt: "查询最新赛程",
+      sourceNode: textNode(),
+      startedAt: "2026-07-15T01:00:00.000Z",
+    });
+
+    expect(node.data).toMatchObject({
+      aiPrompt: "查询最新赛程",
+      aiResponse: undefined,
+      aiStatus: "generating",
+      aiTaskStartedAt: "2026-07-15T01:00:00.000Z",
+      plainText: "",
+    });
+  });
+
+  it("creates a separate pending image result child for every request", () => {
+    const sourceNode = textNode({
+      id: "image-source",
+      type: "imageGeneration",
+      data: { kind: "imageGeneration", title: "图片生成" },
+    });
+    const result = createPendingImageResultChildCanvasNode({
+      aspectRatio: "16:9",
+      id: "image-result-1",
+      model: "gpt-5.6-sol",
+      position: { x: 720, y: 200 },
+      prompt: "生成球场全景",
+      quality: "1K",
+      sourceNode,
+    });
+
+    expect(result.edge).toEqual(expectedEdge("image-source", "image-result-1"));
+    expect(result.node.data).toMatchObject({
+      imageGenerationResult: true,
+      imagePrompt: "生成球场全景",
+      imageStatus: "editing",
+      kind: "imageGeneration",
+    });
+    expect(result.node.style).toEqual({ height: 260, width: 520 });
   });
 
   it("creates a standalone image generation node without a source image", () => {
@@ -237,6 +346,7 @@ describe("canvas node factories", () => {
     });
 
     expect(result.node).toMatchObject({
+      style: { height: 260, width: 520 },
       type: "imageGeneration",
       data: {
         imageOperation: "generate",
@@ -268,9 +378,50 @@ describe("canvas node factories", () => {
     });
     expect(placeholder.edge).toEqual(expectedEdge("source", "placeholder-1"));
     expect(placeholder.node).toMatchObject({
-      position: { x: 700, y: 320 },
+      position: { x: 740, y: 320 },
       data: { kind: "agent", title: "Agent 输出占位", uploadStatus: "pending" },
     });
+
+    const managedText = createConnectedPlaceholderCanvasNode({
+      id: "managed-text-child",
+      kind: "managedText",
+      model: "gpt-5.6-sol",
+      sourceNode: textNode(),
+    });
+    expect(managedText.edge).toEqual(
+      expectedEdge("source", "managed-text-child"),
+    );
+    expect(managedText.node).toMatchObject({
+      position: { x: 740, y: 200 },
+      type: "managedText",
+      data: {
+        kind: "managedText",
+        textGenerationModel: "gpt-5.6-sol",
+      },
+    });
+
+    const task = createConnectedPlaceholderCanvasNode({
+      id: "task-child",
+      kind: "task",
+      sourceNode: textNode(),
+    });
+    expect(task.edge).toEqual(expectedEdge("source", "task-child"));
+    expect(task.node).toMatchObject({
+      position: { x: 740, y: 200 },
+      type: "task",
+      data: { kind: "task", taskStatus: "inProgress" },
+    });
+
+    const childTask = createConnectedPlaceholderCanvasNode({
+      id: "nested-task",
+      kind: "task",
+      sourceNode: textNode({
+        data: { kind: "task", name: "父任务", title: "任务" },
+        id: "parent-task",
+        type: "task",
+      }),
+    });
+    expect(childTask.node.data.taskParentId).toBe("parent-task");
   });
 
   it("places reading note nodes after existing reader children", () => {

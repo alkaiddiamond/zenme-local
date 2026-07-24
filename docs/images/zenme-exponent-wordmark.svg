@@ -1,9 +1,0 @@
-<svg width="1280" height="480" viewBox="0 0 1280 480" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
-  <title id="title">zenme exponent wordmark</title>
-  <desc id="desc">A horizontal zenme wordmark using me as the main word and zen as a superscript exponent.</desc>
-  <rect width="1280" height="480" fill="white"/>
-  <g fill="#080808" font-family="'Inter Tight', Inter, Avenir Next, Helvetica Neue, Arial, sans-serif">
-    <text x="378" y="318" font-size="202" font-weight="560" letter-spacing="-17">me</text>
-    <text x="588" y="176" font-size="62" font-weight="520" letter-spacing="-1" transform="rotate(-5 588 176)">zen</text>
-  </g>
-</svg>

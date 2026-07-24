@@ -1,12 +1,27 @@
 import { ProxyAgent } from "undici";
 
+import type { NetworkProxyConfig } from "@/lib/local/settings";
+
 const proxyAgents = new Map<string, ProxyAgent>();
 
-export function getProxyFetchOptions(targetUrl: string | URL) {
+export function getProxyFetchOptions(
+  targetUrl: string | URL,
+  config?: NetworkProxyConfig,
+) {
   const target = targetUrl instanceof URL ? targetUrl : new URL(targetUrl);
-  if (shouldBypassProxy(target.hostname)) return {};
+  if (
+    isLoopbackHostname(target.hostname) ||
+    shouldBypassProxy(
+      target.hostname,
+      config?.mode === "custom" ? config.noProxy : undefined,
+    )
+  ) {
+    return {};
+  }
 
-  const proxyUrl = getProxyUrl();
+  if (config?.mode === "direct") return {};
+  const proxyUrl =
+    config?.mode === "custom" ? normalizeProxyUrl(config.url) : getProxyUrl();
   if (!proxyUrl) return {};
 
   let agent = proxyAgents.get(proxyUrl);
@@ -26,6 +41,10 @@ function getProxyUrl() {
     process.env.http_proxy ||
     process.env.ALL_PROXY ||
     process.env.all_proxy;
+  return normalizeProxyUrl(value);
+}
+
+function normalizeProxyUrl(value: string | undefined) {
   if (!value) return undefined;
   try {
     const url = new URL(value);
@@ -37,8 +56,13 @@ function getProxyUrl() {
   }
 }
 
-function shouldBypassProxy(hostname: string) {
-  const entries = (process.env.NO_PROXY || process.env.no_proxy || "")
+function shouldBypassProxy(hostname: string, configuredNoProxy?: string) {
+  const entries = (
+    configuredNoProxy ??
+    process.env.NO_PROXY ??
+    process.env.no_proxy ??
+    ""
+  )
     .split(",")
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean);
@@ -47,4 +71,13 @@ function shouldBypassProxy(hostname: string) {
     const normalized = entry.split(":")[0].replace(/^\./, "");
     return normalized === "*" || host === normalized || host.endsWith(`.${normalized}`);
   });
+}
+
+function isLoopbackHostname(hostname: string) {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return (
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized === "::1"
+  );
 }

@@ -60,6 +60,33 @@ describe("local backup", () => {
     expect(settings).toContain('"apiKey": ""');
   });
 
+  it("removes credentials embedded in proxy URLs from backups", async () => {
+    await fs.writeFile(
+      path.join(dataDir, "settings.json"),
+      JSON.stringify({
+        modelProviders: [
+          {
+            id: "provider",
+            networkProxy: {
+              mode: "custom",
+              url: "http://proxy-user:proxy-secret@127.0.0.1:7890",
+              noProxy: "localhost",
+            },
+          },
+        ],
+      }),
+    );
+
+    const backup = await createLocalDataBackup(dataDir);
+    const settings = new AdmZip(backup).readAsText(
+      "zenme-data/settings.json",
+    );
+
+    expect(settings).not.toContain("proxy-user");
+    expect(settings).not.toContain("proxy-secret");
+    expect(settings).toContain("http://127.0.0.1:7890");
+  });
+
   it("never includes or restores ChatGPT OAuth tokens", async () => {
     await fs.writeFile(path.join(dataDir, "openai-oauth.json"), '{"accessToken":"private"}');
     const backup = await createLocalDataBackup(dataDir);

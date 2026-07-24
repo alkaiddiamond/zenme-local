@@ -9,6 +9,10 @@ import {
   PUT as putCanvas,
 } from "@/app/api/projects/[projectId]/canvas/route";
 import {
+  GET as getThumbnail,
+  PUT as putThumbnail,
+} from "@/app/api/projects/[projectId]/thumbnail/route";
+import {
   GET as listProjects,
   POST as createProject,
 } from "@/app/api/projects/route";
@@ -49,11 +53,11 @@ describe("local projects API", () => {
     expect(projectResponse.status).toBe(200);
 
     const snapshot = {
-      version: 2,
+      version: 3,
       nodes: [{ id: "node-1" }],
       edges: [],
       viewport: { x: 0, y: 0, zoom: 1 },
-      updatedAt: "2026-07-08T00:00:00.000Z",
+      updatedAt: new Date(Date.now() + 1_000).toISOString(),
     };
     const formData = new FormData();
     formData.set("snapshot", JSON.stringify(snapshot));
@@ -75,6 +79,29 @@ describe("local projects API", () => {
       snapshot: {
         nodes: [{ id: "node-1" }],
       },
+    });
+
+    const thumbnailResponse = await putThumbnail(
+      new Request(`http://localhost/api/projects/${project.id}/thumbnail`, {
+        method: "PUT",
+        headers: { "content-type": "image/webp" },
+        body: new Blob(["webp"], { type: "image/webp" }),
+      }),
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+    expect(thumbnailResponse.status).toBe(200);
+    const savedThumbnail = await getThumbnail(
+      new Request(`http://localhost/api/projects/${project.id}/thumbnail`),
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+    expect(await savedThumbnail.text()).toBe("webp");
+
+    const canvasAfterThumbnail = await getCanvas(
+      new Request(`http://localhost/api/projects/${project.id}/canvas`),
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+    expect(await canvasAfterThumbnail.json()).toMatchObject({
+      snapshot: { nodes: [{ id: "node-1" }] },
     });
 
     const listResponse = await listProjects();

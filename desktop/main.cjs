@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const net = require("node:net");
@@ -9,6 +9,7 @@ const SERVER_HOST = "127.0.0.1";
 const STARTUP_TIMEOUT_MS = 45_000;
 const APP_NAME = "Zenme";
 const APP_ID = "local.zenme.desktop";
+const IS_SMOKE_TEST = process.argv.includes("--smoke-test");
 
 let mainWindow = null;
 let serverProcess = null;
@@ -46,6 +47,42 @@ function getDefaultDataDir() {
 
 function getLegacyElectronDataDir() {
   return path.join(app.getPath("appData"), "Electron", "data");
+}
+
+function configureApplicationMenu() {
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    {
+      label: APP_NAME,
+      submenu: [
+        { role: "about" },
+        { type: "separator" },
+        { role: "services" },
+        { type: "separator" },
+        { role: "hide" },
+        { role: "hideOthers" },
+        { role: "unhide" },
+        { type: "separator" },
+        { role: "quit" },
+      ],
+    },
+    { role: "editMenu" },
+    {
+      label: "显示",
+      submenu: [
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    { role: "windowMenu" },
+  ]));
 }
 
 function hasLocalProjects(dataDir) {
@@ -102,6 +139,13 @@ function writeDesktopConfig(config) {
   );
 }
 
+function removeLegacyMusicServiceConfiguration() {
+  const config = readDesktopConfig();
+  if (!("musicService" in config)) return;
+  delete config.musicService;
+  writeDesktopConfig(config);
+}
+
 function getDataDir() {
   const configured = readDesktopConfig().dataDir;
   if (configured && typeof configured === "string") {
@@ -126,6 +170,7 @@ function getAppIconPath() {
 async function startLocalServer() {
   const dataDir = getDataDir();
   fs.mkdirSync(dataDir, { recursive: true });
+  removeLegacyMusicServiceConfiguration();
 
   const port = await findAvailablePort();
   const nextServerUrl = `http://${SERVER_HOST}:${port}`;
@@ -284,10 +329,21 @@ async function createWindow() {
   });
 
   await mainWindow.loadURL(nextServerUrl);
+
+  if (IS_SMOKE_TEST) {
+    setTimeout(() => app.quit(), 1_000);
+  }
 }
 
 function registerIpcHandlers() {
   ipcMain.handle("zenme:get-data-dir", () => getDataDir());
+  ipcMain.handle("zenme:write-clipboard-text", (_event, value) => {
+    if (typeof value !== "string") {
+      throw new TypeError("Clipboard text must be a string");
+    }
+    clipboard.writeText(value);
+    return true;
+  });
   ipcMain.handle("zenme:open-external", async (_event, rawUrl) => {
     const target = new URL(String(rawUrl));
     if (target.protocol !== "https:" && target.protocol !== "http:") {
@@ -346,7 +402,7 @@ function registerIpcHandlers() {
 
 app.whenReady().then(async () => {
   try {
-    Menu.setApplicationMenu(null);
+    configureApplicationMenu();
     registerIpcHandlers();
     await createWindow();
   } catch (error) {

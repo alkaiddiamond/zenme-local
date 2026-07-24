@@ -1,4 +1,4 @@
-import type { Connection } from "@xyflow/react";
+import type { Connection, Edge } from "@xyflow/react";
 
 import type {
   CanvasNode,
@@ -7,6 +7,7 @@ import type {
 import {
   NODE_ACTION_HANDLE_ID,
   NODE_CONTEXT_HANDLE_ID,
+  NODE_CONTEXT_TARGET_HANDLE_ID,
   NODE_RIGHT_HANDLE_ID,
 } from "@/components/zenme/node-types";
 
@@ -15,11 +16,27 @@ import { isTextGenerationContextNode } from "./text-generation-context";
 const CONTEXT_CONSUMER_NODE_KINDS = new Set([
   "agent",
   "code",
+  "imageGeneration",
+  "managedText",
   "markdown",
   "note",
+  "task",
   "text",
   "textGeneration",
 ]);
+
+export function isCanvasConnectionValid(connection: Connection | Edge) {
+  const startsFromContextHandle =
+    connection.sourceHandle === NODE_CONTEXT_HANDLE_ID;
+  const endsAtContextTarget =
+    connection.targetHandle === NODE_CONTEXT_TARGET_HANDLE_ID;
+
+  if (startsFromContextHandle || endsAtContextTarget) {
+    return startsFromContextHandle && endsAtContextTarget;
+  }
+
+  return true;
+}
 
 export function normalizeCanvasConnection(
   connection: Connection,
@@ -43,8 +60,7 @@ export function normalizeCanvasConnection(
 
   if (
     CONTEXT_CONSUMER_NODE_KINDS.has(sourceNode.data.kind) &&
-    connection.sourceHandle === NODE_CONTEXT_HANDLE_ID &&
-    isTextGenerationContextNode(targetNode)
+    connection.sourceHandle === NODE_CONTEXT_HANDLE_ID
   ) {
     return {
       ...connection,
@@ -73,6 +89,32 @@ export function normalizeCanvasConnection(
   }
 
   return connection;
+}
+
+export function normalizePersistedCanvasEdges(
+  edges: Edge[],
+  nodes: CanvasNode[],
+) {
+  return edges.map((edge) => {
+    if (
+      edge.sourceHandle !== NODE_CONTEXT_HANDLE_ID &&
+      edge.targetHandle !== NODE_CONTEXT_TARGET_HANDLE_ID
+    ) {
+      return edge;
+    }
+
+    const normalized = normalizeCanvasConnection(
+      {
+        source: edge.source,
+        sourceHandle: edge.sourceHandle ?? null,
+        target: edge.target,
+        targetHandle: edge.targetHandle ?? null,
+      },
+      nodes,
+    );
+
+    return normalized ? { ...edge, ...normalized } : edge;
+  });
 }
 
 export function createNodeActionMenuFromConnectEnd(input: {

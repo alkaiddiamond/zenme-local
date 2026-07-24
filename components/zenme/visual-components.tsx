@@ -11,7 +11,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { AiModelOption } from "@/components/zenme/use-ai-model-options";
+import {
+  resolveAiModelOptionId,
+  type AiModelOption,
+} from "@/components/zenme/use-ai-model-options";
 
 type ZenmeIconButtonProps = ComponentPropsWithoutRef<"button"> & {
   active?: boolean;
@@ -53,6 +56,7 @@ export function ZenmeControlButton({
   children,
   className,
   size = "icon",
+  variant = "outline",
   type = "button",
   ...props
 }: ZenmeControlButtonProps) {
@@ -64,6 +68,7 @@ export function ZenmeControlButton({
       )}
       size={size}
       type={type}
+      variant={variant}
       {...props}
     >
       {children}
@@ -72,43 +77,72 @@ export function ZenmeControlButton({
 }
 
 type ZenmeModelPickerProps = {
+  compact?: boolean;
   icon: ReactNode;
   model: string;
   models: AiModelOption[];
   onChange: (model: string) => void;
+  onOpenChange?: (open: boolean) => void;
 };
 
 export function ZenmeModelPicker({
+  compact = false,
   icon,
   model,
   models,
   onChange,
+  onOpenChange,
 }: ZenmeModelPickerProps) {
-  const activeModel = models.find((option) => option.id === model);
+  const resolvedModel = resolveAiModelOptionId(models, model);
+  const visibleModels = models.filter(
+    (option) => option.id !== model || resolvedModel === model,
+  );
+  const activeModel = visibleModels.find(
+    (option) => option.id === resolvedModel,
+  );
   const activeLabel = activeModel?.label ?? model;
 
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={onOpenChange}>
       <DropdownMenuTrigger asChild>
         <button
           aria-label="选择模型"
-          className="inline-flex h-9 min-w-0 max-w-[220px] flex-1 items-center rounded-full border border-zinc-200 bg-white px-3 text-sm text-zinc-800 shadow-sm transition hover:bg-zinc-50"
+          className={cn(
+            "inline-flex min-w-0 flex-1 items-center rounded-full border border-zinc-200 bg-white px-3 text-zinc-800 shadow-sm transition hover:bg-zinc-50",
+            compact
+              ? "h-[30px] max-w-[180px] text-xs"
+              : "h-9 max-w-[220px] text-sm",
+          )}
           type="button"
         >
-          <span className="mr-2 shrink-0 text-zinc-500">{icon}</span>
+          <span
+            className={cn(
+              "shrink-0 text-zinc-500",
+              compact ? "mr-1.5" : "mr-2",
+            )}
+          >
+            {icon}
+          </span>
           <span className="min-w-0 flex-1 truncate text-left font-medium">
             {activeLabel}
           </span>
-          <ChevronDown className="ml-2 size-4 shrink-0 text-zinc-500" />
+          <ChevronDown
+            className={cn(
+              "shrink-0 text-zinc-500",
+              compact ? "ml-1.5 size-3.5" : "ml-2 size-4",
+            )}
+          />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="zenme-shadow-dropdown w-[var(--radix-dropdown-menu-trigger-width)] rounded-lg border-zinc-200 bg-white p-1.5"
+        className="nodrag nopan nowheel zenme-shadow-dropdown w-[var(--radix-dropdown-menu-trigger-width)] rounded-lg border-zinc-200 bg-white p-1.5"
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
         side="top"
         sideOffset={8}
       >
-        {models.map((option) => (
+        {visibleModels.map((option) => (
           <DropdownMenuItem
             className="flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-zinc-700 focus:bg-zinc-100 focus:text-zinc-950"
             key={option.id}
@@ -117,7 +151,7 @@ export function ZenmeModelPicker({
             <span className="truncate" title={option.id}>
               {option.label}
             </span>
-            {option.id === model ? (
+            {option.id === resolvedModel ? (
               <Check className="ml-3 size-4 text-zinc-900" />
             ) : null}
           </DropdownMenuItem>

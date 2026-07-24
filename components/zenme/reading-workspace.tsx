@@ -11,6 +11,7 @@ import type {
   ReadingAsset,
   ReadingNote,
 } from "@/lib/reading/types";
+import { writeTextToClipboard } from "@/lib/clipboard";
 
 import {
   startCanvasInteractionSample,
@@ -510,7 +511,7 @@ export function ReadingWorkspace({
   const copyNote = useCallback((note: ReadingNote) => {
     const text = [note.selectedText, note.comment].filter(Boolean).join("\n\n");
     if (!text) return;
-    void navigator.clipboard?.writeText(text);
+    void writeTextToClipboard(text);
   }, []);
 
   const quickNoteText =

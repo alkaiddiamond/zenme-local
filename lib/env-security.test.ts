@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import path from "path";
 import { describe, expect, it } from "vitest";
 
@@ -18,6 +18,10 @@ function publicEnvNamesFromSource(source: string) {
 
 function sourceFilesUnder(relativeDir: string): string[] {
   const absoluteDir = path.join(ROOT_DIR, relativeDir);
+
+  if (!existsSync(absoluteDir)) {
+    return [];
+  }
 
   return readdirSync(absoluteDir).flatMap((entry) => {
     const absolutePath = path.join(absoluteDir, entry);

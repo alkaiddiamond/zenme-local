@@ -6,6 +6,7 @@ import {
   createCanvasHistoryEntry,
   getAbsoluteNodePosition,
   getNodeBounds,
+  getNodeSizeFallback,
   isNodeCenterInsideBounds,
   normalizeGroupNodeRelations,
   numericSize,
@@ -43,6 +44,34 @@ function node(input: {
     ...(input.measured ? { measured: input.measured } : {}),
   } as CanvasNode;
 }
+
+describe("node size fallbacks", () => {
+  it("uses a compact request size and a separate pending-result size", () => {
+    const requestNode = node({
+      data: { kind: "imageGeneration", title: "图片生成" },
+      id: "image-request",
+      type: "imageGeneration",
+    });
+    const resultNode = node({
+      data: {
+        imageGenerationResult: true,
+        kind: "imageGeneration",
+        title: "图片生成",
+      },
+      id: "image-result",
+      type: "imageGeneration",
+    });
+
+    expect(getNodeSizeFallback(requestNode)).toEqual({
+      height: 260,
+      width: 520,
+    });
+    expect(getNodeSizeFallback(resultNode)).toEqual({
+      height: 260,
+      width: 520,
+    });
+  });
+});
 
 describe("canvas geometry helpers", () => {
   it("parses numeric sizes and ignores invalid values", () => {
@@ -196,12 +225,28 @@ describe("canvas geometry helpers", () => {
     expect(recovered[1]).toBe(done);
   });
 
+  it("marks persisted AI tasks as interrupted after a reload", () => {
+    const interrupted = node({
+      data: { aiStatus: "generating", kind: "agent", title: "AI 回复" },
+      id: "agent-generating",
+    });
+
+    const [recovered] = recoverInterruptedImageTasks([interrupted]);
+
+    expect(recovered.data).toMatchObject({
+      aiError: "任务因页面刷新或应用重启而中断，请重新提交",
+      aiStatus: "failed",
+    });
+  });
+
   it("creates serializable history entries without runtime-only fields", () => {
     const update = () => undefined;
     const runtimeNode = {
       ...node({
         data: {
           hasIncomingEdge: true,
+          musicCurrentTime: 42,
+          musicIsPlaying: true,
           onUpdateTextNode: update,
           plainText: "正文",
         },
@@ -229,6 +274,8 @@ describe("canvas geometry helpers", () => {
 
     expect(signature).not.toContain("hasIncomingEdge");
     expect(signature).not.toContain("measured");
+    expect(signature).not.toContain("musicCurrentTime");
+    expect(signature).not.toContain("musicIsPlaying");
     expect(entry.nodes[0]).not.toHaveProperty("dragging");
     expect(entry.nodes[0].data).toEqual({
       kind: "text",

@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 
 export function ImageTaskTiming({
+  className,
   durationMs,
   running,
   startedAt,
 }: {
+  className?: string;
   durationMs?: number;
   running: boolean;
   startedAt?: string;
@@ -28,7 +30,7 @@ export function ImageTaskTiming({
   if (elapsed === undefined) return null;
 
   return (
-    <span className="pointer-events-none absolute right-3 top-3 z-10 rounded-full bg-white/90 px-2 py-1 text-[11px] font-medium tabular-nums text-zinc-500 shadow-sm backdrop-blur">
+    <span className={className ?? "pointer-events-none absolute -top-8 right-1 z-10 text-[11px] font-medium tabular-nums text-zinc-500"}>
       {running ? "执行中 " : "耗时 "}{formatDuration(elapsed)}
     </span>
   );

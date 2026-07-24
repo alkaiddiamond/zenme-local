@@ -21,7 +21,7 @@ export function NoteNode({ data, id, selected }: NodeProps) {
       <NodeTargetHandle visible={Boolean(nodeData.hasIncomingEdge)} />
       <NodeEdgeSourceHandle visible={Boolean(nodeData.hasOutgoingEdge)} />
       <NodeContextTargetHandle />
-      <div className="absolute -top-7 left-1 flex h-5 max-w-full items-center gap-2 text-xs font-medium text-zinc-500">
+      <div className="zenme-node-title-bar absolute -top-7 left-1 flex h-5 max-w-full items-center gap-2 text-xs font-medium text-zinc-500">
         <span className="zenme-node-title-icon-hitbox zenme-note-node-drag-handle">
           <Quote className="size-4" />
         </span>
@@ -40,7 +40,9 @@ export function NoteNode({ data, id, selected }: NodeProps) {
         {nodeData.sourceBookTitle}
         {nodeData.chapterTitle ? ` · ${nodeData.chapterTitle}` : ""}
       </p>
-      {selected ? <TextNodeComposer nodeData={nodeData} nodeId={id} /> : null}
+      {selected && !nodeData.isMultiSelection ? (
+        <TextNodeComposer nodeData={nodeData} nodeId={id} />
+      ) : null}
       <NodeActionHandle selected={Boolean(selected)} />
     </NodeFrame>
   );

@@ -14,7 +14,7 @@ export function GroupNode({ data, selected }: NodeProps) {
         selected ? "border-zinc-900" : "border-zinc-200"
       }`}
     >
-      <div className="pointer-events-auto absolute -top-7 left-1 flex h-5 max-w-full items-center gap-2 text-xs font-medium text-zinc-500">
+      <div className="zenme-node-title-bar pointer-events-auto absolute -top-7 left-1 flex h-5 max-w-full items-center gap-2 text-xs font-medium text-zinc-500">
         <span className="zenme-node-title-icon-hitbox">
           <GroupIcon className="size-4 shrink-0 text-zinc-500" />
         </span>

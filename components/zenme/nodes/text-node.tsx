@@ -2,13 +2,23 @@
 
 import {
   type ClipboardEvent,
+  type MouseEvent as ReactMouseEvent,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { NodeResizer, type NodeProps } from "@xyflow/react";
-import { Bot, Copy, FileText, Sparkles, StickyNote } from "lucide-react";
+import {
+  Bot,
+  Copy,
+  FileText,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Sparkles,
+  StickyNote,
+} from "lucide-react";
 
 import type { CanvasNodeData } from "@/components/zenme/node-types";
 import {
@@ -18,6 +28,7 @@ import {
   NodeEdgeSourceHandle,
   NodeTargetHandle,
 } from "@/components/zenme/node-ui";
+import { getModelIdFromReference } from "@/lib/ai/model-reference";
 import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
 import { InlineFormatToolbar } from "@/components/zenme/nodes/inline-format-toolbar";
 import { NodeFrame } from "@/components/zenme/nodes/node-frame";
@@ -29,12 +40,18 @@ import {
   stripLegacyRichTextHtml,
 } from "@/components/zenme/nodes/renderers/rich-text";
 import { TextNodeComposer } from "@/components/zenme/nodes/text-node-composer";
+import { ImageTaskTiming } from "@/components/zenme/nodes/image-task-timing";
+import { getWordSelectionOffsets } from "@/components/zenme/nodes/text-selection";
+import { writeTextToClipboard } from "@/lib/clipboard";
 
 type TextDisplayMode = "code" | "markdown" | "plain";
 
 export function TextNode({ data, id, selected }: NodeProps) {
   const nodeData = data as CanvasNodeData;
   const isAgent = nodeData.kind === "agent";
+  const isTextNode = nodeData.kind === "text";
+  const isTextExpanded = Boolean(nodeData.textExpanded);
+  const suppressFloatingControls = Boolean(nodeData.isMultiSelection);
   const displayMode = getTextDisplayMode(nodeData);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const markdownEditorRef = useRef<HTMLTextAreaElement | null>(null);
@@ -72,7 +89,40 @@ export function TextNode({ data, id, selected }: NodeProps) {
       return;
     }
 
-    void navigator.clipboard?.writeText(text);
+    void writeTextToClipboard(text);
+  }
+
+  function selectAgentResponseWord(event: ReactMouseEvent<HTMLDivElement>) {
+    if (event.detail !== 2) {
+      return;
+    }
+
+    const responseElement = event.currentTarget;
+    const range = responseElement.ownerDocument.caretRangeFromPoint?.(
+      event.clientX,
+      event.clientY,
+    );
+    if (
+      !range ||
+      range.startContainer.nodeType !== Node.TEXT_NODE ||
+      !responseElement.contains(range.startContainer)
+    ) {
+      return;
+    }
+
+    const text = range.startContainer.textContent ?? "";
+    const offsets = getWordSelectionOffsets(text, range.startOffset);
+    event.preventDefault();
+    event.stopPropagation();
+    if (offsets.start === offsets.end) {
+      return;
+    }
+
+    range.setStart(range.startContainer, offsets.start);
+    range.setEnd(range.startContainer, offsets.end);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
   }
 
   useEffect(() => {
@@ -348,6 +398,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
         />
         <NodeEdgeSourceHandle visible={Boolean(nodeData.hasOutgoingEdge)} />
         <NodeContextHandle selected={Boolean(selected)} />
+        <NodeContextTargetHandle />
         <EditableNodeTitle
           displayFallback="请输入标题"
           fallbackTitle="文本"
@@ -356,7 +407,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
           onEditingChange={setIsRenaming}
           title={nodeData.title}
         />
-        {selected || isEditing ? (
+        {!suppressFloatingControls && (selected || isEditing) ? (
           <InlineFormatToolbar
             codeLanguage={codeLanguage}
             mode={displayMode}
@@ -386,13 +437,13 @@ export function TextNode({ data, id, selected }: NodeProps) {
           />
         ) : null}
         <div
-          className={`zenme-shadow-node relative h-full min-h-[180px] w-full overflow-hidden rounded-xl border bg-white text-zinc-950 ${
+          className={`zenme-shadow-node relative h-full min-h-[176px] w-full overflow-hidden rounded-xl border bg-white text-zinc-950 ${
             selected ? "border-zinc-900" : "border-zinc-200"
           }`}
         >
           {displayMode === "plain" ? (
             <div
-              className="zenme-text-node-editor nodrag nowheel h-full min-h-[180px] overflow-auto rounded-xl px-6 py-5 text-base leading-7 text-zinc-800 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
+              className="zenme-text-node-editor nodrag nowheel h-full min-h-[176px] overflow-auto rounded-xl px-6 py-5 text-base leading-7 text-zinc-800 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
               contentEditable
               data-placeholder={isEditing ? "" : "点击此处编辑文本"}
               onBlur={() => {
@@ -416,7 +467,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
               {!isEditing ? (
                 <div
                   aria-hidden
-                  className="zenme-markdown-preview pointer-events-none absolute inset-0 overflow-auto px-6 py-5 text-base leading-7"
+                  className="zenme-markdown-preview pointer-events-none absolute inset-0 overflow-auto px-6 pb-10 pt-5 text-base leading-7"
                   ref={markdownPreviewRef}
                 >
                   {plainText.trim() ? (
@@ -430,7 +481,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
               ) : null}
               <textarea
                 aria-label="Markdown 文本"
-                className={`zenme-markdown-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-6 py-5 text-base leading-7 caret-zinc-950 outline-none ${
+                className={`zenme-markdown-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-6 pb-10 pt-5 text-base leading-7 caret-zinc-950 outline-none ${
                   isEditing
                     ? "text-zinc-800"
                     : "cursor-text text-transparent selection:bg-transparent"
@@ -465,10 +516,15 @@ export function TextNode({ data, id, selected }: NodeProps) {
                     return;
                   }
 
-                  markdownPreviewRef.current.scrollLeft =
-                    event.currentTarget.scrollLeft;
-                  markdownPreviewRef.current.scrollTop =
-                    event.currentTarget.scrollTop;
+                  const editor = event.currentTarget;
+                  const preview = markdownPreviewRef.current;
+                  const editorMaxScrollTop = editor.scrollHeight - editor.clientHeight;
+                  const previewMaxScrollTop = preview.scrollHeight - preview.clientHeight;
+
+                  preview.scrollLeft = editor.scrollLeft;
+                  preview.scrollTop = editorMaxScrollTop > 0
+                    ? (editor.scrollTop / editorMaxScrollTop) * previewMaxScrollTop
+                    : 0;
                 }}
                 ref={markdownEditorRef}
                 spellCheck={false}
@@ -477,7 +533,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
             </>
           ) : null}
           {displayMode === "code" ? (
-            <div className="relative h-full min-h-[180px] overflow-hidden bg-white">
+            <div className="relative h-full min-h-[176px] overflow-hidden bg-white">
               <div
                 aria-hidden
                 className="zenme-code-highlight absolute inset-0 overflow-auto px-4 py-3 font-mono text-[13px] leading-6"
@@ -531,13 +587,42 @@ export function TextNode({ data, id, selected }: NodeProps) {
             </div>
           ) : null}
         </div>
-        {selected ? <TextNodeComposer nodeData={nodeData} nodeId={id} /> : null}
+        {isTextNode ? (
+          <div className="zenme-text-node-floating-actions nodrag absolute right-3 top-3 z-30 flex items-center gap-1">
+            <button
+              aria-expanded={isTextExpanded}
+              className="flex size-7 shrink-0 items-center justify-center rounded-md bg-white/80 text-zinc-400 opacity-55 backdrop-blur transition hover:bg-zinc-100 hover:text-zinc-900 hover:opacity-100 focus-visible:bg-zinc-100 focus-visible:text-zinc-900 focus-visible:opacity-100"
+              onClick={() =>
+                nodeData.onToggleTextExpanded?.(id, !isTextExpanded)
+              }
+              title={isTextExpanded ? "收起文本" : "展开为 A4 阅读面板"}
+              type="button"
+            >
+              {isTextExpanded ? (
+                <Minimize2 className="size-4" />
+              ) : (
+                <Maximize2 className="size-4" />
+              )}
+            </button>
+            <button
+              className="flex size-7 shrink-0 items-center justify-center rounded-md bg-white/80 text-zinc-400 opacity-55 backdrop-blur transition hover:bg-zinc-100 hover:text-zinc-900 hover:opacity-100 focus-visible:bg-zinc-100 focus-visible:text-zinc-900 focus-visible:opacity-100"
+              onClick={() => copyText(readCurrentTextContent())}
+              title="复制文本"
+              type="button"
+            >
+              <Copy className="size-4" />
+            </button>
+          </div>
+        ) : null}
+        {selected && !suppressFloatingControls ? (
+          <TextNodeComposer nodeData={nodeData} nodeId={id} />
+        ) : null}
         <NodeResizer
           color="#a1a1aa"
           handleClassName="zenme-text-resize-handle"
           isVisible={Boolean(selected || isEditing)}
           lineClassName="zenme-text-resize-line"
-          minHeight={180}
+          minHeight={176}
           minWidth={320}
         />
         <NodeActionHandle selected={Boolean(selected)} />
@@ -545,7 +630,9 @@ export function TextNode({ data, id, selected }: NodeProps) {
     );
   }
 
-  if (nodeData.aiPrompt || nodeData.aiResponse) {
+  if (nodeData.aiPrompt || nodeData.aiResponse || nodeData.aiStatus) {
+    const isGenerating = nodeData.aiStatus === "generating";
+    const isResponseExpanded = Boolean(nodeData.aiResponseExpanded);
     const createdAt = nodeData.aiCreatedAt
       ? new Date(nodeData.aiCreatedAt)
       : null;
@@ -561,13 +648,19 @@ export function TextNode({ data, id, selected }: NodeProps) {
 
     return (
       <div className="zenme-agent-response-node group relative h-full w-full">
+        <ImageTaskTiming
+          className="pointer-events-none absolute -top-8 right-1 z-10 text-[11px] font-medium tabular-nums text-zinc-500"
+          durationMs={nodeData.aiTaskDurationMs}
+          running={isGenerating}
+          startedAt={nodeData.aiTaskStartedAt}
+        />
         <NodeTargetHandle
           revealOnHover={false}
           visible={Boolean(nodeData.hasIncomingEdge)}
         />
         <NodeEdgeSourceHandle visible={Boolean(nodeData.hasOutgoingEdge)} />
         <NodeContextTargetHandle />
-        <div className="absolute -top-8 left-1 flex h-5 max-w-full items-center gap-2 text-xs font-medium text-zinc-500">
+        <div className="zenme-node-title-bar absolute -top-8 left-1 flex h-5 max-w-full items-center gap-2 text-xs font-medium text-zinc-500">
           <span className="zenme-node-title-icon-hitbox">
             <Bot className="size-4" />
           </span>
@@ -578,34 +671,82 @@ export function TextNode({ data, id, selected }: NodeProps) {
             selected ? "border-zinc-900" : "border-zinc-200"
           }`}
         >
-          <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-5 py-3 text-xs text-zinc-500">
+          <div
+            className="flex items-center justify-between gap-3 border-b border-zinc-100 px-5 py-3 text-xs text-zinc-500"
+          >
             <div className="flex min-w-0 items-center gap-2">
               <Sparkles className="size-3.5 shrink-0" />
-              <span className="truncate">{nodeData.aiModel ?? "AI"}</span>
+              <span className="truncate">
+                {getModelIdFromReference(nodeData.aiModel) || "AI"}
+              </span>
             </div>
-            {createdAtLabel ? (
-              <span className="shrink-0 tabular-nums">{createdAtLabel}</span>
-            ) : null}
-            <button
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 focus-visible:bg-zinc-100 focus-visible:text-zinc-900"
-              onClick={() =>
-                copyText(nodeData.aiResponse || nodeData.plainText)
-              }
-              title="复制回复"
-              type="button"
-            >
-              <Copy className="size-4" />
-            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              {createdAtLabel ? (
+                <span className="mr-1 tabular-nums">{createdAtLabel}</span>
+              ) : null}
+              <button
+                aria-expanded={isResponseExpanded}
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 focus-visible:bg-zinc-100 focus-visible:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40"
+                disabled={isGenerating || (!nodeData.aiResponse && !nodeData.plainText)}
+                onClick={() => {
+                  nodeData.onToggleAiResponseExpanded?.(
+                    id,
+                    !isResponseExpanded,
+                  );
+                }}
+                title={isResponseExpanded ? "收起回复" : "展开全部回复"}
+                type="button"
+              >
+                {isResponseExpanded ? (
+                  <Minimize2 className="size-4" />
+                ) : (
+                  <Maximize2 className="size-4" />
+                )}
+              </button>
+              <button
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 focus-visible:bg-zinc-100 focus-visible:text-zinc-900"
+                disabled={!nodeData.aiResponse && !nodeData.plainText}
+                onClick={() =>
+                  copyText(nodeData.aiResponse || nodeData.plainText)
+                }
+                title="复制回复"
+                type="button"
+              >
+                <Copy className="size-4" />
+              </button>
+            </div>
           </div>
-          <div className="nodrag nowheel min-h-0 flex-1 overflow-auto px-5 py-4">
-            <div className="zenme-agent-response-text min-h-full rounded-lg bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-800">
-              {renderMarkdown(
-                nodeData.aiResponse || nodeData.plainText || "暂无回复",
+          <div
+            className="nodrag nowheel min-h-0 flex-1 overflow-auto px-5 py-4"
+          >
+            <div
+              className="zenme-agent-response-text min-h-full rounded-lg bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-800"
+              onDoubleClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onMouseDown={selectAgentResponseWord}
+            >
+              {isGenerating ? (
+                <div className="flex min-h-[160px] items-center justify-center gap-2 text-zinc-500">
+                  <Loader2 className="size-4 animate-spin" />
+                  AI 正在生成回复...
+                </div>
+              ) : nodeData.aiStatus === "failed" ? (
+                <div className="rounded-md bg-red-50 px-3 py-2 text-red-600">
+                  {nodeData.aiError || "文本生成失败，请稍后重试"}
+                </div>
+              ) : (
+                renderMarkdown(
+                  nodeData.aiResponse || nodeData.plainText || "暂无回复",
+                )
               )}
             </div>
           </div>
         </div>
-        {selected ? <TextNodeComposer nodeData={nodeData} nodeId={id} /> : null}
+        {selected && !suppressFloatingControls ? (
+          <TextNodeComposer nodeData={nodeData} nodeId={id} />
+        ) : null}
         <NodeResizer
           color="#a1a1aa"
           handleClassName="zenme-text-resize-handle"
@@ -626,7 +767,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
         visible={Boolean(nodeData.hasIncomingEdge)}
       />
       <NodeEdgeSourceHandle visible={Boolean(nodeData.hasOutgoingEdge)} />
-      <div className="mb-3 flex items-center gap-2 text-xs font-medium text-zinc-500">
+      <div className="zenme-node-title-bar mb-3 flex items-center gap-2 text-xs font-medium text-zinc-500">
         <span className="zenme-node-title-icon-hitbox">
           <Icon className="size-4" />
         </span>
@@ -636,7 +777,9 @@ export function TextNode({ data, id, selected }: NodeProps) {
       <p className="mt-2 text-xs leading-5 text-zinc-500">
         后续可承载 Agent 输出、总结或任务结果。
       </p>
-      {selected ? <TextNodeComposer nodeData={nodeData} nodeId={id} /> : null}
+      {selected && !suppressFloatingControls ? (
+        <TextNodeComposer nodeData={nodeData} nodeId={id} />
+      ) : null}
       <NodeActionHandle selected={Boolean(selected)} />
     </NodeFrame>
   );

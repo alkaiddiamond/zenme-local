@@ -24,14 +24,26 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import type {
   ModelModality,
   ModelProviderApiFormat,
   ModelProviderAuthType,
   ModelProviderConfig,
+  NetworkProxyConfig,
   ZenmeLocalSettings,
 } from "@/lib/local/settings";
+import {
+  createModelProviderPreset,
+  identifyModelProviderPreset,
+  type ModelProviderPresetId,
+} from "@/lib/ai/provider-presets";
 
 type SettingsPayload = {
   mode: "local";
@@ -87,8 +99,46 @@ const API_FORMAT_OPTIONS: Array<{
   { label: "OpenAI Chat Completions", value: "openai" },
   { label: "Anthropic Messages", value: "anthropic" },
   { label: "OpenRouter Images / Chat", value: "openrouter" },
+  { label: "火山方舟 Agent Plan", value: "volcengine_agent_plan" },
   { label: "Zhipu GLM", value: "zhipu" },
+  { label: "Ollama（本机）", value: "ollama" },
   { label: "自定义", value: "custom" },
+];
+
+const GENERIC_API_FORMAT_OPTIONS = API_FORMAT_OPTIONS.filter((option) =>
+  ["openai", "anthropic", "custom"].includes(option.value),
+);
+
+const MODEL_PROVIDER_PRESET_OPTIONS: Array<{
+  description: string;
+  label: string;
+  value: ModelProviderPresetId;
+}> = [
+  {
+    description: "智谱官方 GLM 模型接口",
+    label: "智谱 GLM",
+    value: "zhipu",
+  },
+  {
+    description: "Responses API 与 Seedream",
+    label: "火山方舟 Agent Plan",
+    value: "volcengine_agent_plan",
+  },
+  {
+    description: "多模型聚合与图片模型",
+    label: "OpenRouter",
+    value: "openrouter",
+  },
+  {
+    description: "连接本机运行的开源模型",
+    label: "Ollama",
+    value: "ollama",
+  },
+  {
+    description: "OpenAI 或 Anthropic 兼容接口",
+    label: "自定义",
+    value: "custom",
+  },
 ];
 
 const AUTH_TYPE_OPTIONS: Array<{
@@ -98,6 +148,15 @@ const AUTH_TYPE_OPTIONS: Array<{
   { label: "Bearer Token", value: "bearer" },
   { label: "API Key Header", value: "api-key" },
   { label: "无需认证", value: "none" },
+];
+
+const NETWORK_PROXY_MODE_OPTIONS: Array<{
+  label: string;
+  value: NetworkProxyConfig["mode"];
+}> = [
+  { label: "跟随环境变量", value: "environment" },
+  { label: "自定义代理", value: "custom" },
+  { label: "始终直连", value: "direct" },
 ];
 
 const MODALITY_OPTIONS: Array<{
@@ -128,6 +187,8 @@ export function SettingsClient() {
   const [autoSaveIntervalMs, setAutoSaveIntervalMs] = useState(5_000);
   const [modelProviders, setModelProviders] = useState<ModelProviderConfig[]>([]);
   const [editingProvider, setEditingProvider] = useState<ModelProviderConfig | null>(null);
+  const [editingProxyProvider, setEditingProxyProvider] =
+    useState<ModelProviderConfig | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
   const [restoreState, setRestoreState] = useState<"idle" | "restoring" | "done" | "failed">("idle");
   const [restoreMessage, setRestoreMessage] = useState("");
@@ -325,9 +386,6 @@ export function SettingsClient() {
     const savedProvider = nextPayload?.settings.modelProviders.find(
       (item) => item.id === provider.id,
     );
-    if (savedProvider) {
-      setEditingProvider(savedProvider);
-    }
     return savedProvider ?? provider;
   }
 
@@ -386,9 +444,21 @@ export function SettingsClient() {
         <main className="px-10 py-8">
           {activeTab === "models" ? (
             <ModelProviderSettings
-              onAddProvider={() => setEditingProvider(createEmptyProvider())}
+              onAddProvider={(preset) => {
+                const existingProvider =
+                  preset === "custom"
+                    ? undefined
+                    : modelProviders.find(
+                        (provider) =>
+                          identifyModelProviderPreset(provider) === preset,
+                      );
+                setEditingProvider(
+                  existingProvider ?? createModelProviderPreset(preset),
+                );
+              }}
               onDeleteProvider={deleteProvider}
               onEditProvider={setEditingProvider}
+              onEditProxyProvider={setEditingProxyProvider}
               chatGptAction={chatGptAction}
               chatGptMessage={chatGptMessage}
               chatGptStatus={chatGptStatus}
@@ -430,6 +500,13 @@ export function SettingsClient() {
           onClose={() => setEditingProvider(null)}
           onSave={upsertProvider}
           provider={editingProvider}
+        />
+      ) : null}
+      {editingProxyProvider ? (
+        <ProviderProxyModal
+          onClose={() => setEditingProxyProvider(null)}
+          onSave={upsertProvider}
+          provider={editingProxyProvider}
         />
       ) : null}
     </div>
@@ -763,6 +840,7 @@ function ModelProviderSettings({
   onAddProvider,
   onDeleteProvider,
   onEditProvider,
+  onEditProxyProvider,
   chatGptAction,
   chatGptMessage,
   chatGptStatus,
@@ -771,9 +849,10 @@ function ModelProviderSettings({
   onSyncChatGptModels,
   providers,
 }: {
-  onAddProvider: () => void;
+  onAddProvider: (preset: ModelProviderPresetId) => void;
   onDeleteProvider: (providerId: string) => void;
   onEditProvider: (provider: ModelProviderConfig) => void;
+  onEditProxyProvider: (provider: ModelProviderConfig) => void;
   chatGptAction: "idle" | "login" | "sync" | "logout" | "failed";
   chatGptMessage: string;
   chatGptStatus: ChatGptAuthStatus | null;
@@ -793,10 +872,31 @@ function ModelProviderSettings({
             管理模型服务商、模型映射和模型模态能力。
           </p>
         </div>
-        <Button className="bg-[#96573f] text-white hover:bg-[#854b36]" onClick={onAddProvider} type="button">
-          <Plus className="size-4" />
-          添加服务商
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button className="bg-[#96573f] text-white hover:bg-[#854b36]" type="button">
+              <Plus className="size-4" />
+              添加服务商
+              <ChevronDown className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-72">
+            {MODEL_PROVIDER_PRESET_OPTIONS.map((option) => (
+              <DropdownMenuItem
+                className="flex cursor-pointer flex-col items-start gap-0.5 py-2.5"
+                key={option.value}
+                onSelect={() => onAddProvider(option.value)}
+              >
+                <span className="font-medium text-[var(--color-text-primary)]">
+                  {option.label}
+                </span>
+                <span className="text-xs text-[var(--color-text-tertiary)]">
+                  {option.description}
+                </span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <div className="space-y-3">
@@ -807,6 +907,7 @@ function ModelProviderSettings({
             message={chatGptMessage}
             onLogin={onLoginChatGpt}
             onLogout={onLogoutChatGpt}
+            onProxy={() => onEditProxyProvider(provider)}
             onSync={onSyncChatGptModels}
             status={chatGptStatus}
           />
@@ -870,6 +971,7 @@ function ChatGptProviderCard({
   message,
   onLogin,
   onLogout,
+  onProxy,
   onSync,
   status,
 }: {
@@ -877,6 +979,7 @@ function ChatGptProviderCard({
   message: string;
   onLogin: () => void;
   onLogout: () => void;
+  onProxy: () => void;
   onSync: () => void;
   status: ChatGptAuthStatus | null;
 }) {
@@ -892,6 +995,9 @@ function ChatGptProviderCard({
           </div>
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">通过 ChatGPT 账号完成 OpenAI OAuth，无需 API 密钥</p>
         </div>
+        <Button onClick={onProxy} type="button" variant="outline">
+          代理设置
+        </Button>
       </div>
       <div className="mt-4 border-t border-[var(--color-border)] pt-4">
         {status?.loggedIn ? (
@@ -939,20 +1045,12 @@ function ProviderEditorModal({
   >("idle");
   const [modelFetchMessage, setModelFetchMessage] = useState("");
   const [fetchedModelIds, setFetchedModelIds] = useState<string[]>([]);
-  const textModels = useMemo(
-    () =>
-      draft.models.filter(
-        (model) => model.enabled && model.modalities.includes("text"),
-      ),
-    [draft.models],
-  );
-  const imageModels = useMemo(
-    () =>
-      draft.models.filter(
-        (model) => model.enabled && model.modalities.includes("image"),
-      ),
-    [draft.models],
-  );
+  const providerPreset = identifyModelProviderPreset(draft);
+  const isCustomProvider = providerPreset === "custom";
+  const proxyUrlError =
+    draft.networkProxy.mode === "custom"
+      ? validateProxyUrl(draft.networkProxy.url)
+      : "";
   async function saveProvider() {
     setProviderSaveState("saving");
     try {
@@ -965,19 +1063,6 @@ function ProviderEditorModal({
     } catch {
       setProviderSaveState("failed");
     }
-  }
-
-  function updateDefaultModel(
-    key: "main" | "image",
-    value: string,
-  ) {
-    setDraft((current) => ({
-      ...current,
-      modelMapping: {
-        ...current.modelMapping,
-        [key]: value,
-      },
-    }));
   }
 
   function updateContextWindow(modelId: string, value: string) {
@@ -1175,96 +1260,74 @@ function ProviderEditorModal({
               />
             </Field>
 
-            <div className="grid gap-4">
-              <Field label="API 格式">
-                <Select
-                  onChange={(value) =>
-                    setDraft((current) => ({
-                      ...current,
-                      apiFormat: value as ModelProviderApiFormat,
-                    }))
-                  }
-                  options={API_FORMAT_OPTIONS}
-                  value={draft.apiFormat}
-                />
-              </Field>
-              <Field label="认证方式">
-                <Select
-                  onChange={(value) =>
-                    setDraft((current) => ({
-                      ...current,
-                      authType: value as ModelProviderAuthType,
-                    }))
-                  }
-                  options={AUTH_TYPE_OPTIONS}
-                  value={draft.authType}
-                />
-              </Field>
-            </div>
-
-            <Field label="API 密钥">
-              <div className="relative">
-                <Input
-                  className="pr-11"
-                  onChange={(event) =>
-                    setDraft((current) => ({ ...current, apiKey: event.target.value }))
-                  }
-                  placeholder="留空表示使用环境变量或无需认证"
-                  type={showApiKey ? "text" : "password"}
-                  value={draft.apiKey ?? ""}
-                />
-                <button
-                  className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-container-low)]"
-                  onClick={() => setShowApiKey((current) => !current)}
-                  type="button"
-                >
-                  {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                </button>
+            {isCustomProvider ? (
+              <div className="grid gap-4">
+                <Field label="API 格式">
+                  <Select
+                    onChange={(value) =>
+                      setDraft((current) => ({
+                        ...current,
+                        apiFormat: value as ModelProviderApiFormat,
+                      }))
+                    }
+                    options={GENERIC_API_FORMAT_OPTIONS}
+                    value={draft.apiFormat}
+                  />
+                </Field>
+                <Field label="认证方式">
+                  <Select
+                    onChange={(value) =>
+                      setDraft((current) => ({
+                        ...current,
+                        authType: value as ModelProviderAuthType,
+                      }))
+                    }
+                    options={AUTH_TYPE_OPTIONS}
+                    value={draft.authType}
+                  />
+                </Field>
               </div>
-            </Field>
-
-            <section className="grid gap-4 rounded-md border border-[var(--color-border)] p-3.5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-medium text-[var(--color-text-primary)]">
-                    模型映射
-                  </h3>
-                  <p className="text-sm text-[var(--color-text-tertiary)]">
-                    用于标记该服务商的文本与图片处理入口，不代表全局默认模型。
-                  </p>
+            ) : (
+              <Field label="接入协议">
+                <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-container-low)] px-3 py-2.5 text-sm text-[var(--color-text-secondary)]">
+                  {getProviderProtocolSummary(providerPreset)}
                 </div>
-                <Button onClick={() => addModel()} type="button" variant="outline">
-                  <Plus className="size-4" />
-                  添加模型
-                </Button>
-              </div>
-              <Field label="文本模型映射">
-                <Select
-                  onChange={(value) => updateDefaultModel("main", value)}
-                  options={[
-                    { label: "未选择", value: "" },
-                    ...textModels.map((model) => ({
-                      label: model.alias?.trim() || model.id,
-                      value: model.id,
-                    })),
-                  ]}
-                  value={draft.modelMapping.main ?? ""}
-                />
               </Field>
-              <Field label="图片模型映射">
-                <Select
-                  onChange={(value) => updateDefaultModel("image", value)}
-                  options={[
-                    { label: "未选择", value: "" },
-                    ...imageModels.map((model) => ({
-                      label: model.alias?.trim() || model.id,
-                      value: model.id,
-                    })),
-                  ]}
-                  value={draft.modelMapping.image ?? ""}
-                />
+            )}
+
+            {draft.authType === "none" ? (
+              <p className="rounded-md bg-[var(--color-surface-container-low)] px-3 py-2.5 text-sm text-[var(--color-text-secondary)]">
+                本机 Ollama 默认无需 API 密钥。
+              </p>
+            ) : (
+              <Field label="API 密钥">
+                <div className="relative">
+                  <Input
+                    className="pr-11"
+                    onChange={(event) =>
+                      setDraft((current) => ({ ...current, apiKey: event.target.value }))
+                    }
+                    placeholder="请输入服务商 API 密钥"
+                    type={showApiKey ? "text" : "password"}
+                    value={draft.apiKey ?? ""}
+                  />
+                  <button
+                    className="absolute right-2 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full text-[var(--color-text-tertiary)] hover:bg-[var(--color-surface-container-low)]"
+                    onClick={() => setShowApiKey((current) => !current)}
+                    type="button"
+                  >
+                    {showApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
               </Field>
-            </section>
+            )}
+
+            <ProviderProxyFields
+              networkProxy={draft.networkProxy}
+              onChange={(networkProxy) =>
+                setDraft((current) => ({ ...current, networkProxy }))
+              }
+            />
 
             <section className="rounded-md border border-[var(--color-border)] p-3.5">
               <div className="mb-4 flex items-start gap-3">
@@ -1277,19 +1340,25 @@ function ProviderEditorModal({
                     文本节点只显示启用且包含“文本”模态的模型；图片生成节点只使用图片模型。
                   </p>
                 </div>
-                <Button
-                  disabled={modelFetchState === "loading"}
-                  onClick={fetchProviderModels}
-                  type="button"
-                  variant="outline"
-                >
-                  {modelFetchState === "loading" ? (
-                    <RefreshCw className="size-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="size-4" />
-                  )}
-                  拉取模型
-                </Button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button onClick={() => addModel()} type="button" variant="outline">
+                    <Plus className="size-4" />
+                    添加模型
+                  </Button>
+                  <Button
+                    disabled={modelFetchState === "loading"}
+                    onClick={fetchProviderModels}
+                    type="button"
+                    variant="outline"
+                  >
+                    {modelFetchState === "loading" ? (
+                      <RefreshCw className="size-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="size-4" />
+                    )}
+                    拉取模型
+                  </Button>
+                </div>
               </div>
               {modelFetchMessage ? (
                 <p
@@ -1420,7 +1489,7 @@ function ProviderEditorModal({
           </Button>
           <Button
             className="min-w-28 bg-zinc-950 text-white hover:bg-zinc-800 disabled:bg-zinc-400"
-            disabled={providerSaveState === "saving"}
+            disabled={providerSaveState === "saving" || Boolean(proxyUrlError)}
             onClick={() => void saveProvider()}
             type="button"
           >
@@ -1476,6 +1545,168 @@ function Select({
         ))}
       </select>
       <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
+    </div>
+  );
+}
+
+function ProviderProxyFields({
+  networkProxy,
+  onChange,
+}: {
+  networkProxy: NetworkProxyConfig;
+  onChange: (value: NetworkProxyConfig) => void;
+}) {
+  const proxyUrlError =
+    networkProxy.mode === "custom"
+      ? validateProxyUrl(networkProxy.url)
+      : "";
+
+  return (
+    <section className="space-y-4 rounded-md border border-[var(--color-border)] p-3.5">
+      <div>
+        <h3 className="text-base font-medium text-[var(--color-text-primary)]">
+          网络代理
+        </h3>
+        <p className="text-sm text-[var(--color-text-tertiary)]">
+          仅应用于当前服务商的模型、图片及模型列表请求。
+        </p>
+      </div>
+      <div className="space-y-4">
+        <Field label="连接方式">
+          <Select
+            onChange={(value) =>
+              onChange({
+                ...networkProxy,
+                mode: value as NetworkProxyConfig["mode"],
+              })
+            }
+            options={NETWORK_PROXY_MODE_OPTIONS}
+            value={networkProxy.mode}
+          />
+        </Field>
+
+        {networkProxy.mode === "environment" ? (
+          <p className="rounded-md bg-[var(--color-surface-container-low)] px-3 py-2.5 text-sm text-[var(--color-text-secondary)]">
+            按顺序读取 HTTPS_PROXY、HTTP_PROXY、ALL_PROXY 及 NO_PROXY 环境变量。
+          </p>
+        ) : null}
+
+        {networkProxy.mode === "direct" ? (
+          <p className="rounded-md bg-[var(--color-surface-container-low)] px-3 py-2.5 text-sm text-[var(--color-text-secondary)]">
+            当前服务商始终直连，不使用代理。
+          </p>
+        ) : null}
+
+        {networkProxy.mode === "custom" ? (
+          <>
+            <Field label="代理地址" required>
+              <Input
+                onChange={(event) =>
+                  onChange({ ...networkProxy, url: event.target.value })
+                }
+                placeholder="例如：http://127.0.0.1:7890"
+                spellCheck={false}
+                value={networkProxy.url}
+              />
+              {proxyUrlError ? (
+                <p className="mt-1.5 text-xs text-red-600">{proxyUrlError}</p>
+              ) : null}
+            </Field>
+            <Field label="直连地址">
+              <Input
+                onChange={(event) =>
+                  onChange({ ...networkProxy, noProxy: event.target.value })
+                }
+                placeholder="localhost,127.0.0.1,::1"
+                spellCheck={false}
+                value={networkProxy.noProxy}
+              />
+              <p className="mt-1.5 text-xs text-[var(--color-text-tertiary)]">
+                使用英文逗号分隔；localhost、127.0.0.1 和 ::1 始终直连。
+              </p>
+            </Field>
+          </>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function ProviderProxyModal({
+  onClose,
+  onSave,
+  provider,
+}: {
+  onClose: () => void;
+  onSave: (provider: ModelProviderConfig) => Promise<ModelProviderConfig>;
+  provider: ModelProviderConfig;
+}) {
+  const [draft, setDraft] = useState(provider);
+  const [saveState, setSaveState] = useState<
+    "idle" | "saving" | "saved" | "failed"
+  >("idle");
+  const proxyUrlError =
+    draft.networkProxy.mode === "custom"
+      ? validateProxyUrl(draft.networkProxy.url)
+      : "";
+
+  async function save() {
+    setSaveState("saving");
+    try {
+      const saved = await onSave(draft);
+      setDraft(saved);
+      setSaveState("saved");
+      window.setTimeout(onClose, 500);
+    } catch {
+      setSaveState("failed");
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/45 px-6">
+      <div className="zenme-shadow-overlay w-full max-w-lg overflow-hidden rounded-xl bg-white">
+        <header className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
+          <div>
+            <h2 className="text-lg font-medium text-[var(--color-text-primary)]">
+              {provider.name} 代理设置
+            </h2>
+            <p className="mt-0.5 text-xs text-[var(--color-text-tertiary)]">
+              浏览器中的授权页面仍遵循浏览器自身网络设置。
+            </p>
+          </div>
+          <button
+            className="flex size-9 items-center justify-center rounded-full text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-container-low)]"
+            onClick={onClose}
+            type="button"
+          >
+            <X className="size-5" />
+          </button>
+        </header>
+        <div className="p-5">
+          <ProviderProxyFields
+            networkProxy={draft.networkProxy}
+            onChange={(networkProxy) =>
+              setDraft((current) => ({ ...current, networkProxy }))
+            }
+          />
+        </div>
+        <footer className="flex items-center justify-end gap-3 border-t border-[var(--color-border)] px-5 py-4">
+          {saveState === "failed" ? (
+            <span className="mr-auto text-sm text-red-600">保存失败</span>
+          ) : null}
+          <Button onClick={onClose} type="button" variant="outline">
+            取消
+          </Button>
+          <Button
+            className="bg-[#96573f] text-white hover:bg-[#854b36]"
+            disabled={saveState === "saving" || Boolean(proxyUrlError)}
+            onClick={() => void save()}
+            type="button"
+          >
+            {saveState === "saving" ? "保存中..." : "保存"}
+          </Button>
+        </footer>
+      </div>
     </div>
   );
 }
@@ -1591,6 +1822,19 @@ function LocalDataSettings({
   );
 }
 
+function validateProxyUrl(value: string) {
+  if (!value.trim()) return "请输入代理地址。";
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return "仅支持 HTTP 或 HTTPS 代理地址。";
+    }
+    return "";
+  } catch {
+    return "代理地址格式无效。";
+  }
+}
+
 function SavePolicySettings({
   autoSaveIntervalMs,
   saveSettings,
@@ -1639,27 +1883,6 @@ function SavePolicySettings({
   );
 }
 
-function createEmptyProvider(): ModelProviderConfig {
-  return {
-    id: crypto.randomUUID(),
-    name: "新服务商",
-    note: "",
-    baseUrl: "",
-    apiFormat: "openai",
-    authType: "bearer",
-    apiKey: "",
-    enabled: true,
-    isDefault: false,
-    modelMapping: {
-      main: "",
-      image: "",
-    },
-    models: [],
-    contextWindows: {},
-    modelModalities: {},
-  };
-}
-
 function collectProviderModalities(provider: ModelProviderConfig) {
   return Array.from(
     new Set(
@@ -1685,6 +1908,20 @@ function getProviderModelSummary(provider: ModelProviderConfig) {
 function getApiFormatLabel(value: ModelProviderApiFormat) {
   if (value === "openai_oauth") return "ChatGPT OAuth";
   return API_FORMAT_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
+function getProviderProtocolSummary(preset: ModelProviderPresetId) {
+  if (preset === "zhipu") return "Zhipu GLM · Bearer Token";
+  if (preset === "volcengine_agent_plan") {
+    return "Responses API / Seedream · Bearer Token";
+  }
+  if (preset === "openrouter") {
+    return "OpenRouter Images / Chat · Bearer Token";
+  }
+  if (preset === "ollama") {
+    return "OpenAI Chat Completions · 本机无需认证";
+  }
+  return "通用兼容接口";
 }
 
 function getModalityLabel(value: ModelModality) {

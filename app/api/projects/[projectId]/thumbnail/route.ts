@@ -1,7 +1,11 @@
 import fs from "node:fs/promises";
 import { NextResponse } from "next/server";
 
-import { getLocalProjectThumbnailPath } from "@/lib/local/project-repository";
+import {
+  getLocalProjectThumbnailPath,
+  saveLocalProjectThumbnail,
+} from "@/lib/local/project-repository";
+import { MAX_CANVAS_THUMBNAIL_BYTES } from "@/lib/local/canvas-validation";
 
 export async function GET(
   _request: Request,
@@ -18,5 +22,32 @@ export async function GET(
     });
   } catch {
     return NextResponse.json({ error: "缩略图不存在" }, { status: 404 });
+  }
+}
+
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ projectId: string }> },
+) {
+  try {
+    if (request.headers.get("content-type") !== "image/webp") {
+      return NextResponse.json(
+        { error: "缩略图格式无效" },
+        { status: 400 },
+      );
+    }
+    const bytes = Buffer.from(await request.arrayBuffer());
+    if (!bytes.length || bytes.length > MAX_CANVAS_THUMBNAIL_BYTES) {
+      return NextResponse.json(
+        { error: "缩略图大小无效" },
+        { status: 400 },
+      );
+    }
+
+    const { projectId } = await params;
+    await saveLocalProjectThumbnail({ projectId, thumbnail: bytes });
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json({ error: "缩略图保存失败" }, { status: 500 });
   }
 }

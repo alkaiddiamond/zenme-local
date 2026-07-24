@@ -13,6 +13,7 @@ import {
   NodeTargetHandle,
 } from "@/components/zenme/node-ui";
 import { renderHighlightedCode } from "@/components/zenme/nodes/renderers/code-highlight";
+import { writeTextToClipboard } from "@/lib/clipboard";
 
 const CODE_LANGUAGE_OPTIONS = [
   { label: "Python", value: "python" },
@@ -85,7 +86,7 @@ export function CodeNode({ data, id, selected }: NodeProps) {
       return;
     }
 
-    void navigator.clipboard?.writeText(value);
+    void writeTextToClipboard(value);
   }
 
   return (

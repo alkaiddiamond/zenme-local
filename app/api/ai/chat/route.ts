@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 import { resolveAiModel, validateChatBody } from "@/lib/ai/request-policy";
 import {
+  getAllowedProviderModelValues,
+  resolveProviderModelSelection,
+} from "@/lib/ai/provider-model-resolution";
+import {
   createOpenAiAuthHeaders,
   ensureFreshOpenAiTokens,
   RESPONSES_URL,
@@ -10,10 +14,9 @@ import { openAiResponsesToChatStream } from "@/lib/ai/openai-responses-stream";
 import { normalizeStreamTokenUsage } from "@/lib/ai/openai-responses-stream";
 import { observeChatUsageStream } from "@/lib/ai/chat-usage-stream";
 import { checkRateLimit, getClientIp } from "@/lib/api/rate-limit";
-import { normalizeProviderBaseUrl } from "@/lib/api/provider-url";
+import { normalizeProviderApiBaseUrl } from "@/lib/api/provider-url";
 import { getProxyFetchOptions } from "@/lib/api/proxy-fetch";
 import {
-  getEnabledProviderModels,
   getLocalSettings,
   type ZenmeLocalSettings,
   type ModelProviderConfig,
@@ -26,7 +29,7 @@ type ChatMessage = {
 };
 
 const DEFAULT_SYSTEM_PROMPT =
-  "你是 Zenme 的创作助手。用户在一个以项目为中心的无限画布上收集资料、组织想法并推进创作。请基于用户提供的项目上下文和节点内容，帮助用户梳理资料、提炼结构、生成提纲、回答问题或推动下一步。回答聚焦当前项目目标，简洁有用。";
+  "你是 Zenme 的创作助手。用户在一个以项目为中心的无限画布上收集资料、组织想法并推进创作。请基于用户提供的项目上下文和节点内容，帮助用户梳理资料、提炼结构、生成提纲、回答问题或推动下一步。回答聚焦当前项目目标，简洁有用。如果当前请求涉及新闻、赛程、政策、价格、人物职务等可能变化的信息，并且已提供网页搜索工具，应先搜索核实再回答，不要仅依赖模型记忆。";
 const AI_PROVIDER_ERROR_MESSAGE = "模型调用失败，请稍后重试";
 
 export async function POST(request: Request) {
@@ -62,7 +65,9 @@ export async function POST(request: Request) {
     }
 
     const settings = await getLocalSettings().catch(() => null);
-    const allowedModels = getConfiguredTextModels(settings);
+    const allowedModels = settings
+      ? getAllowedProviderModelValues(settings.modelProviders, "text")
+      : [];
     const validationError = validateChatBody(body, allowedModels);
     if (validationError) {
       return NextResponse.json({ error: validationError }, { status: 400 });
@@ -113,7 +118,10 @@ export async function POST(request: Request) {
       }).catch(() => undefined);
 
     let responseBody: ReadableStream<Uint8Array>;
-    if (providerConfig.apiFormat === "openai_oauth") {
+    if (
+      providerConfig.apiFormat === "openai_oauth" ||
+      providerConfig.apiFormat === "volcengine_agent_plan"
+    ) {
       responseBody = openAiResponsesToChatStream(upstream.body, { onUsage: recordUsage });
     } else if (providerConfig.apiFormat === "anthropic") {
       const usage = normalizeStreamTokenUsage(
@@ -149,33 +157,35 @@ type ChatProviderConfig =
       baseUrl: string;
       model: string;
       name: string;
+      networkProxy: ModelProviderConfig["networkProxy"];
     }
   | { error: string };
 
 function resolveChatProviderConfig(
-  model: string,
+  modelReference: string,
   settings: ZenmeLocalSettings | null,
 ): ChatProviderConfig {
-  const provider =
-    settings?.modelProviders.find(
-      (item) =>
-        item.enabled &&
-        getEnabledProviderModels(item, "text").some(
-          (providerModel) => providerModel.id === model,
-        ),
-    );
+  const selection = settings
+    ? resolveProviderModelSelection(
+        modelReference,
+        settings.modelProviders,
+        "text",
+      )
+    : null;
+  const provider = selection?.provider;
+  const model = selection?.modelId ?? modelReference;
   const providerBaseUrl = provider?.baseUrl?.trim();
   const providerApiKey = provider?.apiKey?.trim();
   const providerName = provider?.name?.trim() || "所选模型服务商";
-  const baseUrl = normalizeProviderBaseUrl(
+  const baseUrl = normalizeProviderApiBaseUrl(
     getProviderEnvBaseUrl(provider) ||
       providerBaseUrl ||
       "https://open.bigmodel.cn/api/paas/v4",
+    provider?.apiFormat,
   );
-  const apiKey =
-    process.env.ZHIPU_API_KEY?.trim() ||
-    providerApiKey ||
-    getProviderEnvApiKey(provider);
+  const apiKey = provider
+    ? providerApiKey || getProviderEnvApiKey(provider)
+    : process.env.ZHIPU_API_KEY?.trim();
 
   if (!baseUrl) {
     return { error: `缺少 ${providerName} 的接口地址，请到设置 > 模型配置中补全。` };
@@ -195,24 +205,14 @@ function resolveChatProviderConfig(
     baseUrl,
     model,
     name: providerName,
+    networkProxy: provider?.networkProxy ?? {
+      mode: "environment",
+      url: "",
+      noProxy: "localhost,127.0.0.1,::1",
+    },
   };
 }
 
-function getConfiguredTextModels(settings: ZenmeLocalSettings | null) {
-  const modelIds = new Set<string>();
-
-  for (const provider of settings?.modelProviders ?? []) {
-    if (!provider.enabled) {
-      continue;
-    }
-
-    for (const model of getEnabledProviderModels(provider, "text")) {
-      modelIds.add(model.id);
-    }
-  }
-
-  return Array.from(modelIds);
-}
 
 function getProviderEnvApiKey(provider?: ModelProviderConfig) {
   if (!provider) {
@@ -224,12 +224,18 @@ function getProviderEnvApiKey(provider?: ModelProviderConfig) {
   if (provider.apiFormat === "zhipu") {
     return process.env.ZHIPU_API_KEY?.trim();
   }
+  if (provider.apiFormat === "volcengine_agent_plan") {
+    return process.env.VOLCENGINE_AGENT_PLAN_API_KEY?.trim();
+  }
   return undefined;
 }
 
 function getProviderEnvBaseUrl(provider?: ModelProviderConfig) {
   if (provider?.apiFormat === "zhipu") {
     return process.env.ZHIPU_BASE_URL?.trim();
+  }
+  if (provider?.apiFormat === "volcengine_agent_plan") {
+    return process.env.VOLCENGINE_AGENT_PLAN_BASE_URL?.trim();
   }
   return undefined;
 }
@@ -266,20 +272,11 @@ async function fetchProviderChatCompletion(input: {
           "Content-Type": "application/json",
           ...createOpenAiAuthHeaders(tokens),
         },
-        body: JSON.stringify({
-          model: input.provider.model,
-          instructions: input.systemContent,
-          input: input.messages
-            .filter((message) => message.role !== "system")
-            .map((message) => ({
-              type: "message",
-              role: message.role,
-              content: message.content,
-            })),
-          stream: true,
-          store: false,
-        }),
-        ...getProxyFetchOptions(RESPONSES_URL),
+        body: JSON.stringify(createOpenAiOAuthRequestBody(input)),
+        ...getProxyFetchOptions(
+          RESPONSES_URL,
+          input.provider.networkProxy,
+        ),
       });
     }
 
@@ -298,6 +295,10 @@ async function fetchProviderChatCompletion(input: {
           stream: false,
           system: input.systemContent,
         }),
+        ...getProxyFetchOptions(
+          input.provider.baseUrl,
+          input.provider.networkProxy,
+        ),
       });
       if (!response.ok) return response;
       const payload = (await response.json()) as {
@@ -309,6 +310,20 @@ async function fetchProviderChatCompletion(input: {
         .map((item) => item.text)
         .join("");
       return createTextSseResponse(content, payload.usage);
+    }
+
+    if (input.provider.apiFormat === "volcengine_agent_plan") {
+      return await fetch(`${input.provider.baseUrl}/responses`, {
+        method: "POST",
+        headers: createProviderHeaders(input.provider),
+        body: JSON.stringify(
+          createVolcengineAgentPlanResponsesRequestBody(input),
+        ),
+        ...getProxyFetchOptions(
+          input.provider.baseUrl,
+          input.provider.networkProxy,
+        ),
+      });
     }
 
     return await fetch(`${input.provider.baseUrl}/chat/completions`, {
@@ -323,6 +338,10 @@ async function fetchProviderChatCompletion(input: {
         stream: true,
         stream_options: { include_usage: true },
       }),
+      ...getProxyFetchOptions(
+        input.provider.baseUrl,
+        input.provider.networkProxy,
+      ),
     });
   } catch (error) {
     console.warn("[Zenme AI] provider request threw", {
@@ -335,6 +354,47 @@ async function fetchProviderChatCompletion(input: {
       error: `${input.provider.name} 调用 ${input.provider.model} 失败，无法连接服务商，请检查接口地址或网络。`,
     };
   }
+}
+
+export function createVolcengineAgentPlanResponsesRequestBody(input: {
+  messages: ChatMessage[];
+  provider: { model: string };
+  systemContent: string;
+}) {
+  return {
+    model: input.provider.model,
+    instructions: input.systemContent,
+    input: input.messages
+      .filter((message) => message.role !== "system")
+      .map((message) => ({
+        type: "message",
+        role: message.role,
+        content: message.content,
+      })),
+    stream: true,
+    store: false,
+  };
+}
+
+export function createOpenAiOAuthRequestBody(input: {
+  messages: ChatMessage[];
+  provider: { model: string };
+  systemContent: string;
+}) {
+  return {
+    model: input.provider.model,
+    instructions: input.systemContent,
+    input: input.messages
+      .filter((message) => message.role !== "system")
+      .map((message) => ({
+        type: "message",
+        role: message.role,
+        content: message.content,
+      })),
+    stream: true,
+    store: false,
+    tools: [{ type: "web_search" as const }],
+  };
 }
 
 function createTextSseResponse(content: string, usage?: Record<string, unknown>) {

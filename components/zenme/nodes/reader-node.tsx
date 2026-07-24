@@ -25,7 +25,7 @@ export function ReaderNode({ data, id, selected }: NodeProps) {
         <NodeTargetHandle visible={Boolean(nodeData.hasIncomingEdge)} />
         <NodeEdgeSourceHandle visible={Boolean(nodeData.hasOutgoingEdge)} />
         <NodeContextTargetHandle />
-        <div className="mb-3 flex items-center gap-2 text-xs font-medium text-zinc-500">
+        <div className="zenme-node-title-bar mb-3 flex items-center gap-2 text-xs font-medium text-zinc-500">
           <span className="zenme-node-title-icon-hitbox">
             <BookOpen className="size-4" />
           </span>
@@ -80,7 +80,7 @@ export function ReaderNode({ data, id, selected }: NodeProps) {
           />
         ) : (
           <div className="zenme-shadow-node h-[240px] w-[360px] rounded-xl border border-zinc-200 bg-white p-4">
-            <div className="mb-3 flex items-center gap-2 text-xs font-medium text-zinc-500">
+            <div className="zenme-node-title-bar mb-3 flex items-center gap-2 text-xs font-medium text-zinc-500">
               <span className="zenme-node-title-icon-hitbox">
                 <BookOpen className="size-4" />
               </span>

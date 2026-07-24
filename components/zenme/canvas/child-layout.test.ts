@@ -77,7 +77,7 @@ describe("connected child layout helper", () => {
         flowPosition: { x: 400, y: 300 },
         kind: "text",
       }),
-    ).toEqual({ x: 400, y: 170 });
+    ).toEqual({ x: 400, y: 212 });
     expect(
       getConnectedPlaceholderPosition({
         flowPosition: { x: 400, y: 300 },

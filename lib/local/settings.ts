@@ -1,6 +1,11 @@
 import { getZenmeDataDir } from "@/lib/local/data-dir";
 import { readJsonFile, writeJsonFile } from "@/lib/local/atomic-json";
 import { resolveInside } from "@/lib/local/path-safety";
+import {
+  createOpenRouterProvider,
+  createVolcengineAgentPlanProvider,
+  createZhipuProvider,
+} from "@/lib/ai/provider-presets";
 
 export type ZenmeLocalSettings = {
   version: 1;
@@ -13,11 +18,21 @@ export type ZenmeLocalSettings = {
   modelProviders: ModelProviderConfig[];
 };
 
+export type NetworkProxyMode = "environment" | "custom" | "direct";
+
+export type NetworkProxyConfig = {
+  mode: NetworkProxyMode;
+  url: string;
+  noProxy: string;
+};
+
 export type ModelProviderApiFormat =
   | "openai"
   | "openai_oauth"
   | "anthropic"
   | "openrouter"
+  | "ollama"
+  | "volcengine_agent_plan"
   | "zhipu"
   | "custom";
 
@@ -57,6 +72,7 @@ export type ModelProviderConfig = {
   models: ModelConfig[];
   contextWindows: Record<string, number>;
   modelModalities: Record<string, ModelModality[]>;
+  networkProxy: NetworkProxyConfig;
 };
 
 export function createDefaultLocalSettings(dataDir = getZenmeDataDir()): ZenmeLocalSettings {
@@ -132,7 +148,57 @@ function normalizeLocalSettings(
     modelProviders: normalizeModelProviders(
       settings.modelProviders,
       defaults.modelProviders,
+      normalizeNetworkProxy(
+        (settings as Partial<ZenmeLocalSettings> & {
+          networkProxy?: unknown;
+        }).networkProxy,
+        createDefaultNetworkProxy(),
+      ),
     ),
+  };
+}
+
+export function createDefaultNetworkProxy(): NetworkProxyConfig {
+  return {
+    mode: "environment",
+    url: "",
+    noProxy: "localhost,127.0.0.1,::1",
+  };
+}
+
+function normalizeNetworkProxy(
+  value: unknown,
+  defaults: NetworkProxyConfig,
+): NetworkProxyConfig {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return defaults;
+  }
+  const proxy = value as Partial<NetworkProxyConfig>;
+  const mode =
+    proxy.mode === "custom" ||
+    proxy.mode === "direct" ||
+    proxy.mode === "environment"
+      ? proxy.mode
+      : defaults.mode;
+  const rawUrl = typeof proxy.url === "string" ? proxy.url.trim() : "";
+  let url = "";
+  if (rawUrl) {
+    try {
+      const parsed = new URL(rawUrl);
+      if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+        url = parsed.toString().replace(/\/$/, "");
+      }
+    } catch {
+      url = "";
+    }
+  }
+  return {
+    mode,
+    url,
+    noProxy:
+      typeof proxy.noProxy === "string"
+        ? proxy.noProxy.slice(0, 2_000)
+        : defaults.noProxy,
   };
 }
 
@@ -142,68 +208,8 @@ function createDefaultModelProviders(): ModelProviderConfig[] {
 
   return [
     createChatGptProvider(),
-    {
-      id: "zhipu-glm",
-      name: "Zhipu GLM",
-      note: "智谱 GLM 文本模型服务商",
-      baseUrl: "https://open.bigmodel.cn/api/paas/v4",
-      apiFormat: "zhipu",
-      authType: "bearer",
-      apiKey: zhipuApiKey,
-      enabled: true,
-      isDefault: false,
-      modelMapping: {
-        main: "glm-4.5",
-      },
-      models: [
-        { id: "glm-4.5", alias: "GLM 4.5", enabled: true, contextWindow: 128_000, modalities: ["text", "tool"] },
-        { id: "glm-4.5-air", alias: "GLM 4.5 Air", enabled: true, contextWindow: 128_000, modalities: ["text"] },
-        { id: "glm-5-turbo", alias: "GLM 5 Turbo", enabled: true, contextWindow: 200_000, modalities: ["text", "tool"] },
-        { id: "glm-5.2", alias: "GLM 5.2", enabled: true, contextWindow: 1_000_000, modalities: ["text", "vision", "tool"] },
-      ],
-      contextWindows: {
-        "glm-4.5": 128_000,
-        "glm-4.5-air": 128_000,
-        "glm-5-turbo": 200_000,
-        "glm-5.2": 1_000_000,
-      },
-      modelModalities: {
-        "glm-4.5": ["text", "tool"],
-        "glm-4.5-air": ["text"],
-        "glm-5-turbo": ["text", "tool"],
-        "glm-5.2": ["text", "vision", "tool"],
-      },
-    },
-    {
-      id: "openrouter",
-      name: "OpenRouter",
-      note: "用于图片编辑和多模态模型",
-      baseUrl: "https://openrouter.ai/api/v1",
-      apiFormat: "openrouter",
-      authType: "bearer",
-      apiKey: openRouterApiKey,
-      enabled: true,
-      isDefault: false,
-      modelMapping: {
-        image: "google/gemini-3.1-flash-image-preview",
-        main: "",
-      },
-      models: [
-        {
-          id: "google/gemini-3.1-flash-image-preview",
-          alias: "Nano Banana 2",
-          enabled: true,
-          contextWindow: 128_000,
-          modalities: ["image", "vision"],
-        },
-      ],
-      contextWindows: {
-        "google/gemini-3.1-flash-image-preview": 128_000,
-      },
-      modelModalities: {
-        "google/gemini-3.1-flash-image-preview": ["image", "vision"],
-      },
-    },
+    createZhipuProvider(zhipuApiKey),
+    createOpenRouterProvider(openRouterApiKey),
   ];
 }
 
@@ -224,19 +230,21 @@ export function createChatGptProvider(): ModelProviderConfig {
     models: [],
     contextWindows: {},
     modelModalities: {},
+    networkProxy: createDefaultNetworkProxy(),
   };
 }
 
 function normalizeModelProviders(
   value: unknown,
   defaults: ModelProviderConfig[],
+  legacyNetworkProxy: NetworkProxyConfig,
 ): ModelProviderConfig[] {
   if (!Array.isArray(value)) {
     return defaults;
   }
 
   const providers = value
-    .map(normalizeModelProvider)
+    .map((provider) => normalizeModelProvider(provider, legacyNetworkProxy))
     .filter((provider): provider is ModelProviderConfig => Boolean(provider));
 
   if (providers.length === 0) {
@@ -275,7 +283,10 @@ function withChatGptImageCapability(model: ModelConfig): ModelConfig {
   return { ...model, modalities: [...model.modalities, "image"] };
 }
 
-function normalizeModelProvider(value: unknown): ModelProviderConfig | null {
+function normalizeModelProvider(
+  value: unknown,
+  fallbackNetworkProxy: NetworkProxyConfig,
+): ModelProviderConfig | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
@@ -301,12 +312,33 @@ function normalizeModelProvider(value: unknown): ModelProviderConfig | null {
   };
   const contextWindows = normalizeContextWindows(provider.contextWindows);
   const modelModalities = normalizeModelModalities(provider.modelModalities);
-  const models = normalizeModelConfigs(
+  let models = normalizeModelConfigs(
     provider.models,
     normalizedModelMapping,
     contextWindows,
     modelModalities,
   );
+
+  const baseUrl =
+    typeof provider.baseUrl === "string" ? provider.baseUrl : "";
+  const apiFormat = isVolcengineAgentPlanBaseUrl(baseUrl)
+    ? "volcengine_agent_plan"
+    : isOllamaBaseUrl(baseUrl)
+      ? "ollama"
+      : normalizeApiFormat(provider.apiFormat);
+  const isLegacyAgentPlan =
+    apiFormat === "volcengine_agent_plan" &&
+    provider.apiFormat !== "volcengine_agent_plan";
+  if (isLegacyAgentPlan && models.length === 0) {
+    models = createVolcengineAgentPlanProvider().models;
+  }
+  const agentPlanDefaults = createVolcengineAgentPlanProvider();
+  const nextModelMapping = isLegacyAgentPlan
+    ? {
+        main: normalizedModelMapping.main || agentPlanDefaults.modelMapping.main,
+        image: normalizedModelMapping.image || agentPlanDefaults.modelMapping.image,
+      }
+    : normalizedModelMapping;
 
   return {
     id,
@@ -314,18 +346,22 @@ function normalizeModelProvider(value: unknown): ModelProviderConfig | null {
       ? provider.name
       : "未命名服务商",
     note: typeof provider.note === "string" ? provider.note : "",
-    baseUrl: typeof provider.baseUrl === "string" ? provider.baseUrl : "",
-    apiFormat: normalizeApiFormat(provider.apiFormat),
+    baseUrl,
+    apiFormat,
     authType: normalizeAuthType(provider.authType),
     apiKey: typeof provider.apiKey === "string" ? provider.apiKey : "",
     enabled: provider.enabled !== false,
     isDefault: false,
     modelMapping: {
-      ...normalizedModelMapping,
+      ...nextModelMapping,
     },
     models,
     contextWindows: normalizeContextWindowsFromModels(contextWindows, models),
     modelModalities: normalizeModelModalitiesFromModels(modelModalities, models),
+    networkProxy: normalizeNetworkProxy(
+      provider.networkProxy,
+      fallbackNetworkProxy,
+    ),
   };
 }
 
@@ -335,12 +371,39 @@ function normalizeApiFormat(value: unknown): ModelProviderApiFormat {
     value === "openai_oauth" ||
     value === "anthropic" ||
     value === "openrouter" ||
+    value === "ollama" ||
+    value === "volcengine_agent_plan" ||
     value === "zhipu" ||
     value === "custom"
   ) {
     return value;
   }
   return "openai";
+}
+
+function isVolcengineAgentPlanBaseUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (
+      url.hostname.toLowerCase() === "ark.cn-beijing.volces.com" &&
+      /^\/api\/plan(?:\/v3)?\/?$/i.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isOllamaBaseUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return (
+      (url.hostname === "127.0.0.1" || url.hostname === "localhost") &&
+      url.port === "11434" &&
+      /^\/v1\/?$/i.test(url.pathname)
+    );
+  } catch {
+    return false;
+  }
 }
 
 function normalizeAuthType(value: unknown): ModelProviderAuthType {

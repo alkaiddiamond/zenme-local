@@ -41,3 +41,18 @@ export function createCanvasZoomViewportAtPoint(
     zoom: nextZoom,
   };
 }
+
+export function createPreservedZoomNodeFocusOptions(
+  nodeId: string,
+  currentZoom: number,
+) {
+  const zoom = clampCanvasZoom(currentZoom);
+
+  return {
+    duration: 220,
+    maxZoom: zoom,
+    minZoom: zoom,
+    nodes: [{ id: nodeId }],
+    padding: 0.3,
+  };
+}

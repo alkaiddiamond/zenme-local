@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { requestTextGenerationResponse } from "./text-generation-request";
+import {
+  DEFAULT_TEXT_GENERATION_PROMPT,
+  requestTextGenerationResponse,
+  resolveTextGenerationPrompt,
+} from "./text-generation-request";
 
 function streamFromText(text: string) {
   const encoder = new TextEncoder();
@@ -20,6 +24,30 @@ function streamFromText(text: string) {
 }
 
 describe("text generation request", () => {
+  it("uses an implicit continuation prompt when the composer is empty", async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      body: streamFromText("续写结果"),
+      ok: true,
+    });
+
+    expect(resolveTextGenerationPrompt("   ")).toBe(
+      DEFAULT_TEXT_GENERATION_PROMPT,
+    );
+
+    await requestTextGenerationResponse({
+      context: "当前节点内容",
+      fetcher,
+      model: "deepseek-chat",
+      prompt: "",
+    });
+
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
+      context: "当前节点内容",
+      messages: [{ role: "user", content: DEFAULT_TEXT_GENERATION_PROMPT }],
+      model: "deepseek-chat",
+    });
+  });
+
   it("posts prompt, model and context to the AI chat API", async () => {
     const body = streamFromText("生成结果");
     const fetcher = vi.fn().mockResolvedValue({ body, ok: true });

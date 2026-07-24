@@ -22,6 +22,7 @@ import {
   createModelOption,
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
+import { writeTextToClipboard } from "@/lib/clipboard";
 
 export type { AgentMessage } from "@/components/zenme/agent-types";
 
@@ -71,7 +72,10 @@ export function AgentPanel({
 
   async function copyMessage(content: string) {
     try {
-      await navigator.clipboard.writeText(content);
+      const copied = await writeTextToClipboard(content);
+      if (!copied) {
+        throw new Error("Clipboard write failed");
+      }
     } catch {
       setError("复制失败，请检查浏览器权限");
     }

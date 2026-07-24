@@ -34,6 +34,7 @@ import {
 } from "@/components/zenme/nodes/image-edit-node";
 import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
 import { ImageTaskTiming } from "@/components/zenme/nodes/image-task-timing";
+import { ImageCameraControlPicker } from "@/components/zenme/nodes/image-camera-control-picker";
 import {
   createModelOption,
   useAiModelOptions,
@@ -50,9 +51,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   const nodeData = data as CanvasNodeData;
   const imageModelOptions = useAiModelOptions("image");
   const rememberedPreferences = getImageEditPreferences();
-  const isGeneratedImage = Boolean(
-    nodeData.imageGenerated || nodeData.imagePrompt,
-  );
+  const isGeneratedImage = Boolean(nodeData.imageGenerated);
   const [prompt, setPrompt] = useState(nodeData.imagePrompt ?? "");
   const [aspectRatio, setAspectRatio] = useState<string>(
     getImageEditAspectRatioOption(
@@ -64,6 +63,9 @@ export function ImageNode({ data, id, selected }: NodeProps) {
       nodeData.imageQuality ?? rememberedPreferences.quality,
     ).value,
   );
+  const [cameraControl, setCameraControl] = useState(
+    nodeData.imageCameraControl,
+  );
   const [model, setModel] = useState(
     nodeData.imageModel ??
       rememberedPreferences.modelId ??
@@ -72,12 +74,15 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
+  const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
+  const [isCameraPickerOpen, setIsCameraPickerOpen] = useState(false);
   const [referencePickerRequest, setReferencePickerRequest] = useState(0);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [detectedAspectRatio, setDetectedAspectRatio] = useState<number | undefined>(
     nodeData.imageAspectRatio,
   );
   const isEditing = isSubmitting || nodeData.imageStatus === "editing";
+  const isSubmissionLocked = isSubmitting || Boolean(nodeData.hasRunningGenerationChild);
   const composerScale = 1 / Math.max(zoom, 0.2);
   const composerStyle: CSSProperties = {
     top: `calc(100% + ${12 / Math.max(zoom, 0.2)}px)`,
@@ -112,6 +117,10 @@ export function ImageNode({ data, id, selected }: NodeProps) {
     if (!nodeData.imageQuality) return;
     setQuality(getImageEditQualityOption(nodeData.imageQuality).value);
   }, [nodeData.imageQuality]);
+
+  useEffect(() => {
+    setCameraControl(nodeData.imageCameraControl);
+  }, [nodeData.imageCameraControl]);
 
   useEffect(() => {
     if (nodeData.imageAspectRatio) setDetectedAspectRatio(nodeData.imageAspectRatio);
@@ -149,6 +158,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
 
   function syncPrompt() {
     nodeData.onUpdateImageNode?.(id, {
+      imageCameraControl: cameraControl,
       imageOutputAspectRatio: aspectRatio,
       imageModel: model,
       imagePrompt: prompt,
@@ -159,23 +169,23 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   async function submitImageEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextPrompt = prompt.trim();
-    if (!nextPrompt || isEditing) {
+    if (!nextPrompt || isSubmissionLocked) {
       return;
     }
 
     setIsSubmitting(true);
     nodeData.onUpdateImageNode?.(id, {
+      imageCameraControl: cameraControl,
       imageOutputAspectRatio: aspectRatio,
-      imageError: undefined,
       imageModel: model,
       imagePrompt: nextPrompt,
       imageQuality: quality,
-      imageStatus: "editing",
     });
 
     try {
       await nodeData.onSubmitImageNode?.(id, {
         aspectRatio,
+        cameraControl,
         model,
         prompt: nextPrompt,
         quality,
@@ -224,12 +234,17 @@ export function ImageNode({ data, id, selected }: NodeProps) {
       />
     ) : null;
 
-  if (isGeneratedImage) {
+  if (imageUrl) {
     return (
       <div className={`group relative h-full min-h-[190px] w-full min-w-[220px] ${isRenaming ? "zenme-node-renaming" : ""}`}>
+        <ImageTaskTiming
+          durationMs={nodeData.imageTaskDurationMs}
+          running={isEditing}
+          startedAt={nodeData.imageTaskStartedAt}
+        />
         {selected && !isRenaming ? imageControls : null}
         <EditableNodeTitle
-          fallbackTitle="图片生成"
+          fallbackTitle={isGeneratedImage ? "图片生成" : "图片"}
           icon={<ImageIcon className="size-4" />}
           onCommit={(title) => nodeData.onUpdateImageNode?.(id, { title })}
           onEditingChange={setIsRenaming}
@@ -247,15 +262,10 @@ export function ImageNode({ data, id, selected }: NodeProps) {
           onSubmit={submitImageEdit}
         >
           <div
-          className={`zenme-shadow-node relative h-full min-h-[190px] overflow-hidden rounded-xl border bg-zinc-950 ${
-            selected ? "border-zinc-100" : "border-zinc-800"
+          className={`zenme-shadow-node relative h-full min-h-[190px] overflow-hidden rounded-xl border bg-zinc-100 ${
+            selected ? "border-zinc-900" : "border-zinc-200"
           }`}
           >
-            <ImageTaskTiming
-              durationMs={nodeData.imageTaskDurationMs}
-              running={isEditing}
-              startedAt={nodeData.imageTaskStartedAt}
-            />
             {displayImageUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -278,7 +288,9 @@ export function ImageNode({ data, id, selected }: NodeProps) {
             ) : null}
             <div className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-white/10" />
           </div>
-          {selected && !isRenaming ? (
+          {(selected || isModelPickerOpen || isCameraPickerOpen) &&
+          !nodeData.isMultiSelection &&
+          !isRenaming ? (
             <div
               className="zenme-node-floating-control zenme-shadow-canvas nodrag nowheel absolute left-1/2 z-30 flex min-h-[220px] w-[640px] max-w-[calc(100vw-48px)] flex-col rounded-xl border border-zinc-200 bg-white p-3 text-zinc-950"
               onClick={(event) => event.stopPropagation()}
@@ -318,7 +330,11 @@ export function ImageNode({ data, id, selected }: NodeProps) {
                   event.preventDefault();
                   event.currentTarget.form?.requestSubmit();
                 }}
-                placeholder="继续描述想如何编辑这张图片"
+                placeholder={
+                  isGeneratedImage
+                    ? "继续描述想如何编辑这张图片"
+                    : "描述想如何编辑这张图片"
+                }
                 value={prompt}
               />
               {nodeData.imageError ? (
@@ -326,15 +342,16 @@ export function ImageNode({ data, id, selected }: NodeProps) {
                   {nodeData.imageError}
                 </p>
               ) : null}
-              {isEditing ? (
+              {isSubmissionLocked ? (
                 <div className="mt-2 flex items-center gap-2 px-1 text-xs text-zinc-500">
                   <Loader2 className="size-3.5 animate-spin" />
-                  {imageModelLabel} 正在重新编辑，旧结果会保留到新图完成
+                  {imageModelLabel} 正在编辑，原图会保留到新图完成
                 </div>
               ) : null}
               <div className="mt-auto flex items-end justify-between gap-3 pt-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <ZenmeModelPicker
+                    compact
                     icon={<Sparkles className="size-3.5" />}
                     model={model}
                     models={
@@ -347,6 +364,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
                       nodeData.onUpdateImageNode?.(id, { imageModel: nextModel });
                       void rememberImageEditPreferences({ modelId: nextModel });
                     }}
+                    onOpenChange={setIsModelPickerOpen}
                   />
                   <ImageEditSizePicker
                     aspectRatio={aspectRatioOption.value}
@@ -380,14 +398,24 @@ export function ImageNode({ data, id, selected }: NodeProps) {
                     quality={qualityOption.value}
                     qualityLabel={qualityOption.label}
                   />
+                  <ImageCameraControlPicker
+                    onChange={(nextCameraControl) => {
+                      setCameraControl(nextCameraControl);
+                      nodeData.onUpdateImageNode?.(id, {
+                        imageCameraControl: nextCameraControl,
+                      });
+                    }}
+                    onOpenChange={setIsCameraPickerOpen}
+                    value={cameraControl}
+                  />
                 </div>
                 <button
                   className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-                  disabled={isEditing || !prompt.trim()}
-                  title="重新编辑图片"
+                  disabled={isSubmissionLocked || !prompt.trim()}
+                  title={isGeneratedImage ? "重新编辑图片" : "编辑图片"}
                   type="submit"
                 >
-                  {isEditing ? (
+                  {isSubmissionLocked ? (
                     <Loader2 className="size-4 animate-spin" />
                   ) : (
                     <Send className="size-4" />
@@ -407,6 +435,11 @@ export function ImageNode({ data, id, selected }: NodeProps) {
 
   return (
     <div className={`group relative ${isRenaming ? "zenme-node-renaming" : ""}`} style={displaySize}>
+      <ImageTaskTiming
+        durationMs={nodeData.imageTaskDurationMs}
+        running={isEditing}
+        startedAt={nodeData.imageTaskStartedAt}
+      />
       {selected && !isRenaming ? imageControls : null}
       <EditableNodeTitle
         fallbackTitle="图片"
@@ -427,11 +460,6 @@ export function ImageNode({ data, id, selected }: NodeProps) {
           selected ? "border-zinc-900" : "border-zinc-200"
         }`}
       >
-        <ImageTaskTiming
-          durationMs={nodeData.imageTaskDurationMs}
-          running={isEditing}
-          startedAt={nodeData.imageTaskStartedAt}
-        />
         {displayImageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img

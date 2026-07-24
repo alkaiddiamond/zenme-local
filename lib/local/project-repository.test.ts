@@ -9,6 +9,7 @@ import {
   getLocalProject,
   listLocalProjects,
   saveLocalCanvasSnapshot,
+  saveLocalProjectThumbnail,
   updateLocalProjectName,
 } from "@/lib/local/project-repository";
 
@@ -50,14 +51,15 @@ describe("local project repository", () => {
       model: "glm-4.5",
     }, dataDir);
 
+    const updatedAt = new Date(Date.now() + 1_000).toISOString();
     await saveLocalCanvasSnapshot({
       projectId: project.id,
       snapshot: {
-        version: 2,
+        version: 3,
         nodes: [{ id: "node-1" }],
         edges: [],
         viewport: { x: 1, y: 2, zoom: 1.5 },
-        updatedAt: "2026-07-08T00:00:00.000Z",
+        updatedAt,
       },
     }, dataDir);
 
@@ -66,8 +68,67 @@ describe("local project repository", () => {
         nodes: [{ id: "node-1" }],
         viewport: { x: 1, y: 2, zoom: 1.5 },
       },
-      updated_at: "2026-07-08T00:00:00.000Z",
+      updated_at: updatedAt,
     });
+  });
+
+  it("never lets an older canvas snapshot overwrite a newer save", async () => {
+    const project = await createLocalProject({
+      name: "Ordered Canvas",
+      prompt: "",
+      model: "glm-4.5",
+    }, dataDir);
+    const projectCreatedAt = Date.parse(project.createdAt);
+    const staleUpdatedAt = new Date(projectCreatedAt + 5_000).toISOString();
+    const newestUpdatedAt = new Date(projectCreatedAt + 10_000).toISOString();
+
+    await saveLocalCanvasSnapshot({
+      projectId: project.id,
+      snapshot: {
+        version: 3,
+        nodes: [{ id: "new-node" }],
+        edges: [],
+        viewport: { x: 0, y: 0, zoom: 1 },
+        updatedAt: newestUpdatedAt,
+      },
+    }, dataDir);
+    await saveLocalCanvasSnapshot({
+      projectId: project.id,
+      snapshot: {
+        version: 3,
+        nodes: [{ id: "stale-node" }],
+        edges: [],
+        viewport: { x: 0, y: 0, zoom: 1 },
+        updatedAt: staleUpdatedAt,
+      },
+    }, dataDir);
+
+    await expect(getLocalCanvasSnapshot(project.id, dataDir)).resolves.toMatchObject({
+      snapshot: { nodes: [{ id: "new-node" }] },
+      updated_at: newestUpdatedAt,
+    });
+  });
+
+  it("updates the project thumbnail without rewriting the canvas snapshot", async () => {
+    const project = await createLocalProject({
+      name: "Thumbnail",
+      prompt: "",
+      model: "glm-4.5",
+    }, dataDir);
+    const before = await getLocalCanvasSnapshot(project.id, dataDir);
+
+    await saveLocalProjectThumbnail({
+      projectId: project.id,
+      thumbnail: Buffer.from("webp"),
+    }, dataDir);
+
+    await expect(getLocalCanvasSnapshot(project.id, dataDir)).resolves.toEqual(before);
+    await expect(
+      fs.readFile(
+        path.join(dataDir, "projects", project.id, "canvas", "thumbnail.webp"),
+        "utf8",
+      ),
+    ).resolves.toBe("webp");
   });
 
   it("migrates and rewrites legacy image edit snapshots on first read", async () => {
@@ -101,7 +162,7 @@ describe("local project repository", () => {
 
     await expect(getLocalCanvasSnapshot(project.id, dataDir)).resolves.toMatchObject({
       snapshot: {
-        version: 2,
+        version: 3,
         nodes: [{
           type: "imageGeneration",
           data: { kind: "imageGeneration", title: "图片生成" },
@@ -109,7 +170,7 @@ describe("local project repository", () => {
       },
     });
     const persisted = JSON.parse(await fs.readFile(snapshotPath, "utf8"));
-    expect(persisted.snapshot.version).toBe(2);
+    expect(persisted.snapshot.version).toBe(3);
     expect(JSON.stringify(persisted)).not.toContain("imageEdit\"");
   });
 });

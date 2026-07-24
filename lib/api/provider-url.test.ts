@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeProviderBaseUrl } from "./provider-url";
+import {
+  normalizeProviderApiBaseUrl,
+  normalizeProviderBaseUrl,
+} from "./provider-url";
 
 describe("normalizeProviderBaseUrl", () => {
   it("normalizes HTTP and HTTPS provider addresses", () => {
@@ -25,5 +28,29 @@ describe("normalizeProviderBaseUrl", () => {
     expect(() => normalizeProviderBaseUrl("https://example.com/v1?token=x")).toThrow(
       "不能包含查询参数或片段",
     );
+  });
+
+  it("normalizes the Volcengine Agent Plan console URL to its OpenAI v3 API", () => {
+    expect(
+      normalizeProviderApiBaseUrl(
+        "https://ark.cn-beijing.volces.com/api/plan",
+        "volcengine_agent_plan",
+      ),
+    ).toBe("https://ark.cn-beijing.volces.com/api/plan/v3");
+    expect(
+      normalizeProviderApiBaseUrl(
+        "https://ark.cn-beijing.volces.com/api/plan/v3",
+        "volcengine_agent_plan",
+      ),
+    ).toBe("https://ark.cn-beijing.volces.com/api/plan/v3");
+  });
+
+  it("keeps legacy OpenAI Agent Plan configurations compatible", () => {
+    expect(
+      normalizeProviderApiBaseUrl(
+        "https://ark.cn-beijing.volces.com/api/plan",
+        "openai",
+      ),
+    ).toBe("https://ark.cn-beijing.volces.com/api/plan/v3");
   });
 });

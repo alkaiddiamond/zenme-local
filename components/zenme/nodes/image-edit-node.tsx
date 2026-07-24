@@ -1,13 +1,12 @@
 "use client";
 
 import {
-  type CSSProperties,
   type FormEvent,
   useEffect,
   useRef,
   useState,
 } from "react";
-import { NodeResizer, type NodeProps, useViewport } from "@xyflow/react";
+import { NodeResizer, type NodeProps } from "@xyflow/react";
 import {
   Check,
   ChevronDown,
@@ -46,6 +45,7 @@ import {
 import { ZenmeModelPicker } from "@/components/zenme/visual-components";
 import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
 import { ImageTaskTiming } from "@/components/zenme/nodes/image-task-timing";
+import { ImageCameraControlPicker } from "@/components/zenme/nodes/image-camera-control-picker";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,7 +53,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 export function ImageGenerationNode({ data, id, selected }: NodeProps) {
-  const { zoom } = useViewport();
   const nodeData = data as CanvasNodeData;
   const imageModelOptions = useAiModelOptions("image");
   const rememberedPreferences = getImageEditPreferences();
@@ -68,6 +67,9 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
       nodeData.imageQuality ?? rememberedPreferences.quality,
     ).value,
   );
+  const [cameraControl, setCameraControl] = useState(
+    nodeData.imageCameraControl,
+  );
   const [model, setModel] = useState(
     nodeData.imageModel ??
       rememberedPreferences.modelId ??
@@ -78,13 +80,8 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
   const [isRenaming, setIsRenaming] = useState(false);
   const [referencePickerRequest, setReferencePickerRequest] = useState(0);
   const isEditing = isSubmitting || nodeData.imageStatus === "editing";
-  const showComposer = Boolean(selected && !isRenaming);
-  const composerScale = 1 / Math.max(zoom, 0.2);
-  const composerStyle: CSSProperties = {
-    top: `calc(100% + ${12 / Math.max(zoom, 0.2)}px)`,
-    transform: `translateX(-50%) scale(${composerScale})`,
-    transformOrigin: "top center",
-  };
+  const isSubmissionLocked = isSubmitting || Boolean(nodeData.hasRunningGenerationChild);
+  const isResultNode = Boolean(nodeData.imageGenerationResult);
   const aspectRatioOption = getImageEditAspectRatioOption(aspectRatio);
   const qualityOption = getImageEditQualityOption(quality);
   const imageModelId = model;
@@ -109,6 +106,10 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
   }, [nodeData.imageQuality]);
 
   useEffect(() => {
+    setCameraControl(nodeData.imageCameraControl);
+  }, [nodeData.imageCameraControl]);
+
+  useEffect(() => {
     const nextModel =
       nodeData.imageModel ??
       getImageEditPreferences().modelId ??
@@ -118,6 +119,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
 
   function syncPrompt() {
     nodeData.onUpdateImageNode?.(id, {
+      imageCameraControl: cameraControl,
       imageOutputAspectRatio: aspectRatio,
       imageModel: model,
       imagePrompt: prompt,
@@ -128,23 +130,23 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextPrompt = prompt.trim();
-    if (!nextPrompt || isEditing) {
+    if (!nextPrompt || isSubmissionLocked) {
       return;
     }
 
     setIsSubmitting(true);
     nodeData.onUpdateImageNode?.(id, {
+      imageCameraControl: cameraControl,
       imageOutputAspectRatio: aspectRatio,
-      imageError: undefined,
       imageModel: model,
       imagePrompt: nextPrompt,
       imageQuality: quality,
-      imageStatus: "editing",
     });
 
     try {
       await nodeData.onSubmitImageNode?.(id, {
         aspectRatio,
+        cameraControl,
         model,
         prompt: nextPrompt,
         quality,
@@ -156,6 +158,13 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
 
   return (
     <div className={`zenme-image-edit-node group relative h-full w-full ${isRenaming ? "zenme-node-renaming" : ""}`}>
+      {isResultNode ? (
+        <ImageTaskTiming
+          durationMs={nodeData.imageTaskDurationMs}
+          running={isEditing}
+          startedAt={nodeData.imageTaskStartedAt}
+        />
+      ) : null}
       <NodeTargetHandle
         revealOnHover={false}
         visible={Boolean(nodeData.hasIncomingEdge)}
@@ -171,48 +180,43 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
         onEditingChange={setIsRenaming}
         title={nodeData.title}
       />
-      <form
-        className="relative h-full min-h-[220px] w-full min-w-[420px] text-zinc-950"
-        onSubmit={submit}
-      >
-        <div
-          className={`zenme-shadow-node flex h-full min-h-[220px] items-center justify-center overflow-hidden rounded-xl border bg-white px-4 py-5 ${
-            selected ? "border-zinc-900" : "border-zinc-200"
-          }`}
-        >
-          <ImageTaskTiming
-            durationMs={nodeData.imageTaskDurationMs}
-            running={isEditing}
-            startedAt={nodeData.imageTaskStartedAt}
-          />
-          <div className="flex flex-col items-center gap-3 text-center text-zinc-400">
-            <ImageIcon className="size-12 stroke-[1.5]" />
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-zinc-500">
-                待生成图片
-              </p>
-              <p className="max-w-[320px] text-xs leading-5">
-                {showComposer
-                  ? "生成完成后，图片会显示在当前节点"
-                  : "选中节点后输入图片描述或参考图处理要求"}
-              </p>
-            </div>
-            {!showComposer && isEditing ? (
-              <div className="flex items-center gap-2 text-xs text-zinc-500">
-                <Loader2 className="size-3.5 animate-spin" />
-                正在生成图片...
-              </div>
-            ) : null}
-          </div>
-        </div>
-        {showComposer ? (
+      {isResultNode ? (
+        <div className="relative h-full min-h-[220px] w-full min-w-[420px] text-zinc-950">
           <div
-            className={`zenme-node-floating-control zenme-shadow-canvas nodrag nowheel absolute left-1/2 z-30 flex min-h-[220px] w-[640px] max-w-[calc(100vw-48px)] flex-col rounded-xl border bg-white p-3 ${
+            className={`zenme-shadow-node flex h-full min-h-[220px] items-center justify-center overflow-hidden rounded-xl border bg-white px-4 py-5 ${
               selected ? "border-zinc-900" : "border-zinc-200"
             }`}
-            onClick={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            style={composerStyle}
+          >
+            <div className="flex flex-col items-center gap-3 text-center text-zinc-400">
+              <ImageIcon className="size-12 stroke-[1.5]" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-zinc-500">
+                  {isEditing ? "正在生成图片" : "图片生成未完成"}
+                </p>
+                <p className="max-w-[320px] text-xs leading-5">
+                  {isEditing
+                    ? "生成完成后，图片会显示在当前节点"
+                    : nodeData.imageError ?? "请返回请求节点重新提交"}
+                </p>
+              </div>
+              {isEditing ? (
+                <div className="flex items-center gap-2 text-xs text-zinc-500">
+                  <Loader2 className="size-3.5 animate-spin" />
+                  正在生成图片...
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <form
+          className="relative h-full min-h-[176px] w-full min-w-[420px] text-zinc-950"
+          onSubmit={submit}
+        >
+          <div
+            className={`zenme-shadow-node flex h-full min-h-[176px] flex-col rounded-xl border bg-white p-3 ${
+              selected ? "border-zinc-900" : "border-zinc-200"
+            }`}
           >
             <ImageReferencePicker
               candidates={nodeData.imageReferenceCandidates ?? []}
@@ -224,7 +228,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
               required={false}
             />
             <textarea
-              className="zenme-text-ai-input min-h-24 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-6 text-zinc-900 outline-none placeholder:text-zinc-400"
+              className="zenme-text-ai-input nodrag nowheel min-h-10 flex-1 resize-none bg-transparent px-1 py-0.5 text-sm leading-5 text-zinc-900 outline-none placeholder:text-zinc-400"
               onBlur={syncPrompt}
               onChange={(event) => {
                 const value = event.target.value;
@@ -251,20 +255,21 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
               value={prompt}
             />
             {nodeData.imageError ? (
-              <p className="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-xs leading-5 text-red-600">
+              <p className="mt-1 rounded-md bg-red-50 px-2 py-1 text-xs leading-4 text-red-600">
                 {nodeData.imageError}
               </p>
             ) : null}
-            {isEditing ? (
-              <div className="mt-2 flex items-center gap-2 px-1 text-xs text-zinc-500">
+            {isSubmissionLocked ? (
+              <div className="mt-1 flex items-center gap-2 px-1 text-xs text-zinc-500">
                 <Loader2 className="size-3.5 animate-spin" />
                 {imageModelLabel} 正在生成图片...
               </div>
             ) : null}
 
-            <div className="mt-auto flex items-end justify-between gap-3 pt-3">
+            <div className="nodrag nowheel mt-auto flex items-end justify-between gap-3 pt-2">
               <div className="flex min-w-0 items-center gap-2">
                 <ZenmeModelPicker
+                  compact
                   icon={<Sparkles className="size-3.5" />}
                   model={model}
                   models={
@@ -310,14 +315,23 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
                   quality={qualityOption.value}
                   qualityLabel={qualityOption.label}
                 />
+                <ImageCameraControlPicker
+                  onChange={(nextCameraControl) => {
+                    setCameraControl(nextCameraControl);
+                    nodeData.onUpdateImageNode?.(id, {
+                      imageCameraControl: nextCameraControl,
+                    });
+                  }}
+                  value={cameraControl}
+                />
               </div>
               <button
                 className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-                disabled={isEditing || !prompt.trim()}
+                disabled={isSubmissionLocked || !prompt.trim()}
                 title="生成图片"
                 type="submit"
               >
-                {isEditing ? (
+                {isSubmissionLocked ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <Send className="size-4" />
@@ -325,14 +339,14 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
               </button>
             </div>
           </div>
-        ) : null}
-      </form>
+        </form>
+      )}
       <NodeResizer
         color="#a1a1aa"
         handleClassName="zenme-text-resize-handle"
         isVisible={Boolean(selected && !isRenaming)}
         lineClassName="zenme-text-resize-line"
-        minHeight={220}
+        minHeight={isResultNode ? 220 : 176}
         minWidth={420}
       />
       <NodeActionHandle selected={Boolean(selected && !isRenaming)} />
@@ -384,7 +398,7 @@ export function ImageReferencePicker({
       <div className="flex min-h-11 items-center gap-2">
         {references.map((reference) => (
           <div
-            className="group/reference-image relative size-11 shrink-0 overflow-hidden rounded-md border border-zinc-200 bg-zinc-100 shadow-sm"
+            className="group/reference-image nodrag nowheel relative size-11 shrink-0 overflow-hidden rounded-md border border-zinc-200 bg-zinc-100 shadow-sm"
             key={reference.nodeId}
             title={reference.title}
           >
@@ -402,7 +416,7 @@ export function ImageReferencePicker({
         ))}
         <button
           aria-label="参考"
-          className="flex size-11 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900"
+          className="nodrag nowheel flex size-11 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900"
           onClick={() => setIsOpen((current) => !current)}
           title="参考"
           type="button"
@@ -427,7 +441,7 @@ export function ImageReferencePicker({
         </div>
       ) : null}
       {isOpen ? (
-        <div className="zenme-shadow-dropdown absolute left-0 top-full z-50 mt-2 w-80 rounded-lg border border-zinc-200 bg-white p-2">
+        <div className="zenme-shadow-dropdown nodrag nowheel absolute left-0 top-full z-50 mt-2 w-80 rounded-lg border border-zinc-200 bg-white p-2">
           <div className="relative mb-2">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
             <input

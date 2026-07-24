@@ -23,6 +23,7 @@ import {
   useEdgesState,
   useNodesState,
 } from "@xyflow/react";
+import { Loader2, RefreshCw } from "lucide-react";
 import { AgentPanel } from "@/components/zenme/agent-panel";
 import type { AgentMessage } from "@/components/zenme/agent-types";
 import { useAiModelOptions } from "@/components/zenme/use-ai-model-options";
@@ -44,7 +45,9 @@ import {
 } from "@/components/zenme/canvas/menus";
 import {
   createNodeActionMenuFromConnectEnd,
+  isCanvasConnectionValid,
   normalizeCanvasConnection,
+  normalizePersistedCanvasEdges,
 } from "@/components/zenme/canvas/connections";
 import { CanvasProjectStatus } from "@/components/zenme/canvas/project-status";
 import { nodeTypes } from "@/components/zenme/nodes";
@@ -52,6 +55,7 @@ import {
   getCanvasSnapshotFromApi,
   getProjectFromApi,
   generateOrEditImage,
+  saveProjectThumbnailToApi,
   uploadProjectFileToApi,
 } from "@/lib/zenme-api";
 import {
@@ -63,12 +67,21 @@ import { createDroppedFileCanvasNodes } from "@/components/zenme/canvas/drop-fil
 import {
   createCanvasNodeClipboardPayload,
   createPastedCanvasNodes,
+  getClipboardImageFiles,
+  hasSelectedClipboardText,
   parseCanvasNodeClipboardPayload,
   type CanvasNodeClipboardPayload,
   ZENME_NODE_CLIPBOARD_MIME,
   ZENME_NODE_CLIPBOARD_PREFIX,
 } from "@/components/zenme/canvas/clipboard";
 import { parseDroppedReadingNotePayload } from "@/components/zenme/canvas/drop-payload";
+import { shouldPreventNativeCanvasAuxClick } from "@/components/zenme/canvas/pointer";
+import {
+  ALT_DRAG_PREVIEW_ID_PREFIX,
+  createAltDragCopyUpdate,
+  createAltDragPreviewNodes,
+  isAltDragPreviewNode,
+} from "@/components/zenme/canvas/alt-drag-copy";
 import {
   canPrepareReadingAsset,
   getActionNode,
@@ -82,7 +95,10 @@ import {
   saveAgentSessionSnapshot,
 } from "@/components/zenme/canvas/agent-session";
 import { createAgentContextFromActionNode } from "@/components/zenme/canvas/agent-context";
-import { requestTextGenerationResponse } from "@/components/zenme/canvas/text-generation-request";
+import {
+  requestTextGenerationResponse,
+  resolveTextGenerationPrompt,
+} from "@/components/zenme/canvas/text-generation-request";
 import { getRenderedCanvasEdges } from "@/components/zenme/canvas/edges";
 import {
   createCanvasHistoryEntry,
@@ -105,6 +121,12 @@ import {
   type GroupDragPosition,
 } from "@/components/zenme/canvas/groups";
 import {
+  canSetTaskParent,
+  createTaskConnectionNodeUpdate,
+  createTaskParentSelectionUpdate,
+} from "@/components/zenme/canvas/task-relationships";
+import { createQuickArrangeUpdate } from "@/components/zenme/canvas/quick-arrange";
+import {
   createCanvasDeleteSelection,
   isDeleteKeyboardShortcut,
   isUndoKeyboardShortcut,
@@ -122,8 +144,12 @@ import {
   getCanvasNodeContextText,
 } from "@/components/zenme/canvas/text-generation-context";
 import {
+  createConnectedEdge,
   createConnectedPlaceholderCanvasNode,
   createImageGenerationCanvasNode,
+  createManagedTextCanvasNode,
+  createTaskCanvasNode,
+  createPendingImageResultChildCanvasNode,
   createDroppedReadingNoteCanvasNode,
   createAiResponseChildCanvasNode,
   createReadingNoteCanvasNode,
@@ -131,18 +157,28 @@ import {
   createTextCanvasNode,
 } from "@/components/zenme/canvas/node-factories";
 import {
+  getImageRequestReferenceUrls,
+  getOrderedImageReferenceUrls,
+} from "@/components/zenme/canvas/image-reference-order";
+import {
+  createAiResponseExpansionUpdate,
   createImageGenerationNodeDataUpdate,
+  createMusicChildExpansionUpdate,
   createTextGenerationNodeDataUpdate,
+  createTextNodeExpansionUpdate,
   createTextNodeDataUpdate,
+  createTaskChildrenVisibilityUpdate,
+  createTaskNodeDataUpdate,
+  createProjectTagUpdate,
 } from "@/components/zenme/canvas/node-updates";
 import { createCanvasAddMenuFromPaneDoubleClick } from "@/components/zenme/canvas/pane-menu";
 import {
   CANVAS_ZOOM_MAX,
   CANVAS_ZOOM_MIN,
   clampCanvasZoom,
+  createPreservedZoomNodeFocusOptions,
   createCanvasZoomViewport,
   createCanvasZoomViewportAtPoint,
-  getNextCanvasZoom,
 } from "@/components/zenme/canvas/viewport";
 import type {
   CanvasAddMenuState,
@@ -173,16 +209,33 @@ import { createOpenReadingWorkspaceUpdate } from "@/components/zenme/canvas/read
 import { createReaderCollapseUpdate } from "@/components/zenme/canvas/reader-collapse";
 import { getRenderedCanvasNodes } from "@/components/zenme/canvas/rendered-nodes";
 import {
+  createLyricsNodeUpdate,
+  createMusicPlayerUpdate,
+  extractMusicLyrics,
+  findLyricsNodesNeedingRecovery,
+  getMusicApiErrorMessage,
+  MUSIC_WAVEFORM_VERSION,
+  resolveMusicSourceNode,
+} from "@/components/zenme/canvas/music-workflow";
+import { generateLocalAudioWaveform } from "@/components/zenme/canvas/local-audio-waveform";
+import { releaseRemovedMusicPlayers } from "@/components/zenme/canvas/music-player-runtime";
+import {
   DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
   DEFAULT_IMAGE_EDIT_QUALITY,
   getImageDisplaySize,
+  type ImageCameraControl,
 } from "@/components/zenme/image-edit-options";
 import {
   getImageEditPreferences,
   hydrateImageEditPreferences,
 } from "@/components/zenme/image-edit-preferences";
 import { getImageDimensions } from "@/components/zenme/canvas/files";
-import { NODE_CONTEXT_HANDLE_ID } from "@/components/zenme/node-types";
+import {
+  NODE_CONTEXT_HANDLE_ID,
+  type CanvasNodeData,
+  type MusicChildNodeKind,
+  type ProjectTagAction,
+} from "@/components/zenme/node-types";
 
 type CanvasClientProps = {
   projectId: string;
@@ -200,13 +253,17 @@ const MINI_MAP_CLASS =
 
 export function CanvasClient({ projectId }: CanvasClientProps) {
   const [nodes, setNodes, onNodesChange] =
-    useNodesState<CanvasNode>(createWelcomeNodes());
+    useNodesState<CanvasNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [reactFlow, setReactFlow] =
     useState<ReactFlowInstance<CanvasNode, Edge>>();
   const [showMiniMap, setShowMiniMap] = useState(true);
   const [isMiniMapSuspended, setIsMiniMapSuspended] = useState(false);
   const [isNodeDragging, setIsNodeDragging] = useState(false);
+  const [altDragPreviewNodes, setAltDragPreviewNodes] = useState<CanvasNode[]>([]);
+  const [altDragMovingNodeIds, setAltDragMovingNodeIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [canvasViewport, setCanvasViewport] = useState<Viewport>({
@@ -239,6 +296,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const [pendingViewport, setPendingViewport] = useState<Viewport | null>(null);
   const [canvasLoaded, setCanvasLoaded] = useState(false);
   const [canvasHydrated, setCanvasHydrated] = useState(false);
+  const [canvasLoadError, setCanvasLoadError] = useState<string | null>(null);
+  const [canvasLoadAttempt, setCanvasLoadAttempt] = useState(0);
   const [hasProjectThumbnail, setHasProjectThumbnail] = useState(false);
   const [isContextConnecting, setIsContextConnecting] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -256,10 +315,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const isRefreshingUrls = useRef(false);
   const nodesRef = useRef<CanvasNode[]>(nodes);
   const edgesRef = useRef<Edge[]>(edges);
+  const defaultTextModelRef = useRef(defaultTextModel);
+  defaultTextModelRef.current = defaultTextModel;
   const canvasViewportStateRef = useRef<Viewport>(canvasViewport);
   const reactFlowRef = useRef<ReactFlowInstance<CanvasNode, Edge> | null>(null);
   const fileUploadInputRef = useRef<HTMLInputElement | null>(null);
   const pendingUploadPosition = useRef<{ x: number; y: number } | null>(null);
+  const pendingUploadSourceNodeId = useRef<string | null>(null);
   const lastCanvasPointer = useRef<{ x: number; y: number } | null>(null);
   const nodeClipboard = useRef<{
     marker: string;
@@ -282,6 +344,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     typeof startCanvasInteractionSample
   > | null>(null);
   const dragStartNodeSnapshots = useRef<Map<string, CanvasNode> | null>(null);
+  const altDragSourceNodeId = useRef<string | null>(null);
   const resizeInteractionSample = useRef<ReturnType<
     typeof startCanvasInteractionSample
   > | null>(null);
@@ -291,6 +354,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     (beforeNodeSnapshots: Map<string, CanvasNode>, afterNodes: CanvasNode[]) => void
   >(() => {});
   const groupDragPosition = useRef<GroupDragPosition | null>(null);
+  const musicPlayersRef = useRef(new Map<string, HTMLAudioElement>());
+  const musicWaveformTasksRef = useRef(new Map<string, Promise<void>>());
+  const recoveringLyricsNodeIdsRef = useRef(new Set<string>());
 
   const agentKey = `${ZENME_AGENT_KEY_PREFIX}${projectId}`;
 
@@ -318,8 +384,25 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     return observeCanvasLongTasks({ projectId });
   }, [projectId]);
 
+  useEffect(
+    () => () => {
+      releaseRemovedMusicPlayers(musicPlayersRef.current, new Set());
+    },
+    [],
+  );
+
   useEffect(() => {
     nodesRef.current = nodes;
+    if (musicPlayersRef.current.size > 0) {
+      releaseRemovedMusicPlayers(
+        musicPlayersRef.current,
+        new Set(
+          nodes
+            .filter((node) => node.data.kind === "musicPlayer")
+            .map((node) => node.id),
+        ),
+      );
+    }
   }, [nodes]);
 
   useEffect(() => {
@@ -464,8 +547,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             !change.dimensions ||
             (node.data.kind !== "reader" &&
               node.data.kind !== "text" &&
+              node.data.kind !== "managedText" &&
+              node.data.kind !== "task" &&
               node.data.kind !== "agent" &&
-              node.data.kind !== "textGeneration")
+              node.data.kind !== "textGeneration" &&
+              node.data.kind !== "lyrics")
           ) {
             return node;
           }
@@ -697,7 +783,18 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       edges?: Edge[];
       nodes?: CanvasNode[];
     }) => {
-      const createdNodes = input.nodes ?? [];
+      const createdAt = Date.now();
+      const createdNodes = (input.nodes ?? []).map((node, index) =>
+        node.data.createdAt
+          ? node
+          : {
+              ...node,
+              data: {
+                ...node.data,
+                createdAt: new Date(createdAt + index).toISOString(),
+              },
+            },
+      );
       const createdEdges = input.edges ?? [];
 
       if (createdNodes.length === 0 && createdEdges.length === 0) {
@@ -706,6 +803,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
       const nextNodes = [...input.currentNodes, ...createdNodes];
       const nextEdges = [...input.currentEdges, ...createdEdges];
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
       skipNextHistoryEntryCount.current += 1;
       setNodes(nextNodes);
       setEdges(nextEdges);
@@ -748,17 +847,25 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }, [pushNodeUpdateHistory]);
 
   useEffect(() => {
+    let cancelled = false;
+    let hydrationFrame: number | null = null;
+
     async function loadCanvas() {
       isHydrating.current = true;
       didInitViewport.current = false;
       appliedViewportSignature.current = null;
       setCanvasLoaded(false);
       setCanvasHydrated(false);
+      setCanvasLoadError(null);
       setPendingViewport(null);
+      setNodes([]);
+      setEdges([]);
       try {
-        await getProjectFromApi(projectId);
-        setHasProjectThumbnail(false);
+        const project = await getProjectFromApi(projectId);
+        if (cancelled) return;
+        setHasProjectThumbnail(Boolean(project.thumbnail));
         const remoteSnapshot = await getCanvasSnapshotFromApi(projectId);
+        if (cancelled) return;
 
         if (remoteSnapshot) {
           const snapshot = remoteSnapshot.snapshot as CanvasSnapshot;
@@ -769,11 +876,15 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           const restoredNodes = recoverInterruptedImageTasks(
             normalizeGroupNodeRelations(restored.nodes),
           );
+          const restoredEdges = normalizePersistedCanvasEdges(
+            restored.edges,
+            restoredNodes,
+          );
           setNodes(restoredNodes);
-          setEdges(restored.edges);
+          setEdges(restoredEdges);
           resetCanvasHistory(
             restoredNodes,
-            restored.edges,
+            restoredEdges,
             snapshot.viewport ?? canvasViewportStateRef.current,
           );
           setLastSavedAt(snapshot.updatedAt ?? remoteSnapshot.updated_at);
@@ -785,23 +896,48 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           // 云端模式下重签已上传图片节点的签名 URL，避免签名 1 小时过期导致图片 403。
           void refreshImageNodeUrls(restoredNodes, setNodes, isRefreshingUrls);
         } else {
-          resetCanvasHistory(createWelcomeNodes(), []);
+          const initialNodes = createWelcomeNodes();
+          setNodes(initialNodes);
+          setEdges([]);
+          resetCanvasHistory(initialNodes, []);
         }
-      } catch {
-        setSaveStatus("保存失败");
-      } finally {
+
+        setSaveStatus("已保存");
         setCanvasLoaded(true);
         // 放开 isHydrating 延后一帧：确保 setNodes/setEdges 触发的 effect 先被屏蔽，
         // 避免快照回流把"已保存"误改写为"未保存"。
-        requestAnimationFrame(() => {
+        hydrationFrame = requestAnimationFrame(() => {
+          if (cancelled) return;
           isHydrating.current = false;
           setCanvasHydrated(true);
         });
+      } catch (error) {
+        if (cancelled) return;
+        isHydrating.current = false;
+        setCanvasLoaded(false);
+        setCanvasHydrated(false);
+        setSaveStatus("保存失败");
+        setCanvasLoadError(
+          error instanceof Error ? error.message : "画布加载失败",
+        );
       }
     }
 
-    loadCanvas();
-  }, [projectId, resetCanvasHistory, setEdges, setNodes]);
+    void loadCanvas();
+
+    return () => {
+      cancelled = true;
+      if (hydrationFrame !== null) {
+        cancelAnimationFrame(hydrationFrame);
+      }
+    };
+  }, [
+    canvasLoadAttempt,
+    projectId,
+    resetCanvasHistory,
+    setEdges,
+    setNodes,
+  ]);
 
   useEffect(() => {
     const snapshot = loadAgentSessionSnapshot(
@@ -885,7 +1021,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
   useEffect(() => {
     function writeSelectedNodesToClipboard(event: ClipboardEvent) {
-      if (isEditableTarget(event.target) || !event.clipboardData) return false;
+      if (
+        isEditableTarget(event.target) ||
+        hasSelectedClipboardText(window.getSelection()) ||
+        !event.clipboardData
+      ) {
+        return false;
+      }
       const payload = createCanvasNodeClipboardPayload(nodesRef.current);
       if (!payload) return false;
       const marker = `${ZENME_NODE_CLIPBOARD_PREFIX}${crypto.randomUUID()}`;
@@ -924,8 +1066,26 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     }
 
     async function handlePaste(event: ClipboardEvent) {
-      if (isEditableTarget(event.target) || !event.clipboardData) return;
+      if (!event.clipboardData) return;
       const clipboardData = event.clipboardData;
+      const imageFiles = getClipboardImageFiles(clipboardData);
+      if (imageFiles.length > 0) {
+        event.preventDefault();
+        const pastedImages = await createDroppedFileCanvasNodes({
+          files: imageFiles,
+          onReadingError: setCanvasNotice,
+          position: getClipboardPastePosition(),
+          projectId,
+        });
+        appendCanvasItems({
+          currentEdges: edgesRef.current,
+          currentNodes: nodesRef.current,
+          nodes: pastedImages,
+        });
+        return;
+      }
+
+      if (isEditableTarget(event.target)) return;
       const customPayload = parseCanvasNodeClipboardPayload(
         clipboardData.getData(ZENME_NODE_CLIPBOARD_MIME),
       );
@@ -952,37 +1112,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         return;
       }
 
-      const imageFiles = Array.from(clipboardData.items)
-        .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-        .map((item) => item.getAsFile())
-        .filter((file): file is File => Boolean(file))
-        .map((file, index) => file.name
-          ? file
-          : new File(
-              [file],
-              `clipboard-${Date.now()}-${index + 1}.${getClipboardImageExtension(file.type)}`,
-              { type: file.type },
-            ));
-      if (imageFiles.length > 0) {
-        event.preventDefault();
-        const pastedImages = await createDroppedFileCanvasNodes({
-          files: imageFiles,
-          onReadingError: setCanvasNotice,
-          position,
-          projectId,
-        });
-        appendCanvasItems({
-          currentEdges: edgesRef.current,
-          currentNodes: nodesRef.current,
-          nodes: pastedImages,
-        });
-        return;
-      }
-
       if (plainText.trim()) {
         event.preventDefault();
         const textNode = createTextCanvasNode({
           id: crypto.randomUUID(),
+          model: defaultTextModelRef.current,
           plainText,
           position,
         });
@@ -1190,12 +1324,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           return;
         }
 
-        await saveCanvasSnapshot({
-          edges,
-          nodes,
+        await saveProjectThumbnailToApi({
           projectId,
           thumbnail,
-          viewport: reactFlow.getViewport(),
         });
         setHasProjectThumbnail(true);
       })().catch(() => {
@@ -1204,8 +1335,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     }, 3000);
   }, [
     createThumbnail,
-    edges,
-    nodes,
     projectId,
     reactFlow,
   ]);
@@ -1248,10 +1377,14 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         viewport: reactFlow.getViewport(),
       });
 
-      savedCanvasSignature.current = canvasPersistableSignature;
-      pendingCanvasSignature.current = savedCanvasSignature.current;
+      const savedSignature = canvasPersistableSignature;
+      savedCanvasSignature.current = savedSignature;
       setLastSavedAt(snapshot.updatedAt);
-      setSaveStatus("已保存");
+      setSaveStatus(
+        pendingCanvasSignature.current === savedSignature
+          ? "已保存"
+          : "未保存",
+      );
       if (includeThumbnail && !queuedCanvasSaveRequest.current) {
         scheduleThumbnailSave();
       }
@@ -1309,6 +1442,18 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         return;
       }
 
+      if (pendingCanvasSignature.current !== savedCanvasSignature.current) {
+        void saveCanvasSnapshot({
+          edges: edgesRef.current,
+          nodes: nodesRef.current,
+          projectId,
+          thumbnail: null,
+          viewport: flow.getViewport(),
+        }).catch(() => {
+          // 离开项目时尽快保存最新快照，失败不阻塞页面跳转。
+        });
+      }
+
       void (async () => {
         if (nodesRef.current.length === 0) {
           return;
@@ -1319,18 +1464,39 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           return;
         }
 
-        await saveCanvasSnapshot({
-          edges: edgesRef.current,
-          nodes: nodesRef.current,
+        await saveProjectThumbnailToApi({
           projectId,
           thumbnail,
-          viewport: flow.getViewport(),
         });
       })().catch(() => {
         // 离开项目时的缩略图兜底失败不阻塞页面跳转。
       });
     };
   }, [projectId]);
+
+  useEffect(() => {
+    const flushPendingCanvas = () => {
+      if (
+        isHydrating.current ||
+        pendingCanvasSignature.current === savedCanvasSignature.current
+      ) {
+        return;
+      }
+      void saveCanvasRef.current();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushPendingCanvas();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", flushPendingCanvas);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", flushPendingCanvas);
+    };
+  }, []);
 
   useEffect(() => {
     if (
@@ -1442,7 +1608,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         autosaveTimer.current = null;
       }
     };
-  }, [autoSaveIntervalMs, canvasLoaded, edges, nodes, saveStatus]);
+  }, [autoSaveIntervalMs, canvasLoaded, saveStatus]);
 
   useEffect(() => {
     if (
@@ -1500,25 +1666,74 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         return;
       }
 
-      const nextEdges = addEdge(normalizedConnection, edges);
-      const previousEdgeIds = new Set(edges.map((edge) => edge.id));
+      const sourceNode = nodes.find(
+        (node) => node.id === normalizedConnection.source,
+      );
+      const targetNode = nodes.find(
+        (node) => node.id === normalizedConnection.target,
+      );
+      const isTaskConnection =
+        sourceNode?.data.kind === "task" &&
+        targetNode?.data.kind === "task";
+      if (
+        isTaskConnection &&
+        !canSetTaskParent({
+          childId: targetNode.id,
+          edges,
+          nodes,
+          parentId: sourceNode.id,
+        })
+      ) {
+        setCanvasNotice("不能将当前任务或其子任务设为父任务");
+        return;
+      }
+
+      const deletedEdges = isTaskConnection
+        ? edges.filter((edge) => {
+            const edgeSource = nodes.find((node) => node.id === edge.source);
+            return (
+              edge.target === targetNode.id &&
+              edgeSource?.data.kind === "task" &&
+              edge.source !== sourceNode.id
+            );
+          })
+        : [];
+      const retainedEdges = deletedEdges.length
+        ? edges.filter((edge) => !deletedEdges.includes(edge))
+        : edges;
+      const nextEdges = addEdge(normalizedConnection, retainedEdges);
+      const previousEdgeIds = new Set(retainedEdges.map((edge) => edge.id));
       const createdEdges = nextEdges.filter(
         (edge) => !previousEdgeIds.has(edge.id),
       );
+      const taskNodeUpdate = isTaskConnection
+        ? createTaskConnectionNodeUpdate({
+            childId: targetNode.id,
+            nodes,
+            parentId: sourceNode.id,
+          })
+        : { nextNodes: nodes, nodeUpdates: [] };
 
-      if (createdEdges.length === 0) {
+      if (
+        createdEdges.length === 0 &&
+        deletedEdges.length === 0 &&
+        taskNodeUpdate.nodeUpdates.length === 0
+      ) {
         return;
       }
 
       skipNextHistoryEntryCount.current += 1;
+      setNodes(taskNodeUpdate.nextNodes);
       setEdges(nextEdges);
-      pushCreateHistory({
+      pushMutateHistory({
         afterEdges: nextEdges,
-        afterNodes: nodes,
-        edges: createdEdges,
+        afterNodes: taskNodeUpdate.nextNodes,
+        createdEdges,
+        deletedEdges,
+        nodeUpdates: taskNodeUpdate.nodeUpdates,
       });
     },
-    [edges, nodes, pushCreateHistory, setEdges],
+    [edges, nodes, pushMutateHistory, setEdges, setNodes],
   );
 
   function setCanvasZoom(value: number) {
@@ -1561,8 +1776,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       updates: {
         codeContent?: string;
         codeLanguage?: string;
+        name?: string;
         plainText?: string;
         richTextHtml?: string;
+        tags?: string[];
         textMode?: "code" | "markdown" | "plain";
         title?: string;
       },
@@ -1605,11 +1822,151 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     [pushNodeUpdateHistory, setNodes],
   );
 
+  const updateTaskNode = useCallback(
+    (
+      nodeId: string,
+      updates: Parameters<
+        NonNullable<CanvasNodeData["onUpdateTaskNode"]>
+      >[1],
+    ) => {
+      const update = createTaskNodeDataUpdate({
+        nodeId,
+        nodes: nodesRef.current,
+        updates,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const setTaskParent = useCallback(
+    (nodeId: string, parentId?: string) => {
+      const update = createTaskParentSelectionUpdate({
+        edges: edgesRef.current,
+        nodeId,
+        nodes: nodesRef.current,
+        parentId,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      setEdges(update.nextEdges);
+      pushMutateHistory({
+        afterEdges: update.nextEdges,
+        afterNodes: update.nextNodes,
+        deletedEdges: update.deletedEdges,
+        nodeUpdates: update.nodeUpdates,
+      });
+    },
+    [pushMutateHistory, setEdges, setNodes],
+  );
+
+  const toggleTaskChildren = useCallback(
+    (
+      nodeId: string,
+      expanded: boolean,
+      expandedContentHeight: number,
+    ) => {
+      const update = createTaskChildrenVisibilityUpdate({
+        expanded,
+        expandedContentHeight,
+        nodeId,
+        nodes: nodesRef.current,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const toggleAiResponseExpanded = useCallback(
+    (nodeId: string, expanded: boolean) => {
+      const update = createAiResponseExpansionUpdate({
+        expanded,
+        nodeId,
+        nodes: nodesRef.current,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const toggleTextExpanded = useCallback(
+    (nodeId: string, expanded: boolean) => {
+      const update = createTextNodeExpansionUpdate({
+        expanded,
+        nodeId,
+        nodes: nodesRef.current,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const toggleMusicChildExpanded = useCallback(
+    (nodeId: string, expanded: boolean) => {
+      const update = createMusicChildExpansionUpdate({
+        expanded,
+        nodeId,
+        nodes: nodesRef.current,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const updateProjectTag = useCallback(
+    (action: ProjectTagAction) => {
+      const update = createProjectTagUpdate({
+        action,
+        nodes: nodesRef.current,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const updateMusicNode = useCallback((nodeId: string, updates: { title?: string }) => {
+    const beforeNode = nodesRef.current.find((node) => node.id === nodeId);
+    if (!beforeNode) return;
+    const nextNodes = nodesRef.current.map((node) => node.id === nodeId
+      ? { ...node, data: { ...node.data, ...updates } }
+      : node);
+    skipNextHistoryEntryCount.current += 1;
+    setNodes(nextNodes);
+    pushNodeUpdateHistory(new Map([[nodeId, beforeNode]]), nextNodes);
+  }, [pushNodeUpdateHistory, setNodes]);
+
   const updateImageGenerationNode = useCallback(
     (
       nodeId: string,
       updates: {
         fileId?: string;
+        imageCameraControl?: ImageCameraControl;
         imageOutputAspectRatio?: string;
         imageError?: string;
         imageModel?: string;
@@ -1678,14 +2035,15 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       const currentNodes = reactFlow?.getNodes() ?? nodesRef.current;
       const currentEdges = reactFlow?.getEdges() ?? edges;
       const sourceNode = currentNodes.find((node) => node.id === nodeId);
-      const prompt =
+      const prompt = resolveTextGenerationPrompt(
         input?.prompt?.trim() ??
         sourceNode?.data.textGenerationPrompt?.trim() ??
-        "";
+        "",
+      );
       const model =
         input?.model ?? sourceNode?.data.textGenerationModel ?? defaultTextModel;
 
-      if (!sourceNode || !prompt) {
+      if (!sourceNode) {
         return;
       }
 
@@ -1696,15 +2054,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodes: currentNodes,
       });
       const context = [ownContext, upstreamContext].filter(Boolean).join("\n\n---\n\n");
-      const result = await requestTextGenerationResponse({
-        context,
-        model,
-        prompt,
-      });
-      if (!result) {
-        return;
-      }
-
       const position = getNextConnectedChildNodePosition({
         childFallbackSize: { height: 260, width: 620 },
         edges: currentEdges,
@@ -1719,7 +2068,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           model,
           position,
           prompt,
-          response: result,
           sourceNode,
         });
 
@@ -1729,14 +2077,67 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         edges: [nextEdge],
         nodes: [nextNode],
       });
+
+      const taskStartedAt = Date.now();
+      try {
+        const result = await requestTextGenerationResponse({
+          context,
+          model,
+          prompt,
+        });
+        if (!result) {
+          throw new Error("模型未返回内容");
+        }
+
+        const nextNodes = nodesRef.current.map((node) =>
+          node.id === nextNode.id
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  aiError: undefined,
+                  aiResponse: result,
+                  aiStatus: "done" as const,
+                  aiTaskDurationMs: Date.now() - taskStartedAt,
+                  plainText: result,
+                },
+              }
+            : node,
+        );
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "文本生成失败";
+        const nextNodes = nodesRef.current.map((node) =>
+          node.id === nextNode.id
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  aiError: message,
+                  aiStatus: "failed" as const,
+                  aiTaskDurationMs: Date.now() - taskStartedAt,
+                },
+              }
+            : node,
+        );
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
+      }
     },
-    [appendCanvasItems, defaultTextModel, edges, reactFlow],
+    [appendCanvasItems, defaultTextModel, edges, reactFlow, setNodes],
   );
 
   const submitImageGenerationNode = useCallback(
     async (
       nodeId: string,
-      input?: { aspectRatio?: string; model?: string; prompt?: string; quality?: string },
+      input?: {
+        aspectRatio?: string;
+        cameraControl?: ImageCameraControl;
+        model?: string;
+        prompt?: string;
+        quality?: string;
+      },
     ) => {
       const currentNodes = reactFlow?.getNodes() ?? nodesRef.current;
       const currentEdges = reactFlow?.getEdges() ?? edgesRef.current;
@@ -1751,7 +2152,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
         return (
           node.data.kind === "image" &&
-          Boolean(node.data.imageGenerated || node.data.imagePrompt)
+          Boolean(node.data.originalUrl || node.data.previewUrl)
         );
       });
       const prompt =
@@ -1764,28 +2165,24 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         input?.quality ??
         sourceNode?.data.imageQuality ??
         DEFAULT_IMAGE_EDIT_QUALITY;
+      const cameraControl =
+        input && Object.prototype.hasOwnProperty.call(input, "cameraControl")
+          ? input.cameraControl
+          : sourceNode?.data.imageCameraControl;
       const standaloneImageUrl = sourceNode?.data.kind === "imageGeneration"
         ? undefined
         : sourceNode?.data.originalUrl ?? sourceNode?.data.previewUrl;
       const selectedReferenceNodeIds = sourceNode?.data.imageReferenceNodeIds;
-      const connectedReferenceImageUrls = currentEdges
-            .filter((edge) => edge.target === nodeId)
-            .map((edge) => currentNodes.find((node) => node.id === edge.source))
-            .filter((node): node is CanvasNode => node?.data.kind === "image")
-            .filter((node) =>
-              selectedReferenceNodeIds === undefined ||
-              selectedReferenceNodeIds.includes(node.id),
-            )
-            .map((node) => node.data.originalUrl ?? node.data.previewUrl)
-            .filter((url): url is string => Boolean(url))
-            .slice(0, 8);
-      const isStandaloneUploadedImage =
-        sourceNode?.data.kind === "image" && !sourceNode.data.imageGenerated;
-      const referenceImageUrls = isStandaloneUploadedImage && standaloneImageUrl
-        ? [standaloneImageUrl]
-        : connectedReferenceImageUrls.length > 0
-          ? connectedReferenceImageUrls
-          : [];
+      const connectedReferenceImageUrls = getOrderedImageReferenceUrls({
+        edges: currentEdges,
+        nodes: currentNodes,
+        selectedNodeIds: selectedReferenceNodeIds,
+        targetNodeId: nodeId,
+      });
+      const referenceImageUrls = getImageRequestReferenceUrls({
+        connectedReferenceImageUrls,
+        currentImageUrl: standaloneImageUrl,
+      });
       const operation = referenceImageUrls.length > 0
         ? "edit" as const
         : "generate" as const;
@@ -1794,25 +2191,49 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         return;
       }
 
-      updateImageGenerationNode(nodeId, {
-        imageOutputAspectRatio: aspectRatio,
-        imageError: undefined,
-        imageQuality: quality,
-        imagePrompt: prompt,
-        imageStatus: "editing",
-        imageTaskDurationMs: undefined,
-        imageTaskStartedAt: new Date().toISOString(),
+      const model =
+        input?.model ??
+        sourceNode.data.imageModel ??
+        configuredImageModelOptions[0]?.id ??
+        "";
+      const position = getNextConnectedChildNodePosition({
+        childFallbackSize: { height: 320, width: 420 },
+        edges: currentEdges,
+        nodes: currentNodes,
+        sourceFallbackSize: { height: 320, width: 420 },
+        sourceNode,
+        yOffsetWithoutChild: 0,
+      });
+      const taskStartedAt = Date.now();
+      const { edge: resultEdge, node: resultNode } =
+        createPendingImageResultChildCanvasNode({
+          aspectRatio,
+          cameraControl,
+          id: crypto.randomUUID(),
+          model,
+          position,
+          prompt,
+          quality,
+          sourceNode,
+          startedAt: new Date(taskStartedAt).toISOString(),
+        });
+      resultNode.data.imageOperation = operation;
+      appendCanvasItems({
+        currentEdges,
+        currentNodes,
+        edges: [resultEdge],
+        nodes: [resultNode],
       });
 
       try {
-        const taskStartedAt = Date.now();
         const imageDataUrls = await Promise.all(
           referenceImageUrls.map((url) => fetchImageAsDataUrl(url)),
         );
         const edited = await generateOrEditImage({
           aspectRatio,
+          cameraControl,
           imageDataUrls,
-          model: input?.model ?? sourceNode.data.imageModel ?? configuredImageModelOptions[0]?.id ?? "",
+          model,
           operation,
           prompt,
           quality,
@@ -1827,17 +2248,15 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           projectId,
           file: outputFile,
         });
-        const nextCurrentNodes = reactFlow?.getNodes() ?? nodesRef.current;
+        const nextCurrentNodes = nodesRef.current;
         const outputAspectRatio = outputDimensions.width / outputDimensions.height;
         const resultNodeSize = getImageDisplaySize(outputAspectRatio);
-        const beforeNodeSnapshots = new Map([
-          [nodeId, createCanvasHistoryNodeSnapshot(sourceNode)],
-        ]);
+        const pendingResultNode = nextCurrentNodes.find((node) => node.id === resultNode.id);
+        const beforeNodeSnapshots = pendingResultNode
+          ? new Map([[resultNode.id, createCanvasHistoryNodeSnapshot(pendingResultNode)]])
+          : new Map<string, ReturnType<typeof createCanvasHistoryNodeSnapshot>>();
         const nextNodes = nextCurrentNodes.map((node) =>
-          node.id === nodeId &&
-          (node.data.kind === "imageGeneration" ||
-            (node.data.kind === "image" &&
-              Boolean(node.data.imageGenerated || node.data.imagePrompt)))
+          node.id === resultNode.id
             ? {
                 ...node,
                 measured: resultNodeSize,
@@ -1846,6 +2265,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
                 data: {
                   ...node.data,
                   fileId: upload.fileId,
+                  imageCameraControl: cameraControl,
                   imageOutputAspectRatio: aspectRatio,
                   imageError: undefined,
                   imagePrompt: prompt,
@@ -1854,6 +2274,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
                   imageTaskDurationMs: Date.now() - taskStartedAt,
                   imageTaskStartedAt: new Date(taskStartedAt).toISOString(),
                   imageGenerated: true,
+                  imageGenerationResult: true,
                   imageAspectRatio: outputAspectRatio,
                   imageHeight: outputDimensions.height,
                   imageWidth: outputDimensions.width,
@@ -1871,7 +2292,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
         pushNodeUpdateHistory(beforeNodeSnapshots, nextNodes);
-        const committedEdges = reactFlow?.getEdges() ?? edgesRef.current;
+        const committedEdges = edgesRef.current;
         const committedViewport =
           reactFlow?.getViewport() ?? canvasViewportStateRef.current;
         const committedSnapshot = await saveCanvasSnapshot({
@@ -1887,24 +2308,39 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           committedViewport,
         );
         savedCanvasSignature.current = committedSignature;
-        pendingCanvasSignature.current = committedSignature;
         setLastSavedAt(committedSnapshot.updatedAt);
-        setSaveStatus("已保存");
+        setSaveStatus(
+          pendingCanvasSignature.current === committedSignature
+            ? "已保存"
+            : "未保存",
+        );
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "图片编辑失败，请稍后重试";
-        updateImageGenerationNode(nodeId, {
-          imageError: message,
-          imageStatus: "failed",
-        });
+        const nextNodes = nodesRef.current.map((node) =>
+          node.id === resultNode.id
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  imageError: message,
+                  imageStatus: "failed" as const,
+                  imageTaskDurationMs: Date.now() - taskStartedAt,
+                },
+              }
+            : node,
+        );
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
       }
     },
-    [configuredImageModelOptions, projectId, pushNodeUpdateHistory, reactFlow, setNodes, updateImageGenerationNode],
+    [appendCanvasItems, configuredImageModelOptions, projectId, pushNodeUpdateHistory, reactFlow, setNodes],
   );
 
   function createTextNodeAt(position: { x: number; y: number }) {
     const nextNode = createTextCanvasNode({
       id: crypto.randomUUID(),
+      model: defaultTextModel,
       position,
     });
 
@@ -1918,10 +2354,80 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
   function openUploadPickerAt(position: { x: number; y: number }) {
     pendingUploadPosition.current = position;
+    pendingUploadSourceNodeId.current = null;
     if (fileUploadInputRef.current) {
       fileUploadInputRef.current.value = "";
       fileUploadInputRef.current.click();
     }
+    setCanvasAddMenu(null);
+  }
+
+  function openConnectedUploadPicker() {
+    if (!actionNode || !nodeActionMenu) {
+      return;
+    }
+
+    pendingUploadPosition.current = nodeActionMenu.flowPosition;
+    pendingUploadSourceNodeId.current = actionNode.id;
+    if (fileUploadInputRef.current) {
+      fileUploadInputRef.current.value = "";
+      fileUploadInputRef.current.click();
+    }
+    setNodeActionMenu(null);
+  }
+
+  const quickArrangeCanvas = useCallback(() => {
+    const update = createQuickArrangeUpdate({
+      edges: edgesRef.current,
+      nodes: nodesRef.current,
+    });
+    if (!update) return;
+
+    skipNextHistoryEntryCount.current += 1;
+    setNodes(update.nextNodes);
+    setEdges(update.nextEdges);
+    pushMutateHistory({
+      afterEdges: update.nextEdges,
+      afterNodes: update.nextNodes,
+      edgeUpdates: update.edgeUpdates,
+      nodeUpdates: update.nodeUpdates,
+    });
+    setNodeActionMenu(null);
+    setCanvasAddMenu(null);
+    window.requestAnimationFrame(() => {
+      void reactFlowRef.current?.fitView({
+        duration: 300,
+        padding: 0.16,
+      });
+    });
+  }, [pushMutateHistory, setEdges, setNodes]);
+
+  function createManagedTextNodeAt(position: { x: number; y: number }) {
+    const nextNode = createManagedTextCanvasNode({
+      id: crypto.randomUUID(),
+      model: defaultTextModel,
+      position,
+    });
+
+    appendCanvasItems({
+      currentEdges: edges,
+      currentNodes: nodes,
+      nodes: [nextNode],
+    });
+    setCanvasAddMenu(null);
+  }
+
+  function createTaskNodeAt(position: { x: number; y: number }) {
+    const nextNode = createTaskCanvasNode({
+      id: crypto.randomUUID(),
+      position,
+    });
+
+    appendCanvasItems({
+      currentEdges: edges,
+      currentNodes: nodes,
+      nodes: [nextNode],
+    });
     setCanvasAddMenu(null);
   }
 
@@ -1973,11 +2479,14 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
     if (files.length === 0) {
       pendingUploadPosition.current = null;
+      pendingUploadSourceNodeId.current = null;
       return;
     }
 
     const position = pendingUploadPosition.current ?? { x: 0, y: 0 };
+    const sourceNodeId = pendingUploadSourceNodeId.current;
     pendingUploadPosition.current = null;
+    pendingUploadSourceNodeId.current = null;
 
     const createdNodes = await createDroppedFileCanvasNodes({
       files,
@@ -1986,9 +2495,19 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       projectId,
     });
 
+    const currentEdges = reactFlow?.getEdges() ?? edges;
+    const currentNodes = reactFlow?.getNodes() ?? nodes;
+    const sourceNodeExists = sourceNodeId
+      ? currentNodes.some((node) => node.id === sourceNodeId)
+      : false;
+
     appendCanvasItems({
-      currentEdges: reactFlow?.getEdges() ?? edges,
-      currentNodes: reactFlow?.getNodes() ?? nodes,
+      currentEdges,
+      currentNodes,
+      edges:
+        sourceNodeId && sourceNodeExists
+          ? createdNodes.map((node) => createConnectedEdge(sourceNodeId, node.id))
+          : [],
       nodes: createdNodes,
     });
   }
@@ -2098,7 +2617,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   );
 
   const handleCanvasNodeDragStart = useCallback(
-    (draggedNode: CanvasNode) => {
+    (draggedNode: CanvasNode, duplicateOnDrop: boolean) => {
       setIsMiniMapSuspended(true);
       setIsNodeDragging(true);
       const currentNodes = reactFlow?.getNodes() ?? nodes;
@@ -2110,12 +2629,29 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           nodes: currentNodes.length,
         },
       );
-      dragStartNodeSnapshots.current = new Map(
+      const beforeNodeSnapshots = new Map(
         currentNodes.map((node) => [
           node.id,
           createCanvasHistoryNodeSnapshot(node),
         ]),
       );
+      dragStartNodeSnapshots.current = beforeNodeSnapshots;
+      altDragSourceNodeId.current = duplicateOnDrop ? draggedNode.id : null;
+      if (duplicateOnDrop) {
+        const previewNodes = createAltDragPreviewNodes({
+          beforeNodeSnapshots,
+          draggedNodeId: draggedNode.id,
+        });
+        setAltDragPreviewNodes(previewNodes);
+        setAltDragMovingNodeIds(new Set(
+          previewNodes.map((node) =>
+            node.id.slice(ALT_DRAG_PREVIEW_ID_PREFIX.length),
+          ),
+        ));
+      } else {
+        setAltDragPreviewNodes([]);
+        setAltDragMovingNodeIds(new Set());
+      }
 
       if (draggedNode.data.kind === "group") {
         groupDragPosition.current = {
@@ -2164,11 +2700,48 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       isCanvasInteractionActive.current = false;
       setIsMiniMapSuspended(false);
       setIsNodeDragging(false);
+      setAltDragPreviewNodes([]);
+      setAltDragMovingNodeIds(new Set());
       tickCanvasInteractionSample(dragInteractionSample.current);
+      const currentNodes = (reactFlow?.getNodes() ?? nodes).filter(
+        (node) => !isAltDragPreviewNode(node),
+      );
+      const duplicateSourceNodeId = altDragSourceNodeId.current;
+      altDragSourceNodeId.current = null;
+
+      if (
+        duplicateSourceNodeId === draggedNode.id &&
+        dragStartNodeSnapshots.current
+      ) {
+        const copyUpdate = createAltDragCopyUpdate({
+          beforeNodeSnapshots: dragStartNodeSnapshots.current,
+          createId: () => crypto.randomUUID(),
+          currentNodes,
+          draggedNodeId: draggedNode.id,
+        });
+
+        if (copyUpdate) {
+          groupDragPosition.current = null;
+          nodesRef.current = copyUpdate.nextNodes;
+          skipNextHistoryEntryCount.current += 1;
+          setNodes(copyUpdate.nextNodes);
+          pushCreateHistory({
+            afterEdges: edgesRef.current,
+            afterNodes: copyUpdate.nextNodes,
+            nodes: copyUpdate.createdNodes,
+          });
+          stopCanvasInteractionSample(dragInteractionSample.current, {
+            edges: edges.length,
+            nodes: copyUpdate.nextNodes.length,
+          });
+          dragInteractionSample.current = null;
+          dragStartNodeSnapshots.current = null;
+          return;
+        }
+      }
 
       if (draggedNode.data.kind === "group") {
         groupDragPosition.current = null;
-        const currentNodes = reactFlow?.getNodes() ?? nodes;
         stopCanvasInteractionSample(dragInteractionSample.current, {
           edges: edges.length,
           nodes: currentNodes.length,
@@ -2182,7 +2755,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }
 
       detachNodeFromGroupIfOutside(draggedNode);
-      const currentNodes = reactFlow?.getNodes() ?? nodes;
       stopCanvasInteractionSample(dragInteractionSample.current, {
         edges: edges.length,
         nodes: currentNodes.length,
@@ -2197,8 +2769,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       detachNodeFromGroupIfOutside,
       edges.length,
       nodes,
+      pushCreateHistory,
       pushNodeUpdateHistory,
       reactFlow,
+      setNodes,
     ],
   );
 
@@ -2407,7 +2981,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }
 
   function createConnectedPlaceholder(
-    kind: "text" | "agent" | "textGeneration" | "imageGeneration",
+    kind:
+      | "text"
+      | "agent"
+      | "managedText"
+      | "task"
+      | "textGeneration"
+      | "imageGeneration",
   ) {
     if (!actionNode) {
       return;
@@ -2445,12 +3025,339 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     setNodeActionMenu(null);
   }
 
+  const focusCanvasNode = useCallback((
+    nodeId: string,
+    options?: { preserveZoom?: boolean },
+  ) => {
+    setNodes((current) => current.map((node) => ({
+      ...node,
+      selected: node.id === nodeId,
+    })));
+    window.requestAnimationFrame(() => {
+      const flow = reactFlowRef.current;
+      if (!flow) return;
+      void flow.fitView(
+        options?.preserveZoom
+          ? createPreservedZoomNodeFocusOptions(
+              nodeId,
+              flow.getViewport().zoom,
+            )
+          : {
+              duration: 220,
+              nodes: [{ id: nodeId }],
+              padding: 0.3,
+            },
+      );
+    });
+  }, [setNodes]);
+
+  const createMusicPlayer = useCallback((musicNodeId: string, position?: { x: number; y: number }) => {
+    const musicNode = nodesRef.current.find((node) => node.id === musicNodeId);
+    if (!musicNode || musicNode.data.kind !== "music") return;
+    const update = createMusicPlayerUpdate({
+      edges: edgesRef.current,
+      musicNode,
+      nodes: nodesRef.current,
+      projectId,
+    });
+    const createdNodes = position
+      ? update.createdNodes.map((node) => ({ ...node, position }))
+      : update.createdNodes;
+    if (createdNodes.length || update.createdEdges.length) {
+      appendCanvasItems({
+        currentEdges: edgesRef.current,
+        currentNodes: nodesRef.current,
+        edges: update.createdEdges,
+        nodes: createdNodes,
+      });
+    }
+    focusCanvasNode(update.focusNodeId, { preserveZoom: true });
+  }, [appendCanvasItems, focusCanvasNode, projectId]);
+
+  const ensureMusicPlayback = useCallback((playerNodeId: string) => {
+    const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
+    const sourceNode = resolveMusicSourceNode({
+      edges: edgesRef.current,
+      nodes: nodesRef.current,
+      playerNodeId,
+    });
+    const source = playerNode?.data.originalUrl ?? (
+      sourceNode?.data.kind === "music" ? sourceNode.data.originalUrl : undefined
+    );
+    if (!playerNode || !source) return undefined;
+
+    let audio = musicPlayersRef.current.get(playerNodeId);
+    if (!audio || audio.src !== new URL(source, window.location.href).href) {
+      audio?.pause();
+      const nextAudio = new Audio(source);
+      nextAudio.preload = "metadata";
+      nextAudio.loop = Boolean(playerNode.data.musicLoop);
+      nextAudio.muted = Boolean(playerNode.data.musicMuted);
+      nextAudio.playbackRate = playerNode.data.musicPlaybackRate ?? 1;
+      nextAudio.volume = playerNode.data.musicVolume ?? 1;
+      musicPlayersRef.current.set(playerNodeId, nextAudio);
+      setNodes((current) => current.map((node) => node.id === playerNodeId
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              musicCurrentTime: 0,
+              musicIsPlaying: false,
+            },
+          }
+        : node));
+      nextAudio.addEventListener("loadedmetadata", () => {
+        const duration = Number.isFinite(nextAudio.duration)
+          ? Math.max(0, nextAudio.duration)
+          : 0;
+        setNodes((current) => current.map((node) => node.id === playerNodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                musicCurrentTime: Math.min(
+                  duration,
+                  Math.max(0, nextAudio.currentTime),
+                ),
+                musicDuration: duration,
+              },
+            }
+          : node));
+      });
+      nextAudio.addEventListener("timeupdate", () => {
+        setNodes((current) => current.map((node) => node.id === playerNodeId
+          ? { ...node, data: { ...node.data, musicCurrentTime: nextAudio.currentTime } }
+          : node));
+      });
+      nextAudio.addEventListener("ended", () => {
+        setNodes((current) => current.map((node) => node.id === playerNodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                musicCurrentTime: nextAudio.currentTime,
+                musicIsPlaying: false,
+              },
+            }
+          : node));
+      });
+      audio = nextAudio;
+    }
+    return audio;
+  }, [setNodes]);
+
+  const toggleMusicPlayback = useCallback((playerNodeId: string, playing: boolean) => {
+    const audio = ensureMusicPlayback(playerNodeId);
+    if (!audio) return;
+
+    for (const [id, otherAudio] of musicPlayersRef.current) {
+      if (id !== playerNodeId) otherAudio.pause();
+    }
+    setNodes((current) => current.map((node) => node.data.kind === "musicPlayer"
+      ? { ...node, data: { ...node.data, musicIsPlaying: node.id === playerNodeId && playing } }
+      : node));
+
+    if (playing) {
+      void audio.play().catch((error) => {
+        setNodes((current) => current.map((node) => node.id === playerNodeId
+          ? { ...node, data: { ...node.data, musicError: error instanceof Error ? error.message : "无法播放音乐", musicIsPlaying: false } }
+          : node));
+      });
+    } else {
+      audio.pause();
+    }
+  }, [ensureMusicPlayback, setNodes]);
+
+  const updateMusicPlayback = useCallback((playerNodeId: string, updates: {
+    loop?: boolean;
+    muted?: boolean;
+    playbackRate?: number;
+    volume?: number;
+  }) => {
+    const audio = musicPlayersRef.current.get(playerNodeId);
+    if (audio) {
+      if (updates.loop !== undefined) audio.loop = updates.loop;
+      if (updates.muted !== undefined) audio.muted = updates.muted;
+      if (updates.playbackRate !== undefined) audio.playbackRate = updates.playbackRate;
+      if (updates.volume !== undefined) audio.volume = updates.volume;
+    }
+    setNodes((current) => current.map((node) => node.id === playerNodeId
+      ? {
+          ...node,
+          data: {
+            ...node.data,
+            ...(updates.loop === undefined ? {} : { musicLoop: updates.loop }),
+            ...(updates.muted === undefined ? {} : { musicMuted: updates.muted }),
+            ...(updates.playbackRate === undefined ? {} : { musicPlaybackRate: updates.playbackRate }),
+            ...(updates.volume === undefined ? {} : { musicVolume: updates.volume }),
+          },
+        }
+      : node));
+  }, [setNodes]);
+
+  const seekMusicPlayer = useCallback((playerNodeId: string, seconds: number) => {
+    const audio = musicPlayersRef.current.get(playerNodeId);
+    if (audio) audio.currentTime = seconds;
+    setNodes((current) => current.map((node) => node.id === playerNodeId
+      ? { ...node, data: { ...node.data, musicCurrentTime: seconds } }
+      : node));
+  }, [setNodes]);
+
+  const ensureMusicWaveform = useCallback((playerNodeId: string) => {
+    const existing = musicWaveformTasksRef.current.get(playerNodeId);
+    if (existing) return existing;
+
+    const task = (async () => {
+      const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
+      if (
+        playerNode?.data.musicWaveform?.length &&
+        playerNode.data.musicWaveformVersion === MUSIC_WAVEFORM_VERSION
+      ) return;
+      const sourceNode = resolveMusicSourceNode({
+        edges: edgesRef.current,
+        nodes: nodesRef.current,
+        playerNodeId,
+      });
+      const sourceUrl =
+        playerNode?.data.originalUrl ??
+        (sourceNode?.data.kind === "music"
+          ? sourceNode.data.originalUrl
+          : undefined);
+      if (!playerNode || !sourceUrl) {
+        throw new Error("播放器没有可生成波形的本地音乐文件");
+      }
+
+      const result = await generateLocalAudioWaveform(sourceUrl);
+      setNodes((current) => current.map((node) => node.id === playerNodeId
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              musicDuration: result.duration || node.data.musicDuration,
+              musicWaveform: result.waveform,
+              musicWaveformVersion: MUSIC_WAVEFORM_VERSION,
+            },
+          }
+        : node));
+    })().finally(() => {
+      musicWaveformTasksRef.current.delete(playerNodeId);
+    });
+    musicWaveformTasksRef.current.set(playerNodeId, task);
+    return task;
+  }, [setNodes]);
+
+  const fetchLyrics = useCallback(async (
+    childNodeId: string,
+    playerNodeId: string,
+  ) => {
+    const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
+    const sourceNode = resolveMusicSourceNode({
+      edges: edgesRef.current,
+      nodes: nodesRef.current,
+      playerNodeId,
+    });
+    const fileId = playerNode?.data.fileId ?? sourceNode?.data.fileId;
+    if (!playerNode || !fileId) {
+      setNodes((current) => current.map((node) => node.id === childNodeId
+        ? { ...node, data: { ...node.data, musicError: "播放器没有可获取歌词的上游音乐文件", lyricsFetchStatus: "failed" as const } }
+        : node));
+      return;
+    }
+    try {
+      const startedAt = Date.now();
+      const response = await fetch("/api/music/lyrics", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ projectId, fileId }),
+      });
+      const result = await response.json().catch(() => null) as Record<string, unknown> | null;
+      if (!response.ok) throw new Error(getMusicApiErrorMessage(result));
+      const warnings = Array.isArray(result?.warnings)
+        ? result.warnings.filter((warning): warning is string => typeof warning === "string")
+        : [];
+      setNodes((current) => current.map((node) => node.id === childNodeId
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              musicError: undefined,
+              lyricsFetchDurationMs: Date.now() - startedAt,
+              lyricsFetchStatus: "succeeded" as const,
+              musicLyrics: extractMusicLyrics(result ?? undefined),
+              lyricsWarnings: warnings,
+            },
+          }
+        : node));
+    } catch (error) {
+      setNodes((current) => current.map((node) => node.id === childNodeId
+        ? { ...node, data: { ...node.data, musicError: error instanceof Error ? error.message : "歌词获取失败", lyricsFetchStatus: "failed" as const } }
+        : node));
+    }
+  }, [projectId, setNodes]);
+
+  useEffect(() => {
+    const recoveries = findLyricsNodesNeedingRecovery(nodes).filter(
+      ({ childNodeId }) =>
+        !recoveringLyricsNodeIdsRef.current.has(childNodeId),
+    );
+    for (const recovery of recoveries) {
+      recoveringLyricsNodeIdsRef.current.add(recovery.childNodeId);
+      void fetchLyrics(
+        recovery.childNodeId,
+        recovery.playerNodeId,
+      );
+    }
+  }, [fetchLyrics, nodes]);
+
+  const createMusicChild = useCallback((
+    playerNodeId: string,
+    _kind: MusicChildNodeKind,
+    position?: { x: number; y: number },
+  ) => {
+    const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
+    if (!playerNode || playerNode.data.kind !== "musicPlayer") return;
+    const update = createLyricsNodeUpdate({
+      playerNode,
+      position,
+      projectId,
+    });
+    if (update.createdNodes.length || update.createdEdges.length) {
+      appendCanvasItems({
+        currentEdges: edgesRef.current,
+        currentNodes: nodesRef.current,
+        edges: update.createdEdges,
+        nodes: update.createdNodes,
+      });
+    }
+    focusCanvasNode(update.focusNodeId, { preserveZoom: true });
+    window.setTimeout(() => {
+      void fetchLyrics(update.focusNodeId, playerNodeId);
+    }, 0);
+  }, [appendCanvasItems, fetchLyrics, focusCanvasNode, projectId]);
+
+  const locateMusicPlayer = useCallback((_musicNodeId: string, playerNodeId: string) => {
+    focusCanvasNode(playerNodeId);
+  }, [focusCanvasNode]);
+
+  const locateTaskNode = useCallback((nodeId: string) => {
+    focusCanvasNode(nodeId);
+  }, [focusCanvasNode]);
+
   const renderedNodes = useMemo(
     () =>
       getRenderedCanvasNodes({
         createNoteNode,
         edges,
         nodes,
+        onCreateMusicChildNode: createMusicChild,
+        onCreateMusicPlayerNode: createMusicPlayer,
+        onEnsureMusicPlayback: ensureMusicPlayback,
+        onEnsureMusicWaveform: ensureMusicWaveform,
+        onLocateMusicPlayerNode: locateMusicPlayer,
+        onSeekMusicPlayer: seekMusicPlayer,
+        onToggleMusicPlayback: toggleMusicPlayback,
+        onUpdateMusicNode: updateMusicNode,
+        onUpdateMusicPlayback: updateMusicPlayback,
         onResolveImageDimensions: resolveImageNodeDimensions,
         onCreateTextChildNode: createTextChildNode,
         onSubmitImageNode: submitImageGenerationNode,
@@ -2458,14 +3365,31 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         onUpdateImageNode: updateImageGenerationNode,
         onUpdateTextGenerationNode: updateTextGenerationNode,
         onUpdateTextNode: updateTextNode,
+        onUpdateTaskNode: updateTaskNode,
+        onSetTaskParent: setTaskParent,
+        onLocateTaskNode: locateTaskNode,
+        onToggleTaskChildren: toggleTaskChildren,
+        onToggleAiResponseExpanded: toggleAiResponseExpanded,
+        onToggleTextExpanded: toggleTextExpanded,
+        onToggleMusicChildExpanded: toggleMusicChildExpanded,
+        onUpdateProjectTag: updateProjectTag,
         projectId,
         toggleReaderCollapse,
       }),
     [
       createNoteNode,
+      createMusicChild,
+      createMusicPlayer,
+      ensureMusicPlayback,
+      ensureMusicWaveform,
       createTextChildNode,
       edges,
       nodes,
+      locateMusicPlayer,
+      seekMusicPlayer,
+      toggleMusicPlayback,
+      updateMusicNode,
+      updateMusicPlayback,
       projectId,
       resolveImageNodeDimensions,
       submitImageGenerationNode,
@@ -2474,13 +3398,78 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       updateImageGenerationNode,
       updateTextGenerationNode,
       updateTextNode,
+      updateTaskNode,
+      setTaskParent,
+      locateTaskNode,
+      toggleTaskChildren,
+      toggleAiResponseExpanded,
+      toggleTextExpanded,
+      toggleMusicChildExpanded,
+      updateProjectTag,
     ],
   );
+
+  const displayedNodes = useMemo(
+    () => [
+      ...altDragPreviewNodes,
+      ...renderedNodes.map((node) =>
+        altDragMovingNodeIds.has(node.id)
+          ? {
+              ...node,
+              className: [node.className, "zenme-alt-drag-copy-preview"]
+                .filter(Boolean)
+                .join(" "),
+            }
+          : node,
+      ),
+    ],
+    [altDragMovingNodeIds, altDragPreviewNodes, renderedNodes],
+  );
+
+  if (!canvasHydrated) {
+    if (canvasLoadError) {
+      return (
+        <div
+          className="flex h-full flex-col items-center justify-center gap-3 bg-white px-6 text-center"
+          role="alert"
+        >
+          <div className="text-sm font-medium text-zinc-800">画布加载失败</div>
+          <div className="max-w-md text-xs leading-5 text-zinc-500">
+            {canvasLoadError}
+          </div>
+          <button
+            className="mt-1 inline-flex h-9 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm transition hover:bg-zinc-50 active:bg-zinc-100"
+            onClick={() => setCanvasLoadAttempt((attempt) => attempt + 1)}
+            type="button"
+          >
+            <RefreshCw className="size-4" aria-hidden />
+            重新加载
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        aria-live="polite"
+        className="flex h-full items-center justify-center bg-white text-sm text-zinc-500"
+        role="status"
+      >
+        <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+        正在加载画布...
+      </div>
+    );
+  }
 
   return (
     <div className={`zenme-canvas-shell h-full overflow-hidden bg-white text-zinc-950 ${isNodeDragging ? "zenme-canvas-node-dragging" : ""}`}>
       <main
         className="relative h-full w-full"
+        onAuxClickCapture={(event) => {
+          if (shouldPreventNativeCanvasAuxClick(event.nativeEvent)) {
+            event.preventDefault();
+          }
+        }}
         onDoubleClick={handleCanvasDoubleClick}
         onPointerMove={(event) => {
           lastCanvasPointer.current = { x: event.clientX, y: event.clientY };
@@ -2514,8 +3503,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           edges={renderedEdges}
           elementsSelectable
           nodeTypes={nodeTypes}
-          nodes={renderedNodes}
+          nodes={displayedNodes}
           connectionRadius={120}
+          isValidConnection={isCanvasConnectionValid}
           onConnect={onConnect}
           onConnectEnd={(event) => {
             const sourceNodeId = connectingNodeId.current;
@@ -2560,7 +3550,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           maxZoom={CANVAS_ZOOM_MAX}
           onNodeClick={(_event, node) => bringNodeToFront(node.id)}
           onNodeDrag={(_event, node) => moveGroupedNodesWithFrame(node)}
-          onNodeDragStart={(_event, node) => handleCanvasNodeDragStart(node)}
+          onNodeDragStart={(event, node) =>
+            handleCanvasNodeDragStart(node, event.altKey)
+          }
           onNodeDragStop={(_event, node) => handleCanvasNodeDragStop(node)}
           onNodesChange={handleNodesChange}
           onPaneClick={() => {
@@ -2569,6 +3561,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           }}
           panOnDrag={[1]}
           panOnScroll={false}
+          proOptions={{ hideAttribution: true }}
           selectionOnDrag
           selectionKeyCode={null}
           onlyRenderVisibleElements
@@ -2617,9 +3610,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         ) : null}
 
         <CanvasSideToolbar
+          onArrange={quickArrangeCanvas}
           onOpenAgent={() => setIsAgentOpen(true)}
           onSave={() => void saveCanvas({ includeThumbnail: true })}
-          onZoomIn={() => setCanvasZoom(getNextCanvasZoom(zoomLevel, 0.1))}
         />
 
         <CanvasBottomControls
@@ -2665,6 +3658,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             menu={canvasAddMenu}
             onClose={() => setCanvasAddMenu(null)}
             onCreateImageGenerationNode={createImageGenerationNodeAt}
+            onCreateManagedTextNode={createManagedTextNodeAt}
+            onCreateTaskNode={createTaskNodeAt}
             onCreateTextNode={createTextNodeAt}
             onUploadFiles={openUploadPickerAt}
           />
@@ -2676,7 +3671,18 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             menu={nodeActionMenu}
             onClose={() => setNodeActionMenu(null)}
             onCreateConnectedPlaceholder={createConnectedPlaceholder}
+            onUploadConnectedFiles={openConnectedUploadPicker}
             onOpenReadingWorkspace={openReadingWorkspace}
+            onCreateMusicPlayer={() => {
+              if (!actionNode || actionNode.data.kind !== "music") return;
+              createMusicPlayer(actionNode.id, nodeActionMenu.flowPosition);
+              setNodeActionMenu(null);
+            }}
+            onCreateMusicChild={(kind) => {
+              if (!actionNode || actionNode.data.kind !== "musicPlayer") return;
+              createMusicChild(actionNode.id, kind, nodeActionMenu.flowPosition);
+              setNodeActionMenu(null);
+            }}
             onProcessWithAgent={() => {
               createConnectedPlaceholder("agent");
               setAgentContext(createAgentContextFromActionNode(actionNode));
@@ -2713,13 +3719,6 @@ function blobToDataUrl(blob: Blob) {
     };
     reader.readAsDataURL(blob);
   });
-}
-
-function getClipboardImageExtension(mimeType: string) {
-  if (mimeType === "image/jpeg") return "jpg";
-  if (mimeType === "image/webp") return "webp";
-  if (mimeType === "image/gif") return "gif";
-  return "png";
 }
 
 function dataUrlToFile(dataUrl: string, fileName: string) {

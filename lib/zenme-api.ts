@@ -1,5 +1,7 @@
 "use client";
 
+import type { ImageCameraControl } from "@/components/zenme/image-edit-options";
+import type { AppShellState } from "@/lib/local/app-shell-state";
 import type { CanvasSnapshotPayload, ZenmeProject } from "@/lib/zenme";
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -55,6 +57,27 @@ export async function deleteProjectInApi(projectId: string) {
   }));
 }
 
+export async function getAppShellStateFromApi() {
+  const payload = await readJson<{ state: AppShellState }>(
+    await fetch("/api/app-shell-state", { cache: "no-store" }),
+  );
+  return payload.state;
+}
+
+export async function updateAppShellStateInApi(
+  updates: Partial<Omit<AppShellState, "version">>,
+) {
+  const payload = await readJson<{ state: AppShellState }>(
+    await fetch("/api/app-shell-state", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(updates),
+      keepalive: true,
+    }),
+  );
+  return payload.state;
+}
+
 export async function getCanvasSnapshotFromApi(projectId: string) {
   return readJson<{ snapshot: CanvasSnapshotPayload; updated_at: string } | null>(
     await fetch(`/api/projects/${projectId}/canvas`, {
@@ -78,6 +101,19 @@ export async function saveCanvasSnapshotToApi(input: {
     method: "PUT",
     body: formData,
   }));
+}
+
+export async function saveProjectThumbnailToApi(input: {
+  projectId: string;
+  thumbnail: Blob;
+}) {
+  await readJson<{ ok: true }>(
+    await fetch(`/api/projects/${input.projectId}/thumbnail`, {
+      method: "PUT",
+      headers: { "content-type": "image/webp" },
+      body: input.thumbnail,
+    }),
+  );
 }
 
 export async function uploadProjectFileToApi(input: {
@@ -110,6 +146,7 @@ export async function refreshFileSignedUrlsFromApi(_fileId: string) {
 
 export async function generateOrEditImage(input: {
   aspectRatio?: string;
+  cameraControl?: ImageCameraControl;
   imageDataUrl?: string;
   imageDataUrls?: string[];
   model: string;

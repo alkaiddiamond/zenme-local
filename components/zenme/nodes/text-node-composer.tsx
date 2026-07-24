@@ -27,7 +27,9 @@ export function TextNodeComposer({
   );
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isGenerating = isSubmitting || Boolean(nodeData.hasRunningGenerationChild);
   const configuredModels = useAiModelOptions();
+  const preferredModel = configuredModels[0]?.id ?? modelOptions[0];
   const pickerModels = configuredModels.some((option) => option.id === model)
     ? configuredModels
     : [createModelOption(model), ...configuredModels];
@@ -43,8 +45,8 @@ export function TextNodeComposer({
   }, [nodeData.textGenerationPrompt]);
 
   useEffect(() => {
-    setModel(nodeData.textGenerationModel ?? modelOptions[0]);
-  }, [nodeData.textGenerationModel]);
+    setModel(nodeData.textGenerationModel ?? preferredModel);
+  }, [nodeData.textGenerationModel, preferredModel]);
 
   function syncComposerState(nextState?: {
     model?: string;
@@ -65,7 +67,7 @@ export function TextNodeComposer({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextPrompt = prompt.trim();
-    if (!nextPrompt || isSubmitting) {
+    if (isGenerating) {
       return;
     }
 
@@ -116,12 +118,6 @@ export function TextNodeComposer({
           {error}
         </p>
       ) : null}
-      {isSubmitting ? (
-        <div className="mt-2 flex items-center gap-2 px-1 text-xs text-zinc-500">
-          <Loader2 className="size-3.5 animate-spin" />
-          AI 正在生成回复...
-        </div>
-      ) : null}
       <div className="mt-auto flex items-end justify-between gap-3 pt-3">
         <ZenmeModelPicker
           icon={<Sparkles className="size-4" />}
@@ -131,11 +127,11 @@ export function TextNodeComposer({
         />
         <button
           className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
-          disabled={isSubmitting || !prompt.trim()}
+          disabled={isGenerating}
           title="提交"
           type="submit"
         >
-          {isSubmitting ? (
+          {isGenerating ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
             <Send className="size-4" />

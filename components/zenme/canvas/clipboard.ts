@@ -4,20 +4,48 @@ import { collectSelectedNodeIdsWithChildren } from "./keyboard";
 
 export const ZENME_NODE_CLIPBOARD_MIME = "application/x-zenme-canvas-nodes";
 export const ZENME_NODE_CLIPBOARD_PREFIX = "zenme-node-clipboard:";
+const IMAGE_FILE_EXTENSION = /\.(?:avif|gif|jpe?g|png|svg|webp)$/i;
 
 export type CanvasNodeClipboardPayload = {
   nodes: CanvasNode[];
   version: 1;
 };
 
+export function hasSelectedClipboardText(
+  selection: Pick<Selection, "isCollapsed" | "toString"> | null,
+) {
+  return Boolean(
+    selection &&
+      !selection.isCollapsed &&
+      selection.toString().length > 0,
+  );
+}
+
 export function createCanvasNodeClipboardPayload(nodes: CanvasNode[]) {
   const selectedIds = collectSelectedNodeIdsWithChildren(nodes);
+  return createCanvasNodeClipboardPayloadForNodeIds(nodes, selectedIds);
+}
+
+export function createCanvasNodeClipboardPayloadForNodeIds(
+  nodes: CanvasNode[],
+  selectedIds: ReadonlySet<string>,
+) {
   if (selectedIds.size === 0) return null;
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const copiedNodes = nodes
     .filter((node) => selectedIds.has(node.id))
     .map((node) => {
       const snapshot = createCanvasHistoryNodeSnapshot(node);
+      if (
+        snapshot.data.kind === "task" &&
+        snapshot.data.taskParentId &&
+        !selectedIds.has(snapshot.data.taskParentId)
+      ) {
+        snapshot.data = {
+          ...snapshot.data,
+          taskParentId: undefined,
+        };
+      }
       if (!node.parentId || selectedIds.has(node.parentId)) return snapshot;
       const absolutePosition = getAbsoluteNodePosition(node, nodeById);
       delete snapshot.parentId;
@@ -41,6 +69,46 @@ export function parseCanvasNodeClipboardPayload(value: string) {
   }
 }
 
+export function getClipboardImageFiles(
+  clipboardData: Pick<DataTransfer, "files" | "items">,
+) {
+  const candidates = [
+    ...Array.from(clipboardData.items)
+      .filter((item) => item.kind === "file")
+      .map((item) => ({ file: item.getAsFile(), typeHint: item.type })),
+    ...Array.from(clipboardData.files).map((file) => ({
+      file,
+      typeHint: file.type,
+    })),
+  ];
+  const seen = new Set<string>();
+
+  return candidates.flatMap(({ file, typeHint }, index) => {
+    if (!file) return [];
+    const mimeType = getClipboardImageMimeType(file, typeHint);
+    if (!mimeType) return [];
+    const key = [
+      file.name,
+      file.size,
+      file.lastModified,
+      file.type,
+    ].join(":");
+    if (seen.has(key)) return [];
+    seen.add(key);
+
+    const extension = getClipboardImageExtension(mimeType);
+    const fileName = file.name || `clipboard-${Date.now()}-${index + 1}.${extension}`;
+    if (file.type === mimeType && file.name) return [file];
+
+    return [
+      new File([file], fileName, {
+        lastModified: file.lastModified,
+        type: mimeType,
+      }),
+    ];
+  });
+}
+
 export function createPastedCanvasNodes(input: {
   anchor: { x: number; y: number };
   createId: () => string;
@@ -57,10 +125,22 @@ export function createPastedCanvasNodes(input: {
   return input.payload.nodes.map((sourceNode) => {
     const snapshot = createCanvasHistoryNodeSnapshot(sourceNode);
     const parentId = sourceNode.parentId ? idMap.get(sourceNode.parentId) : undefined;
+    const taskParentId =
+      sourceNode.data.kind === "task" && sourceNode.data.taskParentId
+        ? idMap.get(sourceNode.data.taskParentId)
+        : undefined;
+    const groupId = sourceNode.data.groupId
+      ? idMap.get(sourceNode.data.groupId)
+      : undefined;
     return {
       ...snapshot,
       id: idMap.get(sourceNode.id) as string,
       parentId,
+      data: {
+        ...snapshot.data,
+        groupId,
+        ...(sourceNode.data.kind === "task" ? { taskParentId } : {}),
+      },
       position: parentId
         ? sourceNode.position
         : {
@@ -71,6 +151,23 @@ export function createPastedCanvasNodes(input: {
       ...(parentId ? {} : { extent: undefined }),
     } satisfies CanvasNode;
   });
+}
+
+function getClipboardImageMimeType(file: File, typeHint: string) {
+  const mimeType = file.type || typeHint;
+  if (mimeType.startsWith("image/")) return mimeType;
+  if (file.type || typeHint) return null;
+  if (file.name && !IMAGE_FILE_EXTENSION.test(file.name)) return null;
+  return "image/png";
+}
+
+function getClipboardImageExtension(mimeType: string) {
+  if (mimeType === "image/jpeg") return "jpg";
+  if (mimeType === "image/webp") return "webp";
+  if (mimeType === "image/gif") return "gif";
+  if (mimeType === "image/avif") return "avif";
+  if (mimeType === "image/svg+xml") return "svg";
+  return "png";
 }
 
 function getAbsoluteNodePosition(

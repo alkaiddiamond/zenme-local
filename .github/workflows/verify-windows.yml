@@ -1,0 +1,41 @@
+name: Verify Windows package
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/verify-windows.yml"
+      - "app/**"
+      - "components/**"
+      - "desktop/**"
+      - "lib/**"
+      - "public/**"
+      - "next.config.ts"
+      - "package.json"
+      - "package-lock.json"
+
+permissions:
+  contents: read
+
+jobs:
+  package-windows:
+    runs-on: windows-2025
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - run: npm run desktop:pack
+      - run: npm run desktop:smoke
+      - run: npm run desktop:dist:win
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zenme-windows-x64-unsigned
+          path: dist-desktop/Zenme-*-windows-x64.exe
+          if-no-files-found: error
+          retention-days: 7

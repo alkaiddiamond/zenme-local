@@ -10,6 +10,8 @@ const TEXT_GENERATION_CONTEXT_NODE_KINDS = new Set([
   "note",
   "reader",
   "text",
+  "managedText",
+  "lyrics",
 ]);
 
 export function collectTextGenerationContext(input: {
@@ -85,6 +87,17 @@ export function getCanvasNodeContextText(node: CanvasNode) {
     return `文本节点「${title}」\n${text}`;
   }
 
+  if (node.data.kind === "managedText") {
+    const text = node.data.plainText?.trim();
+    if (!text) {
+      return "";
+    }
+
+    const name = node.data.name?.trim() || "未命名节点";
+    const tags = node.data.tags?.length ? `\n标签：${node.data.tags.join("、")}` : "";
+    return `强管理节点「${name}」${tags}\n${text}`;
+  }
+
   if (node.data.kind === "markdown") {
     const markdown = node.data.plainText?.trim();
     return markdown ? `Markdown 节点「${title}」\n${markdown}` : "";
@@ -136,12 +149,27 @@ export function getCanvasNodeContextText(node: CanvasNode) {
     return `阅读器节点「${title}」`;
   }
 
+  if (node.data.kind === "lyrics") {
+    const lyrics = (node.data.musicLyrics ?? [])
+      .filter((line) => line.text.trim())
+      .map((line) => `${formatTimestamp(line.start)} ${line.text.trim()}`)
+      .join("\n");
+    return lyrics ? `歌词节点「${title}」\n${lyrics}` : "";
+  }
+
   if (node.data.kind === "textGeneration") {
     const prompt = node.data.textGenerationPrompt?.trim();
     return prompt ? `文本生成节点「${title}」\n${prompt}` : "";
   }
 
   return "";
+}
+
+function formatTimestamp(seconds: number) {
+  const safeSeconds = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = Math.floor(safeSeconds % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 }
 
 function stripHtmlToText(html?: string) {

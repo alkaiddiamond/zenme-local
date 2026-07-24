@@ -21,7 +21,37 @@ function node(input: {
 }
 
 describe("rendered canvas nodes", () => {
+  it("marks selected nodes when the canvas has a multi-selection", () => {
+    const first = node({ id: "first" });
+    const second = node({ id: "second" });
+    first.selected = true;
+    second.selected = true;
+
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [],
+      nodes: [first, second, node({ id: "unselected" })],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    expect(renderedNodes.find((item) => item.id === "first")?.data)
+      .toMatchObject({ isMultiSelection: true });
+    expect(renderedNodes.find((item) => item.id === "second")?.data)
+      .toMatchObject({ isMultiSelection: true });
+    expect(renderedNodes.find((item) => item.id === "unselected")?.data)
+      .toMatchObject({ isMultiSelection: false });
+  });
+
   it("injects text composer update handlers into text-like nodes", () => {
+    const onToggleAiResponseExpanded = vi.fn();
+    const onToggleTextExpanded = vi.fn();
     const onUpdateTextGenerationNode = vi.fn();
     const renderedNodes = getRenderedCanvasNodes({
       createNoteNode: vi.fn(),
@@ -42,6 +72,8 @@ describe("rendered canvas nodes", () => {
       onCreateTextChildNode: vi.fn(),
       onSubmitImageNode: vi.fn(),
       onSubmitTextGenerationNode: vi.fn(),
+      onToggleAiResponseExpanded,
+      onToggleTextExpanded,
       onUpdateImageNode: vi.fn(),
       onUpdateTextGenerationNode,
       onUpdateTextNode: vi.fn(),
@@ -51,6 +83,7 @@ describe("rendered canvas nodes", () => {
 
     expect(renderedNodes.find((item) => item.id === "text")?.data)
       .toMatchObject({
+        onToggleTextExpanded,
         onUpdateTextGenerationNode,
       });
     expect(renderedNodes.find((item) => item.id === "note")?.data)
@@ -59,8 +92,123 @@ describe("rendered canvas nodes", () => {
       });
     expect(renderedNodes.find((item) => item.id === "agent")?.data)
       .toMatchObject({
+        onToggleAiResponseExpanded,
         onUpdateTextGenerationNode,
       });
+  });
+
+  it("shares project tag options across managed text nodes", () => {
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [],
+      nodes: [
+        node({
+          data: {
+            kind: "managedText",
+            tagColors: { 产品: "blue" },
+            tags: ["产品", "灵感"],
+          },
+          id: "managed-a",
+          type: "managedText",
+        }),
+        node({
+          data: { kind: "managedText", tags: ["产品", "待办"] },
+          id: "managed-b",
+          type: "managedText",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    expect(renderedNodes[0].data.projectTags).toEqual(["产品", "待办", "灵感"]);
+    expect(renderedNodes[1].data.projectTags).toEqual(["产品", "待办", "灵感"]);
+    expect(renderedNodes[0].data.projectTagColors).toEqual({ 产品: "blue" });
+    expect(renderedNodes[1].data.projectTagColors).toEqual({ 产品: "blue" });
+  });
+
+  it("derives direct task children, progress and shared project tags", () => {
+    const onLocateTaskNode = vi.fn();
+    const onSetTaskParent = vi.fn();
+    const onUpdateTaskNode = vi.fn();
+    const onToggleTaskChildren = vi.fn();
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [
+        { source: "parent", target: "plain-text" },
+        { source: "parent", target: "image" },
+        { source: "parent", target: "managed-text" },
+      ],
+      nodes: [
+        node({
+          data: { kind: "task", tags: ["迭代"], taskStatus: "inProgress" },
+          id: "parent",
+          type: "task",
+        }),
+        node({
+          data: {
+            kind: "task",
+            name: "完成项",
+            taskParentId: "parent",
+            taskStatus: "completed",
+          },
+          id: "done-child",
+          type: "task",
+        }),
+        node({
+          data: {
+            kind: "task",
+            name: "进行项",
+            taskParentId: "parent",
+            taskStatus: "inProgress",
+          },
+          id: "active-child",
+          type: "task",
+        }),
+        node({ id: "plain-text" }),
+        node({
+          data: { kind: "image", title: "任务参考图" },
+          id: "image",
+          type: "image",
+        }),
+        node({
+          data: { kind: "managedText", name: "任务说明" },
+          id: "managed-text",
+          type: "managedText",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onLocateTaskNode,
+      onSetTaskParent,
+      onUpdateTaskNode,
+      onToggleTaskChildren,
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    const parent = renderedNodes.find((item) => item.id === "parent");
+    expect(parent?.data.taskChildren).toEqual([
+      { id: "done-child", name: "完成项", status: "completed" },
+      { id: "active-child", name: "进行项", status: "inProgress" },
+    ]);
+    expect(parent?.data.taskProgress).toBe(0.5);
+    expect(parent?.data.projectTags).toEqual(["迭代"]);
+    expect(parent?.data.taskParentOptions).toEqual([]);
+    expect(parent?.data.onLocateTaskNode).toBe(onLocateTaskNode);
+    expect(parent?.data.onSetTaskParent).toBe(onSetTaskParent);
+    expect(parent?.data.onUpdateTaskNode).toBe(onUpdateTaskNode);
+    expect(parent?.data.onToggleTaskChildren).toBe(onToggleTaskChildren);
   });
 
   it("derives image-generation references from incoming image edges", () => {
@@ -116,7 +264,7 @@ describe("rendered canvas nodes", () => {
         node({ data: { kind: "image", previewUrl: "/b.webp" }, id: "image-b", type: "image" }),
         node({
           data: {
-            imageReferenceNodeIds: ["image-b"],
+            imageReferenceNodeIds: ["image-b", "image-a"],
             kind: "imageGeneration",
           },
           id: "generation",
@@ -134,7 +282,79 @@ describe("rendered canvas nodes", () => {
     });
     const generation = renderedNodes.find((item) => item.id === "generation");
     expect(generation?.data.imageReferenceCandidates).toHaveLength(2);
-    expect(generation?.data.imageReferences?.map((item) => item.nodeId)).toEqual(["image-b"]);
+    expect(generation?.data.imageReferences?.map((item) => item.nodeId)).toEqual([
+      "image-b",
+      "image-a",
+    ]);
+  });
+
+  it("locks a source while one of its generation children is running", () => {
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [
+        { source: "text", target: "agent-running" },
+        { source: "image", target: "image-running" },
+      ],
+      nodes: [
+        node({ id: "text" }),
+        node({ data: { kind: "agent", aiStatus: "generating" }, id: "agent-running", type: "agent" }),
+        node({ data: { kind: "image", imageGenerated: true }, id: "image", type: "image" }),
+        node({
+          data: { kind: "imageGeneration", imageGenerationResult: true, imageStatus: "editing" },
+          id: "image-running",
+          type: "imageGeneration",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    expect(renderedNodes.find((item) => item.id === "text")?.data.hasRunningGenerationChild).toBe(true);
+    expect(renderedNodes.find((item) => item.id === "image")?.data.hasRunningGenerationChild).toBe(true);
+  });
+
+  it("keeps persisted lyrics when the transient analysis result is absent after refresh", () => {
+    const persistedLyrics = [
+      { start: 55, end: 61, text: "第一句" },
+      { start: 61, end: 67, text: "第二句" },
+    ];
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [{ source: "player", target: "lyrics" }],
+      nodes: [
+        node({
+          data: { kind: "musicPlayer" },
+          id: "player",
+          type: "musicPlayer",
+        }),
+        node({
+          data: {
+            kind: "lyrics",
+            lyricsFetchStatus: "succeeded",
+            musicLyrics: persistedLyrics,
+          },
+          id: "lyrics",
+          type: "lyrics",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    expect(renderedNodes.find((item) => item.id === "lyrics")?.data.musicLyrics)
+      .toEqual(persistedLyrics);
   });
 
 });

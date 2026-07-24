@@ -5,19 +5,24 @@ import {
   DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
   DEFAULT_IMAGE_EDIT_QUALITY,
   getImageEditResultNodeSize,
+  type ImageCameraControl,
 } from "@/components/zenme/image-edit-options";
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 
 import { readNodeSize } from "./geometry";
 import type { CanvasNode } from "./types";
 
-const TEXT_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
+const TEXT_NODE_DEFAULT_SIZE = { height: 176, width: 560 };
+const MANAGED_TEXT_NODE_DEFAULT_SIZE = { height: 380, width: 560 };
+const TASK_NODE_COLLAPSED_SIZE = { height: 176, width: 560 };
+const TASK_NODE_DEFAULT_EXPANDED_HEIGHT = 460;
 const CODE_NODE_DEFAULT_SIZE = { height: 420, width: 720 };
 const MARKDOWN_NODE_DEFAULT_SIZE = { height: 320, width: 560 };
 export const NANO_BANANA_2_IMAGE_MODEL =
   "google/gemini-3.1-flash-image-preview";
-const IMAGE_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
-const TEXT_NODE_MIN_HEIGHT = 180;
+const IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
+const IMAGE_RESULT_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
+const TEXT_NODE_MIN_HEIGHT = 176;
 const TEXT_NODE_MAX_GENERATED_HEIGHT = 560;
 const TEXT_NODE_VERTICAL_PADDING = 56;
 const TEXT_NODE_LINE_HEIGHT = 30;
@@ -27,6 +32,7 @@ export function createTextCanvasNode(input: {
   codeLanguage?: string;
   height?: number;
   id: string;
+  model?: string;
   plainText?: string;
   position: { x: number; y: number };
   richTextHtml?: string;
@@ -50,6 +56,65 @@ export function createTextCanvasNode(input: {
       codeContent: input.textMode === "code" ? (input.plainText ?? "") : undefined,
       codeLanguage: input.codeLanguage,
       textMode: input.textMode ?? "plain",
+      textGenerationModel: input.model,
+    },
+  };
+}
+
+export function createManagedTextCanvasNode(input: {
+  createdAt?: string;
+  id: string;
+  model?: string;
+  name?: string;
+  plainText?: string;
+  position: { x: number; y: number };
+  tags?: string[];
+}): CanvasNode {
+  return {
+    id: input.id,
+    type: "managedText",
+    position: input.position,
+    style: MANAGED_TEXT_NODE_DEFAULT_SIZE,
+    data: {
+      kind: "managedText",
+      title: "强管理节点",
+      name: input.name ?? "",
+      tags: input.tags ?? [],
+      createdAt: input.createdAt ?? new Date().toISOString(),
+      plainText: input.plainText ?? "",
+      richTextHtml: "",
+      textMode: "plain",
+      textGenerationModel: input.model,
+    },
+  };
+}
+
+export function createTaskCanvasNode(input: {
+  createdAt?: string;
+  id: string;
+  name?: string;
+  position: { x: number; y: number };
+  tags?: string[];
+}): CanvasNode {
+  const createdAt = input.createdAt ?? new Date().toISOString();
+  return {
+    id: input.id,
+    type: "task",
+    position: input.position,
+    style: TASK_NODE_COLLAPSED_SIZE,
+    data: {
+      kind: "task",
+      title: "任务",
+      name: input.name ?? "",
+      tags: input.tags ?? [],
+      createdAt,
+      updatedAt: createdAt,
+      taskStatus: "inProgress",
+      taskPriority: "P3",
+      taskComplexity: "simple",
+      taskUrgency: "stand",
+      taskChildrenExpanded: false,
+      taskExpandedHeight: TASK_NODE_DEFAULT_EXPANDED_HEIGHT,
     },
   };
 }
@@ -146,8 +211,8 @@ export function createReferencedImageGenerationCanvasNode(input: {
         y: input.sourceNode.position.y,
       },
     style: {
-      height: IMAGE_NODE_DEFAULT_SIZE.height,
-      width: IMAGE_NODE_DEFAULT_SIZE.width,
+      height: IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE.height,
+      width: IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE.width,
     },
     data: {
       kind: "imageGeneration",
@@ -181,8 +246,8 @@ export function createImageGenerationCanvasNode(input: {
     type: "imageGeneration",
     position: input.position,
     style: {
-      height: IMAGE_NODE_DEFAULT_SIZE.height,
-      width: IMAGE_NODE_DEFAULT_SIZE.width,
+      height: IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE.height,
+      width: IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE.width,
     },
     data: {
       kind: "imageGeneration",
@@ -211,8 +276,8 @@ export function createEditedImageChildCanvasNode(input: {
   title?: string;
 }): { edge: Edge; node: CanvasNode } {
   const sourceSize = readNodeSize(input.sourceNode, {
-    height: IMAGE_NODE_DEFAULT_SIZE.height,
-    width: IMAGE_NODE_DEFAULT_SIZE.width,
+    height: IMAGE_RESULT_NODE_DEFAULT_SIZE.height,
+    width: IMAGE_RESULT_NODE_DEFAULT_SIZE.width,
   });
   const resultSize = getImageEditResultNodeSize(input.aspectRatio);
   const node: CanvasNode = {
@@ -280,7 +345,8 @@ export function createAiResponseChildCanvasNode(input: {
   model?: string;
   position?: { x: number; y: number };
   prompt: string;
-  response: string;
+  response?: string;
+  startedAt?: string;
   sourceNode: CanvasNode;
 }): { edge: Edge; node: CanvasNode } {
   const sourceSize = readNodeSize(input.sourceNode, {
@@ -295,7 +361,7 @@ export function createAiResponseChildCanvasNode(input: {
       y: input.sourceNode.position.y + 48,
     },
     style: {
-      height: estimateAiResponseNodeHeight(input.response),
+      height: input.response ? estimateAiResponseNodeHeight(input.response) : 260,
       width: 620,
     },
     data: {
@@ -305,9 +371,52 @@ export function createAiResponseChildCanvasNode(input: {
       aiResponse: input.response,
       aiModel: input.model,
       aiCreatedAt: new Date().toISOString(),
+      aiStatus: input.response ? "done" : "generating",
+      aiTaskStartedAt: input.startedAt ?? new Date().toISOString(),
       textGenerationModel: input.model,
-      plainText: input.response,
+      plainText: input.response ?? "",
       textMode: "markdown",
+    },
+  };
+
+  return {
+    edge: createConnectedEdge(input.sourceNode.id, input.id),
+    node,
+  };
+}
+
+export function createPendingImageResultChildCanvasNode(input: {
+  aspectRatio?: string;
+  cameraControl?: ImageCameraControl;
+  id: string;
+  model?: string;
+  position: { x: number; y: number };
+  prompt: string;
+  quality?: string;
+  sourceNode: CanvasNode;
+  startedAt?: string;
+}): { edge: Edge; node: CanvasNode } {
+  const node: CanvasNode = {
+    id: input.id,
+    type: "imageGeneration",
+    position: input.position,
+    style: {
+      height: IMAGE_RESULT_NODE_DEFAULT_SIZE.height,
+      width: IMAGE_RESULT_NODE_DEFAULT_SIZE.width,
+    },
+    data: {
+      kind: "imageGeneration",
+      title: "图片生成",
+      imageOperation: "generate",
+      imageGenerationResult: true,
+      imageCameraControl: input.cameraControl,
+      imageModel: input.model ?? NANO_BANANA_2_IMAGE_MODEL,
+      imageOutputAspectRatio: input.aspectRatio ?? DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
+      imagePrompt: input.prompt,
+      imageQuality: input.quality ?? DEFAULT_IMAGE_EDIT_QUALITY,
+      imageStatus: "editing",
+      imageTaskStartedAt: input.startedAt ?? new Date().toISOString(),
+      imageReferenceNodeIds: [],
     },
   };
 
@@ -377,15 +486,21 @@ export function createReaderCanvasNode(input: {
 export function createConnectedPlaceholderCanvasNode(input: {
   aspectRatio?: string;
   id: string;
-  kind: "text" | "agent" | "textGeneration" | "imageGeneration";
+  kind:
+    | "text"
+    | "agent"
+    | "managedText"
+    | "task"
+    | "textGeneration"
+    | "imageGeneration";
   model?: string;
   position?: { x: number; y: number };
   quality?: string;
   sourceNode: CanvasNode;
 }): { edge: Edge; node: CanvasNode } {
   const sourceSize = readNodeSize(input.sourceNode, {
-    height: 260,
-    width: 520,
+    height: TEXT_NODE_DEFAULT_SIZE.height,
+    width: TEXT_NODE_DEFAULT_SIZE.width,
   });
   if (input.kind === "textGeneration") {
     const { edge, node } = createTextGenerationCanvasNode({
@@ -408,6 +523,43 @@ export function createConnectedPlaceholderCanvasNode(input: {
     return createReferencedImageGenerationCanvasNode(input);
   }
 
+  if (input.kind === "task") {
+    const taskNode = createTaskCanvasNode({
+      id: input.id,
+      position: input.position ?? {
+        x: input.sourceNode.position.x + sourceSize.width + 80,
+        y: input.sourceNode.position.y,
+      },
+    });
+    return {
+      edge: createConnectedEdge(input.sourceNode.id, input.id),
+      node:
+        input.sourceNode.data.kind === "task"
+          ? {
+              ...taskNode,
+              data: {
+                ...taskNode.data,
+                taskParentId: input.sourceNode.id,
+              },
+            }
+          : taskNode,
+    };
+  }
+
+  if (input.kind === "managedText") {
+    return {
+      edge: createConnectedEdge(input.sourceNode.id, input.id),
+      node: createManagedTextCanvasNode({
+        id: input.id,
+        model: input.model,
+        position: input.position ?? {
+          x: input.sourceNode.position.x + sourceSize.width + 80,
+          y: input.sourceNode.position.y,
+        },
+      }),
+    };
+  }
+
   const node: CanvasNode = {
     id: input.id,
     type: input.kind,
@@ -417,16 +569,17 @@ export function createConnectedPlaceholderCanvasNode(input: {
     },
     style:
       input.kind === "text"
-        ? {
-            height: 260,
-            width: 520,
-          }
+        ? TEXT_NODE_DEFAULT_SIZE
         : undefined,
     data: {
       kind: input.kind,
       title: input.kind === "agent" ? "Agent 输出占位" : "文本",
       richTextHtml: input.kind === "text" ? "" : undefined,
       plainText: input.kind === "text" ? "" : undefined,
+      textGenerationModel:
+        input.kind === "text" || input.kind === "agent"
+          ? input.model
+          : undefined,
       uploadStatus: "pending",
     },
   };
@@ -550,7 +703,7 @@ export function createDroppedReadingNoteCanvasNode(input: {
   };
 }
 
-function createConnectedEdge(sourceId: string, targetId: string): Edge {
+export function createConnectedEdge(sourceId: string, targetId: string): Edge {
   return {
     id: `edge-${sourceId}-${targetId}`,
     source: sourceId,
