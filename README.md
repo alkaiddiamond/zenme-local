@@ -10,9 +10,9 @@ Zenme Local 是一款纯本地的 AI 无限画布桌面应用，用一个可连�
 
 ## 产品预览
 
-| 项目入口 | 无限画布与节点 |
+| Windows 桌面主页 | Windows 桌面画布与节点 |
 | --- | --- |
-| ![Zenme 项目入口](.github/assets/dashboard.png) | ![Zenme 无限画布与节点](.github/assets/canvas-nodes.png) |
+| ![Zenme Windows 桌面主页](.github/assets/dashboard.png) | ![Zenme Windows 桌面画布与节点](.github/assets/canvas-nodes.png) |
 
 ## 下载与安装
 

@@ -36,6 +36,7 @@
     "audit:prod": "npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org",
     "licenses:generate": "node scripts/generate-third-party-licenses.cjs",
     "licenses:check": "npm run licenses:generate && git diff --exit-code -- THIRD_PARTY_LICENSES.md",
+    "screenshots:readme": "npm run build && npm run desktop:pack && node scripts/capture-readme-screenshots.cjs",
     "desktop:smoke": "node desktop/smoke-packaged-app.cjs",
     "release:check": "npm run verify && npm run audit:prod && npm run licenses:check && npm run desktop:pack && npm run desktop:smoke"
   },
