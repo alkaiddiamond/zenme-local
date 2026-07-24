@@ -24,14 +24,14 @@ test("release package declares MIT and includes license notices", () => {
   );
 });
 
-test("release workflow requires signed Windows and notarized macOS artifacts", () => {
+test("release workflow requires signed Windows artifacts while macOS is paused", () => {
   const workflow = fs.readFileSync(
     path.join(projectRoot, ".github", "workflows", "release.yml"),
     "utf8",
   );
 
   assert.match(workflow, /Get-AuthenticodeSignature/);
-  assert.match(workflow, /codesign --verify/);
-  assert.match(workflow, /stapler validate/);
   assert.match(workflow, /gh release create/);
+  assert.match(workflow, /needs: windows/);
+  assert.doesNotMatch(workflow, /macos-intel:/);
 });

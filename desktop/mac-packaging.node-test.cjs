@@ -36,6 +36,8 @@ test("macOS Intel build tooling prepares the icon and uses an Intel runner", () 
 
   assert.match(packageJson.scripts["desktop:dist:mac:intel"], /--mac dmg zip --x64/);
   assert.match(iconScript, /iconutil -c icns/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /pull_request:/);
   assert.match(workflow, /runs-on: macos-15-intel/);
   assert.match(workflow, /npm run desktop:dist:mac:intel/);
   assert.match(packageJson.scripts["desktop:smoke"], /smoke-packaged-app/);

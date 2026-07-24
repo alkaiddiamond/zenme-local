@@ -1,4 +1,4 @@
-name: Release signed desktop apps
+name: Release signed Windows app
 
 on:
   push:
@@ -46,51 +46,8 @@ jobs:
           path: dist-desktop/Zenme-*-windows-x64.exe
           if-no-files-found: error
 
-  macos-intel:
-    runs-on: macos-15-intel
-    timeout-minutes: 60
-    env:
-      CSC_LINK: ${{ secrets.MACOS_CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.MACOS_CSC_KEY_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Require signing and notarization credentials
-        run: |
-          test -n "$CSC_LINK"
-          test -n "$CSC_KEY_PASSWORD"
-          test -n "$APPLE_ID"
-          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
-          test -n "$APPLE_TEAM_ID"
-      - run: npm ci
-      - run: npm run verify
-      - run: npm run audit:prod
-      - run: npm run licenses:check
-      - run: npm run desktop:dist:mac:intel
-      - name: Verify signature and notarization
-        run: |
-          codesign --verify --deep --strict --verbose=2 dist-desktop/mac/Zenme.app
-          spctl --assess --type execute --verbose=4 dist-desktop/mac/Zenme.app
-          xcrun stapler validate dist-desktop/Zenme-*-mac-x64.dmg
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-macos-intel
-          path: |
-            dist-desktop/Zenme-*-mac-x64.dmg
-            dist-desktop/Zenme-*-mac-x64.zip
-          if-no-files-found: error
-
   publish-draft:
-    needs:
-      - windows
-      - macos-intel
+    needs: windows
     runs-on: ubuntu-latest
 
     steps:

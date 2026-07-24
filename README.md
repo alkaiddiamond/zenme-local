@@ -21,8 +21,8 @@ Zenme Local 是一款纯本地的 AI 无限画布桌面应用，用一个可连�
 | 平台 | 支持状态 | 产物 |
 | --- | --- | --- |
 | Windows 10/11 x64 | 发布目标 | NSIS `.exe` |
-| macOS 12+ Intel x64 | 发布目标 | `.dmg`、`.zip` |
-| macOS Apple Silicon | 暂未提供原生版本 | — |
+| macOS 12+ Intel x64 | 暂停发布，保留手动构建配置 | `.dmg`、`.zip` |
+| macOS Apple Silicon | 待恢复 macOS 工作后评估 | — |
 | Linux | 尚未进入发布验收 | — |
 
 未签名的 Windows 包可能触发 SmartScreen，未签名或未公证的 macOS 包可能被 Gatekeeper 拦截。公开发布必须完成对应平台的代码签名；内部构建产物不能视为正式发行版。
@@ -76,13 +76,7 @@ npm run build
 npm run desktop:dist:win
 ```
 
-```bash
-# macOS 12+ Intel x64；必须在 macOS 上执行
-npm run build
-npm run desktop:dist:mac:intel
-```
-
-输出目录为 `dist-desktop/`。macOS 公开包还需要 Apple Developer ID 签名和 notarization。
+输出目录为 `dist-desktop/`。macOS 发布工作当前暂停；Intel 构建命令与手动验证工作流仍保留，恢复前需要完成 Apple Developer ID 签名、notarization 和安装验收。
 
 ## 项目结构
 

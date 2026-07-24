@@ -1,11 +1,13 @@
 # 发布手册
 
+> 当前公开发布目标仅为 Windows x64。macOS Intel 构建配置保留，但自动验证与公开发布已暂停；恢复工作跟踪在 GitHub Issue #9。
+
 ## 支持矩阵
 
 | 平台 | 架构 | 最低版本 | 正式产物 |
 | --- | --- | --- | --- |
 | Windows | x64 | Windows 10 | NSIS `.exe` |
-| macOS | Intel x64 | macOS 12 Monterey | `.dmg`、`.zip` |
+| macOS | Intel x64 | macOS 12 Monterey | 暂停发布 |
 
 Apple Silicon 原生包和 Linux 尚未进入 v0.1.0 发布范围。
 
