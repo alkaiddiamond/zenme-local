@@ -11,6 +11,11 @@ test("Windows release targets an x64 NSIS installer without deleting user data",
   assert.deepEqual(packageJson.build.win.target, [{ target: "nsis", arch: ["x64"] }]);
   assert.equal(packageJson.build.nsis.oneClick, false);
   assert.equal(packageJson.build.nsis.deleteAppDataOnUninstall, false);
+  assert.equal(packageJson.build.nsis.include, "desktop/installer.nsh");
+  assert.match(
+    fs.readFileSync(path.join(projectRoot, "desktop", "installer.nsh"), "utf8"),
+    /ShowInstDetails show/,
+  );
   assert.match(packageJson.scripts["desktop:dist:win"], /--win nsis --x64/);
 });
 

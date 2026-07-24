@@ -159,6 +159,7 @@
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
       "deleteAppDataOnUninstall": false,
+      "include": "desktop/installer.nsh",
       "oneClick": false
     }
   }
