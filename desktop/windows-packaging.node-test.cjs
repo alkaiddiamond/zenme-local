@@ -16,6 +16,14 @@ test("Windows release targets an x64 NSIS installer without deleting user data",
     fs.readFileSync(path.join(projectRoot, "desktop", "installer.nsh"), "utf8"),
     /ShowInstDetails show/,
   );
+  assert.match(
+    fs.readFileSync(path.join(projectRoot, "desktop", "installer.nsh"), "utf8"),
+    /SetDetailsPrint both/,
+  );
+  assert.match(
+    fs.readFileSync(path.join(projectRoot, "desktop", "installer.nsh"), "utf8"),
+    /DetailPrint "Preparing the Zenme installation/,
+  );
   assert.match(packageJson.scripts["desktop:dist:win"], /--win nsis --x64/);
 });
 
