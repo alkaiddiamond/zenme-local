@@ -2,23 +2,66 @@
 
 Zenme's original source code is licensed under the MIT License. This file covers bundled third-party software only; each component remains subject to its own license.
 
-Zenme bundles the runtime packages listed below. This inventory is generated from `package-lock.json` and installed package metadata with `npm run licenses:generate`.
+Zenme's runtime dependency graph contains the packages listed below; each installer includes the variants appropriate to its target platform. This inventory is generated from `package-lock.json` and installed package metadata with `npm run licenses:generate`.
 
 Original license files remain bundled with their packages. Electron distributions also include Electron and Chromium license notices. Before every public release, regenerate this file and review any `UNKNOWN`, non-permissive, or changed license entry.
 
 | Package | Version | License | Source |
 | --- | --- | --- | --- |
 | @borewit/text-codec | 0.2.2 | MIT | [source](https://github.com/Borewit/text-codec) |
+| @emnapi/runtime | 1.11.1 | MIT | — |
 | @floating-ui/core | 1.7.5 | MIT | [source](https://github.com/floating-ui/floating-ui) |
 | @floating-ui/dom | 1.7.6 | MIT | [source](https://github.com/floating-ui/floating-ui) |
 | @floating-ui/react-dom | 2.1.8 | MIT | [source](https://github.com/floating-ui/floating-ui) |
 | @floating-ui/utils | 0.2.11 | MIT | [source](https://github.com/floating-ui/floating-ui) |
-| @img/colour | 1.1.0 | MIT | [source](https://github.com/lovell/colour) |
-| @img/sharp-win32-x64 | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later | [source](https://github.com/lovell/sharp) |
-| @napi-rs/canvas | 1.0.1 | MIT | [source](https://github.com/Brooooooklyn/canvas) |
-| @napi-rs/canvas-win32-x64-msvc | 1.0.1 | MIT | [source](https://github.com/Brooooooklyn/canvas) |
+| @img/colour | 1.1.0 | MIT | — |
+| @img/sharp-darwin-arm64 | 0.35.3 | Apache-2.0 | — |
+| @img/sharp-darwin-x64 | 0.35.3 | Apache-2.0 | — |
+| @img/sharp-freebsd-wasm32 | 0.35.3 | Apache-2.0 | — |
+| @img/sharp-libvips-darwin-arm64 | 1.3.2 | LGPL-3.0-or-later | — |
+| @img/sharp-libvips-darwin-x64 | 1.3.2 | LGPL-3.0-or-later | — |
+| @img/sharp-libvips-linux-arm | 1.3.2 | LGPL-3.0-or-later | — |
+| @img/sharp-libvips-linux-arm64 | 1.3.2 | LGPL-3.0-or-later | — |
+| @img/sharp-libvips-linux-ppc64 | 1.3.2 | LGPL-3.0-or-later | — |
+| @img/sharp-libvips-linux-riscv64 | 1.3.2 | LGPL-3.0-or-later | — |
+| @img/sharp-libvips-linux-s390x | 1.3.2 | LGPL-3.0-or-later | — |
+| @img/sharp-libvips-linux-x64 | 1.3.2 | LGPL-3.0-or-later | — |
+| @img/sharp-libvips-linuxmusl-arm64 | 1.3.2 | LGPL-3.0-or-later | — |
+| @img/sharp-libvips-linuxmusl-x64 | 1.3.2 | LGPL-3.0-or-later | — |
+| @img/sharp-linux-arm | 0.35.3 | Apache-2.0 | — |
+| @img/sharp-linux-arm64 | 0.35.3 | Apache-2.0 | — |
+| @img/sharp-linux-ppc64 | 0.35.3 | Apache-2.0 | — |
+| @img/sharp-linux-riscv64 | 0.35.3 | Apache-2.0 | — |
+| @img/sharp-linux-s390x | 0.35.3 | Apache-2.0 | — |
+| @img/sharp-linux-x64 | 0.35.3 | Apache-2.0 | — |
+| @img/sharp-linuxmusl-arm64 | 0.35.3 | Apache-2.0 | — |
+| @img/sharp-linuxmusl-x64 | 0.35.3 | Apache-2.0 | — |
+| @img/sharp-wasm32 | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later AND MIT | — |
+| @img/sharp-webcontainers-wasm32 | 0.35.3 | Apache-2.0 | — |
+| @img/sharp-win32-arm64 | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later | — |
+| @img/sharp-win32-ia32 | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later | — |
+| @img/sharp-win32-x64 | 0.35.3 | Apache-2.0 AND LGPL-3.0-or-later | — |
+| @napi-rs/canvas | 1.0.1 | MIT | — |
+| @napi-rs/canvas-android-arm64 | 1.0.1 | MIT | — |
+| @napi-rs/canvas-darwin-arm64 | 1.0.1 | MIT | — |
+| @napi-rs/canvas-darwin-x64 | 1.0.1 | MIT | — |
+| @napi-rs/canvas-linux-arm-gnueabihf | 1.0.1 | MIT | — |
+| @napi-rs/canvas-linux-arm64-gnu | 1.0.1 | MIT | — |
+| @napi-rs/canvas-linux-arm64-musl | 1.0.1 | MIT | — |
+| @napi-rs/canvas-linux-riscv64-gnu | 1.0.1 | MIT | — |
+| @napi-rs/canvas-linux-x64-gnu | 1.0.1 | MIT | — |
+| @napi-rs/canvas-linux-x64-musl | 1.0.1 | MIT | — |
+| @napi-rs/canvas-win32-arm64-msvc | 1.0.1 | MIT | — |
+| @napi-rs/canvas-win32-x64-msvc | 1.0.1 | MIT | — |
 | @next/env | 16.2.11 | MIT | [source](https://github.com/vercel/next.js) |
-| @next/swc-win32-x64-msvc | 16.2.11 | MIT | [source](https://github.com/vercel/next.js) |
+| @next/swc-darwin-arm64 | 16.2.11 | MIT | — |
+| @next/swc-darwin-x64 | 16.2.11 | MIT | — |
+| @next/swc-linux-arm64-gnu | 16.2.11 | MIT | — |
+| @next/swc-linux-arm64-musl | 16.2.11 | MIT | — |
+| @next/swc-linux-x64-gnu | 16.2.11 | MIT | — |
+| @next/swc-linux-x64-musl | 16.2.11 | MIT | — |
+| @next/swc-win32-arm64-msvc | 16.2.11 | MIT | — |
+| @next/swc-win32-x64-msvc | 16.2.11 | MIT | — |
 | @radix-ui/primitive | 1.1.4 | MIT | [source](https://github.com/radix-ui/primitives) |
 | @radix-ui/react-arrow | 1.1.10 | MIT | [source](https://github.com/radix-ui/primitives) |
 | @radix-ui/react-checkbox | 1.3.5 | MIT | [source](https://github.com/radix-ui/primitives) |
@@ -112,7 +155,7 @@ Original license files remain bundled with their packages. Electron distribution
 | regenerator-runtime | 0.13.11 | MIT | [source](https://github.com/facebook/regenerator/tree/main/packages/runtime) |
 | scheduler | 0.27.0 | MIT | [source](https://github.com/facebook/react) |
 | semver | 7.8.5 | ISC | [source](https://github.com/npm/node-semver) |
-| sharp | 0.35.3 | Apache-2.0 | [source](https://github.com/lovell/sharp) |
+| sharp | 0.35.3 | Apache-2.0 | — |
 | source-map-js | 1.2.1 | BSD-3-Clause | [source](https://github.com/7rulnik/source-map-js) |
 | strtok3 | 10.3.5 | MIT | [source](https://github.com/Borewit/strtok3) |
 | styled-jsx | 5.1.6 | MIT | [source](https://github.com/vercel/styled-jsx) |

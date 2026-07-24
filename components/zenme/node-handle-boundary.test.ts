@@ -53,7 +53,7 @@ describe("node handle visual boundaries", () => {
     const taskSource = readFileSync(
       new URL("./nodes/task-node.tsx", import.meta.url),
       "utf8",
-    );
+    ).replaceAll("\r\n", "\n");
 
     expect(taskSource).toContain(
       '<NodeTargetHandle\n        id={STANDARD_NODE_TARGET_HANDLE_ID}\n        revealOnHover={false}\n        visible={Boolean(nodeData.hasIncomingEdge)}',

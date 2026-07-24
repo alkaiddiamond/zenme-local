@@ -19,17 +19,31 @@ function repositoryUrl(repository) {
     : normalized;
 }
 
+function packageNameFromPath(packagePath) {
+  const nodeModulesPrefix = "node_modules/";
+  const packageLocation = packagePath.slice(
+    packagePath.lastIndexOf(nodeModulesPrefix) + nodeModulesPrefix.length,
+  );
+  const segments = packageLocation.split("/");
+  return segments[0].startsWith("@")
+    ? `${segments[0]}/${segments[1]}`
+    : segments[0];
+}
+
 const packages = new Map();
 for (const [packagePath, lockEntry] of Object.entries(lock.packages ?? {})) {
   if (!packagePath.startsWith("node_modules/")) continue;
 
   const packageJsonPath = path.join(projectRoot, packagePath, "package.json");
   let metadata = {};
-  if (fs.existsSync(packageJsonPath)) {
+  // Optional native packages vary by operating system. Reading their installed
+  // metadata would make this generated inventory platform-dependent, so use
+  // package-lock data for every optional package and include all variants.
+  if (lockEntry.optional !== true && fs.existsSync(packageJsonPath)) {
     metadata = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
   }
 
-  const name = metadata.name ?? lockEntry.name;
+  const name = metadata.name ?? lockEntry.name ?? packageNameFromPath(packagePath);
   const version = metadata.version ?? lockEntry.version;
   if (!name || !version) continue;
 
@@ -54,7 +68,7 @@ const lines = [
   "",
   "Zenme's original source code is licensed under the MIT License. This file covers bundled third-party software only; each component remains subject to its own license.",
   "",
-  "Zenme bundles the runtime packages listed below. This inventory is generated from `package-lock.json` and installed package metadata with `npm run licenses:generate`.",
+  "Zenme's runtime dependency graph contains the packages listed below; each installer includes the variants appropriate to its target platform. This inventory is generated from `package-lock.json` and installed package metadata with `npm run licenses:generate`.",
   "",
   "Original license files remain bundled with their packages. Electron distributions also include Electron and Chromium license notices. Before every public release, regenerate this file and review any `UNKNOWN`, non-permissive, or changed license entry.",
   "",
