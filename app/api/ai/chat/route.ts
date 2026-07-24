@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 
 import { resolveAiModel, validateChatBody } from "@/lib/ai/request-policy";
 import {
+  getAllowedProviderModelValues,
+  resolveProviderModelSelection,
+} from "@/lib/ai/provider-model-resolution";
+import {
   createOpenAiAuthHeaders,
   ensureFreshOpenAiTokens,
   RESPONSES_URL,
@@ -13,7 +17,6 @@ import { checkRateLimit, getClientIp } from "@/lib/api/rate-limit";
 import { normalizeProviderApiBaseUrl } from "@/lib/api/provider-url";
 import { getProxyFetchOptions } from "@/lib/api/proxy-fetch";
 import {
-  getEnabledProviderModels,
   getLocalSettings,
   type ZenmeLocalSettings,
   type ModelProviderConfig,
@@ -62,7 +65,9 @@ export async function POST(request: Request) {
     }
 
     const settings = await getLocalSettings().catch(() => null);
-    const allowedModels = getConfiguredTextModels(settings);
+    const allowedModels = settings
+      ? getAllowedProviderModelValues(settings.modelProviders, "text")
+      : [];
     const validationError = validateChatBody(body, allowedModels);
     if (validationError) {
       return NextResponse.json({ error: validationError }, { status: 400 });
@@ -157,17 +162,18 @@ type ChatProviderConfig =
   | { error: string };
 
 function resolveChatProviderConfig(
-  model: string,
+  modelReference: string,
   settings: ZenmeLocalSettings | null,
 ): ChatProviderConfig {
-  const provider =
-    settings?.modelProviders.find(
-      (item) =>
-        item.enabled &&
-        getEnabledProviderModels(item, "text").some(
-          (providerModel) => providerModel.id === model,
-        ),
-    );
+  const selection = settings
+    ? resolveProviderModelSelection(
+        modelReference,
+        settings.modelProviders,
+        "text",
+      )
+    : null;
+  const provider = selection?.provider;
+  const model = selection?.modelId ?? modelReference;
   const providerBaseUrl = provider?.baseUrl?.trim();
   const providerApiKey = provider?.apiKey?.trim();
   const providerName = provider?.name?.trim() || "所选模型服务商";
@@ -207,21 +213,6 @@ function resolveChatProviderConfig(
   };
 }
 
-function getConfiguredTextModels(settings: ZenmeLocalSettings | null) {
-  const modelIds = new Set<string>();
-
-  for (const provider of settings?.modelProviders ?? []) {
-    if (!provider.enabled) {
-      continue;
-    }
-
-    for (const model of getEnabledProviderModels(provider, "text")) {
-      modelIds.add(model.id);
-    }
-  }
-
-  return Array.from(modelIds);
-}
 
 function getProviderEnvApiKey(provider?: ModelProviderConfig) {
   if (!provider) {

@@ -319,4 +319,42 @@ describe("rendered canvas nodes", () => {
     expect(renderedNodes.find((item) => item.id === "image")?.data.hasRunningGenerationChild).toBe(true);
   });
 
+  it("keeps persisted lyrics when the transient analysis result is absent after refresh", () => {
+    const persistedLyrics = [
+      { start: 55, end: 61, text: "第一句" },
+      { start: 61, end: 67, text: "第二句" },
+    ];
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [{ source: "player", target: "lyrics" }],
+      nodes: [
+        node({
+          data: { kind: "musicPlayer" },
+          id: "player",
+          type: "musicPlayer",
+        }),
+        node({
+          data: {
+            kind: "lyrics",
+            musicJobStatus: "succeeded",
+            musicLyrics: persistedLyrics,
+          },
+          id: "lyrics",
+          type: "lyrics",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    expect(renderedNodes.find((item) => item.id === "lyrics")?.data.musicLyrics)
+      .toEqual(persistedLyrics);
+  });
+
 });

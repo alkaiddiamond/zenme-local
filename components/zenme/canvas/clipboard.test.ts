@@ -4,6 +4,7 @@ import {
   createCanvasNodeClipboardPayload,
   createPastedCanvasNodes,
   getClipboardImageFiles,
+  hasSelectedClipboardText,
   parseCanvasNodeClipboardPayload,
 } from "./clipboard";
 import type { CanvasNode } from "./types";
@@ -18,6 +19,22 @@ function node(input: Partial<CanvasNode> & Pick<CanvasNode, "id">): CanvasNode {
 }
 
 describe("canvas clipboard", () => {
+  it("leaves copy events to the browser when text is selected", () => {
+    expect(
+      hasSelectedClipboardText({
+        isCollapsed: false,
+        toString: () => "selected prompt",
+      }),
+    ).toBe(true);
+    expect(
+      hasSelectedClipboardText({
+        isCollapsed: true,
+        toString: () => "",
+      }),
+    ).toBe(false);
+    expect(hasSelectedClipboardText(null)).toBe(false);
+  });
+
   it("copies selected nodes and pastes them without edges", () => {
     const payload = createCanvasNodeClipboardPayload([
       node({ id: "a", position: { x: 100, y: 200 }, selected: true }),
@@ -43,7 +60,12 @@ describe("canvas clipboard", () => {
   it("preserves copied group relationships but creates new ids", () => {
     const payload = createCanvasNodeClipboardPayload([
       node({ id: "group", selected: true, data: { kind: "group", title: "组" } }),
-      node({ id: "child", parentId: "group", position: { x: 20, y: 30 } }),
+      node({
+        data: { groupId: "group", kind: "text", title: "child" },
+        id: "child",
+        parentId: "group",
+        position: { x: 20, y: 30 },
+      }),
     ]);
     let id = 0;
     const pasted = createPastedCanvasNodes({
@@ -52,6 +74,7 @@ describe("canvas clipboard", () => {
       payload: payload!,
     });
     expect(pasted[1].parentId).toBe(pasted[0].id);
+    expect(pasted[1].data.groupId).toBe(pasted[0].id);
     expect(pasted[1].position).toEqual({ x: 20, y: 30 });
   });
 

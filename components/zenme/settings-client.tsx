@@ -690,12 +690,18 @@ function MusicAnalysisSettings() {
               value={serviceToken}
             />
           </label>
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-xs text-[var(--color-text-tertiary)]">仅允许 `http://127.0.0.1`、`localhost` 或 `[::1]`；Token 不会返回给页面或写入日志。</p>
+          <div className="flex flex-col gap-3 border-t border-[var(--color-border)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs text-[var(--color-text-tertiary)]">仅允许 `http://127.0.0.1`、`localhost` 或 `[::1]`；Token 不会返回给页面或写入日志。</p>
+              <p className="mt-1 text-xs text-[var(--color-text-secondary)]">修改地址或 Token 后，请保存并重新连接服务。</p>
+            </div>
             <Button
+              className="min-w-[132px] shrink-0"
               disabled={!desktopApiAvailable || configuration?.environmentManaged || Boolean(configuring) || !serviceBaseUrl.trim()}
               onClick={() => void saveExternalApiConnection()}
+              type="button"
             >
+              <Save className="size-4" />
               {configuring === "save" ? "连接中" : "保存并连接"}
             </Button>
           </div>
@@ -1260,20 +1266,6 @@ function ProviderEditorModal({
     draft.networkProxy.mode === "custom"
       ? validateProxyUrl(draft.networkProxy.url)
       : "";
-  const textModels = useMemo(
-    () =>
-      draft.models.filter(
-        (model) => model.enabled && model.modalities.includes("text"),
-      ),
-    [draft.models],
-  );
-  const imageModels = useMemo(
-    () =>
-      draft.models.filter(
-        (model) => model.enabled && model.modalities.includes("image"),
-      ),
-    [draft.models],
-  );
   async function saveProvider() {
     setProviderSaveState("saving");
     try {
@@ -1286,19 +1278,6 @@ function ProviderEditorModal({
     } catch {
       setProviderSaveState("failed");
     }
-  }
-
-  function updateDefaultModel(
-    key: "main" | "image",
-    value: string,
-  ) {
-    setDraft((current) => ({
-      ...current,
-      modelMapping: {
-        ...current.modelMapping,
-        [key]: value,
-      },
-    }));
   }
 
   function updateContextWindow(modelId: string, value: string) {
@@ -1565,49 +1544,6 @@ function ProviderEditorModal({
               }
             />
 
-            <section className="grid gap-4 rounded-md border border-[var(--color-border)] p-3.5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-medium text-[var(--color-text-primary)]">
-                    模型映射
-                  </h3>
-                  <p className="text-sm text-[var(--color-text-tertiary)]">
-                    用于标记该服务商的文本与图片处理入口，不代表全局默认模型。
-                  </p>
-                </div>
-                <Button onClick={() => addModel()} type="button" variant="outline">
-                  <Plus className="size-4" />
-                  添加模型
-                </Button>
-              </div>
-              <Field label="文本模型映射">
-                <Select
-                  onChange={(value) => updateDefaultModel("main", value)}
-                  options={[
-                    { label: "未选择", value: "" },
-                    ...textModels.map((model) => ({
-                      label: model.alias?.trim() || model.id,
-                      value: model.id,
-                    })),
-                  ]}
-                  value={draft.modelMapping.main ?? ""}
-                />
-              </Field>
-              <Field label="图片模型映射">
-                <Select
-                  onChange={(value) => updateDefaultModel("image", value)}
-                  options={[
-                    { label: "未选择", value: "" },
-                    ...imageModels.map((model) => ({
-                      label: model.alias?.trim() || model.id,
-                      value: model.id,
-                    })),
-                  ]}
-                  value={draft.modelMapping.image ?? ""}
-                />
-              </Field>
-            </section>
-
             <section className="rounded-md border border-[var(--color-border)] p-3.5">
               <div className="mb-4 flex items-start gap-3">
                 <ImageIcon className="mt-0.5 size-5 text-[#96573f]" />
@@ -1619,19 +1555,25 @@ function ProviderEditorModal({
                     文本节点只显示启用且包含“文本”模态的模型；图片生成节点只使用图片模型。
                   </p>
                 </div>
-                <Button
-                  disabled={modelFetchState === "loading"}
-                  onClick={fetchProviderModels}
-                  type="button"
-                  variant="outline"
-                >
-                  {modelFetchState === "loading" ? (
-                    <RefreshCw className="size-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="size-4" />
-                  )}
-                  拉取模型
-                </Button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button onClick={() => addModel()} type="button" variant="outline">
+                    <Plus className="size-4" />
+                    添加模型
+                  </Button>
+                  <Button
+                    disabled={modelFetchState === "loading"}
+                    onClick={fetchProviderModels}
+                    type="button"
+                    variant="outline"
+                  >
+                    {modelFetchState === "loading" ? (
+                      <RefreshCw className="size-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="size-4" />
+                    )}
+                    拉取模型
+                  </Button>
+                </div>
               </div>
               {modelFetchMessage ? (
                 <p

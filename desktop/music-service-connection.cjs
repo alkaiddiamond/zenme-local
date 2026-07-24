@@ -101,7 +101,7 @@ class MusicServiceConnection {
   }
 
   serverEnvironment() {
-    return this.status === "connected" && this.baseUrl && this.token
+    return this.configured && this.baseUrl && this.token
       ? { ZENME_MUSIC_SERVICE_URL: this.baseUrl, ZENME_MUSIC_SERVICE_TOKEN: this.token }
       : {};
   }

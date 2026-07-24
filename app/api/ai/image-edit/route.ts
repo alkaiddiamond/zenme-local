@@ -9,6 +9,7 @@ import {
   type ImageCameraControl,
 } from "@/components/zenme/image-edit-options";
 import { readOpenAiImageGenerationStream } from "@/lib/ai/openai-image-generation";
+import { resolveProviderModelSelection } from "@/lib/ai/provider-model-resolution";
 import { getVolcengineSeedreamSize } from "@/lib/ai/volcengine-image-size";
 import {
   createOpenAiAuthHeaders,
@@ -22,7 +23,6 @@ import {
   normalizeProviderBaseUrl,
 } from "@/lib/api/provider-url";
 import {
-  getEnabledProviderModels,
   getLocalSettings,
   type ModelProviderConfig,
 } from "@/lib/local/settings";
@@ -74,8 +74,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "参考图片格式无效" }, { status: 400 });
     }
 
-    const provider = await resolveImageProvider(model);
-    if (!provider) return NextResponse.json({ error: "未启用该图片模型" }, { status: 400 });
+    const selection = await resolveImageProvider(model);
+    if (!selection) return NextResponse.json({ error: "未启用该图片模型" }, { status: 400 });
+    const { modelId, provider } = selection;
 
     const operation = body.operation ?? (imageDataUrls.length ? "edit" : "generate");
     const result = provider.apiFormat === "openai_oauth"
@@ -83,7 +84,7 @@ export async function POST(request: Request) {
           aspectRatio: body.aspectRatio,
           cameraControl,
           imageDataUrls,
-          model,
+          model: modelId,
           operation,
           prompt,
           provider,
@@ -94,7 +95,7 @@ export async function POST(request: Request) {
             aspectRatio: body.aspectRatio,
             cameraControl,
             imageDataUrls,
-            model,
+            model: modelId,
             operation,
             prompt,
             provider,
@@ -104,7 +105,7 @@ export async function POST(request: Request) {
           aspectRatio: body.aspectRatio,
           cameraControl,
           imageDataUrls,
-          model,
+          model: modelId,
           operation,
           prompt,
           provider,
@@ -114,7 +115,7 @@ export async function POST(request: Request) {
     void recordTokenUsage({
       providerId: provider.id,
       providerName: provider.name,
-      modelId: model,
+      modelId,
       modality: "image",
       inputTokens: result.usage?.inputTokens,
       outputTokens: result.usage?.outputTokens,
@@ -126,7 +127,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       b64Json: result.b64Json,
       mediaType: result.mediaType,
-      model,
+      model: modelId,
       revisedPrompt: result.revisedPrompt,
       usage: result.usage,
     });
@@ -343,10 +344,11 @@ function getOpenRouterImageResolution(quality?: string) {
 
 async function resolveImageProvider(model: string) {
   const settings = await getLocalSettings().catch(() => null);
-  return settings?.modelProviders.find(
-    (provider) =>
-      provider.enabled &&
-      getEnabledProviderModels(provider, "image").some((item) => item.id === model),
+  if (!settings) return null;
+  return resolveProviderModelSelection(
+    model,
+    settings.modelProviders,
+    "image",
   );
 }
 

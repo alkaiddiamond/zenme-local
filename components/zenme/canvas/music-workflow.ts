@@ -15,13 +15,12 @@ const CHILD_OFFSETS: Record<MusicChildNodeKind, { x: number; y: number }> = {
 };
 
 const PRODUCT_PROFILES = {
-  lyrics: "lyrics-structure",
   musicAnalysis: "comprehensive-analysis",
   sunoPrompt: "suno-prompt",
-} as const satisfies Record<MusicChildNodeKind, string>;
+} as const;
 
 const LEGACY_CAPABILITIES: Record<MusicChildNodeKind, string[]> = {
-  lyrics: ["metadata", "waveform", "structure", "rhythm", "downbeats", "meter", "lyrics"],
+  lyrics: [],
   musicAnalysis: [
     "metadata", "waveform", "stems", "structure", "key", "chords", "rhythm",
     "genre", "mood", "instruments", "notes", "downbeats", "meter", "stem_rhythm",
@@ -37,7 +36,27 @@ export type MusicServiceCapabilities = {
   profiles?: Array<{ id?: unknown }>;
 };
 
-export const MUSIC_WAVEFORM_VERSION = 2;
+export const MUSIC_WAVEFORM_VERSION = 3;
+
+export function normalizeMusicPlaybackTimes(
+  durationValue?: number,
+  currentValue?: number,
+) {
+  const duration =
+    typeof durationValue === "number" &&
+    Number.isFinite(durationValue) &&
+    durationValue > 0
+      ? durationValue
+      : 0;
+  const current =
+    duration > 0 &&
+    typeof currentValue === "number" &&
+    Number.isFinite(currentValue)
+      ? Math.max(0, Math.min(duration, currentValue))
+      : 0;
+
+  return { current, duration };
+}
 
 export function musicPlayerNodeId(musicNodeId: string) {
   return `music-player:${musicNodeId}`;
@@ -83,7 +102,7 @@ export function downsampleWaveform(values: number[], targetPoints = 160) {
 
 export function musicCapabilitiesFor(kind: MusicChildNodeKind) {
   if (kind === "lyrics") {
-    return ["lyrics", "structure"];
+    return [];
   }
   if (kind === "sunoPrompt") {
     return ["suno_prompt"];
@@ -99,11 +118,47 @@ export function musicJobRequestFor(
   kind: MusicChildNodeKind,
   serviceCapabilities?: MusicServiceCapabilities | null,
 ) {
+  if (kind === "lyrics") {
+    throw new Error("歌词由 Zenme Local 直接获取，不创建音乐分析任务");
+  }
   const profile = PRODUCT_PROFILES[kind];
   if (serviceSupportsProfile(serviceCapabilities, profile)) {
     return { capabilities: musicCapabilitiesFor(kind), profile };
   }
   return { capabilities: [...LEGACY_CAPABILITIES[kind]], profile: "complete" };
+}
+
+export function getMusicApiErrorMessage(
+  body: unknown,
+  fallback = "无法创建分析任务",
+) {
+  if (!body || typeof body !== "object") {
+    return fallback;
+  }
+
+  const response = body as {
+    detail?: unknown;
+    error?: unknown;
+    message?: unknown;
+  };
+  const detailMessage =
+    response.detail && typeof response.detail === "object"
+      ? (response.detail as { message?: unknown }).message
+      : undefined;
+  const candidates = [
+    typeof response.detail === "string" ? response.detail : undefined,
+    detailMessage,
+    response.message,
+    response.error,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return fallback;
 }
 
 export function musicPlayerPreviewRequest(
@@ -184,7 +239,7 @@ export function createMusicChildUpdate(input: {
     zh?: string;
   } | undefined;
   const titleSuffix = {
-    lyrics: "歌词与结构",
+    lyrics: "歌词",
     musicAnalysis: "综合分析",
     sunoPrompt: "Suno 提示词",
   }[input.kind];
@@ -195,7 +250,7 @@ export function createMusicChildUpdate(input: {
     musicJobStatus: "queued",
     musicProgress: 0,
     musicStage: "creating",
-    musicStageLabel: "正在创建分析任务",
+    musicStageLabel: input.kind === "lyrics" ? "正在获取同步歌词" : "正在创建分析任务",
     musicJobCreatedAt: new Date().toISOString(),
     musicJobStartedAt: new Date().toISOString(),
     musicJobElapsedMs: 0,
@@ -257,6 +312,20 @@ export function extractMusicLyrics(
       text: line.text,
     }];
   });
+}
+
+export function findLyricsNodesNeedingRecovery(nodes: CanvasNode[]) {
+  return nodes.flatMap((node) =>
+    node.data.kind === "lyrics" &&
+    node.data.musicJobStatus === "succeeded" &&
+    !node.data.musicLyrics?.length &&
+    node.data.musicParentPlayerNodeId
+      ? [{
+          childNodeId: node.id,
+          playerNodeId: node.data.musicParentPlayerNodeId,
+        }]
+      : [],
+  );
 }
 
 function stripPlayerSuffix(title: string) {

@@ -155,13 +155,14 @@ async function startLocalServer() {
   fs.mkdirSync(dataDir, { recursive: true });
 
   musicServiceConnection = createMusicServiceConnection();
-  try {
-    const snapshot = await musicServiceConnection.connect();
-    if (!snapshot.configured) {
-      console.warn(`[music-service] ${snapshot.error}`);
+  if (musicServiceConnection.configuration().configured) {
+    try {
+      await musicServiceConnection.connect();
+    } catch (error) {
+      console.error(`[music-service] unavailable: ${error instanceof Error ? error.message : error}`);
     }
-  } catch (error) {
-    console.error(`[music-service] unavailable: ${error instanceof Error ? error.message : error}`);
+  } else {
+    console.log("[music-service] stdio MCP will start on the first music request");
   }
   const port = await findAvailablePort();
   const nextServerUrl = `http://${SERVER_HOST}:${port}`;
@@ -183,6 +184,7 @@ function spawnNextServer(port, dataDir) {
     ...process.env,
     ZENME_DATA_DIR: dataDir,
     ZENME_DESKTOP: "1",
+    ZENME_MUSIC_MCP_ENABLED: "1",
     ...(musicServiceConnection?.serverEnvironment() || {}),
   };
   if (app.isPackaged) {

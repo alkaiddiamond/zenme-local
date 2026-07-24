@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 
+import {
+  getModelIdFromReference,
+  parseProviderModelReference,
+} from "@/lib/ai/model-reference";
 import { modelOptions as fallbackModelOptions } from "@/lib/zenme";
 
 export type AiModelOption = {
@@ -16,6 +20,22 @@ const preferredModelCache: Partial<Record<AiModelModality, string>> = {};
 
 export function createModelOption(id: string, label = id): AiModelOption {
   return { id, label };
+}
+
+export function resolveAiModelOptionId(
+  models: AiModelOption[],
+  currentModelId: string,
+) {
+  if (!parseProviderModelReference(currentModelId)) {
+    const scopedMatch = models.find(
+      (model) =>
+        Boolean(parseProviderModelReference(model.id)) &&
+        getModelIdFromReference(model.id) === currentModelId,
+    );
+    if (scopedMatch) return scopedMatch.id;
+  }
+
+  return currentModelId;
 }
 
 export async function rememberAiModelPreference(

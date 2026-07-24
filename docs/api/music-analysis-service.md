@@ -1,17 +1,19 @@
 # 本地音乐分析服务接口草案
 
-> 当前基线为 API-first。Zenme 默认连接独立组件提供的 loopback HTTP API；MCP stdio 只作为显式启用的可选集成。
+> 当前基线为 MCP stdio 按需启动。Zenme 默认在首次音乐请求时启动独立组件，loopback HTTP API 作为显式配置的兼容连接。
 
 服务端 DAG、缓存、结构融合、Qwen 和发布门禁的执行基线见
 [service-improvement-execution-plan.md](https://github.com/alkaiddiamond/zenme-music-service/blob/main/docs/service-improvement-execution-plan.md)。
 
-## 可选 stdio MCP 接入
+## 默认 stdio MCP 接入
 
-设置 `ZENME_MUSIC_MCP_ENABLED=1` 后，Zenme 的 Next.js 服务端可作为 MCP Client，独立 `zenme-music-service` 作为 MCP Server。默认情况下不启用，也不得在普通 API 请求中隐式拉起 MCP 子进程。
+Zenme 桌面端会为本地 Next.js 服务设置 `ZENME_MUSIC_MCP_ENABLED=1`。首次音乐请求会启动 `zenme-music-service mcp --stdio`，后续请求复用同一 MCP 会话；Zenme 退出或本地服务重启时关闭该子进程。音乐服务不监听 TCP 端口。
 
 工具包括 `analyze_music`、`get_music_job`、`cancel_music_analysis`、`retry_music_analysis`、`generate_suno_prompt`。资源包括任务状态、统一结果、Markdown 报告、波形、歌词和 opaque artifact URI。
 
-显式启用后的发现顺序为：`ZENME_MUSIC_MCP_COMMAND` → 开发环境同级项目 `.venv` → PATH 中的 `zenme-music-mcp`。`ZENME_MUSIC_MCP_COMMAND_ARGS` 可用 JSON 字符串数组传递启动器前置参数。只要配置了 loopback HTTP URL 和 Token，始终优先使用 HTTP API。
+发现顺序为：`ZENME_MUSIC_MCP_COMMAND` → 开发环境同级项目 `.venv` → PATH 中的 `zenme-music-service`。默认参数为 `mcp --stdio`；`ZENME_MUSIC_MCP_COMMAND_ARGS` 可用 JSON 字符串数组覆盖启动参数。只要配置了 loopback HTTP URL 和 Token，始终优先使用 HTTP API。
+
+桌面配置中的 HTTP 连接必须带有 `transport: "http"` 显式标记；旧版本遗留且没有该标记的固定端口配置保持在本地但不再自动启用。用户在新版设置页执行“保存并连接”后才写入标记并切换到 HTTP 兼容模式。
 
 ## 服务边界
 
@@ -68,10 +70,10 @@ Zenme 先读取此端点。如果目标 profile 已公布，就发送 profile �
   "inputPath": "absolute-local-path",
   "inputSha256": "sha256",
   "capabilities": [
-    "lyrics",
-    "structure"
+    "key",
+    "rhythm"
   ],
-  "profile": "lyrics-structure"
+  "profile": "comprehensive-analysis"
 }
 ```
 
@@ -80,13 +82,13 @@ Zenme 先读取此端点。如果目标 profile 已公布，就发送 profile �
 | Zenme 场景 | profile | 新服务显式公共能力 |
 | --- | --- | --- |
 | 播放器波形预览 | `player-preview` | `metadata`, `waveform` |
-| 歌词与结构 | `lyrics-structure` | `lyrics`, `structure` |
 | 综合分析 | `comprehensive-analysis` | 节点实际展示的分析结果字段 |
 | Suno 提示词 | `suno-prompt` | `suno_prompt` |
 
 profile 只表达产品意图，服务端 Planner 负责展开 DAG、合并同一适配器和复用阶段缓存。显式
-`capabilities` 仍是合同的一部分，不能只发 profile。播放器 profile 不得展开 Demucs、Whisper、
-All-In-One、Essentia 或 Qwen 等重模型。
+`capabilities` 仍是合同的一部分，不能只发 profile。播放器 profile 不得展开 Demucs、Essentia
+或 Qwen 等重模型。音乐服务不再提供 `lyrics`、`structure` 或 `lyrics-structure`；同步歌词由
+Zenme Local 的 `/api/music/lyrics` 在服务端按“网易云优先、LRCLIB 后备”直接获取。
 
 ### `POST /v1/jobs/plan`
 
@@ -117,10 +119,8 @@ All-In-One、Essentia 或 Qwen 等重模型。
 
 Zenme 画布只持久化 `jobId`、状态、阶段和进度等任务引用，不把完整结果复制进画布快照。分析结果节点首次加载或应用重启后通过 `jobId` 重新读取结果，并优先展示服务返回的 `report.markdown` 中文可读报告；原始结构化字段仍用于时间轴、指标卡和 Suno 提示词节点。
 
-顶层 `segments` 是供 Zenme 时间轴使用的最终结构。`structureMethod` 标明
-`all-in-one`、`fused-v1` 或 `fused-qwen-v1`；内部候选和融合诊断不得替代顶层最终时间线。
 Suno v2 返回 `style`、`moods`、`instruments`、`vocal`、`arrangement`、`tempo`、`key`、
-`structure`、`promptZh`、`promptEn`、`negativePrompt`、`source` 和 `promptVersion`，并在兼容期保留
+`promptZh`、`promptEn`、`negativePrompt`、`source` 和 `promptVersion`，并在兼容期保留
 旧 `zh/en`。Zenme 优先读取 `promptZh/promptEn`，缺失时回退到 `zh/en`。
 
 ### `waveform` 数据合同
@@ -145,10 +145,7 @@ Suno v2 返回 `style`、`moods`、`instruments`、`vocal`、`arrangement`、`te
 metadata
 waveform
 stems
-lyrics
-lyrics_alignment
 beats
-structure
 chords
 notes
 genre

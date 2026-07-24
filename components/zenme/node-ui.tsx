@@ -116,7 +116,8 @@ function MagneticHandleContent({
 }) {
   const { zoom } = useViewport();
   const zoomRef = useRef(zoom);
-  const elementRef = useRef<HTMLSpanElement>(null);
+  const hitAreaRef = useRef<HTMLSpanElement>(null);
+  const motionRef = useRef<HTMLSpanElement>(null);
   const centerRef = useRef<{ x: number; y: number } | null>(null);
   const activeRef = useRef(false);
   const enteringRef = useRef(true);
@@ -129,7 +130,7 @@ function MagneticHandleContent({
       : { bottom: 40, left: 40, right: 24, top: 40 };
 
   const returnToOrigin = useCallback(() => {
-    const element = elementRef.current;
+    const element = motionRef.current;
     if (!element) return;
     element.style.transition = MAGNET_RETURN_TRANSITION;
     element.style.transform = "translate3d(0, 0, 0)";
@@ -137,7 +138,7 @@ function MagneticHandleContent({
 
   const handleMouseMove = useCallback(
     (event: MouseEvent) => {
-      const element = elementRef.current;
+      const element = motionRef.current;
       const center = centerRef.current;
       if (!element || !center || !activeRef.current) return;
 
@@ -162,8 +163,8 @@ function MagneticHandleContent({
           clearTimeout(transitionTimerRef.current);
         }
         transitionTimerRef.current = setTimeout(() => {
-          if (elementRef.current) {
-            elementRef.current.style.transition = "none";
+          if (motionRef.current) {
+            motionRef.current.style.transition = "none";
           }
         }, 250);
       }
@@ -178,13 +179,14 @@ function MagneticHandleContent({
   }, [zoom]);
 
   const handleMouseEnter = useCallback(() => {
-    const element = elementRef.current;
-    if (!element) return;
+    const hitArea = hitAreaRef.current;
+    const motion = motionRef.current;
+    if (!hitArea || !motion) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
-    element.style.transition = "none";
-    element.style.transform = "translate3d(0, 0, 0)";
-    const rect = element.getBoundingClientRect();
+    motion.style.transition = "none";
+    motion.style.transform = "translate3d(0, 0, 0)";
+    const rect = hitArea.getBoundingClientRect();
     centerRef.current = {
       x: rect.left + rect.width / 2,
       y: rect.top + rect.height / 2,
@@ -214,12 +216,17 @@ function MagneticHandleContent({
 
   return (
     <span
-      className="relative flex size-20 will-change-transform items-center justify-center"
+      className="relative flex size-20 items-center justify-center"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      ref={elementRef}
+      ref={hitAreaRef}
     >
-      {children}
+      <span
+        className="zenme-node-handle-magnetic-content relative flex items-center justify-center will-change-transform"
+        ref={motionRef}
+      >
+        {children}
+      </span>
     </span>
   );
 }

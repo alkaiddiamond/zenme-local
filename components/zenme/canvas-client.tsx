@@ -23,7 +23,7 @@ import {
   useEdgesState,
   useNodesState,
 } from "@xyflow/react";
-import { Loader2 } from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 import { AgentPanel } from "@/components/zenme/agent-panel";
 import type { AgentMessage } from "@/components/zenme/agent-types";
 import { useAiModelOptions } from "@/components/zenme/use-ai-model-options";
@@ -55,6 +55,7 @@ import {
   getCanvasSnapshotFromApi,
   getProjectFromApi,
   generateOrEditImage,
+  saveProjectThumbnailToApi,
   uploadProjectFileToApi,
 } from "@/lib/zenme-api";
 import {
@@ -67,12 +68,15 @@ import {
   createCanvasNodeClipboardPayload,
   createPastedCanvasNodes,
   getClipboardImageFiles,
+  hasSelectedClipboardText,
   parseCanvasNodeClipboardPayload,
   type CanvasNodeClipboardPayload,
   ZENME_NODE_CLIPBOARD_MIME,
   ZENME_NODE_CLIPBOARD_PREFIX,
 } from "@/components/zenme/canvas/clipboard";
 import { parseDroppedReadingNotePayload } from "@/components/zenme/canvas/drop-payload";
+import { shouldPreventNativeCanvasAuxClick } from "@/components/zenme/canvas/pointer";
+import { createAltDragCopyUpdate } from "@/components/zenme/canvas/alt-drag-copy";
 import {
   canPrepareReadingAsset,
   getActionNode,
@@ -167,6 +171,7 @@ import {
   CANVAS_ZOOM_MAX,
   CANVAS_ZOOM_MIN,
   clampCanvasZoom,
+  createPreservedZoomNodeFocusOptions,
   createCanvasZoomViewport,
   createCanvasZoomViewportAtPoint,
 } from "@/components/zenme/canvas/viewport";
@@ -201,12 +206,16 @@ import { getRenderedCanvasNodes } from "@/components/zenme/canvas/rendered-nodes
 import {
   createMusicChildUpdate,
   createMusicPlayerUpdate,
+  extractMusicLyrics,
+  findLyricsNodesNeedingRecovery,
+  getMusicApiErrorMessage,
   MUSIC_WAVEFORM_VERSION,
   musicJobRequestFor,
-  musicPlayerPreviewRequest,
   type MusicServiceCapabilities,
   resolveMusicSourceNode,
 } from "@/components/zenme/canvas/music-workflow";
+import { generateLocalAudioWaveform } from "@/components/zenme/canvas/local-audio-waveform";
+import { releaseRemovedMusicPlayers } from "@/components/zenme/canvas/music-player-runtime";
 import {
   DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
   DEFAULT_IMAGE_EDIT_QUALITY,
@@ -253,7 +262,7 @@ async function fetchMusicServiceCapabilities(): Promise<MusicServiceCapabilities
 
 export function CanvasClient({ projectId }: CanvasClientProps) {
   const [nodes, setNodes, onNodesChange] =
-    useNodesState<CanvasNode>(createWelcomeNodes());
+    useNodesState<CanvasNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [reactFlow, setReactFlow] =
     useState<ReactFlowInstance<CanvasNode, Edge>>();
@@ -292,6 +301,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const [pendingViewport, setPendingViewport] = useState<Viewport | null>(null);
   const [canvasLoaded, setCanvasLoaded] = useState(false);
   const [canvasHydrated, setCanvasHydrated] = useState(false);
+  const [canvasLoadError, setCanvasLoadError] = useState<string | null>(null);
+  const [canvasLoadAttempt, setCanvasLoadAttempt] = useState(0);
   const [hasProjectThumbnail, setHasProjectThumbnail] = useState(false);
   const [isContextConnecting, setIsContextConnecting] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -338,6 +349,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     typeof startCanvasInteractionSample
   > | null>(null);
   const dragStartNodeSnapshots = useRef<Map<string, CanvasNode> | null>(null);
+  const altDragSourceNodeId = useRef<string | null>(null);
   const resizeInteractionSample = useRef<ReturnType<
     typeof startCanvasInteractionSample
   > | null>(null);
@@ -349,6 +361,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const groupDragPosition = useRef<GroupDragPosition | null>(null);
   const musicPlayersRef = useRef(new Map<string, HTMLAudioElement>());
   const musicWaveformTasksRef = useRef(new Map<string, Promise<void>>());
+  const recoveringLyricsNodeIdsRef = useRef(new Set<string>());
 
   const agentKey = `${ZENME_AGENT_KEY_PREFIX}${projectId}`;
 
@@ -376,16 +389,25 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     return observeCanvasLongTasks({ projectId });
   }, [projectId]);
 
-  useEffect(() => () => {
-    for (const audio of musicPlayersRef.current.values()) {
-      audio.pause();
-      audio.src = "";
-    }
-    musicPlayersRef.current.clear();
-  }, []);
+  useEffect(
+    () => () => {
+      releaseRemovedMusicPlayers(musicPlayersRef.current, new Set());
+    },
+    [],
+  );
 
   useEffect(() => {
     nodesRef.current = nodes;
+    if (musicPlayersRef.current.size > 0) {
+      releaseRemovedMusicPlayers(
+        musicPlayersRef.current,
+        new Set(
+          nodes
+            .filter((node) => node.data.kind === "musicPlayer")
+            .map((node) => node.id),
+        ),
+      );
+    }
   }, [nodes]);
 
   useEffect(() => {
@@ -831,17 +853,25 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }, [pushNodeUpdateHistory]);
 
   useEffect(() => {
+    let cancelled = false;
+    let hydrationFrame: number | null = null;
+
     async function loadCanvas() {
       isHydrating.current = true;
       didInitViewport.current = false;
       appliedViewportSignature.current = null;
       setCanvasLoaded(false);
       setCanvasHydrated(false);
+      setCanvasLoadError(null);
       setPendingViewport(null);
+      setNodes([]);
+      setEdges([]);
       try {
-        await getProjectFromApi(projectId);
-        setHasProjectThumbnail(false);
+        const project = await getProjectFromApi(projectId);
+        if (cancelled) return;
+        setHasProjectThumbnail(Boolean(project.thumbnail));
         const remoteSnapshot = await getCanvasSnapshotFromApi(projectId);
+        if (cancelled) return;
 
         if (remoteSnapshot) {
           const snapshot = remoteSnapshot.snapshot as CanvasSnapshot;
@@ -872,23 +902,48 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           // 云端模式下重签已上传图片节点的签名 URL，避免签名 1 小时过期导致图片 403。
           void refreshImageNodeUrls(restoredNodes, setNodes, isRefreshingUrls);
         } else {
-          resetCanvasHistory(createWelcomeNodes(), []);
+          const initialNodes = createWelcomeNodes();
+          setNodes(initialNodes);
+          setEdges([]);
+          resetCanvasHistory(initialNodes, []);
         }
-      } catch {
-        setSaveStatus("保存失败");
-      } finally {
+
+        setSaveStatus("已保存");
         setCanvasLoaded(true);
         // 放开 isHydrating 延后一帧：确保 setNodes/setEdges 触发的 effect 先被屏蔽，
         // 避免快照回流把"已保存"误改写为"未保存"。
-        requestAnimationFrame(() => {
+        hydrationFrame = requestAnimationFrame(() => {
+          if (cancelled) return;
           isHydrating.current = false;
           setCanvasHydrated(true);
         });
+      } catch (error) {
+        if (cancelled) return;
+        isHydrating.current = false;
+        setCanvasLoaded(false);
+        setCanvasHydrated(false);
+        setSaveStatus("保存失败");
+        setCanvasLoadError(
+          error instanceof Error ? error.message : "画布加载失败",
+        );
       }
     }
 
-    loadCanvas();
-  }, [projectId, resetCanvasHistory, setEdges, setNodes]);
+    void loadCanvas();
+
+    return () => {
+      cancelled = true;
+      if (hydrationFrame !== null) {
+        cancelAnimationFrame(hydrationFrame);
+      }
+    };
+  }, [
+    canvasLoadAttempt,
+    projectId,
+    resetCanvasHistory,
+    setEdges,
+    setNodes,
+  ]);
 
   useEffect(() => {
     const snapshot = loadAgentSessionSnapshot(
@@ -972,7 +1027,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
   useEffect(() => {
     function writeSelectedNodesToClipboard(event: ClipboardEvent) {
-      if (isEditableTarget(event.target) || !event.clipboardData) return false;
+      if (
+        isEditableTarget(event.target) ||
+        hasSelectedClipboardText(window.getSelection()) ||
+        !event.clipboardData
+      ) {
+        return false;
+      }
       const payload = createCanvasNodeClipboardPayload(nodesRef.current);
       if (!payload) return false;
       const marker = `${ZENME_NODE_CLIPBOARD_PREFIX}${crypto.randomUUID()}`;
@@ -1269,12 +1330,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           return;
         }
 
-        await saveCanvasSnapshot({
-          edges,
-          nodes,
+        await saveProjectThumbnailToApi({
           projectId,
           thumbnail,
-          viewport: reactFlow.getViewport(),
         });
         setHasProjectThumbnail(true);
       })().catch(() => {
@@ -1283,8 +1341,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     }, 3000);
   }, [
     createThumbnail,
-    edges,
-    nodes,
     projectId,
     reactFlow,
   ]);
@@ -1327,10 +1383,14 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         viewport: reactFlow.getViewport(),
       });
 
-      savedCanvasSignature.current = canvasPersistableSignature;
-      pendingCanvasSignature.current = savedCanvasSignature.current;
+      const savedSignature = canvasPersistableSignature;
+      savedCanvasSignature.current = savedSignature;
       setLastSavedAt(snapshot.updatedAt);
-      setSaveStatus("已保存");
+      setSaveStatus(
+        pendingCanvasSignature.current === savedSignature
+          ? "已保存"
+          : "未保存",
+      );
       if (includeThumbnail && !queuedCanvasSaveRequest.current) {
         scheduleThumbnailSave();
       }
@@ -1388,6 +1448,18 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         return;
       }
 
+      if (pendingCanvasSignature.current !== savedCanvasSignature.current) {
+        void saveCanvasSnapshot({
+          edges: edgesRef.current,
+          nodes: nodesRef.current,
+          projectId,
+          thumbnail: null,
+          viewport: flow.getViewport(),
+        }).catch(() => {
+          // 离开项目时尽快保存最新快照，失败不阻塞页面跳转。
+        });
+      }
+
       void (async () => {
         if (nodesRef.current.length === 0) {
           return;
@@ -1398,18 +1470,39 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           return;
         }
 
-        await saveCanvasSnapshot({
-          edges: edgesRef.current,
-          nodes: nodesRef.current,
+        await saveProjectThumbnailToApi({
           projectId,
           thumbnail,
-          viewport: flow.getViewport(),
         });
       })().catch(() => {
         // 离开项目时的缩略图兜底失败不阻塞页面跳转。
       });
     };
   }, [projectId]);
+
+  useEffect(() => {
+    const flushPendingCanvas = () => {
+      if (
+        isHydrating.current ||
+        pendingCanvasSignature.current === savedCanvasSignature.current
+      ) {
+        return;
+      }
+      void saveCanvasRef.current();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        flushPendingCanvas();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", flushPendingCanvas);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", flushPendingCanvas);
+    };
+  }, []);
 
   useEffect(() => {
     if (
@@ -1521,7 +1614,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         autosaveTimer.current = null;
       }
     };
-  }, [autoSaveIntervalMs, canvasLoaded, edges, nodes, saveStatus]);
+  }, [autoSaveIntervalMs, canvasLoaded, saveStatus]);
 
   useEffect(() => {
     if (
@@ -2221,9 +2314,12 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           committedViewport,
         );
         savedCanvasSignature.current = committedSignature;
-        pendingCanvasSignature.current = committedSignature;
         setLastSavedAt(committedSnapshot.updatedAt);
-        setSaveStatus("已保存");
+        setSaveStatus(
+          pendingCanvasSignature.current === committedSignature
+            ? "已保存"
+            : "未保存",
+        );
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "图片编辑失败，请稍后重试";
@@ -2527,7 +2623,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   );
 
   const handleCanvasNodeDragStart = useCallback(
-    (draggedNode: CanvasNode) => {
+    (draggedNode: CanvasNode, duplicateOnDrop: boolean) => {
       setIsMiniMapSuspended(true);
       setIsNodeDragging(true);
       const currentNodes = reactFlow?.getNodes() ?? nodes;
@@ -2545,6 +2641,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           createCanvasHistoryNodeSnapshot(node),
         ]),
       );
+      altDragSourceNodeId.current = duplicateOnDrop ? draggedNode.id : null;
 
       if (draggedNode.data.kind === "group") {
         groupDragPosition.current = {
@@ -2594,10 +2691,43 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       setIsMiniMapSuspended(false);
       setIsNodeDragging(false);
       tickCanvasInteractionSample(dragInteractionSample.current);
+      const currentNodes = reactFlow?.getNodes() ?? nodes;
+      const duplicateSourceNodeId = altDragSourceNodeId.current;
+      altDragSourceNodeId.current = null;
+
+      if (
+        duplicateSourceNodeId === draggedNode.id &&
+        dragStartNodeSnapshots.current
+      ) {
+        const copyUpdate = createAltDragCopyUpdate({
+          beforeNodeSnapshots: dragStartNodeSnapshots.current,
+          createId: () => crypto.randomUUID(),
+          currentNodes,
+          draggedNodeId: draggedNode.id,
+        });
+
+        if (copyUpdate) {
+          groupDragPosition.current = null;
+          nodesRef.current = copyUpdate.nextNodes;
+          skipNextHistoryEntryCount.current += 1;
+          setNodes(copyUpdate.nextNodes);
+          pushCreateHistory({
+            afterEdges: edgesRef.current,
+            afterNodes: copyUpdate.nextNodes,
+            nodes: copyUpdate.createdNodes,
+          });
+          stopCanvasInteractionSample(dragInteractionSample.current, {
+            edges: edges.length,
+            nodes: copyUpdate.nextNodes.length,
+          });
+          dragInteractionSample.current = null;
+          dragStartNodeSnapshots.current = null;
+          return;
+        }
+      }
 
       if (draggedNode.data.kind === "group") {
         groupDragPosition.current = null;
-        const currentNodes = reactFlow?.getNodes() ?? nodes;
         stopCanvasInteractionSample(dragInteractionSample.current, {
           edges: edges.length,
           nodes: currentNodes.length,
@@ -2611,7 +2741,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }
 
       detachNodeFromGroupIfOutside(draggedNode);
-      const currentNodes = reactFlow?.getNodes() ?? nodes;
       stopCanvasInteractionSample(dragInteractionSample.current, {
         edges: edges.length,
         nodes: currentNodes.length,
@@ -2626,8 +2755,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       detachNodeFromGroupIfOutside,
       edges.length,
       nodes,
+      pushCreateHistory,
       pushNodeUpdateHistory,
       reactFlow,
+      setNodes,
     ],
   );
 
@@ -2904,17 +3035,29 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     [setNodes],
   );
 
-  const focusCanvasNode = useCallback((nodeId: string) => {
+  const focusCanvasNode = useCallback((
+    nodeId: string,
+    options?: { preserveZoom?: boolean },
+  ) => {
     setNodes((current) => current.map((node) => ({
       ...node,
       selected: node.id === nodeId,
     })));
     window.requestAnimationFrame(() => {
-      void reactFlowRef.current?.fitView({
-        duration: 220,
-        nodes: [{ id: nodeId }],
-        padding: 0.3,
-      });
+      const flow = reactFlowRef.current;
+      if (!flow) return;
+      void flow.fitView(
+        options?.preserveZoom
+          ? createPreservedZoomNodeFocusOptions(
+              nodeId,
+              flow.getViewport().zoom,
+            )
+          : {
+              duration: 220,
+              nodes: [{ id: nodeId }],
+              padding: 0.3,
+            },
+      );
     });
   }, [setNodes]);
 
@@ -2938,10 +3081,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodes: createdNodes,
       });
     }
-    focusCanvasNode(update.focusNodeId);
+    focusCanvasNode(update.focusNodeId, { preserveZoom: true });
   }, [appendCanvasItems, focusCanvasNode, projectId]);
 
-  const toggleMusicPlayback = useCallback((playerNodeId: string, playing: boolean) => {
+  const ensureMusicPlayback = useCallback((playerNodeId: string) => {
     const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
     const sourceNode = resolveMusicSourceNode({
       edges: edgesRef.current,
@@ -2951,41 +3094,79 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     const source = playerNode?.data.originalUrl ?? (
       sourceNode?.data.kind === "music" ? sourceNode.data.originalUrl : undefined
     );
-    if (!playerNode || !source) return;
+    if (!playerNode || !source) return undefined;
 
-    for (const [id, audio] of musicPlayersRef.current) {
-      if (id !== playerNodeId) audio.pause();
+    let audio = musicPlayersRef.current.get(playerNodeId);
+    if (!audio || audio.src !== new URL(source, window.location.href).href) {
+      audio?.pause();
+      const nextAudio = new Audio(source);
+      nextAudio.preload = "metadata";
+      nextAudio.loop = Boolean(playerNode.data.musicLoop);
+      nextAudio.muted = Boolean(playerNode.data.musicMuted);
+      nextAudio.playbackRate = playerNode.data.musicPlaybackRate ?? 1;
+      nextAudio.volume = playerNode.data.musicVolume ?? 1;
+      musicPlayersRef.current.set(playerNodeId, nextAudio);
+      setNodes((current) => current.map((node) => node.id === playerNodeId
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              musicCurrentTime: 0,
+              musicIsPlaying: false,
+            },
+          }
+        : node));
+      nextAudio.addEventListener("loadedmetadata", () => {
+        const duration = Number.isFinite(nextAudio.duration)
+          ? Math.max(0, nextAudio.duration)
+          : 0;
+        setNodes((current) => current.map((node) => node.id === playerNodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                musicCurrentTime: Math.min(
+                  duration,
+                  Math.max(0, nextAudio.currentTime),
+                ),
+                musicDuration: duration,
+              },
+            }
+          : node));
+      });
+      nextAudio.addEventListener("timeupdate", () => {
+        setNodes((current) => current.map((node) => node.id === playerNodeId
+          ? { ...node, data: { ...node.data, musicCurrentTime: nextAudio.currentTime } }
+          : node));
+      });
+      nextAudio.addEventListener("ended", () => {
+        setNodes((current) => current.map((node) => node.id === playerNodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                musicCurrentTime: nextAudio.currentTime,
+                musicIsPlaying: false,
+              },
+            }
+          : node));
+      });
+      audio = nextAudio;
+    }
+    return audio;
+  }, [setNodes]);
+
+  const toggleMusicPlayback = useCallback((playerNodeId: string, playing: boolean) => {
+    const audio = ensureMusicPlayback(playerNodeId);
+    if (!audio) return;
+
+    for (const [id, otherAudio] of musicPlayersRef.current) {
+      if (id !== playerNodeId) otherAudio.pause();
     }
     setNodes((current) => current.map((node) => node.data.kind === "musicPlayer"
       ? { ...node, data: { ...node.data, musicIsPlaying: node.id === playerNodeId && playing } }
       : node));
 
-    let audio = musicPlayersRef.current.get(playerNodeId);
-    if (!audio || audio.src !== new URL(source, window.location.href).href) {
-      audio?.pause();
-      audio = new Audio(source);
-      audio.preload = "metadata";
-      audio.loop = Boolean(playerNode.data.musicLoop);
-      audio.muted = Boolean(playerNode.data.musicMuted);
-      audio.playbackRate = playerNode.data.musicPlaybackRate ?? 1;
-      audio.volume = playerNode.data.musicVolume ?? 1;
-      musicPlayersRef.current.set(playerNodeId, audio);
-      audio.addEventListener("loadedmetadata", () => {
-        setNodes((current) => current.map((node) => node.id === playerNodeId
-          ? { ...node, data: { ...node.data, musicDuration: audio!.duration } }
-          : node));
-      });
-      audio.addEventListener("timeupdate", () => {
-        setNodes((current) => current.map((node) => node.id === playerNodeId
-          ? { ...node, data: { ...node.data, musicCurrentTime: audio!.currentTime } }
-          : node));
-      });
-      audio.addEventListener("ended", () => {
-        setNodes((current) => current.map((node) => node.id === playerNodeId
-          ? { ...node, data: { ...node.data, musicIsPlaying: false } }
-          : node));
-      });
-    }
     if (playing) {
       void audio.play().catch((error) => {
         setNodes((current) => current.map((node) => node.id === playerNodeId
@@ -2995,7 +3176,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     } else {
       audio.pause();
     }
-  }, [setNodes]);
+  }, [ensureMusicPlayback, setNodes]);
 
   const updateMusicPlayback = useCallback((playerNodeId: string, updates: {
     loop?: boolean;
@@ -3047,77 +3228,33 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodes: nodesRef.current,
         playerNodeId,
       });
-      const fileId = playerNode?.data.fileId ?? sourceNode?.data.fileId;
-      if (!playerNode || !fileId) {
-        throw new Error("播放器没有可生成波形的上游音乐文件");
+      const sourceUrl =
+        playerNode?.data.originalUrl ??
+        (sourceNode?.data.kind === "music"
+          ? sourceNode.data.originalUrl
+          : undefined);
+      if (!playerNode || !sourceUrl) {
+        throw new Error("播放器没有可生成波形的本地音乐文件");
       }
 
-      const serviceCapabilities = await fetchMusicServiceCapabilities();
-      const requestContract = musicPlayerPreviewRequest(serviceCapabilities);
-
-      const response = await fetch("/api/music/jobs", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          fileId,
-          ...requestContract,
-          options: { keepStems: false },
-        }),
-      });
-      const created = await response.json().catch(() => null) as (
-        Partial<MusicJobSnapshot> & { error?: string }
-      ) | null;
-      if (!response.ok || !created || typeof created.id !== "string") {
-        throw new Error(typeof created?.error === "string"
-          ? created.error
-          : "无法创建波形任务");
-      }
-
-      for (let attempt = 0; attempt < 600; attempt += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 1_000));
-        const statusResponse = await fetch(`/api/music/jobs/${encodeURIComponent(created.id)}`);
-        const status = await statusResponse.json().catch(() => null) as MusicJobSnapshot | null;
-        if (!statusResponse.ok || !status) continue;
-        if (status.status === "failed" || status.status === "cancelled") {
-          throw new Error(status.error?.message || "波形生成失败");
-        }
-        if (status.status !== "succeeded") continue;
-
-        const resultResponse = await fetch(`/api/music/jobs/${encodeURIComponent(created.id)}/result`);
-        const result = await resultResponse.json().catch(() => null) as {
-          input?: { duration?: number };
-          waveform?: unknown[];
-        } | null;
-        const waveform = result?.waveform?.filter(
-          (value): value is number => typeof value === "number" && Number.isFinite(value),
-        );
-        const analyzedDuration = result?.input?.duration;
-        if (!resultResponse.ok || !waveform?.length) {
-          throw new Error("音乐服务没有返回有效波形");
-        }
-        setNodes((current) => current.map((node) => node.id === playerNodeId
-          ? {
-              ...node,
-              data: {
-                ...node.data,
-                musicDuration: typeof analyzedDuration === "number"
-                  ? analyzedDuration
-                  : node.data.musicDuration,
-                musicWaveform: waveform,
-                musicWaveformVersion: MUSIC_WAVEFORM_VERSION,
-              },
-            }
-          : node));
-        return;
-      }
-      throw new Error("波形生成超时");
+      const result = await generateLocalAudioWaveform(sourceUrl);
+      setNodes((current) => current.map((node) => node.id === playerNodeId
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              musicDuration: result.duration || node.data.musicDuration,
+              musicWaveform: result.waveform,
+              musicWaveformVersion: MUSIC_WAVEFORM_VERSION,
+            },
+          }
+        : node));
     })().finally(() => {
       musicWaveformTasksRef.current.delete(playerNodeId);
     });
     musicWaveformTasksRef.current.set(playerNodeId, task);
     return task;
-  }, [projectId, setNodes]);
+  }, [setNodes]);
 
   const submitMusicChildAnalysis = useCallback(async (
     childNodeId: string,
@@ -3138,6 +3275,43 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       return;
     }
     try {
+      if (kind === "lyrics") {
+        const startedAt = Date.now();
+        const response = await fetch("/api/music/lyrics", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ projectId, fileId }),
+        });
+        const result = await response.json().catch(() => null) as Record<string, unknown> | null;
+        if (!response.ok) {
+          throw new Error(getMusicApiErrorMessage(result, "未找到同步歌词"));
+        }
+        const warnings = Array.isArray(result?.warnings)
+          ? result.warnings.filter((warning): warning is string => typeof warning === "string")
+          : [];
+        setNodes((current) => current.map((node) => node.id === childNodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                musicAnalysisResult: result ?? undefined,
+                musicError: undefined,
+                musicJobCompletedAt: new Date().toISOString(),
+                musicJobDurationMs: Date.now() - startedAt,
+                musicJobElapsedMs: Date.now() - startedAt,
+                musicJobStatus: "succeeded" as const,
+                musicLyrics: extractMusicLyrics(result ?? undefined),
+                musicProgress: 1,
+                musicStage: "completed",
+                musicStageLabel: result?.source === "netease-unofficial"
+                  ? "歌词来自网易云"
+                  : "歌词来自 LRCLIB",
+                musicWarnings: warnings,
+              },
+            }
+          : node));
+        return;
+      }
       if (kind === "sunoPrompt") {
         const cachedAnalysis = nodesRef.current.find((node) =>
           node.data.kind === "musicAnalysis" &&
@@ -3188,8 +3362,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           ...requestContract,
           options: {
             language: "auto",
-            keepStems: kind !== "lyrics",
-            requiredCapabilities: kind === "lyrics" ? ["lyrics"] : [],
+            keepStems: true,
+            requiredCapabilities: [],
           },
         }),
       });
@@ -3197,12 +3371,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         updateMusicJob(childNodeId, await response.json() as MusicJobSnapshot);
         return;
       }
-      const body = await response.json().catch(() => null) as {
-        detail?: { message?: string };
-        error?: string;
-        message?: string;
-      } | null;
-      const errorMessage = body?.detail?.message || body?.message || body?.error || "无法创建分析任务";
+      const body = await response.json().catch(() => null);
+      const errorMessage = getMusicApiErrorMessage(body);
       setNodes((current) => current.map((node) => node.id === childNodeId
         ? { ...node, data: { ...node.data, musicError: errorMessage, musicJobStatus: "failed" as const } }
         : node));
@@ -3212,6 +3382,21 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         : node));
     }
   }, [projectId, setNodes, updateMusicJob]);
+
+  useEffect(() => {
+    const recoveries = findLyricsNodesNeedingRecovery(nodes).filter(
+      ({ childNodeId }) =>
+        !recoveringLyricsNodeIdsRef.current.has(childNodeId),
+    );
+    for (const recovery of recoveries) {
+      recoveringLyricsNodeIdsRef.current.add(recovery.childNodeId);
+      void submitMusicChildAnalysis(
+        recovery.childNodeId,
+        recovery.playerNodeId,
+        "lyrics",
+      );
+    }
+  }, [nodes, submitMusicChildAnalysis]);
 
   const performMusicJobAction = useCallback(async (
     playerNodeId: string,
@@ -3287,7 +3472,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodes: update.createdNodes,
       });
     }
-    focusCanvasNode(update.focusNodeId);
+    focusCanvasNode(update.focusNodeId, { preserveZoom: true });
     window.setTimeout(() => {
       void submitMusicChildAnalysis(update.focusNodeId, playerNodeId, kind);
     }, 0);
@@ -3318,6 +3503,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         onCancelMusicAnalysis: cancelMusicAnalysis,
         onCreateMusicChildNode: createMusicChild,
         onCreateMusicPlayerNode: createMusicPlayer,
+        onEnsureMusicPlayback: ensureMusicPlayback,
         onEnsureMusicWaveform: ensureMusicWaveform,
         onLocateMusicPlayerNode: locateMusicPlayer,
         onMusicAnalysisComplete: completeMusicAnalysis,
@@ -3350,6 +3536,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       cancelMusicAnalysis,
       createMusicChild,
       createMusicPlayer,
+      ensureMusicPlayback,
       ensureMusicWaveform,
       createTextChildNode,
       edges,
@@ -3382,6 +3569,28 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   );
 
   if (!canvasHydrated) {
+    if (canvasLoadError) {
+      return (
+        <div
+          className="flex h-full flex-col items-center justify-center gap-3 bg-white px-6 text-center"
+          role="alert"
+        >
+          <div className="text-sm font-medium text-zinc-800">画布加载失败</div>
+          <div className="max-w-md text-xs leading-5 text-zinc-500">
+            {canvasLoadError}
+          </div>
+          <button
+            className="mt-1 inline-flex h-9 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium text-zinc-800 shadow-sm transition hover:bg-zinc-50 active:bg-zinc-100"
+            onClick={() => setCanvasLoadAttempt((attempt) => attempt + 1)}
+            type="button"
+          >
+            <RefreshCw className="size-4" aria-hidden />
+            重新加载
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div
         aria-live="polite"
@@ -3398,6 +3607,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     <div className={`zenme-canvas-shell h-full overflow-hidden bg-white text-zinc-950 ${isNodeDragging ? "zenme-canvas-node-dragging" : ""}`}>
       <main
         className="relative h-full w-full"
+        onAuxClickCapture={(event) => {
+          if (shouldPreventNativeCanvasAuxClick(event.nativeEvent)) {
+            event.preventDefault();
+          }
+        }}
         onDoubleClick={handleCanvasDoubleClick}
         onPointerMove={(event) => {
           lastCanvasPointer.current = { x: event.clientX, y: event.clientY };
@@ -3478,7 +3692,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           maxZoom={CANVAS_ZOOM_MAX}
           onNodeClick={(_event, node) => bringNodeToFront(node.id)}
           onNodeDrag={(_event, node) => moveGroupedNodesWithFrame(node)}
-          onNodeDragStart={(_event, node) => handleCanvasNodeDragStart(node)}
+          onNodeDragStart={(event, node) =>
+            handleCanvasNodeDragStart(node, event.altKey)
+          }
           onNodeDragStop={(_event, node) => handleCanvasNodeDragStop(node)}
           onNodesChange={handleNodesChange}
           onPaneClick={() => {

@@ -22,7 +22,10 @@ import {
   getCanvasHistoryState,
   getCanvasPersistableSignature,
 } from "./history-state";
-import { collectTextGenerationContext } from "./text-generation-context";
+import {
+  collectTextGenerationContext,
+  isTextGenerationContextNode,
+} from "./text-generation-context";
 import type { CanvasHistoryEntry, CanvasNode } from "./types";
 
 function canvasNode(input: {
@@ -266,6 +269,59 @@ describe("canvas state and context helpers", () => {
     ).toContain(
       "强管理节点「世界杯选题」\n标签：体育、采访\n整理可能的冷门故事",
     );
+  });
+
+  it("includes every timestamped lyric line in text generation context", () => {
+    const lyrics = canvasNode({
+      data: {
+        kind: "lyrics",
+        musicLyrics: [
+          { start: 55, text: "第一句" },
+          { start: 61.8, text: "第二句" },
+        ],
+        title: "张悬 - 毕竟 · 歌词",
+      },
+      id: "lyrics",
+      type: "lyrics",
+    });
+    const text = canvasNode({
+      data: { kind: "text", plainText: "分析歌词", title: "文本" },
+      id: "text",
+    });
+
+    expect(
+      collectTextGenerationContext({
+        edges: [edge("lyrics", "text")],
+        nodeId: "text",
+        nodes: [lyrics, text],
+      }),
+    ).toContain(
+      "歌词节点「张悬 - 毕竟 · 歌词」\n0:55 第一句\n1:01 第二句",
+    );
+  });
+
+  it("normalizes lyrics-to-text connections as readable context edges", () => {
+    const lyrics = canvasNode({
+      data: { kind: "lyrics", title: "歌词" },
+      id: "lyrics",
+      type: "lyrics",
+    });
+    const text = canvasNode({
+      data: { kind: "text", title: "文本" },
+      id: "text",
+    });
+    const connection: Connection = {
+      source: "lyrics",
+      sourceHandle: null,
+      target: "text",
+      targetHandle: null,
+    };
+
+    expect(isTextGenerationContextNode(lyrics)).toBe(true);
+    expect(normalizeCanvasConnection(connection, [lyrics, text])).toEqual({
+      ...connection,
+      sourceHandle: NODE_RIGHT_HANDLE_ID,
+    });
   });
 
   it("normalizes text node context handles into readable edge direction", () => {

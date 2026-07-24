@@ -1,15 +1,21 @@
 "use client";
 
 import { NodeResizer, type NodeProps } from "@xyflow/react";
-import { FileText } from "lucide-react";
+import { Check, Copy, FileText } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { CanvasNodeData, MusicLyricLine } from "@/components/zenme/node-types";
 import { NodeFrame } from "@/components/zenme/nodes/node-frame";
 import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
-import { NodeActionHandle, NodeEdgeSourceHandle, NodeTargetHandle } from "@/components/zenme/node-ui";
+import {
+  NodeActionHandle,
+  NodeContextTargetHandle,
+  NodeEdgeSourceHandle,
+  NodeTargetHandle,
+} from "@/components/zenme/node-ui";
 import { MusicJobStatus, MusicJobTiming, useMusicJob } from "@/components/zenme/nodes/use-music-job";
 import { MusicChildExpandButton } from "@/components/zenme/nodes/music-child-expand-button";
+import { writeTextToClipboard } from "@/lib/clipboard";
 
 export function groupLyrics(lines: MusicLyricLine[]) {
   return lines.reduce<Array<{ label: string; lines: MusicLyricLine[] }>>((groups, line) => {
@@ -21,9 +27,16 @@ export function groupLyrics(lines: MusicLyricLine[]) {
   }, []);
 }
 
+export function formatLyricsForClipboard(lines: MusicLyricLine[]) {
+  return lines
+    .map((line) => `${formatTime(line.start)} ${line.text}`.trim())
+    .join("\n");
+}
+
 export function LyricsNode({ data, selected, id }: NodeProps) {
   const node = data as CanvasNodeData;
   const [isRenaming, setIsRenaming] = useState(false);
+  const [copied, setCopied] = useState(false);
   const lines = node.musicLyrics ?? [];
   const activeTime = node.musicCurrentTime ?? 0;
   const activeLine = lines.find(
@@ -31,24 +44,62 @@ export function LyricsNode({ data, selected, id }: NodeProps) {
   );
   const activeLineKey = activeLine?.id ?? activeLine?.start;
   const activeLineRef = useRef<HTMLButtonElement | null>(null);
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useMusicJob(id, node);
   useEffect(() => {
     activeLineRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [activeLineKey]);
+  useEffect(
+    () => () => {
+      if (copyResetTimer.current) {
+        clearTimeout(copyResetTimer.current);
+      }
+    },
+    [],
+  );
+
+  async function copyLyrics() {
+    const text = formatLyricsForClipboard(lines);
+    if (!text || !(await writeTextToClipboard(text))) {
+      return;
+    }
+
+    setCopied(true);
+    if (copyResetTimer.current) {
+      clearTimeout(copyResetTimer.current);
+    }
+    copyResetTimer.current = setTimeout(() => setCopied(false), 1_500);
+  }
+
   return (
     <NodeFrame className={`flex h-full min-h-[176px] w-full min-w-[420px] flex-col p-4 ${isRenaming ? "zenme-node-renaming" : ""}`} selected={Boolean(selected)}>
-      <MusicChildExpandButton node={node} nodeId={id} />
-      <EditableNodeTitle fallbackTitle="歌词与结构" icon={<FileText className="size-4" />} onCommit={(title) => node.onUpdateMusicNode?.(id, { title })} onEditingChange={setIsRenaming} title={node.title} />
+      <MusicChildExpandButton className="right-12" node={node} nodeId={id} />
+      <button
+        aria-label={copied ? "歌词已复制" : "复制歌词"}
+        className="nodrag absolute right-3 top-3 z-20 flex size-7 items-center justify-center rounded-md bg-white text-zinc-500 shadow-sm ring-1 ring-zinc-200 transition hover:bg-zinc-50 hover:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40"
+        disabled={!lines.length}
+        onClick={() => void copyLyrics()}
+        title={copied ? "已复制" : "复制歌词"}
+        type="button"
+      >
+        {copied ? (
+          <Check className="size-3.5 text-emerald-600" />
+        ) : (
+          <Copy className="size-3.5" />
+        )}
+      </button>
+      <EditableNodeTitle fallbackTitle="歌词" icon={<FileText className="size-4" />} onCommit={(title) => node.onUpdateMusicNode?.(id, { title })} onEditingChange={setIsRenaming} title={node.title} />
       <MusicJobTiming node={node} />
       <NodeTargetHandle visible={Boolean(node.hasIncomingEdge)} />
       <NodeEdgeSourceHandle visible={Boolean(node.hasOutgoingEdge)} />
+      <NodeContextTargetHandle />
       <MusicJobStatus hideDuration hideSucceeded node={node} nodeId={id} />
       <div className="nodrag nowheel min-h-0 flex-1 space-y-4 overflow-auto pr-1">
         {groupLyrics(lines).map((group, groupIndex) => <section key={`${group.label}-${groupIndex}`}><p className={`sticky top-0 bg-white py-1 text-[11px] font-medium ${activeLine?.section === group.label ? "text-zinc-950" : "text-zinc-400"}`}>{group.label}</p><div className="space-y-0.5">{group.lines.map((line, index) => {
           const active = activeTime >= line.start && activeTime < (line.end ?? Number.POSITIVE_INFINITY);
           return <button className={`flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left text-sm ${active ? "bg-zinc-100 text-zinc-950" : "text-zinc-600 hover:bg-zinc-50"}`} key={line.id || `${line.start}-${index}`} onClick={() => node.musicParentPlayerNodeId && node.onSeekMusicPlayer?.(node.musicParentPlayerNodeId, line.start)} ref={active ? activeLineRef : undefined} type="button"><span className="w-10 shrink-0 pt-0.5 font-mono text-[10px] text-zinc-400">{formatTime(line.start)}</span><span>{line.text}</span></button>;
         })}</div></section>)}
-        {!lines.length ? <p className="py-10 text-center text-xs text-zinc-400">{node.musicWarnings?.[0] || (node.musicJobStatus === "failed" ? node.musicError : "等待歌词分析结果")}</p> : null}
+        {!lines.length ? <p className="py-10 text-center text-xs text-zinc-400">{node.musicWarnings?.[0] || (node.musicJobStatus === "failed" ? node.musicError : "正在获取同步歌词")}</p> : null}
       </div>
       <NodeResizer
         color="#a1a1aa"

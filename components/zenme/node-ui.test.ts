@@ -53,5 +53,13 @@ describe("node plus handle motion", () => {
     expect(nodeUiSource).toContain(
       "const offsetX = (event.clientX - center.x) / safeZoom",
     );
+    expect(nodeUiSource).toContain("ref={hitAreaRef}");
+    expect(nodeUiSource).toContain("ref={motionRef}");
+    expect(nodeUiSource).toContain(
+      "zenme-node-handle-magnetic-content",
+    );
+    expect(nodeUiSource).toContain(
+      "const rect = hitArea.getBoundingClientRect()",
+    );
   });
 });

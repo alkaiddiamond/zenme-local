@@ -30,7 +30,9 @@ import { cn } from "@/lib/utils";
 import {
   createProjectInApi,
   deleteProjectInApi,
+  getAppShellStateFromApi,
   listProjectsFromApi,
+  updateAppShellStateInApi,
   updateProjectNameInApi,
 } from "@/lib/zenme-api";
 import {
@@ -65,6 +67,24 @@ function getDesktopWindowApi() {
   return (window as Window & { zenmeDesktop?: DesktopWindowApi }).zenmeDesktop;
 }
 
+function readLegacyProjectIds(key: string) {
+  try {
+    const stored = window.localStorage.getItem(key);
+    const ids = stored ? JSON.parse(stored) as unknown : [];
+    return Array.isArray(ids)
+      ? ids.filter((id): id is string => typeof id === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistAppShellState(
+  updates: Parameters<typeof updateAppShellStateInApi>[0],
+) {
+  void updateAppShellStateInApi(updates).catch(() => undefined);
+}
+
 export function AppShell({ children, active }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -76,6 +96,7 @@ export function AppShell({ children, active }: AppShellProps) {
   const [pinnedProjectIds, setPinnedProjectIds] = useState<string[]>([]);
   const [favoriteProjectIds, setFavoriteProjectIds] = useState<string[]>([]);
   const [projectOrderIds, setProjectOrderIds] = useState<string[]>([]);
+  const [isAppShellStateLoaded, setIsAppShellStateLoaded] = useState(false);
   const [openProjectMenuId, setOpenProjectMenuId] = useState<string | null>(null);
   const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
   const [renameProjectName, setRenameProjectName] = useState("");
@@ -101,63 +122,64 @@ export function AppShell({ children, active }: AppShellProps) {
   }, [refreshProjects]);
 
   useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(OPEN_PROJECT_TABS_KEY);
-      if (stored) {
-        const ids = JSON.parse(stored) as unknown;
-        if (Array.isArray(ids)) {
-          setOpenProjectIds(ids.filter((id): id is string => typeof id === "string"));
+    let cancelled = false;
+
+    async function loadAppShellState() {
+      try {
+        let state = await getAppShellStateFromApi();
+        if (!state.localStorageMigrationCompleted) {
+          state = await updateAppShellStateInApi({
+            favoriteProjectIds:
+              state.favoriteProjectIds.length > 0
+                ? state.favoriteProjectIds
+                : readLegacyProjectIds(FAVORITE_PROJECTS_KEY),
+            localStorageMigrationCompleted: true,
+            openProjectIds:
+              state.openProjectIds.length > 0
+                ? state.openProjectIds
+                : readLegacyProjectIds(OPEN_PROJECT_TABS_KEY).slice(-9),
+            pinnedProjectIds:
+              state.pinnedProjectIds.length > 0
+                ? state.pinnedProjectIds
+                : readLegacyProjectIds(PINNED_PROJECTS_KEY),
+            projectOrderIds:
+              state.projectOrderIds.length > 0
+                ? state.projectOrderIds
+                : readLegacyProjectIds(PROJECT_ORDER_KEY),
+            sidebarCollapsed:
+              window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === null
+                ? state.sidebarCollapsed
+                : window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true",
+          });
         }
+        if (cancelled) return;
+        setFavoriteProjectIds(state.favoriteProjectIds);
+        setOpenProjectIds(state.openProjectIds);
+        setPinnedProjectIds(state.pinnedProjectIds);
+        setProjectOrderIds(state.projectOrderIds);
+        setIsSidebarCollapsed(state.sidebarCollapsed);
+      } catch {
+        if (cancelled) return;
+        setFavoriteProjectIds(readLegacyProjectIds(FAVORITE_PROJECTS_KEY));
+        setOpenProjectIds(readLegacyProjectIds(OPEN_PROJECT_TABS_KEY).slice(-9));
+        setPinnedProjectIds(readLegacyProjectIds(PINNED_PROJECTS_KEY));
+        setProjectOrderIds(readLegacyProjectIds(PROJECT_ORDER_KEY));
+        setIsSidebarCollapsed(
+          window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true",
+        );
+      } finally {
+        if (!cancelled) setIsAppShellStateLoaded(true);
       }
-    } catch {
-      setOpenProjectIds([]);
     }
+
+    void loadAppShellState();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    setIsSidebarCollapsed(
-      window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true",
-    );
-  }, []);
-
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(PINNED_PROJECTS_KEY);
-      const ids = stored ? JSON.parse(stored) as unknown : [];
-      if (Array.isArray(ids)) {
-        setPinnedProjectIds(ids.filter((id): id is string => typeof id === "string"));
-      }
-    } catch {
-      setPinnedProjectIds([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(FAVORITE_PROJECTS_KEY);
-      const ids = stored ? JSON.parse(stored) as unknown : [];
-      if (Array.isArray(ids)) {
-        setFavoriteProjectIds(ids.filter((id): id is string => typeof id === "string"));
-      }
-    } catch {
-      setFavoriteProjectIds([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(PROJECT_ORDER_KEY);
-      const ids = stored ? JSON.parse(stored) as unknown : [];
-      if (Array.isArray(ids)) {
-        setProjectOrderIds(ids.filter((id): id is string => typeof id === "string"));
-      }
-    } catch {
-      setProjectOrderIds([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!projects.length) return;
+    if (!isAppShellStateLoaded || !projects.length) return;
     setProjectOrderIds((current) => {
       const knownProjectIds = new Set(projects.map((project) => project.id));
       const existing = current.filter((id) => knownProjectIds.has(id));
@@ -166,21 +188,23 @@ export function AppShell({ children, active }: AppShellProps) {
         .filter((id) => !existing.includes(id));
       const next = [...newProjectIds, ...existing];
       window.localStorage.setItem(PROJECT_ORDER_KEY, JSON.stringify(next));
+      persistAppShellState({ projectOrderIds: next });
       return next;
     });
-  }, [projects]);
+  }, [isAppShellStateLoaded, projects]);
 
   useEffect(() => {
-    if (!currentProjectId) return;
+    if (!isAppShellStateLoaded || !currentProjectId) return;
     setOpenProjectIds((current) => {
       if (current.includes(currentProjectId)) {
         return current;
       }
       const next = [...current, currentProjectId].slice(-9);
       window.localStorage.setItem(OPEN_PROJECT_TABS_KEY, JSON.stringify(next));
+      persistAppShellState({ openProjectIds: next });
       return next;
     });
-  }, [currentProjectId]);
+  }, [currentProjectId, isAppShellStateLoaded]);
 
   const projectsById = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
@@ -297,6 +321,7 @@ export function AppShell({ children, active }: AppShellProps) {
   function persistOpenProjectIds(nextIds: string[]) {
     setOpenProjectIds(nextIds);
     window.localStorage.setItem(OPEN_PROJECT_TABS_KEY, JSON.stringify(nextIds));
+    persistAppShellState({ openProjectIds: nextIds });
   }
 
   function closeProjectTab(projectId: string) {
@@ -321,6 +346,7 @@ export function AppShell({ children, active }: AppShellProps) {
     setIsSidebarCollapsed((current) => {
       const next = !current;
       window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+      persistAppShellState({ sidebarCollapsed: next });
       return next;
     });
   }
@@ -365,6 +391,7 @@ export function AppShell({ children, active }: AppShellProps) {
         ? current.filter((id) => id !== projectId)
         : [projectId, ...current];
       window.localStorage.setItem(PINNED_PROJECTS_KEY, JSON.stringify(next));
+      persistAppShellState({ pinnedProjectIds: next });
       return next;
     });
   }
@@ -376,6 +403,7 @@ export function AppShell({ children, active }: AppShellProps) {
         ? current.filter((id) => id !== projectId)
         : [...current, projectId];
       window.localStorage.setItem(FAVORITE_PROJECTS_KEY, JSON.stringify(next));
+      persistAppShellState({ favoriteProjectIds: next });
       return next;
     });
   }
@@ -408,16 +436,19 @@ export function AppShell({ children, active }: AppShellProps) {
       setPinnedProjectIds((current) => {
         const next = current.filter((id) => id !== projectId);
         window.localStorage.setItem(PINNED_PROJECTS_KEY, JSON.stringify(next));
+        persistAppShellState({ pinnedProjectIds: next });
         return next;
       });
       setFavoriteProjectIds((current) => {
         const next = current.filter((id) => id !== projectId);
         window.localStorage.setItem(FAVORITE_PROJECTS_KEY, JSON.stringify(next));
+        persistAppShellState({ favoriteProjectIds: next });
         return next;
       });
       setProjectOrderIds((current) => {
         const next = current.filter((id) => id !== projectId);
         window.localStorage.setItem(PROJECT_ORDER_KEY, JSON.stringify(next));
+        persistAppShellState({ projectOrderIds: next });
         return next;
       });
 

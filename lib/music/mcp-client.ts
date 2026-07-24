@@ -8,6 +8,7 @@ type JsonObject = Record<string, unknown>;
 
 const globalMusicMcp = globalThis as typeof globalThis & {
   __zenmeMusicMcpClientPromise?: Promise<Client>;
+  __zenmeMusicMcpShutdownHooksRegistered?: boolean;
 };
 
 export async function musicMcpRequest(requestPath: string, init?: RequestInit) {
@@ -89,12 +90,33 @@ function isTextContent(value: unknown): value is { type: "text"; text: string } 
 
 async function getMusicMcpClient() {
   if (!globalMusicMcp.__zenmeMusicMcpClientPromise) {
+    registerShutdownHooks();
     globalMusicMcp.__zenmeMusicMcpClientPromise = connectMusicMcp().catch((error) => {
       delete globalMusicMcp.__zenmeMusicMcpClientPromise;
       throw error;
     });
   }
   return globalMusicMcp.__zenmeMusicMcpClientPromise;
+}
+
+export async function closeMusicMcpClient() {
+  const clientPromise = globalMusicMcp.__zenmeMusicMcpClientPromise;
+  delete globalMusicMcp.__zenmeMusicMcpClientPromise;
+  if (!clientPromise) return;
+  try {
+    const client = await clientPromise;
+    await client.close();
+  } catch {
+    // A failed or already-closed stdio session needs no further cleanup.
+  }
+}
+
+function registerShutdownHooks() {
+  if (globalMusicMcp.__zenmeMusicMcpShutdownHooksRegistered) return;
+  globalMusicMcp.__zenmeMusicMcpShutdownHooksRegistered = true;
+  process.once("SIGINT", () => void closeMusicMcpClient());
+  process.once("SIGTERM", () => void closeMusicMcpClient());
+  process.once("beforeExit", () => void closeMusicMcpClient());
 }
 
 async function connectMusicMcp() {
@@ -117,11 +139,11 @@ async function connectMusicMcp() {
 
 function discoverMusicMcpCommand() {
   const siblingProject = path.resolve(process.cwd(), "..", "zenme-music-service");
-  const siblingExecutable = path.join(siblingProject, ".venv", "Scripts", "zenme-music-mcp.exe");
+  const siblingExecutable = path.join(siblingProject, ".venv", "Scripts", "zenme-music-service.exe");
   if (process.env.NODE_ENV === "development" && existsSync(siblingExecutable)) {
-    return { command: siblingExecutable, args: [] as string[] };
+    return { command: siblingExecutable, args: ["mcp", "--stdio"] };
   }
-  return { command: "zenme-music-mcp", args: [] as string[] };
+  return { command: "zenme-music-service", args: ["mcp", "--stdio"] };
 }
 
 function parseCommandArgs(value: string | undefined) {

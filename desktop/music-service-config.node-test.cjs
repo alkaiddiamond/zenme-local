@@ -15,6 +15,7 @@ test("desktop config resolves only an external API Base URL and token", () => {
     desktopConfig: {
       dataDir: path.resolve("zenme-data"),
       musicService: {
+        transport: "http",
         baseUrl: "http://127.0.0.1:43127",
         token: "desktop-secret",
       },
@@ -34,7 +35,7 @@ test("desktop config resolves only an external API Base URL and token", () => {
 test("URL/token environment pair overrides the whole desktop connection", () => {
   const configuration = resolveMusicServiceConfiguration({
     desktopConfig: {
-      musicService: { baseUrl: "http://127.0.0.1:1111", token: "configured" },
+      musicService: { transport: "http", baseUrl: "http://127.0.0.1:1111", token: "configured" },
     },
     env: {
       ZENME_MUSIC_SERVICE_URL: "http://localhost:2222",
@@ -49,7 +50,7 @@ test("URL/token environment pair overrides the whole desktop connection", () => 
 
 test("partial or invalid API configuration remains unavailable without throwing", () => {
   const partial = resolveMusicServiceConfiguration({
-    desktopConfig: { musicService: { baseUrl: "http://127.0.0.1:43127" } },
+    desktopConfig: { musicService: { transport: "http", baseUrl: "http://127.0.0.1:43127" } },
     env: {},
   });
   const invalid = resolveMusicServiceConfiguration({
@@ -84,9 +85,27 @@ test("configuration updates remove obsolete executable and storage fields", () =
   assert.equal(configured.dataDir, current.dataDir);
   assert.equal(configured.theme, "dark");
   assert.deepEqual(configured.musicService, {
+    transport: "http",
     baseUrl: "http://127.0.0.1:43127",
     token: "new-secret",
   });
+});
+
+test("legacy HTTP settings stay dormant until the user explicitly enables compatibility mode", () => {
+  const configuration = resolveMusicServiceConfiguration({
+    desktopConfig: {
+      musicService: {
+        baseUrl: "http://127.0.0.1:8765",
+        token: "legacy-secret",
+      },
+    },
+    env: {},
+  });
+
+  assert.equal(configuration.configured, false);
+  assert.equal(configuration.source, "none");
+  assert.equal(configuration.baseUrl, null);
+  assert.equal(configuration.token, null);
 });
 
 test("normalizer accepts only loopback HTTP origins", () => {

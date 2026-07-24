@@ -4,6 +4,7 @@ import {
   CANVAS_ZOOM_MAX,
   CANVAS_ZOOM_MIN,
   clampCanvasZoom,
+  createPreservedZoomNodeFocusOptions,
   createCanvasZoomViewport,
   createCanvasZoomViewportAtPoint,
   getNextCanvasZoom,
@@ -39,5 +40,15 @@ describe("canvas viewport helpers", () => {
         { x: 300, y: 250 },
       ),
     ).toEqual({ x: -100, y: -150, zoom: 2 });
+  });
+
+  it("focuses a node while locking fit-view to the current zoom", () => {
+    expect(createPreservedZoomNodeFocusOptions("player-1", 0.75)).toEqual({
+      duration: 220,
+      maxZoom: 0.75,
+      minZoom: 0.75,
+      nodes: [{ id: "player-1" }],
+      padding: 0.3,
+    });
   });
 });

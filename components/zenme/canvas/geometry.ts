@@ -370,6 +370,8 @@ function getSerializableRecord<T extends Record<string, unknown>>(record: T) {
         key !== "hasIncomingEdge" &&
         key !== "hasOutgoingEdge" &&
         key !== "hasRunningGenerationChild" &&
+        key !== "musicCurrentTime" &&
+        key !== "musicIsPlaying" &&
         typeof value !== "function",
     ),
   ) as T;

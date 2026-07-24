@@ -73,6 +73,19 @@ test("connection leaves Zenme available when no external API is configured", asy
   assert.equal(snapshot.errorCode, "external_api_not_configured");
 });
 
+test("configured API credentials reach Next even when the service starts later", () => {
+  const connection = new MusicServiceConnection({
+    baseUrl: "http://127.0.0.1:43127",
+    token: "configured-before-service-start",
+  });
+
+  assert.equal(connection.snapshot().status, "disconnected");
+  assert.deepEqual(connection.serverEnvironment(), {
+    ZENME_MUSIC_SERVICE_URL: "http://127.0.0.1:43127",
+    ZENME_MUSIC_SERVICE_TOKEN: "configured-before-service-start",
+  });
+});
+
 test("connection rejects non-loopback and credential-bearing URLs before fetch", async () => {
   for (const baseUrl of [
     "https://example.com",

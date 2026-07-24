@@ -36,4 +36,19 @@ describe("model provider settings", () => {
     expect(source).toContain("仅应用于当前服务商");
     expect(source).toContain("localhost、127.0.0.1 和 ::1 始终直连");
   });
+
+  it("manages models directly without a separate model mapping section", () => {
+    expect(source).not.toContain("文本模型映射");
+    expect(source).not.toContain("图片模型映射");
+    expect(source).not.toContain("用于标记该服务商的文本与图片处理入口");
+    expect(source).toContain("模型列表");
+    expect(source).toContain("添加模型");
+    expect(source).toContain("拉取模型");
+  });
+
+  it("shows an explicit music API save and reconnect action", () => {
+    expect(source).toContain("修改地址或 Token 后，请保存并重新连接服务。");
+    expect(source).toContain('className="min-w-[132px] shrink-0"');
+    expect(source).toContain("保存并连接");
+  });
 });

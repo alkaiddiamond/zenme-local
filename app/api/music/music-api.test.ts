@@ -11,6 +11,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.ZENME_MUSIC_SERVICE_URL;
   delete process.env.ZENME_MUSIC_SERVICE_TOKEN;
+  delete process.env.ZENME_MUSIC_MCP_ENABLED;
 });
 
 describe("music service proxy", () => {

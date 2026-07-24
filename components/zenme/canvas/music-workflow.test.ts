@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 
 import type { CanvasNode } from "./types";
 import {
   createMusicChildUpdate,
   createMusicPlayerUpdate,
+  getMusicApiErrorMessage,
   downsampleWaveform,
   extractMusicLyrics,
+  findLyricsNodesNeedingRecovery,
   musicCapabilitiesFor,
   musicJobRequestFor,
   musicPlayerPreviewRequest,
+  normalizeMusicPlaybackTimes,
   resolveMusicSourceNode,
 } from "./music-workflow";
 
@@ -20,6 +24,36 @@ const musicNode: CanvasNode = {
 };
 
 describe("music workflow", () => {
+  it("creates music analysis nodes without changing the current canvas zoom", () => {
+    const canvasClientSource = readFileSync(
+      new URL("../canvas-client.tsx", import.meta.url),
+      "utf8",
+    );
+    const createMusicChildSource = canvasClientSource.slice(
+      canvasClientSource.indexOf("const createMusicChild = useCallback"),
+      canvasClientSource.indexOf(
+        "const cancelMusicAnalysis = useCallback",
+      ),
+    );
+
+    expect(createMusicChildSource).toContain(
+      "focusCanvasNode(update.focusNodeId, { preserveZoom: true })",
+    );
+  });
+
+  it("preserves string and structured API error details", () => {
+    expect(getMusicApiErrorMessage({ detail: "Unauthorized" })).toBe(
+      "Unauthorized",
+    );
+    expect(
+      getMusicApiErrorMessage({ detail: { message: "模型尚未安装" } }),
+    ).toBe("模型尚未安装");
+    expect(getMusicApiErrorMessage({ error: "服务未配置" })).toBe(
+      "服务未配置",
+    );
+    expect(getMusicApiErrorMessage(null)).toBe("无法创建分析任务");
+  });
+
   it("creates one deterministic player for a music asset", () => {
     const first = createMusicPlayerUpdate({
       edges: [], musicNode, nodes: [musicNode], projectId: "project-1",
@@ -68,9 +102,23 @@ describe("music workflow", () => {
     expect(new Set(sampled.map((value) => value.toFixed(2))).size).toBeGreaterThan(20);
   });
 
+  it("does not display a stale playback position before duration is known", () => {
+    expect(normalizeMusicPlaybackTimes(undefined, 297)).toEqual({
+      current: 0,
+      duration: 0,
+    });
+    expect(normalizeMusicPlaybackTimes(180, 297)).toEqual({
+      current: 180,
+      duration: 180,
+    });
+    expect(normalizeMusicPlaybackTimes(180, 42)).toEqual({
+      current: 42,
+      duration: 180,
+    });
+  });
+
   it("requests only the capabilities required by each child node", () => {
-    expect(musicCapabilitiesFor("lyrics")).toContain("lyrics");
-    expect(musicCapabilitiesFor("lyrics")).not.toContain("instruments");
+    expect(musicCapabilitiesFor("lyrics")).toEqual([]);
     expect(musicCapabilitiesFor("musicAnalysis")).toContain("instruments");
     expect(musicCapabilitiesFor("musicAnalysis")).not.toContain("lyrics");
     expect(musicCapabilitiesFor("sunoPrompt")).toContain("suno_prompt");
@@ -80,7 +128,6 @@ describe("music workflow", () => {
     const capabilities = {
       profiles: [
         { id: "player-preview" },
-        { id: "lyrics-structure" },
         { id: "comprehensive-analysis" },
         { id: "suno-prompt" },
       ],
@@ -89,10 +136,7 @@ describe("music workflow", () => {
       capabilities: ["metadata", "waveform"],
       profile: "player-preview",
     });
-    expect(musicJobRequestFor("lyrics", capabilities)).toEqual({
-      capabilities: ["lyrics", "structure"],
-      profile: "lyrics-structure",
-    });
+    expect(() => musicJobRequestFor("lyrics", capabilities)).toThrow(/直接获取/);
     expect(musicJobRequestFor("sunoPrompt", capabilities)).toEqual({
       capabilities: ["suno_prompt"],
       profile: "suno-prompt",
@@ -100,10 +144,7 @@ describe("music workflow", () => {
   });
 
   it("falls back to the legacy explicit capability contract", () => {
-    const lyrics = musicJobRequestFor("lyrics", { profiles: [] });
-    expect(lyrics.profile).toBe("complete");
-    expect(lyrics.capabilities).toContain("downbeats");
-    expect(lyrics.capabilities).toContain("lyrics");
+    expect(() => musicJobRequestFor("lyrics", { profiles: [] })).toThrow(/直接获取/);
     expect(musicPlayerPreviewRequest(null).profile).toBe("complete");
   });
 
@@ -173,10 +214,36 @@ describe("music workflow", () => {
     expect(update.createdNodes[0].style).toMatchObject({ height: 176, width: 560 });
   });
 
-  it("assigns lyric lines to analyzed structure sections", () => {
+  it("keeps locally fetched lyric lines without requiring structure sections", () => {
     expect(extractMusicLyrics({
-      segments: [{ start: 0, end: 20, label: "Intro" }, { start: 20, end: 40, label: "Verse" }],
       lyrics: [{ start: 21, end: 24, text: "第一句" }],
-    })).toEqual([expect.objectContaining({ section: "Verse", text: "第一句" })]);
+    })).toEqual([expect.objectContaining({ section: undefined, text: "第一句" })]);
+  });
+
+  it("finds succeeded historical lyric nodes whose persisted lines were lost", () => {
+    const lyrics: CanvasNode = {
+      id: "lyrics-1",
+      type: "lyrics",
+      position: { x: 0, y: 0 },
+      data: {
+        kind: "lyrics",
+        musicJobStatus: "succeeded",
+        musicLyrics: [],
+        musicParentPlayerNodeId: "player-1",
+        title: "歌词",
+      },
+    };
+    const intactLyrics: CanvasNode = {
+      ...lyrics,
+      id: "lyrics-2",
+      data: {
+        ...lyrics.data,
+        musicLyrics: [{ start: 1, text: "已有歌词" }],
+      },
+    };
+
+    expect(findLyricsNodesNeedingRecovery([lyrics, intactLyrics])).toEqual([
+      { childNodeId: "lyrics-1", playerNodeId: "player-1" },
+    ]);
   });
 });

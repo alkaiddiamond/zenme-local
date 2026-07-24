@@ -8,6 +8,7 @@ import type { CanvasNodeData } from "@/components/zenme/node-types";
 import {
   downsampleWaveform,
   MUSIC_WAVEFORM_VERSION,
+  normalizeMusicPlaybackTimes,
 } from "@/components/zenme/canvas/music-workflow";
 import { NodeFrame } from "@/components/zenme/nodes/node-frame";
 import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
@@ -15,13 +16,21 @@ import { NodeActionHandle, NodeEdgeSourceHandle, NodeTargetHandle } from "@/comp
 
 export function MusicPlayerNode({ data, selected, id }: NodeProps) {
   const node = data as CanvasNodeData;
-  const duration = Math.max(0, node.musicDuration ?? 0);
-  const current = Math.max(0, Math.min(duration || Infinity, node.musicCurrentTime ?? 0));
+  const { current, duration } = normalizeMusicPlaybackTimes(
+    node.musicDuration,
+    node.musicCurrentTime,
+  );
   const waveform = node.musicWaveform?.length ? node.musicWaveform : null;
   const displayedWaveform = waveform ? downsampleWaveform(waveform) : null;
   const [isRenaming, setIsRenaming] = useState(false);
   const [waveformState, setWaveformState] = useState<"idle" | "loading" | "error">("idle");
   const onEnsureMusicWaveform = node.onEnsureMusicWaveform;
+  const onEnsureMusicPlayback = node.onEnsureMusicPlayback;
+
+  useEffect(() => {
+    if (!node.originalUrl || !onEnsureMusicPlayback) return;
+    onEnsureMusicPlayback(id);
+  }, [id, node.originalUrl, onEnsureMusicPlayback]);
 
   useEffect(() => {
     if (waveform?.length && node.musicWaveformVersion === MUSIC_WAVEFORM_VERSION) {
@@ -56,7 +65,7 @@ export function MusicPlayerNode({ data, selected, id }: NodeProps) {
             {waveformState === "loading"
               ? "正在生成真实波形"
               : waveformState === "error"
-                ? "波形生成失败，重新打开播放器后重试"
+                ? "本地波形生成失败，请检查音频文件格式"
                 : "正在准备波形"}
           </p>
         )}

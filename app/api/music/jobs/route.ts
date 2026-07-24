@@ -20,10 +20,17 @@ export async function POST(request: Request) {
   } else {
     return Response.json({ error: "必须选择当前项目中的音乐文件" }, { status: 400 });
   }
-  const response = await musicServiceRequest("/v1/jobs", {
-    method: "POST", body: JSON.stringify(body),
-  });
-  return Response.json(await response.json(), { status: response.status });
+  try {
+    const response = await musicServiceRequest("/v1/jobs", {
+      method: "POST", body: JSON.stringify(body),
+    });
+    return Response.json(await response.json(), { status: response.status });
+  } catch {
+    return Response.json(
+      { error: "音乐分析服务未配置或暂时不可用" },
+      { status: 503 },
+    );
+  }
 }
 
 async function sha256File(inputPath: string) {

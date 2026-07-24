@@ -44,4 +44,47 @@ describe("music analysis canvas persistence", () => {
     expect(persisted.data.onMusicAnalysisComplete).toBeUndefined();
     expect(node.data.musicAnalysisResult).toBeDefined();
   });
+
+  it("does not persist high-frequency playback runtime state", () => {
+    const node: CanvasNode = {
+      id: "player-1",
+      type: "musicPlayer",
+      position: { x: 0, y: 0 },
+      data: {
+        kind: "musicPlayer",
+        musicCurrentTime: 42,
+        musicDuration: 180,
+        musicIsPlaying: true,
+        title: "播放器",
+      },
+    };
+
+    const [persisted] = getPersistableCanvasNodes([node]);
+
+    expect(persisted.data.musicCurrentTime).toBeUndefined();
+    expect(persisted.data.musicIsPlaying).toBeUndefined();
+    expect(persisted.data.musicDuration).toBe(180);
+  });
+
+  it("persists resolved lyrics independently from transient analysis results", () => {
+    const node: CanvasNode = {
+      id: "lyrics-1",
+      type: "lyrics",
+      position: { x: 0, y: 0 },
+      data: {
+        kind: "lyrics",
+        musicAnalysisResult: { lyrics: [{ start: 12, text: "歌词" }] },
+        musicJobStatus: "succeeded",
+        musicLyrics: [{ start: 12, end: 18, text: "歌词" }],
+        title: "歌词",
+      },
+    };
+
+    const [persisted] = getPersistableCanvasNodes([node]);
+
+    expect(persisted.data.musicAnalysisResult).toBeUndefined();
+    expect(persisted.data.musicLyrics).toEqual([
+      { start: 12, end: 18, text: "歌词" },
+    ]);
+  });
 });

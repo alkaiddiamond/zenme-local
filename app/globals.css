@@ -133,6 +133,8 @@
     --shadow-overlay: 0 20px 60px rgba(15, 23, 42, 0.14);
     --shadow-button-primary: none;
     --shadow-focus-ring: 0 0 0 3px rgba(148, 163, 184, 0.22);
+    --gradient-btn-primary: linear-gradient(180deg, #27272a 0%, #09090b 100%);
+    --gradient-btn-primary-hover: linear-gradient(180deg, #3f3f46 0%, #18181b 100%);
   }
   .dark {
     --background: 0 0% 3.9%;
@@ -159,6 +161,8 @@
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+    --gradient-btn-primary: linear-gradient(180deg, #fafafa 0%, #e4e4e7 100%);
+    --gradient-btn-primary-hover: linear-gradient(180deg, #ffffff 0%, #f4f4f5 100%);
   }
 }
 
@@ -519,6 +523,23 @@
 
 .zenme-canvas .zenme-agent-response-text,
 .zenme-canvas .zenme-agent-response-text * {
+  cursor: text !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+.zenme-canvas .zenme-agent-response-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.zenme-canvas .zenme-agent-response-text pre {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.zenme-canvas .zenme-suno-prompt-text {
   cursor: text !important;
   -webkit-user-select: text !important;
   user-select: text !important;

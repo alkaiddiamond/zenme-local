@@ -27,11 +27,11 @@ export function SunoPromptNode({ data, selected, id }: NodeProps) {
       <div className="nodrag nowheel mt-3 min-h-0 flex-1 space-y-4 overflow-auto pr-1">
         <section>
           <p className="text-xs text-zinc-500">中文</p>
-          <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{node.sunoPromptZh || "等待分析结果"}</p>
+          <p className="zenme-suno-prompt-text mt-1 whitespace-pre-wrap text-sm leading-6">{node.sunoPromptZh || "等待分析结果"}</p>
         </section>
         <section>
           <p className="text-xs text-zinc-500">English</p>
-          <p className="mt-1 whitespace-pre-wrap text-sm leading-6">{node.sunoPromptEn || "Waiting for analysis"}</p>
+          <p className="zenme-suno-prompt-text mt-1 whitespace-pre-wrap text-sm leading-6">{node.sunoPromptEn || "Waiting for analysis"}</p>
         </section>
       </div>
       <NodeResizer

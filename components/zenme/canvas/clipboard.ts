@@ -11,8 +11,25 @@ export type CanvasNodeClipboardPayload = {
   version: 1;
 };
 
+export function hasSelectedClipboardText(
+  selection: Pick<Selection, "isCollapsed" | "toString"> | null,
+) {
+  return Boolean(
+    selection &&
+      !selection.isCollapsed &&
+      selection.toString().length > 0,
+  );
+}
+
 export function createCanvasNodeClipboardPayload(nodes: CanvasNode[]) {
   const selectedIds = collectSelectedNodeIdsWithChildren(nodes);
+  return createCanvasNodeClipboardPayloadForNodeIds(nodes, selectedIds);
+}
+
+export function createCanvasNodeClipboardPayloadForNodeIds(
+  nodes: CanvasNode[],
+  selectedIds: ReadonlySet<string>,
+) {
   if (selectedIds.size === 0) return null;
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const copiedNodes = nodes
@@ -112,17 +129,18 @@ export function createPastedCanvasNodes(input: {
       sourceNode.data.kind === "task" && sourceNode.data.taskParentId
         ? idMap.get(sourceNode.data.taskParentId)
         : undefined;
+    const groupId = sourceNode.data.groupId
+      ? idMap.get(sourceNode.data.groupId)
+      : undefined;
     return {
       ...snapshot,
       id: idMap.get(sourceNode.id) as string,
       parentId,
-      data:
-        sourceNode.data.kind === "task"
-          ? {
-              ...snapshot.data,
-              taskParentId,
-            }
-          : snapshot.data,
+      data: {
+        ...snapshot.data,
+        groupId,
+        ...(sourceNode.data.kind === "task" ? { taskParentId } : {}),
+      },
       position: parentId
         ? sourceNode.position
         : {

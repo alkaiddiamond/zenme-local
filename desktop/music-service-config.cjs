@@ -32,12 +32,13 @@ function resolveMusicServiceConfiguration({ desktopConfig = {}, env = process.en
     env.ZENME_MUSIC_SERVICE_URL,
     env.ZENME_MUSIC_SERVICE_TOKEN,
   ].some((value) => typeof value === "string" && value.trim());
+  const desktopHttpEnabled = configured.transport === "http";
   const rawBaseUrl = environmentManaged
     ? env.ZENME_MUSIC_SERVICE_URL
-    : configured.baseUrl;
+    : desktopHttpEnabled ? configured.baseUrl : null;
   const token = optionalSecret(environmentManaged
     ? env.ZENME_MUSIC_SERVICE_TOKEN
-    : configured.token);
+    : desktopHttpEnabled ? configured.token : null);
   let baseUrl = null;
   let error = null;
   try {
@@ -66,6 +67,7 @@ function updateMusicServiceConfiguration(desktopConfig, updates) {
   const token = optionalSecret(
     Object.hasOwn(updates, "token") ? updates.token : current.token,
   );
+  if (baseUrl || token) nextMusicService.transport = "http";
   if (baseUrl) nextMusicService.baseUrl = baseUrl;
   if (token) nextMusicService.token = token;
   return { ...desktopConfig, musicService: nextMusicService };

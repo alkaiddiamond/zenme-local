@@ -189,6 +189,8 @@ export function getPersistableCanvasNodes(nodes: CanvasNode[]) {
           key !== "hasIncomingEdge" &&
           key !== "hasOutgoingEdge" &&
           key !== "isMultiSelection" &&
+          key !== "musicCurrentTime" &&
+          key !== "musicIsPlaying" &&
           key !== "musicAnalysisResult" &&
           typeof value !== "function",
       ),

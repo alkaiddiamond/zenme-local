@@ -36,6 +36,7 @@ type RenderedCanvasNodeInput = {
   ) => void;
   nodes: CanvasNode[];
   onMusicAnalysisComplete?: NonNullable<CanvasNodeData["onMusicAnalysisComplete"]>;
+  onEnsureMusicPlayback?: NonNullable<CanvasNodeData["onEnsureMusicPlayback"]>;
   onEnsureMusicWaveform?: NonNullable<CanvasNodeData["onEnsureMusicWaveform"]>;
   onCancelMusicAnalysis?: NonNullable<CanvasNodeData["onCancelMusicAnalysis"]>;
   onCreateMusicChildNode?: NonNullable<CanvasNodeData["onCreateMusicChildNode"]>;
@@ -149,6 +150,7 @@ export function getRenderedCanvasNodes({
   onResolveImageDimensions,
   onCreateTextChildNode,
   onMusicAnalysisComplete,
+  onEnsureMusicPlayback,
   onEnsureMusicWaveform,
   onCancelMusicAnalysis,
   onCreateMusicChildNode,
@@ -336,6 +338,7 @@ export function getRenderedCanvasNodes({
           previewUrl: source?.data.previewUrl,
           onCancelMusicAnalysis,
           onCreateMusicChildNode,
+          onEnsureMusicPlayback,
           onEnsureMusicWaveform,
           onMusicAnalysisComplete,
           onMusicJobUpdate,
@@ -355,6 +358,7 @@ export function getRenderedCanvasNodes({
     ) {
       const player = playerByChildId.get(nodeWithConnectionState.id);
       const analysisResult = nodeWithConnectionState.data.musicAnalysisResult;
+      const lyricsFromResult = extractMusicLyrics(analysisResult);
       const sunoPrompt = analysisResult?.sunoPrompt as { en?: string; zh?: string } | undefined;
       return {
         ...nodeWithConnectionState,
@@ -369,7 +373,11 @@ export function getRenderedCanvasNodes({
           musicJobId: nodeWithConnectionState.data.musicJobId,
           musicParentPlayerNodeId: player?.id ?? nodeWithConnectionState.data.musicParentPlayerNodeId,
           ...(nodeWithConnectionState.data.kind === "lyrics"
-            ? { musicLyrics: extractMusicLyrics(analysisResult) }
+            ? {
+                musicLyrics: lyricsFromResult.length > 0
+                  ? lyricsFromResult
+                  : nodeWithConnectionState.data.musicLyrics ?? [],
+              }
             : {}),
           ...(nodeWithConnectionState.data.kind === "musicAnalysis"
             ? { musicAnalysisResult: analysisResult }

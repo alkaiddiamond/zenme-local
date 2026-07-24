@@ -20,8 +20,8 @@
 ## 2. 核心原则
 
 1. **Zenme 是工作台，不是所有能力的运行时。** 重模型、GPU 任务和独立领域服务应由独立组件负责。
-2. **产品能力与实现阶段分离。** 用户选择“歌词与结构”或“图片生成”，不直接选择 Whisper、All-In-One 或某个内部 runner。
-3. **HTTP API 是独立本地服务的默认产品通道。** MCP 只用于显式启用的自动化和 Agent 工具入口。
+2. **产品能力与实现阶段分离。** 用户选择“综合分析”或“图片生成”，不直接选择某个内部 runner。
+3. **传输方式服从能力生命周期。** 需要常驻或跨应用共享的服务可使用 loopback HTTP；适合随桌面会话按需启停的独立组件可使用 MCP stdio。音乐分析采用后者。
 4. **渲染器不持有秘密，也不直连外部服务。** 所有调用经过 Zenme 同源服务端代理或 Electron 主进程。
 5. **能力必须可发现、可协商、可降级。** 界面不得展示尚未安装、未启用或合同不兼容的操作。
 6. **长任务必须持久化。** 任务可查询、取消、重试并在应用重启后恢复。
@@ -44,7 +44,7 @@
 - `image.generate`
 - `image.transform`
 - `music.player-preview`
-- `music.lyrics-structure`
+- `music.lyrics.lookup`
 - `music.comprehensive-analysis`
 - `music.suno-prompt`
 
@@ -56,7 +56,7 @@
 
 ### 3.4 Profile
 
-面向特定产品场景的能力组合，例如 `lyrics-structure`。Profile 表达产品意图，不替代公共 capability，也不得泄露内部执行 DAG。
+面向特定产品场景的能力组合，例如 `comprehensive-analysis`。Profile 表达产品意图，不替代公共 capability，也不得泄露内部执行 DAG。
 
 ### 3.5 Job
 
@@ -73,14 +73,14 @@
 | 应用内开源库 | 轻量、确定性、无独立 GPU 队列的通用能力 | 进程内调用 | Zenme | Markdown、文件解析、Tesseract OCR |
 | 远程模型服务商 | 短请求或可流式返回的云端模型 | HTTPS，经同源代理 | 服务商 | Zhipu、OpenRouter |
 | OAuth 账号服务商 | 需要浏览器授权和 Token 刷新的账号能力 | HTTPS，经同源代理 | 服务商 | ChatGPT |
-| 独立本地服务 | 重模型、GPU、长任务、独立缓存或专用运行时 | loopback HTTP API | 独立组件 | `zenme-music-service` |
-| MCP 适配 | Agent 工具、自动化、调试或脚本集成 | stdio/显式连接 | 独立组件 | 音乐服务 MCP 适配 |
+| 独立本地服务 | 重模型、GPU、长任务、独立缓存或专用运行时 | MCP stdio 或 loopback HTTP | 独立组件/桌面会话 | `zenme-music-service` |
+| MCP 适配 | 固定工作流、Agent 工具、自动化、调试或脚本集成 | stdio/显式连接 | 独立组件 | 音乐服务 MCP 适配 |
 
 选择规则：
 
 1. 已有成熟库能够在现有 Node/Electron 运行时安全完成的轻量能力，优先直接集成。
-2. 需要 Python/CUDA、长时间运行、独立队列、阶段缓存或崩溃隔离的能力，使用独立本地 HTTP 服务。
-3. MCP 不作为固定 UI 工作流的默认 RPC 层，也不用于替代可靠的持久任务 API。
+2. 需要 Python/CUDA、长时间运行、独立队列、阶段缓存或崩溃隔离的能力，使用独立本地组件；传输根据是否需要常驻和跨应用共享选择 MCP stdio 或 loopback HTTP。
+3. MCP 可作为已确认能力的固定 UI 工作流传输层，但长任务仍必须落入可靠的持久 Job Store，不能被伪装成单次同步工具调用。
 4. Skill 只负责 Agent 侧知识和调用流程，不作为产品运行时依赖，也不能替代服务合同。
 5. 不允许为了统一形式而把所有能力强行包装成 MCP，或把独立服务塞入 Electron/Next.js 进程。
 
@@ -203,16 +203,16 @@ flowchart LR
   "serviceVersion": "0.1.0",
   "protocolVersion": 1,
   "locality": "local",
-  "transport": "http-loopback",
+  "transport": "mcp-stdio",
   "capabilities": [
     {
-      "id": "music.lyrics-structure",
+      "id": "music.comprehensive-analysis",
       "version": 1,
       "enabled": true,
       "installed": true,
       "experimental": false,
       "inputKinds": ["audio"],
-      "outputKinds": ["lyrics", "timeline-segments"],
+      "outputKinds": ["analysis-report"],
       "execution": "job"
     }
   ]
@@ -282,10 +282,10 @@ Zenme 先协商能力再展示操作。旧服务缺少新字段时使用显式�
     "fileId": "file-id",
     "sha256": "content-sha256"
   },
-  "profile": "lyrics-structure",
-  "capabilities": ["lyrics", "structure"],
+  "profile": "comprehensive-analysis",
+  "capabilities": ["key", "rhythm"],
   "options": {
-    "requiredCapabilities": ["lyrics"]
+    "requiredCapabilities": ["key"]
   }
 }
 ```
@@ -357,19 +357,19 @@ queued → preparing → running → succeeded
 
 ## 10. MCP 规范
 
-- MCP 必须显式启用，默认关闭。
+- MCP 是否默认启用由具体能力的产品决策确定；音乐分析在桌面端默认按需启用。
 - MCP adapter 复用现有服务核心、Job Store、缓存和 schema，不复制业务逻辑。
-- 固定桌面工作流优先调用 HTTP API；HTTP 失败时不得自动切换到 MCP 并重复创建任务。
+- 同一操作只选择一种传输；显式 HTTP 覆盖失败时不得自动切换到 MCP 并重复创建任务。
 - MCP 工具返回持久 `jobId` 或稳定资源 URI，不把长任务伪装成单次同步工具调用。
 - MCP 的工具名称不是 Zenme 公共 capability ID；需要经过适配映射。
-- MCP 子进程不得由普通 Next.js 请求隐式创建。显式自动化会话结束时按其生命周期规则清理。
+- 允许由首次产品请求按需创建已配置的 MCP 子进程；后续请求复用同一会话，并在 Zenme 本地服务退出或重启时清理。
 
 ## 11. 安全与隐私
 
 ### 11.1 调用边界
 
 - Zenme 本地 API 只接受 loopback、同源请求，拒绝跨站调用。
-- 独立本地服务只监听 loopback，并使用高熵 Bearer Token。
+- 使用 HTTP 的独立本地服务只监听 loopback 并使用高熵 Bearer Token；MCP stdio 模式不得额外监听网络端口。
 - 远程服务 URL 仅允许 HTTP/HTTPS，禁止嵌入凭据、查询串和片段。
 - 通用远程代理必须防止 SSRF；本地服务代理只允许已配置的 loopback 地址和固定 `/v1/*` 路径。
 
@@ -426,18 +426,18 @@ queued → preparing → running → succeeded
 | 产品动作 | 公共 profile | 输入 | 结果节点 | 执行方式 |
 | --- | --- | --- | --- | --- |
 | 播放器预览 | `player-preview` | 音乐文件 | 播放器内部波形 | 轻量 Job |
-| 歌词与结构 | `lyrics-structure` | 播放器引用 | 歌词与结构节点 | 持久 Job |
+| 歌词 | 不经过音乐服务 | 本地音乐文件引用 | 歌词节点 | Zenme Local 服务端查询 |
 | 综合分析 | `comprehensive-analysis` | 播放器引用 | 综合分析节点 | 持久 Job |
 | Suno 提示词 | `suno-prompt` | 播放器及缓存结果 | Suno 提示词节点 | 持久 Job |
 
 音乐服务遵循以下额外规则：
 
-- HTTP loopback 是默认产品通道，MCP 仅在显式环境配置下启用。
-- 服务独立安装、独立启动、独立退出；Zenme 不因页面请求或应用关闭隐式启停服务。
-- Zenme 只保存连接信息并做健康检查，不管理 Python/CUDA 运行时。
+- MCP stdio 是默认产品通道；首次音乐请求按需启动服务进程，桌面会话内复用，并在 Zenme 本地服务退出或重启时关闭。
+- 服务保持独立安装和独立版本化，模型、缓存与 Job Store 独立持久化；由 Zenme 管理本次 stdio 子进程生命周期，不把 Python/CUDA 运行时加载进 Electron 或 Next.js 进程。
+- loopback HTTP 只作为用户明确保存的兼容连接；HTTP 与 MCP 之间不做静默故障切换。
 - 播放器只播放和共享时间轴；分析 Job 属于对应下游结果节点。
 - Suno 任务先复用同一音频的有效缓存，只补齐缺失能力。
-- 内部 All-In-One、Whisper、Demucs、Essentia 和 Qwen 阶段不暴露为画布操作。
+- 音乐服务不注册 All-In-One、Whisper、歌词解析或结构分析能力；同步歌词由 Zenme Local 按“网易云优先、LRCLIB 后备”获取。
 
 ## 17. 接入验收清单
 
@@ -454,7 +454,7 @@ queued → preparing → running → succeeded
 ### 合同
 
 - [ ] Health、Capabilities 和版本协商通过。
-- [ ] 长任务支持 Job 查询、SSE、取消、重试和恢复。
+- [ ] 长任务支持 Job 查询、SSE 或轮询、取消、重试和恢复。
 - [ ] Result 与 artifact schema 有测试和示例。
 - [ ] 新旧版本兼容策略已验证。
 - [ ] 缺失必需能力可以在重任务前快速失败。
@@ -477,9 +477,9 @@ queued → preparing → running → succeeded
 
 以下是规范落地时需要处理的已知偏差，不在本文档编辑任务中直接改代码：
 
-1. 音乐设置页仍显示“默认通过 stdio MCP”，应改为“默认连接独立 loopback HTTP 服务；MCP 为可选自动化入口”。
+1. 音乐设置页已统一显示“默认通过 stdio MCP”；兼容 HTTP 配置仅在用户明确保存后覆盖默认传输。
 2. `ModelProviderConfig.isDefault` 与 `modelMapping` 目前属于历史兼容字段，UI 不应暴露“设为默认”；后续应通过版本化设置迁移移除产品语义。
-3. 音乐服务生命周期文案必须统一为“独立组件自行维护”，不得同时宣称由桌面应用自动启停。
+3. 音乐服务生命周期文案必须统一为“组件独立安装和持久化，stdio 子进程由桌面会话按需启停”。
 4. 外部能力设置目前分散在模型配置和音乐分析区域；后续可建立统一状态组件，但不得为追求统一而合并不同协议的业务表单。
 5. 音乐 `/v1/jobs/plan` 属于诊断和预检能力，普通节点仍由服务端在创建 Job 时执行同等预检。
 

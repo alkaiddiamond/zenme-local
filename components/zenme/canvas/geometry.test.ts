@@ -245,6 +245,8 @@ describe("canvas geometry helpers", () => {
       ...node({
         data: {
           hasIncomingEdge: true,
+          musicCurrentTime: 42,
+          musicIsPlaying: true,
           onUpdateTextNode: update,
           plainText: "正文",
         },
@@ -272,6 +274,8 @@ describe("canvas geometry helpers", () => {
 
     expect(signature).not.toContain("hasIncomingEdge");
     expect(signature).not.toContain("measured");
+    expect(signature).not.toContain("musicCurrentTime");
+    expect(signature).not.toContain("musicIsPlaying");
     expect(entry.nodes[0]).not.toHaveProperty("dragging");
     expect(entry.nodes[0].data).toEqual({
       kind: "text",

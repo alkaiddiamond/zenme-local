@@ -212,7 +212,7 @@ export function NodeActionMenu({
       ) : null}
       {actionNode?.data.kind === "musicPlayer" ? (
         <>
-          <FloatingMenuItem icon={FileText} onClick={() => onCreateMusicChild("lyrics")} primary title="歌词与结构" />
+          <FloatingMenuItem icon={FileText} onClick={() => onCreateMusicChild("lyrics")} primary title="歌词" />
           <FloatingMenuItem icon={BarChart3} onClick={() => onCreateMusicChild("musicAnalysis")} title="综合分析" />
           <FloatingMenuItem icon={WandSparkles} onClick={() => onCreateMusicChild("sunoPrompt")} title="Suno 提示词" />
         </>

@@ -11,7 +11,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { AiModelOption } from "@/components/zenme/use-ai-model-options";
+import {
+  resolveAiModelOptionId,
+  type AiModelOption,
+} from "@/components/zenme/use-ai-model-options";
 
 type ZenmeIconButtonProps = ComponentPropsWithoutRef<"button"> & {
   active?: boolean;
@@ -53,6 +56,7 @@ export function ZenmeControlButton({
   children,
   className,
   size = "icon",
+  variant = "outline",
   type = "button",
   ...props
 }: ZenmeControlButtonProps) {
@@ -64,6 +68,7 @@ export function ZenmeControlButton({
       )}
       size={size}
       type={type}
+      variant={variant}
       {...props}
     >
       {children}
@@ -88,7 +93,13 @@ export function ZenmeModelPicker({
   onChange,
   onOpenChange,
 }: ZenmeModelPickerProps) {
-  const activeModel = models.find((option) => option.id === model);
+  const resolvedModel = resolveAiModelOptionId(models, model);
+  const visibleModels = models.filter(
+    (option) => option.id !== model || resolvedModel === model,
+  );
+  const activeModel = visibleModels.find(
+    (option) => option.id === resolvedModel,
+  );
   const activeLabel = activeModel?.label ?? model;
 
   return (
@@ -131,7 +142,7 @@ export function ZenmeModelPicker({
         side="top"
         sideOffset={8}
       >
-        {models.map((option) => (
+        {visibleModels.map((option) => (
           <DropdownMenuItem
             className="flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-zinc-700 focus:bg-zinc-100 focus:text-zinc-950"
             key={option.id}
@@ -140,7 +151,7 @@ export function ZenmeModelPicker({
             <span className="truncate" title={option.id}>
               {option.label}
             </span>
-            {option.id === model ? (
+            {option.id === resolvedModel ? (
               <Check className="ml-3 size-4 text-zinc-900" />
             ) : null}
           </DropdownMenuItem>

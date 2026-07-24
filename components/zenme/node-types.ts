@@ -188,6 +188,7 @@ export type CanvasNodeData = {
   onCreateMusicPlayerNode?: (musicNodeId: string) => void;
   onLocateMusicPlayerNode?: (musicNodeId: string, playerNodeId: string) => void;
   onToggleMusicPlayback?: (playerNodeId: string, playing: boolean) => void;
+  onEnsureMusicPlayback?: (playerNodeId: string) => void;
   onSeekMusicPlayer?: (playerNodeId: string, seconds: number) => void;
   onCancelMusicAnalysis?: (playerNodeId: string, jobId: string) => Promise<void> | void;
   onRetryMusicAnalysis?: (playerNodeId: string, jobId: string) => Promise<void> | void;
