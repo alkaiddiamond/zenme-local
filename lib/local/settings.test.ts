@@ -25,15 +25,7 @@ describe("local settings", () => {
     await expect(getLocalSettings(dataDir)).resolves.toMatchObject({
       autoSaveIntervalMs: 5000,
       dataDir,
-      modelProviders: expect.arrayContaining([
-        expect.objectContaining({
-          networkProxy: {
-            mode: "environment",
-            noProxy: "localhost,127.0.0.1,::1",
-            url: "",
-          },
-        }),
-      ]),
+      modelProviders: [],
       version: 1,
     });
 
@@ -96,6 +88,9 @@ describe("local settings", () => {
       url: "http://127.0.0.1:7890",
       noProxy: "localhost,example.internal",
     });
+    expect(settings.modelProviders.map((provider) => provider.id)).toEqual([
+      "provider",
+    ]);
   });
 
   it("provides the Agent Plan language and image model preset", () => {

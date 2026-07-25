@@ -157,7 +157,10 @@ export function NodeActionMenu({
   onCreateMusicPlayer,
   onCreateMusicChild,
 }: NodeActionMenuProps) {
-  if (actionNode?.data.kind === "text") {
+  if (
+    actionNode?.data.kind === "text" ||
+    actionNode?.data.kind === "agent"
+  ) {
     return (
       <FloatingMenu left={menu.x + 12} top={menu.y - 8}>
         <FloatingMenuHeader onClose={onClose} title="添加节点" />

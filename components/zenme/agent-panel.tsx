@@ -19,7 +19,6 @@ import type { AgentMessage } from "@/components/zenme/agent-types";
 import { requestAgentChat } from "@/components/zenme/agent-chat-request";
 import { readAiChatStreamDeltas } from "@/components/zenme/canvas/ai-stream";
 import {
-  createModelOption,
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
 import { writeTextToClipboard } from "@/lib/clipboard";
@@ -59,9 +58,7 @@ export function AgentPanel({
 }: AgentPanelProps) {
   const abortRef = useRef<AbortController | null>(null);
   const configuredModels = useAiModelOptions();
-  const pickerModels = configuredModels.some((option) => option.id === model)
-    ? configuredModels
-    : [createModelOption(model), ...configuredModels];
+  const pickerModels = configuredModels;
 
   useEffect(() => {
     return () => {

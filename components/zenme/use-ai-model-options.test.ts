@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -25,6 +26,16 @@ describe("AI model option preferences", () => {
     expect(orderModelOptionsByPreference(models, "missing-model")).toEqual(
       models,
     );
+  });
+
+  it("does not initialize selectors from static fallback models", () => {
+    const source = readFileSync(
+      new URL("./use-ai-model-options.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).not.toContain("fallbackModelOptions");
+    expect(source).toContain("useState<AiModelOption[]>(\n    [],");
   });
 
   it("maps a legacy bare model id to the first provider-scoped option", () => {

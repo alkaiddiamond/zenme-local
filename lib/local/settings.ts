@@ -2,10 +2,11 @@ import { getZenmeDataDir } from "@/lib/local/data-dir";
 import { readJsonFile, writeJsonFile } from "@/lib/local/atomic-json";
 import { resolveInside } from "@/lib/local/path-safety";
 import {
-  createOpenRouterProvider,
+  CHATGPT_PROVIDER_ID,
   createVolcengineAgentPlanProvider,
-  createZhipuProvider,
 } from "@/lib/ai/provider-presets";
+
+export { CHATGPT_PROVIDER_ID, createChatGptProvider } from "@/lib/ai/provider-presets";
 
 export type ZenmeLocalSettings = {
   version: 1;
@@ -203,36 +204,10 @@ function normalizeNetworkProxy(
 }
 
 function createDefaultModelProviders(): ModelProviderConfig[] {
-  const zhipuApiKey = process.env.ZHIPU_API_KEY?.trim();
-  const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim();
-
-  return [
-    createChatGptProvider(),
-    createZhipuProvider(zhipuApiKey),
-    createOpenRouterProvider(openRouterApiKey),
-  ];
+  return [];
 }
 
-export const CHATGPT_PROVIDER_ID = "chatgpt-official";
 export const CHATGPT_IMAGE_MODEL_IDS = new Set(["gpt-5.6-sol"]);
-
-export function createChatGptProvider(): ModelProviderConfig {
-  return {
-    id: CHATGPT_PROVIDER_ID,
-    name: "ChatGPT",
-    note: "通过 ChatGPT 账号使用 Codex 模型",
-    baseUrl: "https://chatgpt.com/backend-api/codex",
-    apiFormat: "openai_oauth",
-    authType: "none",
-    enabled: true,
-    isDefault: false,
-    modelMapping: { main: "" },
-    models: [],
-    contextWindows: {},
-    modelModalities: {},
-    networkProxy: createDefaultNetworkProxy(),
-  };
-}
 
 function normalizeModelProviders(
   value: unknown,
@@ -271,9 +246,10 @@ function normalizeModelProviders(
         }
       : provider,
   );
-  const hasChatGpt = normalizedProviders.some((provider) => provider.id === CHATGPT_PROVIDER_ID);
-  return (hasChatGpt ? normalizedProviders : [createChatGptProvider(), ...normalizedProviders])
-    .map((provider) => ({ ...provider, isDefault: false }));
+  return normalizedProviders.map((provider) => ({
+    ...provider,
+    isDefault: false,
+  }));
 }
 
 function withChatGptImageCapability(model: ModelConfig): ModelConfig {

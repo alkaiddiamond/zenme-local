@@ -14,6 +14,7 @@ const electronExecutable = path.join(
 );
 const outputDir = path.join(projectRoot, ".github", "assets");
 const debuggingPort = 9_223;
+const demoMode = process.argv.includes("--demo");
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function requestJson(url) {
@@ -257,7 +258,7 @@ async function main() {
         ELECTRON_DISABLE_SECURITY_WARNINGS: "true",
       },
       stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
+      windowsHide: !demoMode,
     },
   );
   electron.stdout.on("data", (chunk) => process.stdout.write(chunk));
@@ -273,12 +274,22 @@ async function main() {
 
     const origin = new URL(target.url).origin;
     await waitForRenderer(client, origin);
+
+    if (demoMode) {
+      await client.send("Page.navigate", { url: origin });
+      await delay(2_500);
+      console.log("Zenme demo mode is ready with an empty project list. Close the Zenme window to clean up demo data.");
+      await new Promise((resolve) => electron.once("exit", resolve));
+      return;
+    }
+
     const projectId = await evaluate(
       client,
       demoSetupExpression.replace("__ZENME_ORIGIN__", JSON.stringify(origin)),
     );
     await client.send("Page.navigate", { url: `${origin}/projects/${projectId}` });
     await delay(3_500);
+
     await capture(client, "canvas-nodes.png");
 
     await client.send("Page.navigate", { url: origin });

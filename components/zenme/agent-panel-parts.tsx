@@ -156,7 +156,9 @@ export function AgentComposer({
         </div>
         <Button
           className="size-9 rounded-full bg-zinc-950 p-0 text-white hover:bg-zinc-800"
-          disabled={isSubmitting}
+          disabled={
+            isSubmitting || !models.some((option) => option.id === model)
+          }
           size="icon"
           type="submit"
         >

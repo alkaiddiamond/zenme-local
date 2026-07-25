@@ -6,12 +6,10 @@ import { ArrowUp, Sparkles } from "lucide-react";
 
 import type { CanvasNodeData } from "@/components/zenme/node-types";
 import {
-  createModelOption,
   rememberAiModelPreference,
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
 import { ZenmeModelPicker } from "@/components/zenme/visual-components";
-import { modelOptions } from "@/lib/zenme";
 
 export function TextNodeComposer({
   nodeData,
@@ -23,16 +21,14 @@ export function TextNodeComposer({
   const { zoom } = useViewport();
   const [prompt, setPrompt] = useState(nodeData.textGenerationPrompt ?? "");
   const [model, setModel] = useState(
-    nodeData.textGenerationModel ?? modelOptions[0],
+    nodeData.textGenerationModel ?? "",
   );
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isGenerating = isSubmitting || Boolean(nodeData.hasRunningGenerationChild);
   const configuredModels = useAiModelOptions();
-  const preferredModel = configuredModels[0]?.id ?? modelOptions[0];
-  const pickerModels = configuredModels.some((option) => option.id === model)
-    ? configuredModels
-    : [createModelOption(model), ...configuredModels];
+  const preferredModel = configuredModels[0]?.id ?? "";
+  const pickerModels = configuredModels;
   const composerScale = 1 / Math.max(zoom, 0.2);
   const composerStyle: CSSProperties = {
     top: `calc(100% + ${12 / Math.max(zoom, 0.2)}px)`,
@@ -134,7 +130,10 @@ export function TextNodeComposer({
               ? "cursor-wait"
               : "disabled:cursor-not-allowed disabled:bg-zinc-300"
           }`}
-          disabled={isGenerating}
+          disabled={
+            isGenerating ||
+            !configuredModels.some((option) => option.id === model)
+          }
           title="提交"
           type="submit"
         >

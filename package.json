@@ -22,6 +22,7 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "desktop:dev": "electron desktop/main.cjs",
+    "desktop:demo": "node scripts/capture-readme-screenshots.cjs --demo",
     "desktop:pack": "electron-builder --dir",
     "desktop:dist:win": "electron-builder --win nsis --x64 --publish never",
     "desktop:prepare:mac": "bash desktop/scripts/prepare-macos-icon.sh",

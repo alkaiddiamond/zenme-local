@@ -115,6 +115,11 @@ const MODEL_PROVIDER_PRESET_OPTIONS: Array<{
   value: ModelProviderPresetId;
 }> = [
   {
+    description: "通过 ChatGPT 账号使用 Codex 模型",
+    label: "ChatGPT",
+    value: "chatgpt",
+  },
+  {
     description: "智谱官方 GLM 模型接口",
     label: "智谱 GLM",
     value: "zhipu",
@@ -445,6 +450,15 @@ export function SettingsClient() {
           {activeTab === "models" ? (
             <ModelProviderSettings
               onAddProvider={(preset) => {
+                if (preset === "chatgpt") {
+                  const existingProvider = modelProviders.find(
+                    (provider) => identifyModelProviderPreset(provider) === preset,
+                  );
+                  if (!existingProvider) {
+                    void upsertProvider(createModelProviderPreset(preset));
+                  }
+                  return;
+                }
                 const existingProvider =
                   preset === "custom"
                     ? undefined
@@ -900,6 +914,16 @@ function ModelProviderSettings({
       </div>
 
       <div className="space-y-3">
+        {providers.length === 0 ? (
+          <div className="rounded-md border border-dashed border-[var(--color-border)] px-6 py-10 text-center">
+            <p className="text-sm font-medium text-[var(--color-text-primary)]">
+              尚未配置模型服务商
+            </p>
+            <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+              使用右上角“添加服务商”按需配置。
+            </p>
+          </div>
+        ) : null}
         {providers.map((provider) => provider.apiFormat === "openai_oauth" ? (
           <ChatGptProviderCard
             action={chatGptAction}

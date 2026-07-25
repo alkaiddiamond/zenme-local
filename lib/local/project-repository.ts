@@ -51,6 +51,7 @@ export async function listLocalProjects(dataDir = getZenmeDataDir()) {
 }
 
 export async function createLocalProject(input: {
+  initialCanvas?: CanvasSnapshotPayload;
   name: string;
   prompt: string;
   model: string;
@@ -75,7 +76,7 @@ export async function createLocalProject(input: {
   await writeLocalProject(project, dataDir);
   await saveLocalCanvasSnapshot({
     projectId: project.id,
-    snapshot: {
+    snapshot: input.initialCanvas ?? {
       version: 3,
       nodes: [],
       edges: [],

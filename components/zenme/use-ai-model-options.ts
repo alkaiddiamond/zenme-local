@@ -6,7 +6,6 @@ import {
   getModelIdFromReference,
   parseProviderModelReference,
 } from "@/lib/ai/model-reference";
-import { modelOptions as fallbackModelOptions } from "@/lib/zenme";
 
 export type AiModelOption = {
   id: string;
@@ -76,12 +75,7 @@ export function orderModelOptionsByPreference(
 
 export function useAiModelOptions(modality: AiModelModality = "text") {
   const [models, setModels] = useState<AiModelOption[]>(
-    orderModelOptionsByPreference(
-      modality === "text"
-        ? fallbackModelOptions.map((id) => createModelOption(id))
-        : [],
-      preferredModelCache[modality],
-    ),
+    [],
   );
 
   useEffect(() => {
@@ -128,7 +122,7 @@ export function useAiModelOptions(modality: AiModelModality = "text") {
           return createModelOption(id, item?.label?.trim() || id);
         });
 
-        if (!cancelled && nextModels.length > 0) {
+        if (!cancelled) {
           const preferredModelId =
             payload.preferredModelId ?? preferredModelCache[modality];
           if (preferredModelId) {
@@ -139,7 +133,7 @@ export function useAiModelOptions(modality: AiModelModality = "text") {
           );
         }
       } catch {
-        // Keep the static fallback available when settings cannot be loaded.
+        // Keep the selector empty when settings cannot be loaded.
       }
     }
 

@@ -30,6 +30,61 @@ afterEach(async () => {
 });
 
 describe("local projects API", () => {
+  it("persists the initial prompt text node with the new project", async () => {
+    const updatedAt = "2026-07-25T00:00:00.000Z";
+    const initialCanvas = {
+      version: 3 as const,
+      nodes: [
+        {
+          id: "home-prompt",
+          type: "text",
+          position: { x: 120, y: 120 },
+          data: {
+            kind: "text",
+            plainText: "从首页开始生成",
+            richTextHtml: "",
+            textGenerationModel: "provider/model",
+            textGenerationPrompt: "从首页开始生成",
+            textMode: "plain",
+            title: "文本",
+          },
+        },
+      ],
+      edges: [],
+      viewport: { x: 160, y: 120, zoom: 1 },
+      updatedAt,
+    };
+    const createResponse = await createProject(
+      new Request("http://localhost/api/projects", {
+        method: "POST",
+        body: JSON.stringify({
+          initialCanvas,
+          model: "provider/model",
+          name: "首页项目",
+          prompt: "从首页开始生成",
+        }),
+      }),
+    );
+
+    expect(createResponse.status).toBe(201);
+    const project = await createResponse.json() as { id: string };
+    const canvasResponse = await getCanvas(
+      new Request(`http://localhost/api/projects/${project.id}/canvas`),
+      { params: Promise.resolve({ projectId: project.id }) },
+    );
+
+    await expect(canvasResponse.json()).resolves.toMatchObject({
+      snapshot: {
+        nodes: [
+          {
+            id: "home-prompt",
+            data: { plainText: "从首页开始生成" },
+          },
+        ],
+      },
+    });
+  });
+
   it("creates projects and saves the latest canvas snapshot locally", async () => {
     const createResponse = await createProject(
       new Request("http://localhost/api/projects", {

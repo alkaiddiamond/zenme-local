@@ -38,7 +38,6 @@ import {
 import {
   createProjectName,
   getProjectActivityTime,
-  modelOptions,
   type ZenmeProject,
 } from "@/lib/zenme";
 
@@ -309,7 +308,7 @@ export function AppShell({ children, active }: AppShellProps) {
       const project = await createProjectInApi({
         name: createProjectName(""),
         prompt: "",
-        model: modelOptions[0],
+        model: "",
       });
       await refreshProjects();
       router.push(`/projects/${project.id}`);

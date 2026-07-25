@@ -22,6 +22,7 @@ export async function listProjectsFromApi() {
 }
 
 export async function createProjectInApi(input: {
+  initialCanvas?: CanvasSnapshotPayload;
   name: string;
   prompt: string;
   model: string;

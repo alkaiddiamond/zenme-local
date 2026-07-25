@@ -100,7 +100,8 @@ export function ZenmeModelPicker({
   const activeModel = visibleModels.find(
     (option) => option.id === resolvedModel,
   );
-  const activeLabel = activeModel?.label ?? model;
+  const hasModels = visibleModels.length > 0;
+  const activeLabel = activeModel?.label ?? (hasModels ? "请选择模型" : "未配置模型");
 
   return (
     <DropdownMenu onOpenChange={onOpenChange}>
@@ -113,6 +114,7 @@ export function ZenmeModelPicker({
               ? "h-[30px] max-w-[180px] text-xs"
               : "h-9 max-w-[220px] text-sm",
           )}
+          disabled={!hasModels}
           type="button"
         >
           <span

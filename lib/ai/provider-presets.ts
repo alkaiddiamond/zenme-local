@@ -6,13 +6,33 @@ import type {
 export const VOLCENGINE_AGENT_PLAN_BASE_URL =
   "https://ark.cn-beijing.volces.com/api/plan";
 export const VOLCENGINE_AGENT_PLAN_PROVIDER_ID = "volcengine-agent-plan";
+export const CHATGPT_PROVIDER_ID = "chatgpt-official";
 
 export type ModelProviderPresetId =
+  | "chatgpt"
   | "zhipu"
   | "volcengine_agent_plan"
   | "openrouter"
   | "ollama"
   | "custom";
+
+export function createChatGptProvider(): ModelProviderConfig {
+  return {
+    id: CHATGPT_PROVIDER_ID,
+    name: "ChatGPT",
+    note: "通过 ChatGPT 账号使用 Codex 模型",
+    baseUrl: "https://chatgpt.com/backend-api/codex",
+    apiFormat: "openai_oauth",
+    authType: "none",
+    enabled: true,
+    isDefault: false,
+    modelMapping: { main: "" },
+    models: [],
+    contextWindows: {},
+    modelModalities: {},
+    networkProxy: createProviderNetworkProxy(),
+  };
+}
 
 const VOLCENGINE_AGENT_PLAN_MODELS: ModelConfig[] = [
   { id: "ark-code-latest", alias: "Ark Code Latest", enabled: true, modalities: ["text", "tool"] },
@@ -173,6 +193,7 @@ function createProviderNetworkProxy() {
 export function createModelProviderPreset(
   preset: ModelProviderPresetId,
 ): ModelProviderConfig {
+  if (preset === "chatgpt") return createChatGptProvider();
   if (preset === "zhipu") return createZhipuProvider();
   if (preset === "volcengine_agent_plan") {
     return createVolcengineAgentPlanProvider();
@@ -185,6 +206,12 @@ export function createModelProviderPreset(
 export function identifyModelProviderPreset(
   provider: ModelProviderConfig,
 ): ModelProviderPresetId {
+  if (
+    provider.apiFormat === "openai_oauth" ||
+    provider.id === CHATGPT_PROVIDER_ID
+  ) {
+    return "chatgpt";
+  }
   if (provider.apiFormat === "zhipu" || provider.id === "zhipu-glm") {
     return "zhipu";
   }

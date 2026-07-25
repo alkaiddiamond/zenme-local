@@ -59,7 +59,6 @@ import {
   uploadProjectFileToApi,
 } from "@/lib/zenme-api";
 import {
-  modelOptions,
   ZENME_AGENT_KEY_PREFIX,
 } from "@/lib/zenme";
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
@@ -95,6 +94,7 @@ import {
   saveAgentSessionSnapshot,
 } from "@/components/zenme/canvas/agent-session";
 import { createAgentContextFromActionNode } from "@/components/zenme/canvas/agent-context";
+import { consumeHomePromptRequest } from "@/components/zenme/canvas/home-prompt";
 import {
   requestTextGenerationResponse,
   resolveTextGenerationPrompt,
@@ -281,14 +281,15 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const [agentInput, setAgentInput] = useState("");
   const [agentIsSubmitting, setAgentIsSubmitting] = useState(false);
   const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([]);
-  const [agentModel, setAgentModel] = useState(modelOptions[0]);
+  const homePromptRequestProjectRef = useRef<string | null>(null);
+  const [agentModel, setAgentModel] = useState("");
   const configuredModelOptions = useAiModelOptions();
   const configuredImageModelOptions = useAiModelOptions("image");
   const configuredModelIds = useMemo(
     () => configuredModelOptions.map((option) => option.id),
     [configuredModelOptions],
   );
-  const defaultTextModel = configuredModelOptions[0]?.id ?? modelOptions[0];
+  const defaultTextModel = configuredModelOptions[0]?.id ?? "";
   const [nodeActionMenu, setNodeActionMenu] =
     useState<NodeActionMenuState | null>(null);
   const [canvasAddMenu, setCanvasAddMenu] =
@@ -2127,6 +2128,26 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     },
     [appendCanvasItems, defaultTextModel, edges, reactFlow, setNodes],
   );
+
+  useEffect(() => {
+    if (
+      !canvasHydrated ||
+      homePromptRequestProjectRef.current === projectId
+    ) {
+      return;
+    }
+
+    const request = consumeHomePromptRequest(projectId);
+    if (!request) {
+      return;
+    }
+
+    homePromptRequestProjectRef.current = projectId;
+    void submitTextGenerationNode(request.nodeId, {
+      model: request.model,
+      prompt: request.prompt,
+    });
+  }, [canvasHydrated, projectId, submitTextGenerationNode]);
 
   const submitImageGenerationNode = useCallback(
     async (

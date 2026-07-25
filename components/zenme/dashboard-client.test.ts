@@ -11,6 +11,14 @@ describe("dashboard project composer", () => {
     expect(source).toContain("<ZenmeModelPicker");
     expect(source).toContain('useAiModelOptions()');
     expect(source).toContain('rememberAiModelPreference("text", nextModel)');
+    expect(source).toContain("const pickerModels = configuredModels;");
+    expect(source).not.toContain("modelOptions");
+  });
+
+  it("creates an initial text node and schedules one generation request", () => {
+    expect(source).toContain("createHomePromptCanvas({");
+    expect(source).toContain("initialCanvas,");
+    expect(source).toContain("rememberHomePromptRequest(project.id");
   });
 
   it("has no input placeholder and follows the text composer keyboard behavior", () => {

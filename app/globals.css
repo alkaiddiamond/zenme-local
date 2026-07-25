@@ -416,6 +416,16 @@
   user-select: text !important;
 }
 
+.zenme-canvas .zenme-text-ai-input:placeholder-shown::selection {
+  background-color: transparent;
+  color: #a1a1aa;
+}
+
+.zenme-canvas .zenme-text-ai-input:placeholder-shown::-moz-selection {
+  background-color: transparent;
+  color: #a1a1aa;
+}
+
 .zenme-canvas .zenme-node-title-input {
   caret-color: #18181b !important;
   cursor: text !important;

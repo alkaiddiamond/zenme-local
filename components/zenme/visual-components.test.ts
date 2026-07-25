@@ -11,4 +11,9 @@ describe("Zenme control button styles", () => {
     expect(visualComponentsSource).toContain('variant = "outline"');
     expect(visualComponentsSource).toContain("variant={variant}");
   });
+
+  it("disables an empty model picker and explains that no model is configured", () => {
+    expect(visualComponentsSource).toContain('"未配置模型"');
+    expect(visualComponentsSource).toContain("disabled={!hasModels}");
+  });
 });

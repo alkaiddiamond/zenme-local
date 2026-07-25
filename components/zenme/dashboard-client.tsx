@@ -10,7 +10,6 @@ import {
   ProjectGrid,
 } from "@/components/zenme/project-card";
 import {
-  createModelOption,
   rememberAiModelPreference,
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
@@ -20,22 +19,23 @@ import {
   listProjectsFromApi,
 } from "@/lib/zenme-api";
 import {
+  createHomePromptCanvas,
+  rememberHomePromptRequest,
+} from "@/components/zenme/canvas/home-prompt";
+import {
   createProjectName,
   getProjectActivityTime,
-  modelOptions,
   type ZenmeProject,
 } from "@/lib/zenme";
 
 export function DashboardClient() {
   const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState(modelOptions[0]);
+  const [model, setModel] = useState("");
   const [projects, setProjects] = useState<ZenmeProject[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const configuredModels = useAiModelOptions();
-  const preferredModel = configuredModels[0]?.id ?? modelOptions[0];
-  const pickerModels = configuredModels.some((option) => option.id === model)
-    ? configuredModels
-    : [createModelOption(model), ...configuredModels];
+  const preferredModel = configuredModels[0]?.id ?? "";
+  const pickerModels = configuredModels;
 
   useEffect(() => {
     setModel(preferredModel);
@@ -51,12 +51,29 @@ export function DashboardClient() {
 
       try {
         const trimmedPrompt = projectPrompt.trim();
+        const promptNodeId = trimmedPrompt ? crypto.randomUUID() : null;
+        const initialCanvas = promptNodeId
+          ? createHomePromptCanvas({
+              model,
+              nodeId: promptNodeId,
+              prompt: trimmedPrompt,
+            })
+          : undefined;
 
         const project = await createProjectInApi({
+          initialCanvas,
           name: createProjectName(trimmedPrompt),
           prompt: trimmedPrompt,
           model,
         });
+
+        if (promptNodeId && model) {
+          rememberHomePromptRequest(project.id, {
+            model,
+            nodeId: promptNodeId,
+            prompt: trimmedPrompt,
+          });
+        }
 
         window.location.href = `/projects/${project.id}`;
       } finally {

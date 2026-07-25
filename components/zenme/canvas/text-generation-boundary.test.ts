@@ -23,9 +23,23 @@ describe("text generation request boundary", () => {
       "components/zenme/nodes/text-node-composer.tsx",
     );
 
-    expect(source).toContain("disabled={isGenerating}");
+    expect(source).toContain(
+      "!configuredModels.some((option) => option.id === model)",
+    );
     expect(source).not.toContain("!prompt.trim()");
     expect(source).not.toContain("!nextPrompt || isGenerating");
+  });
+
+  it("does not paint an empty composer placeholder as selected", () => {
+    const source = readProjectFile("app/globals.css");
+
+    expect(source).toContain(
+      ".zenme-text-ai-input:placeholder-shown::selection",
+    );
+    expect(source).toContain(
+      ".zenme-text-ai-input:placeholder-shown::-moz-selection",
+    );
+    expect(source).toContain("background-color: transparent");
   });
 
   it("uses the same compact model picker as image nodes", () => {

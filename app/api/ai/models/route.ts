@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { getAllowedAiModels } from "@/lib/ai/request-policy";
 import { getProviderModelSelections } from "@/lib/ai/provider-model-resolution";
 import { checkRateLimit, getClientIp } from "@/lib/api/rate-limit";
 import { getLocalSettings } from "@/lib/local/settings";
@@ -32,9 +31,7 @@ export async function GET(request: Request) {
     const configuredModels = settings
       ? getProviderModelSelections(settings.modelProviders, modality)
       : [];
-    const models = configuredModels.length > 0
-      ? configuredModels
-      : getAllowedAiModels().map((id) => ({ id, label: id }));
+    const models = configuredModels;
     const preferredModelId = modality === "image"
       ? settings?.lastImageModelId
       : settings?.lastTextModelId;

@@ -36,7 +36,6 @@ import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title"
 import { ImageTaskTiming } from "@/components/zenme/nodes/image-task-timing";
 import { ImageCameraControlPicker } from "@/components/zenme/nodes/image-camera-control-picker";
 import {
-  createModelOption,
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
 import {
@@ -354,11 +353,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
                     compact
                     icon={<Sparkles className="size-3.5" />}
                     model={model}
-                    models={
-                      imageModelOptions.some((option) => option.id === model)
-                        ? imageModelOptions
-                        : [createModelOption(model), ...imageModelOptions]
-                    }
+                    models={imageModelOptions}
                     onChange={(nextModel) => {
                       setModel(nextModel);
                       nodeData.onUpdateImageNode?.(id, { imageModel: nextModel });
@@ -423,7 +418,11 @@ export function ImageNode({ data, id, selected }: NodeProps) {
                       ? "cursor-wait"
                       : "disabled:cursor-not-allowed disabled:bg-zinc-300"
                   }`}
-                  disabled={isSubmissionLocked || !prompt.trim()}
+                  disabled={
+                    isSubmissionLocked ||
+                    !prompt.trim() ||
+                    !imageModelOptions.some((option) => option.id === model)
+                  }
                   title={isGeneratedImage ? "重新编辑图片" : "编辑图片"}
                   type="submit"
                 >

@@ -35,7 +35,6 @@ import {
 } from "@/components/zenme/node-ui";
 import { NANO_BANANA_2_IMAGE_MODEL } from "@/components/zenme/canvas/node-factories";
 import {
-  createModelOption,
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
 import {
@@ -272,11 +271,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
                   compact
                   icon={<Sparkles className="size-3.5" />}
                   model={model}
-                  models={
-                    imageModelOptions.some((option) => option.id === model)
-                      ? imageModelOptions
-                      : [createModelOption(model), ...imageModelOptions]
-                  }
+                  models={imageModelOptions}
                   onChange={(nextModel) => {
                     setModel(nextModel);
                     nodeData.onUpdateImageNode?.(id, { imageModel: nextModel });
@@ -333,7 +328,11 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
                     ? "cursor-wait"
                     : "disabled:cursor-not-allowed disabled:bg-zinc-300"
                 }`}
-                disabled={isSubmissionLocked || !prompt.trim()}
+                disabled={
+                  isSubmissionLocked ||
+                  !prompt.trim() ||
+                  !imageModelOptions.some((option) => option.id === model)
+                }
                 title="生成图片"
                 type="submit"
               >

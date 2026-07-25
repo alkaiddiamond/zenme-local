@@ -6,7 +6,6 @@ import { ArrowUp, Sparkles } from "lucide-react";
 
 import type { CanvasNodeData } from "@/components/zenme/node-types";
 import {
-  createModelOption,
   rememberAiModelPreference,
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
@@ -17,19 +16,16 @@ import {
   NodeTargetHandle,
 } from "@/components/zenme/node-ui";
 import { ZenmeModelPicker } from "@/components/zenme/visual-components";
-import { modelOptions } from "@/lib/zenme";
 
 export function TextGenerationNode({ data, id, selected }: NodeProps) {
   const nodeData = data as CanvasNodeData;
   const [prompt, setPrompt] = useState(nodeData.textGenerationPrompt ?? "");
   const [model, setModel] = useState(
-    nodeData.textGenerationModel ?? modelOptions[0],
+    nodeData.textGenerationModel ?? "",
   );
   const configuredModels = useAiModelOptions();
-  const preferredModel = configuredModels[0]?.id ?? modelOptions[0];
-  const pickerModels = configuredModels.some((option) => option.id === model)
-    ? configuredModels
-    : [createModelOption(model), ...configuredModels];
+  const preferredModel = configuredModels[0]?.id ?? "";
+  const pickerModels = configuredModels;
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isGenerating = isSubmitting || Boolean(nodeData.hasRunningGenerationChild);
@@ -144,7 +140,11 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
                 ? "cursor-wait"
                 : "disabled:cursor-not-allowed disabled:bg-zinc-300"
             }`}
-            disabled={isGenerating || !prompt.trim()}
+            disabled={
+              isGenerating ||
+              !prompt.trim() ||
+              !configuredModels.some((option) => option.id === model)
+            }
             title="提交"
             type="submit"
           >
