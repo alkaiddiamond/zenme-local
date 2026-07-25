@@ -1,4 +1,4 @@
-name: Release signed Windows app
+name: Release Windows app
 
 on:
   push:
@@ -12,9 +12,8 @@ jobs:
   windows:
     runs-on: windows-2025
     timeout-minutes: 50
-    env:
-      CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
-      CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+    outputs:
+      signed: ${{ steps.signing.outputs.enabled }}
 
     steps:
       - uses: actions/checkout@v4
@@ -22,24 +21,51 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Require signing credentials
+      - name: Detect signing credentials
+        id: signing
         shell: pwsh
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
         run: |
-          if (-not $env:CSC_LINK -or -not $env:CSC_KEY_PASSWORD) {
-            throw "Windows signing secrets are required for a release"
+          if ($env:CSC_LINK -and $env:CSC_KEY_PASSWORD) {
+            "enabled=true" >> $env:GITHUB_OUTPUT
+            Write-Host "Windows Authenticode signing is enabled."
+          } else {
+            "enabled=false" >> $env:GITHUB_OUTPUT
+            Write-Warning "Windows signing credentials are not configured. The release will be unsigned and may trigger SmartScreen."
           }
       - run: npm ci
       - run: npm run verify
       - run: npm run audit:prod
       - run: npm run licenses:check
-      - run: npm run desktop:dist:win
-      - name: Verify installer signature
+      - name: Build signed installer
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: npm run desktop:dist:win
+      - name: Build unsigned installer
+        if: steps.signing.outputs.enabled != 'true'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run desktop:dist:win
+      - name: Verify signed installer
+        if: steps.signing.outputs.enabled == 'true'
         shell: pwsh
         run: |
           $installer = Get-ChildItem -LiteralPath dist-desktop -Filter 'Zenme-*-windows-x64.exe' | Select-Object -First 1
           if (-not $installer) { throw 'Windows installer was not generated' }
           $signature = Get-AuthenticodeSignature -LiteralPath $installer.FullName
           if ($signature.Status -ne 'Valid') { throw "Invalid installer signature: $($signature.Status)" }
+      - name: Verify unsigned installer
+        if: steps.signing.outputs.enabled != 'true'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -LiteralPath dist-desktop -Filter 'Zenme-*-windows-x64.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Windows installer was not generated' }
+          $signature = Get-AuthenticodeSignature -LiteralPath $installer.FullName
+          if ($signature.Status -ne 'NotSigned') { throw "Unexpected installer signature state: $($signature.Status)" }
       - uses: actions/upload-artifact@v4
         with:
           name: release-windows-x64
@@ -63,4 +89,11 @@ jobs:
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" release-artifacts/* --draft --generate-notes --title "Zenme ${GITHUB_REF_NAME}"
+          WINDOWS_SIGNED: ${{ needs.windows.outputs.signed }}
+        run: |
+          if [ "$WINDOWS_SIGNED" = "true" ]; then
+            signing_note="Windows Authenticode: signed"
+          else
+            signing_note="Windows Authenticode: unsigned; SmartScreen may warn on first launch"
+          fi
+          gh release create "${GITHUB_REF_NAME}" release-artifacts/* --draft --generate-notes --notes "$signing_note" --title "Zenme ${GITHUB_REF_NAME}"

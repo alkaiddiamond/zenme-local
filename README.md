@@ -57,7 +57,7 @@ Zenme 用无限画布替代线性对话列表。提示词、AI 回复、生成�
 3. 首次启动后，在「设置 → 模型配置」中登录 ChatGPT，或添加兼容 OpenAI / Anthropic 协议的服务商。
 
 > [!NOTE]
-> Alpha 阶段请先阅读对应 Release 的安装说明和已知问题。未签名的内部构建可能触发 Windows SmartScreen，可点击「更多信息」后确认运行。正式 Release 需经过签名、安装、升级、卸载和冷启动验证。
+> Alpha 阶段请先阅读对应 Release 的安装说明和已知问题。Windows 安装包当前可能未签名并触发 SmartScreen；请确认文件来自本仓库 Releases，核对 SHA-256 后点击「更多信息」确认运行。公开产物仍需完成安装、升级、卸载和冷启动验证。
 
 ### 平台支持
 

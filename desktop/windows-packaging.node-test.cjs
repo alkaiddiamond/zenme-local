@@ -37,13 +37,16 @@ test("release package declares MIT and includes license notices", () => {
   );
 });
 
-test("release workflow requires signed Windows artifacts while macOS is paused", () => {
+test("release workflow allows verified unsigned Windows artifacts while macOS is paused", () => {
   const workflow = fs.readFileSync(
     path.join(projectRoot, ".github", "workflows", "release.yml"),
     "utf8",
   );
 
   assert.match(workflow, /Get-AuthenticodeSignature/);
+  assert.match(workflow, /Windows signing credentials are not configured/);
+  assert.match(workflow, /Status -ne 'NotSigned'/);
+  assert.doesNotMatch(workflow, /signing secrets are required for a release/);
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /needs: windows/);
   assert.doesNotMatch(workflow, /macos-intel:/);

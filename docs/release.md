@@ -1,6 +1,6 @@
 # 发布手册
 
-> 当前公开发布目标仅为 Windows x64。macOS Intel 构建配置保留，但自动验证与公开发布已暂停；恢复工作跟踪在 GitHub Issue #9。
+> 当前公开发布目标仅为 Windows x64。Windows Authenticode 签名为可选能力，未签名产物必须明确提示 SmartScreen 风险并提供 SHA-256。macOS Intel 构建配置保留，但自动验证与公开发布已暂停；恢复工作跟踪在 GitHub Issue #9。
 
 ## 支持矩阵
 
@@ -37,7 +37,7 @@ npm run build
 npm run desktop:dist:win
 ```
 
-正式产物必须完成 Authenticode 签名。安装后验证：
+有可用 Authenticode 证书时应对安装包签名；没有证书时允许发布未签名 Alpha 产物，但 Release 必须明确标注 `unsigned`、SmartScreen 提示和 SHA-256。无论是否签名，安装后都需要验证：
 
 1. 全新安装与首次启动。
 2. 自定义安装目录。
@@ -71,8 +71,8 @@ GitHub Actions 的无签名产物仅用于证明构建链，不得发布给普�
 1. 冻结范围，更新 `CHANGELOG.md` 的版本和日期。
 2. 运行所有门禁和平台真机检查。
 3. 创建版本提交与 `vX.Y.Z` tag。
-4. 从受保护的发布 workflow 生成签名产物。
-5. 核对 SHA-256、签名、文件名和安装结果。
+4. 从受保护的发布 workflow 生成产物；配置证书时签名，否则验证产物确实为未签名状态。
+5. 核对 SHA-256、签名状态、文件名和安装结果。
 6. 创建 GitHub Release，附变更、已知问题、系统要求和校验和。
 7. 发布后从 Releases 页面重新下载并执行一次安装冒烟测试。
 
