@@ -1,102 +1,129 @@
-<p align="center">
-  <img src="public/brand/icons/zenme-logo-128.png" width="96" alt="Zenme logo" />
-</p>
-
-<h1 align="center">Zenme</h1>
+# Zenme
 
 <p align="center">
-  本地优先的 AI 无限画布桌面应用。把思考、生成、阅读与任务管理连接在同一个空间。
+  <img src="public/brand/icons/zenme-logo-128.png" width="160" alt="Zenme Logo" />
 </p>
+
+<div align="center">
+
+[![GitHub Stars](https://img.shields.io/github/stars/alkaiddiamond/zenme-local?style=social)](https://github.com/alkaiddiamond/zenme-local/stargazers)
+[![GitHub Forks](https://img.shields.io/github/forks/alkaiddiamond/zenme-local?style=social)](https://github.com/alkaiddiamond/zenme-local/network/members)
+[![GitHub Issues](https://img.shields.io/github/issues/alkaiddiamond/zenme-local)](https://github.com/alkaiddiamond/zenme-local/issues)
+[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/alkaiddiamond/zenme-local)](https://github.com/alkaiddiamond/zenme-local/pulls)
+[![License](https://img.shields.io/github/license/alkaiddiamond/zenme-local)](LICENSE)
+[![Docs](https://img.shields.io/badge/工程文档-查看-8B5E3C)](docs/README.md)
+
+</div>
+
+Zenme 是一款**本地优先的 AI 无限画布桌面应用**：把提示词、AI 回复、图片、视频、任务、书籍与阅读笔记集中到一个 Windows APP 里，通过节点和连线保存上下文，让每一次思考都可追溯、可组合、可继续。
 
 <p align="center">
-  <a href="https://github.com/alkaiddiamond/zenme-local/releases">下载</a> ·
-  <a href="docs/README.md">工程文档</a> ·
-  <a href="CONTRIBUTING.md">参与贡献</a> ·
-  <a href="LICENSE">MIT License</a>
+  <a href="#桌面端预览">桌面端预览</a> · <a href="#安装-zenme">安装 Zenme</a> · <a href="#功能亮点">功能亮点</a> · <a href="#本地数据与隐私">本地数据与隐私</a> · <a href="#工程文档">工程文档</a>
 </p>
 
-> 当前版本：`v0.1.0 Alpha`。Windows x64 是当前公开发布目标；数据格式、升级流程和部分交互仍可能调整。
+> [!IMPORTANT]
+> Zenme 当前处于 `v0.1.0 Alpha`。Windows 10/11 x64 是当前公开发布目标；数据格式、升级流程和部分交互仍可能调整。
 
-![Zenme 桌面应用项目入口](docs/images/1.项目入口.png)
+---
 
-## 为什么是 Zenme
+## 桌面端预览
 
-传统 AI 对话会把上下文压缩进一条不断增长的消息流。Zenme 使用无限画布保存思考过程：提示词、AI 回复、图片、视频、任务、书籍和阅读笔记都可以成为节点，并通过连线保留它们之间的关系。
+Zenme 用无限画布替代线性对话列表。提示词、AI 回复、生成结果、任务和阅读笔记都可以成为节点，并通过连线保存它们之间的关系。
 
-Zenme 是桌面应用，也是一个纯本地工作空间：项目、画布、文件、阅读资料、笔记和设置默认保存在本机，不依赖 Zenme 账号、远程数据库或自动云同步。
+<p align="center">
+  <a href="https://github.com/alkaiddiamond/zenme-local/releases"><img src="https://img.shields.io/badge/下载桌面端-Windows_x64-8B5E3C?style=for-the-badge" alt="下载 Zenme 桌面端"></a>
+  &nbsp;
+  <a href="docs/release.md"><img src="https://img.shields.io/badge/安装与发布-Guide-gray?style=for-the-badge" alt="安装与发布指南"></a>
+</p>
 
-## 产品能力
+<table>
+  <tr>
+    <td align="center" colspan="2"><img src="docs/images/1.项目入口.png" alt="桌面端项目入口"><br><b>桌面端项目入口</b></td>
+    <td align="center" colspan="2"><img src="docs/images/2.服务商配置.png" alt="模型服务商配置"><br><b>模型服务商配置</b></td>
+    <td align="center" colspan="2"><img src="docs/images/3.管理.png" alt="画布任务管理"><br><b>画布任务管理</b></td>
+  </tr>
+  <tr>
+    <td align="center" colspan="3"><img src="docs/images/3.图片编辑.png" alt="图片生成与编辑"><br><b>图片生成与编辑</b></td>
+    <td align="center" colspan="3"><img src="docs/images/4.读书.png" alt="阅读、笔记与 AI 回复"><br><b>阅读、笔记与 AI 回复</b></td>
+  </tr>
+</table>
 
-### 灵活接入模型
+---
 
-通过 ChatGPT OAuth 使用账号可用的 Codex 模型，也可以配置兼容 OpenAI 或 Anthropic 协议的服务商。模型按文本、视觉、图片、视频、向量、音频、工具等能力管理，节点只展示真正可用的模型。
+## 安装 Zenme
 
-![Zenme 模型服务商配置](docs/images/2.服务商配置.png)
+1. 前往 [GitHub Releases](https://github.com/alkaiddiamond/zenme-local/releases) 下载最新的 Windows x64 安装包。
+2. 运行 NSIS `.exe`，按安装向导完成安装。
+3. 首次启动后，在「设置 → 模型配置」中登录 ChatGPT，或添加兼容 OpenAI / Anthropic 协议的服务商。
 
-### 在画布上组织任务
+> [!NOTE]
+> Alpha 阶段请先阅读对应 Release 的安装说明和已知问题。未签名的内部构建可能触发 Windows SmartScreen，可点击「更多信息」后确认运行。正式 Release 需经过签名、安装、升级、卸载和冷启动验证。
 
-任务节点支持父子任务、进度、状态、优先级、复杂度、负责人和标签。文本、任务及生成结果可以自由连线、分组、复制和排列，画布自动保存到本地。
+### 平台支持
 
-![Zenme 任务管理画布](docs/images/3.管理.png)
-
-### 生成并继续编辑图片
-
-图片生成节点支持提示词、参考图片、画幅和模型选择。生成结果可以继续作为下一次编辑的输入，在画布上保留每一步结果与来源。
-
-![Zenme 图片生成与编辑](docs/images/3.图片编辑.png)
-
-### 边读边记，并把笔记交给 AI
-
-在画布中打开 PDF、EPUB 和 TXT，保存阅读进度、目录导航、标注与页内笔记。阅读笔记可以拖回画布，继续连接文本或 AI 回复节点进行分析和创作。
-
-![Zenme PDF 阅读、笔记与 AI 回复](docs/images/4.读书.png)
-
-### 更多节点与交互
-
-- 文本、Markdown、代码与 AI 回复节点。
-- 图片生成、图片编辑与异步视频生成节点。
-- 任务、分组、阅读器、书籍和阅读笔记节点。
-- 音乐、音乐播放器与歌词节点。
-- 连线、框选、多选、Alt 拖动复制、撤销重做、缩放和小地图。
-- 本地 Token 用量统计、数据目录切换、备份与恢复。
-
-## 下载与平台支持
-
-构建产物通过 [GitHub Releases](https://github.com/alkaiddiamond/zenme-local/releases) 发布。Alpha 阶段请先阅读 Release 中的已知问题和安装说明。
-
-| 平台 | 当前状态 | 目标产物 |
+| 平台 | 状态 | 产物 |
 | --- | --- | --- |
 | Windows 10/11 x64 | 当前发布目标 | NSIS `.exe` |
-| macOS 12+ Intel x64 | 发布暂停，保留构建配置 | `.dmg`、`.zip` |
-| macOS Apple Silicon | 尚未进入发布范围 | — |
-| Linux | 尚未进入发布范围 | — |
+| macOS 12+ Intel x64 | 暂停发布，保留构建配置 | `.dmg`、`.zip` |
+| macOS Apple Silicon | 暂未支持 | — |
+| Linux | 暂未支持 | — |
 
-未签名的内部 Windows 构建可能触发 SmartScreen。只有经过签名、安装、升级、卸载和冷启动验证的产物才应作为正式 Release 发布。
+---
+
+## 功能亮点
+
+- **无限画布工作区**：自由组织文本、AI 回复、图片、视频、任务、书籍和阅读笔记，通过连线保留上下文。
+- **多模型服务商**：支持 ChatGPT OAuth，以及兼容 OpenAI / Anthropic 协议的自定义服务商。
+- **能力化模型管理**：按文本、视觉、图片、视频、向量、音频和工具能力管理模型，节点只展示可用选项。
+- **图片生成与编辑**：支持提示词、参考图片、画幅和模型选择，生成结果可以继续编辑并保留来源。
+- **异步视频生成**：创建任务后保存服务商任务 ID，独立轮询状态，关闭并重新打开项目后可继续恢复。
+- **阅读与笔记**：在画布中打开 PDF、EPUB 和 TXT，使用目录、阅读进度、标注与页内笔记继续创作。
+- **任务管理**：支持父子任务、进度、状态、优先级、复杂度、负责人和标签。
+- **高效画布交互**：支持框选、多选、连线、分组、Alt 拖动复制、撤销重做、缩放和小地图。
+- **本地数据管理**：支持数据目录切换、备份与恢复，并提供本地 Token 用量统计。
+
+### 节点类型
+
+| 类别 | 节点 |
+| --- | --- |
+| 创作 | 文本、Markdown、代码、AI 回复 |
+| 生成 | 图片生成、图片编辑、视频生成 |
+| 管理 | 任务、分组 |
+| 阅读 | 书籍、阅读器、阅读笔记 |
+| 音乐 | 音乐、音乐播放器、歌词 |
+
+---
 
 ## 本地数据与隐私
 
-- Zenme 不提供产品账号、云端数据库或自动云同步。
-- 模型 API Key、ChatGPT OAuth 凭据和用户内容只保存在本地数据目录。
-- 本地 Next.js 服务只监听 loopback，并限制为同源访问。
+Zenme 是纯本地桌面应用，不提供 Zenme 账号、远程数据库或自动云同步。
+
+- 项目、画布、文件、阅读资料、笔记和设置默认保存在本机。
+- 模型 API Key 与 ChatGPT OAuth 凭据只保存在本地数据目录。
+- 本地 Next.js 服务只监听 loopback，并限制同源访问。
 - 导出的备份默认排除 API Key 和 OAuth 凭据，恢复后需要重新登录或填写密钥。
 - 升级和卸载不会主动删除用户数据；删除数据需要用户明确操作。
-- 调用外部模型时，发送给对应服务商的内容仍受该服务商的隐私政策约束。
+- 调用外部模型时，发送给服务商的内容仍受对应服务商的隐私政策约束。
 
-默认数据目录位于 Electron `userData` 下，也可以在设置中选择其他位置。开发环境可通过 `ZENME_DATA_DIR` 指定测试目录，避免使用真实数据：
+默认数据目录位于 Electron `userData` 下，也可以在应用设置中切换。开发环境请使用 `ZENME_DATA_DIR` 指定独立测试目录，避免读取真实数据。
 
-```powershell
-$env:ZENME_DATA_DIR="G:\data\zenme-development"
-npm run desktop:dev
-```
+---
 
-## 从源码运行
+## 参与开发
 
-需要 Node.js `22.12–24` 和 npm `11`。
+### 环境要求
+
+- Node.js `22.12–24`
+- npm `11`
+- Windows 10/11 x64（当前主要开发与发布环境）
+
+### 从源码启动桌面应用
 
 ```powershell
 git clone https://github.com/alkaiddiamond/zenme-local.git
 cd zenme-local
 npm ci
+$env:ZENME_DATA_DIR="G:\data\zenme-development"
 npm run desktop:dev
 ```
 
@@ -105,7 +132,7 @@ Electron 窗口是正式产品入口。单独运行 `npm run dev` 主要用于 W
 ### 质量检查
 
 ```powershell
-npm run check          # Lint + 测试
+npm run check          # ESLint + 测试
 npm run verify         # check + 生产构建
 npm run release:check  # 发布门禁 + 桌面打包与冒烟测试
 ```
@@ -118,9 +145,24 @@ npm run desktop:pack      # 生成免安装目录包
 npm run desktop:dist:win  # 生成 Windows x64 NSIS 安装包
 ```
 
-产物输出到 `dist-desktop/`。详细签名、安装验证和回滚流程见 [发布手册](docs/release.md)。
+构建产物输出到 `dist-desktop/`。签名、安装验证和回滚流程见 [发布手册](docs/release.md)。
 
-## 项目结构
+---
+
+## 技术栈
+
+| 类别 | 技术 |
+| --- | --- |
+| 桌面应用 | Electron |
+| Web 框架 | Next.js + React |
+| 语言 | TypeScript |
+| 样式 | Tailwind CSS |
+| 画布 | React Flow |
+| 测试 | Vitest + Node.js Test Runner |
+| 打包 | electron-builder + NSIS |
+| 数据 | 本地文件系统、原子写入与版本迁移 |
+
+### 项目结构
 
 ```text
 app/                  Next.js 页面与仅本机访问的 API
@@ -134,18 +176,28 @@ docs/                 与源码版本绑定的工程文档和 README 图片
 
 产品需求、设计资料、路线图和研究文档维护在独立的 `zenme-doc` 仓库；本仓库只保留与代码版本直接绑定的工程资料。
 
-## 文档与贡献
+---
 
-- [工程文档索引](docs/README.md)
-- [系统架构](docs/architecture.md)
-- [本地数据与迁移](docs/data-and-migrations.md)
-- [安全模型](docs/security-model.md)
-- [发布手册](docs/release.md)
-- [贡献指南](CONTRIBUTING.md)
-- [安全策略](SECURITY.md)
-- [版本记录](CHANGELOG.md)
-- [第三方许可证](THIRD_PARTY_LICENSES.md)
+## 工程文档
+
+| 文档 | 说明 |
+| --- | --- |
+| [工程文档索引](docs/README.md) | 架构、安全、数据与发布文档入口 |
+| [系统架构](docs/architecture.md) | Next.js、Electron 和本地服务边界 |
+| [本地数据与迁移](docs/data-and-migrations.md) | 数据目录、格式、迁移与备份策略 |
+| [安全模型](docs/security-model.md) | Loopback、同源、凭据和路径安全 |
+| [发布手册](docs/release.md) | 打包、签名、冒烟测试与发布流程 |
+| [贡献指南](CONTRIBUTING.md) | 开发流程、质量门禁和提交要求 |
+| [安全策略](SECURITY.md) | 漏洞报告方式和支持范围 |
+| [版本记录](CHANGELOG.md) | 版本变化与发布记录 |
+| [第三方许可证](THIRD_PARTY_LICENSES.md) | 随应用分发的软件及许可证 |
 
 提交 Issue 或日志时，请勿包含 API Key、OAuth 凭据、本地业务文件或完整数据目录。
+
+---
+
+## 贡献与许可证
+
+欢迎通过 [Issues](https://github.com/alkaiddiamond/zenme-local/issues) 报告问题或提出建议。提交代码前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 Zenme 自有代码以 [MIT License](LICENSE) 开源；随应用分发的第三方软件继续适用各自的许可证与署名要求。
