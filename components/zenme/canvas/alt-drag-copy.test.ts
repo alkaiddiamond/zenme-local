@@ -5,6 +5,7 @@ import {
   createAltDragCopyUpdate,
   createAltDragPreviewNodes,
   isAltDragPreviewNode,
+  removeAltDragPreviewClasses,
 } from "./alt-drag-copy";
 import type { CanvasNode } from "./types";
 
@@ -89,6 +90,42 @@ describe("Alt-drag node copy", () => {
       },
     ]);
     expect(update?.createdNodes).toHaveLength(1);
+  });
+
+  it("removes transient preview classes from the committed copy", () => {
+    const before = [node({ id: "source", kind: "task", x: 20, y: 40 })];
+    const dragged = {
+      ...node({ id: "source", kind: "task", x: 180, y: 220 }),
+      className: "task-surface zenme-alt-drag-copy-preview",
+    };
+    const update = createAltDragCopyUpdate({
+      beforeNodeSnapshots: snapshots(before),
+      createId: () => "copy",
+      currentNodes: [dragged],
+      draggedNodeId: "source",
+    });
+
+    expect(update?.createdNodes[0]).toMatchObject({
+      className: "task-surface",
+      id: "copy",
+      type: "task",
+    });
+    expect(update?.createdNodes[0].className).not.toContain(
+      "zenme-alt-drag-copy-preview",
+    );
+  });
+
+  it("repairs a preview class left in a persisted node", () => {
+    const persisted = {
+      ...node({ id: "persisted-copy", kind: "task", x: 180, y: 220 }),
+      className: "zenme-alt-drag-copy-preview",
+    };
+
+    expect(removeAltDragPreviewClasses(persisted)).toMatchObject({
+      className: undefined,
+      id: "persisted-copy",
+      type: "task",
+    });
   });
 
   it("copies grouped children while remapping group ownership", () => {

@@ -1,8 +1,10 @@
 import type { ReadingFormat, ReadingSection } from "@/lib/reading/types";
+import type { PdfOutlineSection } from "./types";
 
 export type ReadingNavigationSection = {
   endIndex: number;
   index: number;
+  pageNumber?: number;
   title: string;
 };
 
@@ -40,13 +42,26 @@ export function getReadingSectionTitle(input: {
 export function buildReadingNavigationSections(input: {
   assetFormat: ReadingFormat;
   pdfPageCount: number;
+  pdfOutlineSections?: PdfOutlineSection[];
   sections: ReadingSection[];
 }): ReadingNavigationSection[] {
   if (input.assetFormat === "pdf") {
     const count = Math.max(input.pdfPageCount, input.sections.length, 1);
+    if (input.pdfOutlineSections?.length) {
+      return input.pdfOutlineSections.map((section, index, sections) => ({
+        endIndex: Math.max(
+          section.index,
+          (sections[index + 1]?.index ?? count) - 1,
+        ),
+        index: section.index,
+        pageNumber: section.index + 1,
+        title: section.title,
+      }));
+    }
     return Array.from({ length: count }, (_, index) => ({
       endIndex: index,
       index,
+      pageNumber: index + 1,
       title: `第 ${index + 1} 页`,
     }));
   }

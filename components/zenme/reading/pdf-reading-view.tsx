@@ -5,7 +5,12 @@ import type { MutableRefObject } from "react";
 import type { ReadingNote } from "@/lib/reading/types";
 
 import { PdfPageView } from "./pdf-page-view";
-import type { PdfAnnotationDraft, PdfDocumentProxyLike } from "./types";
+import { resolvePdfOutlineSections } from "./pdf-outline";
+import type {
+  PdfAnnotationDraft,
+  PdfDocumentProxyLike,
+  PdfOutlineSection,
+} from "./types";
 
 type PdfReadingViewProps = {
   annotationResetKey: number;
@@ -15,6 +20,7 @@ type PdfReadingViewProps = {
   notes: ReadingNote[];
   onAnnotationDraft: (draft: PdfAnnotationDraft | null) => void;
   onError: (message: string | null) => void;
+  onOutline: (sections: PdfOutlineSection[]) => void;
   onPageCount: (count: number) => void;
   pageRefs: MutableRefObject<Record<number, HTMLElement | null>>;
 };
@@ -29,6 +35,7 @@ export const PdfReadingView = memo(function PdfReadingView({
   notes,
   onAnnotationDraft,
   onError,
+  onOutline,
   onPageCount,
   pageRefs,
 }: PdfReadingViewProps) {
@@ -51,6 +58,7 @@ export const PdfReadingView = memo(function PdfReadingView({
 
     async function loadPdf() {
       try {
+        onOutline([]);
         const pdfjs = await import("pdfjs-dist");
         pdfjs.GlobalWorkerOptions.workerSrc = new URL(
           "pdfjs-dist/build/pdf.worker.mjs",
@@ -58,6 +66,7 @@ export const PdfReadingView = memo(function PdfReadingView({
         ).toString();
         const documentTask = pdfjs.getDocument({
           url: `/api/reading/assets/${assetId}/file`,
+          wasmUrl: "/pdfjs/wasm/",
         });
         loadedPdf =
           (await documentTask.promise) as unknown as PdfDocumentProxyLike;
@@ -77,6 +86,12 @@ export const PdfReadingView = memo(function PdfReadingView({
         setPageAspectRatio(nextAspectRatio);
         setPdf(loadedPdf);
         onPageCount(loadedPdf.numPages);
+        const outline = await resolvePdfOutlineSections(loadedPdf).catch(
+          () => [],
+        );
+        if (!cancelled) {
+          onOutline(outline);
+        }
       } catch (err) {
         if (!cancelled) {
           onError(err instanceof Error ? err.message : "PDF 阅读器加载失败");
@@ -90,7 +105,7 @@ export const PdfReadingView = memo(function PdfReadingView({
       cancelled = true;
       void loadedPdf?.destroy?.();
     };
-  }, [assetId, onError, onPageCount]);
+  }, [assetId, onError, onOutline, onPageCount]);
 
   if (!pdf) {
     return (

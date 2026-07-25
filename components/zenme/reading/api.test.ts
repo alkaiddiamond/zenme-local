@@ -359,4 +359,21 @@ describe("reading browser api notes and OCR", () => {
 
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it("uses a localized message when the OCR request cannot connect", async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    await expect(
+      recognizePdfAnnotationDraft({
+        draft: {
+          imageDataUrl: "data:image/png;base64,abc",
+          kind: "region",
+          pageIndex: 0,
+          rect: { h: 0.2, w: 0.3, x: 0.1, y: 0.1 },
+          x: 10,
+          y: 20,
+        },
+      }),
+    ).rejects.toThrow("OCR 服务连接失败，请重新框选或稍后重试");
+  });
 });

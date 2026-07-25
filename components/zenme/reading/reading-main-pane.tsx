@@ -10,6 +10,7 @@ import { PdfReadingView } from "./pdf-reading-view";
 import { ReadingTextSectionsView } from "./reading-text-sections-view";
 import type {
   PdfAnnotationDraft,
+  PdfOutlineSection,
   ReadingPayload,
   TextSelection,
 } from "./types";
@@ -23,6 +24,7 @@ type ReadingMainPaneProps = {
   onAnnotationDraft: (draft: PdfAnnotationDraft | null) => void;
   onError: (message: string | null) => void;
   onMouseUp: () => void;
+  onOutline: (sections: PdfOutlineSection[]) => void;
   onPageCount: (count: number) => void;
   onScroll: (event: UIEvent<HTMLElement>) => void;
   payload: ReadingPayload;
@@ -41,6 +43,7 @@ export function ReadingMainPane({
   onAnnotationDraft,
   onError,
   onMouseUp,
+  onOutline,
   onPageCount,
   onScroll,
   payload,
@@ -68,6 +71,7 @@ export function ReadingMainPane({
           notes={payload.notes}
           onAnnotationDraft={onAnnotationDraft}
           onError={onError}
+          onOutline={onOutline}
           onPageCount={onPageCount}
           pageRefs={sectionRefs}
         />

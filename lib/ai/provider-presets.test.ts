@@ -53,4 +53,12 @@ describe("model provider presets", () => {
     expect(first.id).not.toBe(second.id);
     expect(identifyModelProviderPreset(first)).toBe("custom");
   });
+
+  it("does not prefill the Volcengine Ark model list", () => {
+    const provider = createModelProviderPreset("volcengine_ark");
+
+    expect(provider.models).toEqual([]);
+    expect(provider.modelModalities).toEqual({});
+    expect(provider.modelMapping).toMatchObject({ video: "" });
+  });
 });

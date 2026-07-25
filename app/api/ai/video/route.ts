@@ -2,9 +2,6 @@ import { resolveProviderModelSelection } from "@/lib/ai/provider-model-resolutio
 import { getProxyFetchOptions } from "@/lib/api/proxy-fetch";
 import { getLocalSettings, type ModelProviderConfig } from "@/lib/local/settings";
 
-const VIDEO_TASK_TIMEOUT_MS = 15 * 60 * 1000;
-const VIDEO_POLL_INTERVAL_MS = 5_000;
-
 type VideoRequestBody = {
   duration?: number;
   generateAudio?: boolean;
@@ -83,60 +80,80 @@ export async function POST(request: Request) {
       );
     }
 
-    const task = await waitForVideoTask({
-      apiBaseUrl,
-      apiKey,
-      provider,
+    return Response.json({
+      model: selection.modelId,
+      status: created.status ?? "queued",
       taskId: created.id,
     });
+  } catch {
+    return Response.json({ error: "视频任务创建失败，请稍后重试" }, { status: 500 });
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    const requestUrl = new URL(request.url);
+    const model = requestUrl.searchParams.get("model")?.trim();
+    const taskId = requestUrl.searchParams.get("taskId")?.trim();
+    const shouldDownload = requestUrl.searchParams.get("download") === "1";
+    if (!model) return Response.json({ error: "缺少视频模型" }, { status: 400 });
+    if (!taskId || taskId.length > 256) {
+      return Response.json({ error: "缺少有效的视频任务 ID" }, { status: 400 });
+    }
+
+    const settings = await getLocalSettings();
+    const selection = resolveProviderModelSelection(model, settings.modelProviders, "video");
+    if (!selection) return Response.json({ error: "未启用该视频模型" }, { status: 400 });
+    const provider = selection.provider;
+    const apiKey = provider.apiKey?.trim();
+    if (!apiKey) return Response.json({ error: "缺少视频服务商 API Key" }, { status: 400 });
+    const apiBaseUrl = normalizeVolcengineVideoBaseUrl(provider);
+    const response = await fetch(
+      `${apiBaseUrl}/contents/generations/tasks/${encodeURIComponent(taskId)}`,
+      {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(60_000),
+        ...getProxyFetchOptions(apiBaseUrl, provider.networkProxy),
+      },
+    );
+    const task = (await response.json().catch(() => null)) as VideoTask | null;
+    if (!response.ok || !task) {
+      return Response.json(
+        { error: formatVideoError("视频任务查询失败", response.status, task) },
+        { status: response.ok ? 502 : response.status },
+      );
+    }
+
+    if (!shouldDownload) {
+      return Response.json({
+        error: task.error?.message,
+        status: task.status ?? "running",
+        taskId,
+      });
+    }
+    if (task.status !== "succeeded") {
+      return Response.json({ error: "视频任务尚未完成", status: task.status }, { status: 409 });
+    }
     const videoUrl = task.content?.video_url;
-    if (!videoUrl) throw new Error("视频任务成功但未返回下载地址");
+    if (!videoUrl) return Response.json({ error: "视频任务未返回下载地址" }, { status: 502 });
     const videoResponse = await fetch(videoUrl, {
       signal: AbortSignal.timeout(2 * 60 * 1000),
       ...getProxyFetchOptions(videoUrl, provider.networkProxy),
     });
-    if (!videoResponse.ok) throw new Error("生成视频下载失败");
-
+    if (!videoResponse.ok) {
+      return Response.json({ error: "生成视频下载失败" }, { status: 502 });
+    }
     return new Response(await videoResponse.arrayBuffer(), {
       headers: {
         "cache-control": "no-store",
         "content-type": videoResponse.headers.get("content-type") || "video/mp4",
         "x-zenme-model": selection.modelId,
-        "x-zenme-task-id": created.id,
+        "x-zenme-task-id": taskId,
       },
     });
   } catch {
-    return Response.json({ error: "视频生成失败，请稍后重试" }, { status: 500 });
+    return Response.json({ error: "视频任务查询失败，请稍后重试" }, { status: 500 });
   }
-}
-
-async function waitForVideoTask(input: {
-  apiBaseUrl: string;
-  apiKey: string;
-  provider: ModelProviderConfig;
-  taskId: string;
-}) {
-  const deadline = Date.now() + VIDEO_TASK_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const response = await fetch(
-      `${input.apiBaseUrl}/contents/generations/tasks/${encodeURIComponent(input.taskId)}`,
-      {
-        headers: { Authorization: `Bearer ${input.apiKey}` },
-        signal: AbortSignal.timeout(60_000),
-        ...getProxyFetchOptions(input.apiBaseUrl, input.provider.networkProxy),
-      },
-    );
-    const task = (await response.json().catch(() => null)) as VideoTask | null;
-    if (!response.ok || !task) {
-      throw new Error(formatVideoError("视频任务查询失败", response.status, task));
-    }
-    if (task.status === "succeeded") return task;
-    if (task.status === "failed" || task.status === "cancelled") {
-      throw new Error(task.error?.message || "视频任务未完成");
-    }
-    await new Promise((resolve) => setTimeout(resolve, VIDEO_POLL_INTERVAL_MS));
-  }
-  throw new Error("视频任务执行超过 15 分钟，请稍后重试");
 }
 
 function normalizeVolcengineVideoBaseUrl(provider: ModelProviderConfig) {

@@ -4,13 +4,14 @@ import { recognizePdfAnnotationDraft } from "./api";
 import type { PdfAnnotationDraft } from "./types";
 
 export function usePdfAnnotationDraft(input: {
-  setError: (error: string | null) => void;
-}) {
-  const { setError } = input;
+  onOcrError?: (error: string) => void;
+} = {}) {
+  const { onOcrError } = input;
   const [pdfAnnotationDraft, setPdfAnnotationDraft] =
     useState<PdfAnnotationDraft | null>(null);
   const [pdfAnnotationResetKey, setPdfAnnotationResetKey] = useState(0);
   const [isPdfOcrRecognizing, setIsPdfOcrRecognizing] = useState(false);
+  const [pdfOcrError, setPdfOcrError] = useState<string | null>(null);
   const pdfOcrRequestId = useRef(0);
 
   useEffect(() => {
@@ -26,10 +27,14 @@ export function usePdfAnnotationDraft(input: {
     }
 
     const requestId = ++pdfOcrRequestId.current;
+    const controller = new AbortController();
     setIsPdfOcrRecognizing(true);
-    setError(null);
+    setPdfOcrError(null);
 
-    recognizePdfAnnotationDraft({ draft: pdfAnnotationDraft })
+    recognizePdfAnnotationDraft({
+      draft: pdfAnnotationDraft,
+      signal: controller.signal,
+    })
       .then((text) => {
         if (pdfOcrRequestId.current !== requestId) return;
         setPdfAnnotationDraft((current) => {
@@ -53,7 +58,9 @@ export function usePdfAnnotationDraft(input: {
       })
       .catch((err) => {
         if (pdfOcrRequestId.current !== requestId) return;
-        setError(err instanceof Error ? err.message : "OCR 识别失败");
+        const message = err instanceof Error ? err.message : "OCR 识别失败";
+        setPdfOcrError(message);
+        onOcrError?.(message);
         setPdfAnnotationDraft((current) => {
           if (
             !current ||
@@ -73,13 +80,21 @@ export function usePdfAnnotationDraft(input: {
           setIsPdfOcrRecognizing(false);
         }
       });
-  }, [pdfAnnotationDraft, setError]);
+
+    return () => {
+      if (pdfOcrRequestId.current === requestId) {
+        pdfOcrRequestId.current += 1;
+      }
+      controller.abort();
+    };
+  }, [onOcrError, pdfAnnotationDraft]);
 
   const resetPdfAnnotationDraft = useCallback(() => {
     pdfOcrRequestId.current += 1;
     setPdfAnnotationDraft(null);
     setPdfAnnotationResetKey((key) => key + 1);
     setIsPdfOcrRecognizing(false);
+    setPdfOcrError(null);
     window.getSelection()?.removeAllRanges();
   }, []);
 
@@ -103,6 +118,7 @@ export function usePdfAnnotationDraft(input: {
     isPdfOcrRecognizing,
     pdfAnnotationDraft,
     pdfAnnotationResetKey,
+    pdfOcrError,
     resetPdfAnnotationDraft,
     setPdfAnnotationDraft,
     setPdfAnnotationResetKey,

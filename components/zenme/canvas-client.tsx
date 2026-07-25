@@ -54,8 +54,10 @@ import { nodeTypes } from "@/components/zenme/nodes";
 import {
   getCanvasSnapshotFromApi,
   getProjectFromApi,
+  createVideoTask,
+  downloadVideoTask,
   generateOrEditImage,
-  generateVideo,
+  getVideoTaskStatus,
   saveProjectThumbnailToApi,
   uploadProjectFileToApi,
 } from "@/lib/zenme-api";
@@ -81,6 +83,7 @@ import {
   createAltDragCopyUpdate,
   createAltDragPreviewNodes,
   isAltDragPreviewNode,
+  removeAltDragPreviewClasses,
 } from "@/components/zenme/canvas/alt-drag-copy";
 import {
   canPrepareReadingAsset,
@@ -145,6 +148,10 @@ import {
   getCanvasNodeContextText,
 } from "@/components/zenme/canvas/text-generation-context";
 import { buildContextualImageGenerationPrompt } from "@/components/zenme/canvas/image-generation-context";
+import {
+  recoverInterruptedVideoTasks,
+  waitForVideoTaskCompletion,
+} from "@/components/zenme/canvas/video-task-runtime";
 import {
   createConnectedEdge,
   createConnectedPlaceholderCanvasNode,
@@ -321,6 +328,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const isRefreshingUrls = useRef(false);
   const nodesRef = useRef<CanvasNode[]>(nodes);
   const edgesRef = useRef<Edge[]>(edges);
+  const activeVideoTaskControllersRef = useRef(new Map<string, AbortController>());
   const defaultTextModelRef = useRef(defaultTextModel);
   defaultTextModelRef.current = defaultTextModel;
   const canvasViewportStateRef = useRef<Viewport>(canvasViewport);
@@ -879,9 +887,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             snapshot.nodes.length ? snapshot.nodes : createWelcomeNodes(),
             snapshot.edges,
           );
-          const restoredNodes = recoverInterruptedImageTasks(
-            normalizeGroupNodeRelations(restored.nodes),
-          );
+          const restoredNodes = recoverInterruptedVideoTasks(
+            recoverInterruptedImageTasks(
+              normalizeGroupNodeRelations(
+                restored.nodes.map(removeAltDragPreviewClasses),
+              ),
+            ),
+          ).nodes;
           const restoredEdges = normalizePersistedCanvasEdges(
             restored.edges,
             restoredNodes,
@@ -2388,6 +2400,100 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     [appendCanvasItems, configuredImageModelOptions, projectId, pushNodeUpdateHistory, reactFlow, setNodes],
   );
 
+  const persistVideoTaskNodes = useCallback(async (nextNodes: CanvasNode[]) => {
+    await saveCanvasSnapshot({
+      edges: edgesRef.current,
+      nodes: nextNodes,
+      projectId,
+      thumbnail: null,
+      viewport: reactFlowRef.current?.getViewport() ?? canvasViewportStateRef.current,
+    });
+  }, [projectId]);
+
+  const runVideoTask = useCallback(async (input: {
+    model: string;
+    nodeId: string;
+    startedAt: string;
+    taskId: string;
+  }) => {
+    if (activeVideoTaskControllersRef.current.has(input.nodeId)) return;
+    const controller = new AbortController();
+    activeVideoTaskControllersRef.current.set(input.nodeId, controller);
+    const startedAtMs = Date.parse(input.startedAt);
+    try {
+      await waitForVideoTaskCompletion({
+        getStatus: () => getVideoTaskStatus({ model: input.model, taskId: input.taskId }),
+        signal: controller.signal,
+        startedAt: input.startedAt,
+      });
+      const generated = await downloadVideoTask({ model: input.model, taskId: input.taskId });
+      const file = new File([generated.blob], `zenme-video-${Date.now()}.mp4`, {
+        type: generated.blob.type || "video/mp4",
+      });
+      const upload = await uploadProjectFileToApi({ projectId, file });
+      const nextNodes = nodesRef.current.map((node) =>
+        node.id === input.nodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                fileId: upload.fileId,
+                originalUrl: upload.originalUrl,
+                videoError: undefined,
+                videoStatus: "done" as const,
+                videoTaskDurationMs: Date.now() - (Number.isFinite(startedAtMs) ? startedAtMs : Date.now()),
+              },
+            }
+          : node,
+      );
+      nodesRef.current = nextNodes;
+      setNodes(nextNodes);
+      await persistVideoTaskNodes(nextNodes).catch(() => undefined);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      const message = error instanceof Error ? error.message : "视频生成失败，请稍后重试";
+      const nextNodes = nodesRef.current.map((node) =>
+        node.id === input.nodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                videoError: message,
+                videoStatus: "failed" as const,
+                videoTaskDurationMs: Date.now() - (Number.isFinite(startedAtMs) ? startedAtMs : Date.now()),
+              },
+            }
+          : node,
+      );
+      nodesRef.current = nextNodes;
+      setNodes(nextNodes);
+      await persistVideoTaskNodes(nextNodes).catch(() => undefined);
+    } finally {
+      if (activeVideoTaskControllersRef.current.get(input.nodeId) === controller) {
+        activeVideoTaskControllersRef.current.delete(input.nodeId);
+      }
+    }
+  }, [persistVideoTaskNodes, projectId, setNodes]);
+
+  useEffect(() => {
+    if (!canvasHydrated) return;
+    const taskControllers = activeVideoTaskControllersRef.current;
+    const { resumable } = recoverInterruptedVideoTasks(nodesRef.current);
+    resumable.forEach((node) => {
+      if (!node.data.providerTaskId || !node.data.videoModel) return;
+      void runVideoTask({
+        model: node.data.videoModel,
+        nodeId: node.id,
+        startedAt: node.data.videoTaskStartedAt ?? new Date().toISOString(),
+        taskId: node.data.providerTaskId,
+      });
+    });
+    return () => {
+      taskControllers.forEach((controller) => controller.abort());
+      taskControllers.clear();
+    };
+  }, [canvasHydrated, projectId, runVideoTask]);
+
   const submitVideoGenerationNode = useCallback(async (
     nodeId: string,
     input?: Parameters<NonNullable<CanvasNodeData["onSubmitVideoNode"]>>[1],
@@ -2420,9 +2526,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       sourceNode,
       yOffsetWithoutChild: 0,
     });
+    const executionId = crypto.randomUUID();
     const taskStartedAt = Date.now();
     const { edge: resultEdge, node: resultNode } = createPendingVideoResultChildCanvasNode({
       duration,
+      executionId,
       generateAudio,
       id: crypto.randomUUID(),
       model,
@@ -2442,7 +2550,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
     try {
       const imageDataUrls = await Promise.all(referenceUrls.map(fetchImageAsDataUrl));
-      const generated = await generateVideo({
+      const created = await createVideoTask({
         duration,
         generateAudio,
         imageDataUrls,
@@ -2454,27 +2562,26 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         ratio,
         resolution,
       });
-      const file = new File([generated.blob], `zenme-video-${Date.now()}.mp4`, {
-        type: generated.blob.type || "video/mp4",
-      });
-      const upload = await uploadProjectFileToApi({ projectId, file });
       const nextNodes = nodesRef.current.map((node) =>
         node.id === resultNode.id
           ? {
               ...node,
               data: {
                 ...node.data,
-                fileId: upload.fileId,
-                originalUrl: upload.originalUrl,
-                videoError: undefined,
-                videoStatus: "done" as const,
-                videoTaskDurationMs: Date.now() - taskStartedAt,
+                providerTaskId: created.taskId,
               },
             }
           : node,
       );
       nodesRef.current = nextNodes;
       setNodes(nextNodes);
+      await persistVideoTaskNodes(nextNodes).catch(() => undefined);
+      await runVideoTask({
+        model,
+        nodeId: resultNode.id,
+        startedAt: new Date(taskStartedAt).toISOString(),
+        taskId: created.taskId,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : "视频生成失败，请稍后重试";
       const nextNodes = nodesRef.current.map((node) =>
@@ -2492,8 +2599,16 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       );
       nodesRef.current = nextNodes;
       setNodes(nextNodes);
+      await persistVideoTaskNodes(nextNodes).catch(() => undefined);
     }
-  }, [appendCanvasItems, configuredVideoModelOptions, projectId, reactFlow, setNodes]);
+  }, [
+    appendCanvasItems,
+    configuredVideoModelOptions,
+    persistVideoTaskNodes,
+    reactFlow,
+    runVideoTask,
+    setNodes,
+  ]);
 
   function createTextNodeAt(position: { x: number; y: number }) {
     const nextNode = createTextCanvasNode({
@@ -3598,16 +3713,17 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const displayedNodes = useMemo(
     () => [
       ...altDragPreviewNodes,
-      ...renderedNodes.map((node) =>
-        altDragMovingNodeIds.has(node.id)
+      ...renderedNodes.map((node) => {
+        const stableNode = removeAltDragPreviewClasses(node);
+        return altDragMovingNodeIds.has(node.id)
           ? {
-              ...node,
-              className: [node.className, "zenme-alt-drag-copy-preview"]
+              ...stableNode,
+              className: [stableNode.className, "zenme-alt-drag-copy-preview"]
                 .filter(Boolean)
                 .join(" "),
             }
-          : node,
-      ),
+          : stableNode;
+      }),
     ],
     [altDragMovingNodeIds, altDragPreviewNodes, renderedNodes],
   );

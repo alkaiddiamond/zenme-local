@@ -86,13 +86,14 @@ export function createAltDragCopyUpdate(input: {
     beforeDraggedNode,
   );
   const copySourceNodes = input.currentNodes.map((node) => {
+    const copySourceNode = removeAltDragPreviewClasses(node);
     const before = input.beforeNodeSnapshots.get(node.id);
     if (
       !before ||
       !copiedNodeIds.has(node.id) ||
       node.id === input.draggedNodeId
     ) {
-      return node;
+      return copySourceNode;
     }
 
     // Group children keep their original relative layout. Only the dragged root
@@ -117,7 +118,7 @@ export function createAltDragCopyUpdate(input: {
     anchor,
     createId: input.createId,
     payload,
-  });
+  }).map(removeAltDragPreviewClasses);
   const draggedCopyIndex = payload.nodes.findIndex(
     (node) => node.id === input.draggedNodeId,
   );
@@ -173,4 +174,18 @@ function positionsEqual(
   second: { x: number; y: number },
 ) {
   return first.x === second.x && first.y === second.y;
+}
+
+export function removeAltDragPreviewClasses(node: CanvasNode): CanvasNode {
+  const className = node.className
+    ?.split(/\s+/)
+    .filter(
+      (name) =>
+        name &&
+        name !== "zenme-alt-drag-copy-preview" &&
+        name !== "zenme-alt-drag-source-preview",
+    )
+    .join(" ");
+  if (className === node.className) return node;
+  return { ...node, className: className || undefined };
 }

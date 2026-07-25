@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChartNoAxesColumn,
@@ -90,6 +90,8 @@ type ChatGptAuthStatus = {
   accountId: string | null;
   modelCount: number;
   error: string | null;
+  modelSyncError: string | null;
+  modelSyncing: boolean;
 };
 
 const API_FORMAT_OPTIONS: Array<{
@@ -202,6 +204,7 @@ export function SettingsClient() {
   const [chatGptStatus, setChatGptStatus] = useState<ChatGptAuthStatus | null>(null);
   const [chatGptAction, setChatGptAction] = useState<"idle" | "login" | "sync" | "logout" | "failed">("idle");
   const [chatGptMessage, setChatGptMessage] = useState("");
+  const syncChatGptModelsRef = useRef<() => Promise<void>>(async () => undefined);
 
   async function loadChatGptStatus() {
     const response = await fetch("/api/ai/openai-oauth/status", { cache: "no-store" });
@@ -228,7 +231,10 @@ export function SettingsClient() {
       setPayload(nextPayload);
       setAutoSaveIntervalMs(nextPayload.settings.autoSaveIntervalMs);
       setModelProviders(nextPayload.settings.modelProviders);
-      void loadChatGptStatus();
+      const status = await loadChatGptStatus();
+      if (status?.loggedIn && !status.modelSyncing && status.modelCount === 0) {
+        void syncChatGptModelsRef.current();
+      }
       const dataDir = await window.zenmeDesktop?.getDataDir();
       setDesktopDataDir(dataDir ?? "");
     }
@@ -251,10 +257,19 @@ export function SettingsClient() {
       const startedAt = Date.now();
       const timer = window.setInterval(async () => {
         const status = await loadChatGptStatus();
+        if (status?.loggedIn && status.modelSyncing) return;
         if (status?.loggedIn || status?.error || Date.now() - startedAt > 5 * 60_000) {
           window.clearInterval(timer);
-          if (status?.loggedIn) await reloadSettings();
-          setChatGptAction(status?.loggedIn ? "idle" : "failed");
+          if (status?.loggedIn) {
+            if (status.modelCount === 0) {
+              await syncChatGptModels();
+            } else {
+              await reloadSettings();
+              setChatGptAction("idle");
+            }
+          } else {
+            setChatGptAction("failed");
+          }
           if (!status?.loggedIn) {
             setChatGptMessage(status?.error || "登录等待已超时，请重新发起登录。");
           }
@@ -269,16 +284,20 @@ export function SettingsClient() {
   async function syncChatGptModels() {
     setChatGptAction("sync");
     setChatGptMessage("");
-    const response = await fetch("/api/ai/openai-oauth/models", { method: "POST" });
-    if (response.ok) {
+    try {
+      const response = await fetch("/api/ai/openai-oauth/models", { method: "POST" });
+      if (!response.ok) {
+        const result = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(result?.error ?? "ChatGPT 模型同步失败。");
+      }
       await Promise.all([reloadSettings(), loadChatGptStatus()]);
       setChatGptAction("idle");
-    } else {
-      const result = await response.json().catch(() => null) as { error?: string } | null;
-      setChatGptMessage(result?.error ?? "ChatGPT 模型同步失败。");
+    } catch (error) {
+      setChatGptMessage(error instanceof Error ? error.message : "ChatGPT 模型同步失败。");
       setChatGptAction("failed");
     }
   }
+  syncChatGptModelsRef.current = syncChatGptModels;
 
   async function logoutChatGpt() {
     setChatGptAction("logout");
@@ -1035,7 +1054,14 @@ function ChatGptProviderCard({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-sm font-medium text-emerald-700">已登录 {status.email || "ChatGPT 账号"}</p>
-              <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">已同步 {status.modelCount} 个可用模型</p>
+              <p className="mt-1 text-xs text-[var(--color-text-tertiary)]">
+                {status.modelSyncing ? "正在自动同步模型…" : `已同步 ${status.modelCount} 个可用模型`}
+              </p>
+              {action === "failed" || status.modelSyncError ? (
+                <p className="mt-2 text-xs text-red-600">
+                  {message || status.modelSyncError || "模型同步失败，请稍后重试。"}
+                </p>
+              ) : null}
             </div>
             <div className="flex gap-2">
               <Button disabled={busy} onClick={onSync} type="button" variant="outline"><RefreshCw className={`size-4 ${action === "sync" ? "animate-spin" : ""}`} />同步模型</Button>

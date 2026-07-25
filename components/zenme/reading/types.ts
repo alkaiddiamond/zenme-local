@@ -41,8 +41,22 @@ export type NoteDropIndicator = {
 
 export type PdfDocumentProxyLike = {
   destroy?: () => Promise<void> | void;
+  getDestination: (id: string) => Promise<unknown[] | null>;
+  getOutline: () => Promise<PdfOutlineItem[] | null>;
   getPage: (pageNumber: number) => Promise<PdfPageProxyLike>;
+  getPageIndex: (pageReference: unknown) => Promise<number>;
   numPages: number;
+};
+
+export type PdfOutlineItem = {
+  dest: string | unknown[] | null;
+  items: PdfOutlineItem[];
+  title: string;
+};
+
+export type PdfOutlineSection = {
+  index: number;
+  title: string;
 };
 
 export type PdfPageProxyLike = {

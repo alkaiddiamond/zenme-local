@@ -227,13 +227,20 @@ export async function createPdfReadingAnnotation(input: {
 
 export async function recognizePdfAnnotationDraft(input: {
   draft: PdfAnnotationDraft;
+  signal?: AbortSignal;
 }) {
   if (!input.draft.imageDataUrl) {
     throw new Error("缺少 OCR 图片");
   }
 
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), 35_000);
+  let timedOut = false;
+  const abortRequest = () => controller.abort();
+  input.signal?.addEventListener("abort", abortRequest, { once: true });
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 100_000);
 
   let response: Response;
   try {
@@ -247,11 +254,15 @@ export async function recognizePdfAnnotationDraft(input: {
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
+      if (!timedOut && input.signal?.aborted) {
+        throw new Error("OCR 识别已取消");
+      }
       throw new Error("OCR 识别超时，请重新框选或稍后重试");
     }
-    throw error;
+    throw new Error("OCR 服务连接失败，请重新框选或稍后重试");
   } finally {
     window.clearTimeout(timeoutId);
+    input.signal?.removeEventListener("abort", abortRequest);
   }
 
   const payload = (await response.json().catch(() => null)) as {

@@ -127,6 +127,7 @@ describe("video generation node workflow", () => {
 
     const result = createPendingVideoResultChildCanvasNode({
       duration: 5,
+      executionId: "execution-1",
       generateAudio: true,
       id: "video-result",
       model: "volcengine/doubao-seedance-1-5-pro-251215",
@@ -142,6 +143,7 @@ describe("video generation node workflow", () => {
       style: { height: 315, width: 560 },
       type: "video",
       data: {
+        executionId: "execution-1",
         kind: "video",
         videoGenerationResult: true,
         videoPrompt: "机器人转身并向镜头挥手",

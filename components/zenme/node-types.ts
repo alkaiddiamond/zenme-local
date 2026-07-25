@@ -199,6 +199,8 @@ export type CanvasNodeData = {
     url: string;
   }>;
   imageReferenceNodeIds?: string[];
+  executionId?: string;
+  providerTaskId?: string;
   videoPrompt?: string;
   videoPromptMentions?: Array<{
     nodeId: string;

@@ -306,6 +306,7 @@ export function createVideoGenerationCanvasNode(input: {
 
 export function createPendingVideoResultChildCanvasNode(input: {
   duration: number;
+  executionId: string;
   generateAudio: boolean;
   id: string;
   model: string;
@@ -324,6 +325,7 @@ export function createPendingVideoResultChildCanvasNode(input: {
       position: input.position,
       style: VIDEO_RESULT_NODE_DEFAULT_SIZE,
       data: {
+        executionId: input.executionId,
         kind: "video",
         title: "视频生成",
         videoDuration: input.duration,

@@ -44,7 +44,7 @@ import {
   getReadingGridColumns,
   supportsReadingContentScale,
 } from "./reading/layout";
-import type { ReadingPayload } from "./reading/types";
+import type { PdfOutlineSection, ReadingPayload } from "./reading/types";
 import {
   scrollElementIntoContainer,
   scrollToEpubSection,
@@ -77,6 +77,9 @@ export function ReadingWorkspace({
     [assetId],
   );
   const [pdfPageCount, setPdfPageCount] = useState(0);
+  const [pdfOutlineSections, setPdfOutlineSections] = useState<
+    PdfOutlineSection[]
+  >([]);
   const [selectedColor, setSelectedColor] =
     useState<ReadingAnnotationColor>("yellow");
   const [comment, setComment] = useState("");
@@ -194,10 +197,11 @@ export function ReadingWorkspace({
     isPdfOcrBusy,
     pdfAnnotationDraft,
     pdfAnnotationResetKey,
+    pdfOcrError,
     resetPdfAnnotationDraft,
     setPdfAnnotationDraft,
     setPdfAnnotationResetKey,
-  } = usePdfAnnotationDraft({ setError });
+  } = usePdfAnnotationDraft();
 
   const {
     captureSelection,
@@ -228,9 +232,10 @@ export function ReadingWorkspace({
     return buildReadingNavigationSections({
       assetFormat: payload.asset.format,
       pdfPageCount,
+      pdfOutlineSections,
       sections: payload.sections,
     });
-  }, [payload, pdfPageCount]);
+  }, [payload, pdfOutlineSections, pdfPageCount]);
 
   const updateEpubVisibleRange = useCallback(
     (container: HTMLElement | null, pageCount: number) => {
@@ -515,7 +520,9 @@ export function ReadingWorkspace({
   }, []);
 
   const quickNoteText =
-    pdfAnnotationDraft?.ocrFailed && !canSavePdfAnnotation
+    pdfOcrError && !canSavePdfAnnotation
+      ? pdfOcrError
+      : pdfAnnotationDraft?.ocrFailed && !canSavePdfAnnotation
       ? "未识别到文字，请重新框选"
       : isPdfOcrBusy && !canSavePdfAnnotation
         ? "OCR 识别中，首次加载可能较慢..."
@@ -641,6 +648,7 @@ export function ReadingWorkspace({
             onAnnotationDraft={setPdfAnnotationDraft}
             onError={setError}
             onMouseUp={captureSelection}
+            onOutline={setPdfOutlineSections}
             onPageCount={setPdfPageCount}
             onScroll={handleReaderScroll}
             payload={payload}

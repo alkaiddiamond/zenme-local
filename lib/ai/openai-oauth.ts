@@ -44,6 +44,8 @@ type PendingSession = {
 type OAuthGlobal = typeof globalThis & {
   __zenmeOpenAiOAuthSession?: PendingSession;
   __zenmeOpenAiOAuthError?: string;
+  __zenmeOpenAiOAuthModelSyncError?: string;
+  __zenmeOpenAiOAuthModelSyncing?: boolean;
 };
 
 function tokenPath() {
@@ -261,7 +263,44 @@ export async function syncOpenAiModels() {
   const etag = response.headers.get("etag") ?? undefined;
   if (etag !== tokens.modelsEtag) await writeTokens({ ...tokens, modelsEtag: etag });
   delete (globalThis as OAuthGlobal).__zenmeOpenAiOAuthError;
+  delete (globalThis as OAuthGlobal).__zenmeOpenAiOAuthModelSyncError;
   return models;
+}
+
+export async function retryOpenAiModelSync(input: {
+  attempts?: number;
+  delay?: (durationMs: number) => Promise<void>;
+  sync?: () => Promise<unknown>;
+} = {}) {
+  const attempts = Math.max(1, input.attempts ?? 3);
+  const delay = input.delay ?? ((durationMs: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, durationMs)));
+  const sync = input.sync ?? syncOpenAiModels;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await sync();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) await delay(1_200 * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
+
+function startOpenAiModelSync() {
+  const globalState = globalThis as OAuthGlobal;
+  globalState.__zenmeOpenAiOAuthModelSyncing = true;
+  delete globalState.__zenmeOpenAiOAuthModelSyncError;
+  void retryOpenAiModelSync()
+    .catch((error) => {
+      globalState.__zenmeOpenAiOAuthModelSyncError = error instanceof Error
+        ? error.message
+        : "ChatGPT 模型同步失败，请稍后重试。";
+    })
+    .finally(() => {
+      globalState.__zenmeOpenAiOAuthModelSyncing = false;
+    });
 }
 
 async function getChatGptNetworkProxy() {
@@ -317,9 +356,10 @@ export async function startOpenAiOAuth() {
         code_verifier: session.codeVerifier,
       }));
       await writeTokens(normalizeTokens(raw));
-      await syncOpenAiModels();
+      delete (globalThis as OAuthGlobal).__zenmeOpenAiOAuthError;
+      startOpenAiModelSync();
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      response.end(html("ChatGPT 登录成功", "模型已同步，可以关闭此页面返回 Zenme。", true));
+      response.end(html("ChatGPT 登录成功", "正在同步模型，可以关闭此页面返回 Zenme。", true));
     } catch (error) {
       (globalThis as OAuthGlobal).__zenmeOpenAiOAuthError = error instanceof Error
         ? error.message
@@ -364,12 +404,16 @@ export async function getOpenAiOAuthStatus() {
     accountId: tokens?.accountId ?? null,
     modelCount: provider?.models.length ?? 0,
     error: (globalThis as OAuthGlobal).__zenmeOpenAiOAuthError ?? null,
+    modelSyncError: (globalThis as OAuthGlobal).__zenmeOpenAiOAuthModelSyncError ?? null,
+    modelSyncing: Boolean((globalThis as OAuthGlobal).__zenmeOpenAiOAuthModelSyncing),
   };
 }
 
 export async function logoutOpenAi() {
   await closePendingSession();
   delete (globalThis as OAuthGlobal).__zenmeOpenAiOAuthError;
+  delete (globalThis as OAuthGlobal).__zenmeOpenAiOAuthModelSyncError;
+  delete (globalThis as OAuthGlobal).__zenmeOpenAiOAuthModelSyncing;
   await fs.rm(tokenPath(), { force: true });
   const settings = await getLocalSettings();
   await updateLocalSettings({

@@ -168,7 +168,9 @@ export async function generateOrEditImage(input: {
   }));
 }
 
-export async function generateVideo(input: {
+export type VideoTaskStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export async function createVideoTask(input: {
   duration: number;
   generateAudio: boolean;
   imageDataUrls?: string[];
@@ -187,10 +189,37 @@ export async function generateVideo(input: {
     const body = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(body?.error ?? "视频生成失败");
   }
+  return readJson<{
+    model: string;
+    status: VideoTaskStatus;
+    taskId: string;
+  }>(response);
+}
+
+export async function getVideoTaskStatus(input: { model: string; taskId: string }) {
+  const params = new URLSearchParams({ model: input.model, taskId: input.taskId });
+  return readJson<{
+    error?: string;
+    status: VideoTaskStatus;
+    taskId: string;
+  }>(await fetch(`/api/ai/video?${params.toString()}`, { cache: "no-store" }));
+}
+
+export async function downloadVideoTask(input: { model: string; taskId: string }) {
+  const params = new URLSearchParams({
+    download: "1",
+    model: input.model,
+    taskId: input.taskId,
+  });
+  const response = await fetch(`/api/ai/video?${params.toString()}`, { cache: "no-store" });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error ?? "生成视频下载失败");
+  }
   return {
     blob: await response.blob(),
     model: response.headers.get("x-zenme-model") ?? input.model,
-    taskId: response.headers.get("x-zenme-task-id") ?? undefined,
+    taskId: response.headers.get("x-zenme-task-id") ?? input.taskId,
   };
 }
 

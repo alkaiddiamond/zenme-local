@@ -83,10 +83,6 @@ export function createVolcengineAgentPlanProvider(): ModelProviderConfig {
 }
 
 export function createVolcengineArkProvider(): ModelProviderConfig {
-  const models: ModelConfig[] = [
-    { id: "doubao-seedance-2-0-260128", alias: "Doubao Seedance 2.0", enabled: true, modalities: ["video", "vision", "audio"] },
-    { id: "doubao-seedance-2-0-fast-260128", alias: "Doubao Seedance 2.0 Fast", enabled: true, modalities: ["video", "vision", "audio"] },
-  ];
   return {
     id: "volcengine-ark",
     name: "火山方舟在线推理",
@@ -97,10 +93,10 @@ export function createVolcengineArkProvider(): ModelProviderConfig {
     apiKey: "",
     enabled: true,
     isDefault: false,
-    modelMapping: { main: "", image: "", video: models[0].id },
-    models,
+    modelMapping: { main: "", image: "", video: "" },
+    models: [],
     contextWindows: {},
-    modelModalities: Object.fromEntries(models.map((model) => [model.id, model.modalities])),
+    modelModalities: {},
     networkProxy: createProviderNetworkProxy(),
   };
 }

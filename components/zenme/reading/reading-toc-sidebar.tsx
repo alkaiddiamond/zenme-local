@@ -5,6 +5,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 type NavigationSection = {
   endIndex: number;
   index: number;
+  pageNumber?: number;
   title: string;
 };
 
@@ -104,7 +105,12 @@ export const ReadingTocSidebar = memo(function ReadingTocSidebar({
               type="button"
             >
               <FileText className="size-3 shrink-0" />
-              <span className="truncate">{section.title}</span>
+              <span className="min-w-0 flex-1 truncate">{section.title}</span>
+              {section.pageNumber ? (
+                <span className="shrink-0 tabular-nums opacity-60">
+                  {section.pageNumber}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>

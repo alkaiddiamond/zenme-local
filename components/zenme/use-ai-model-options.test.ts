@@ -44,7 +44,7 @@ describe("AI model option preferences", () => {
     const source = readFileSync(
       new URL("./use-ai-model-options.ts", import.meta.url),
       "utf8",
-    );
+    ).replaceAll("\r\n", "\n");
 
     expect(source).not.toContain("fallbackModelOptions");
     expect(source).toContain("useState<AiModelOption[]>(\n    [],");
