@@ -11,6 +11,7 @@ import {
   NotebookTabs,
   Type,
   Upload,
+  Video,
 } from "lucide-react";
 
 import {
@@ -31,6 +32,7 @@ type CanvasAddMenuProps = {
   onClose: () => void;
   onCreateImageGenerationNode: (position: { x: number; y: number }) => void;
   onCreateManagedTextNode: (position: { x: number; y: number }) => void;
+  onCreateVideoGenerationNode: (position: { x: number; y: number }) => void;
   onCreateTaskNode: (position: { x: number; y: number }) => void;
   onCreateTextNode: (position: { x: number; y: number }) => void;
   onUploadFiles: (position: { x: number; y: number }) => void;
@@ -40,6 +42,7 @@ type NodeCreationMenuItemsProps = {
   includeUpload?: boolean;
   onCreateImageGenerationNode: () => void;
   onCreateManagedTextNode: () => void;
+  onCreateVideoGenerationNode: () => void;
   onCreateTaskNode: () => void;
   onCreateTextNode: () => void;
   onUploadFiles: () => void;
@@ -49,6 +52,7 @@ function NodeCreationMenuItems({
   includeUpload = true,
   onCreateImageGenerationNode,
   onCreateManagedTextNode,
+  onCreateVideoGenerationNode,
   onCreateTaskNode,
   onCreateTextNode,
   onUploadFiles,
@@ -67,6 +71,12 @@ function NodeCreationMenuItems({
         icon={ImagePlus}
         onClick={onCreateImageGenerationNode}
         title="图片"
+      />
+      <FloatingMenuItem
+        description="根据提示词和参考帧创建视频"
+        icon={Video}
+        onClick={onCreateVideoGenerationNode}
+        title="视频"
       />
       <FloatingMenuItem
         description="带名称、标签和创建时间的强管理节点"
@@ -100,6 +110,7 @@ export function CanvasAddMenu({
   onClose,
   onCreateImageGenerationNode,
   onCreateManagedTextNode,
+  onCreateVideoGenerationNode,
   onCreateTaskNode,
   onCreateTextNode,
   onUploadFiles,
@@ -117,6 +128,9 @@ export function CanvasAddMenu({
         }
         onCreateManagedTextNode={() =>
           onCreateManagedTextNode(menu.flowPosition)
+        }
+        onCreateVideoGenerationNode={() =>
+          onCreateVideoGenerationNode(menu.flowPosition)
         }
         onCreateTaskNode={() => onCreateTaskNode(menu.flowPosition)}
         onCreateTextNode={() => onCreateTextNode(menu.flowPosition)}
@@ -137,7 +151,8 @@ type NodeActionMenuProps = {
       | "managedText"
       | "task"
       | "textGeneration"
-      | "imageGeneration",
+      | "imageGeneration"
+      | "videoGeneration",
   ) => void;
   onUploadConnectedFiles: () => void;
   onOpenReadingWorkspace: () => void;
@@ -172,6 +187,9 @@ export function NodeActionMenu({
           onCreateManagedTextNode={() =>
             onCreateConnectedPlaceholder("managedText")
           }
+          onCreateVideoGenerationNode={() =>
+            onCreateConnectedPlaceholder("videoGeneration")
+          }
           onCreateTaskNode={() => onCreateConnectedPlaceholder("task")}
           onCreateTextNode={() => onCreateConnectedPlaceholder("text")}
           onUploadFiles={onUploadConnectedFiles}
@@ -190,6 +208,9 @@ export function NodeActionMenu({
           }
           onCreateManagedTextNode={() =>
             onCreateConnectedPlaceholder("managedText")
+          }
+          onCreateVideoGenerationNode={() =>
+            onCreateConnectedPlaceholder("videoGeneration")
           }
           onCreateTaskNode={() => onCreateConnectedPlaceholder("task")}
           onCreateTextNode={() => onCreateConnectedPlaceholder("text")}
@@ -226,6 +247,13 @@ export function NodeActionMenu({
           icon={BookOpen}
           onClick={onOpenReadingWorkspace}
           title="在阅读器中打开"
+        />
+      ) : null}
+      {actionNode?.data.kind === "image" ? (
+        <FloatingMenuItem
+          icon={Video}
+          onClick={() => onCreateConnectedPlaceholder("videoGeneration")}
+          title="生成视频"
         />
       ) : null}
       <FloatingMenuItem

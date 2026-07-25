@@ -150,7 +150,7 @@ export function ZenmeModelPicker({
             key={option.id}
             onSelect={() => onChange(option.id)}
           >
-            <span className="truncate" title={option.id}>
+            <span className="truncate" title={option.tooltip}>
               {option.label}
             </span>
             {option.id === resolvedModel ? (

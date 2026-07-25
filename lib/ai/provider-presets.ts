@@ -12,6 +12,7 @@ export type ModelProviderPresetId =
   | "chatgpt"
   | "zhipu"
   | "volcengine_agent_plan"
+  | "volcengine_ark"
   | "openrouter"
   | "ollama"
   | "custom";
@@ -77,6 +78,29 @@ export function createVolcengineAgentPlanProvider(): ModelProviderConfig {
     modelModalities: Object.fromEntries(
       models.map((model) => [model.id, model.modalities]),
     ),
+    networkProxy: createProviderNetworkProxy(),
+  };
+}
+
+export function createVolcengineArkProvider(): ModelProviderConfig {
+  const models: ModelConfig[] = [
+    { id: "doubao-seedance-2-0-260128", alias: "Doubao Seedance 2.0", enabled: true, modalities: ["video", "vision", "audio"] },
+    { id: "doubao-seedance-2-0-fast-260128", alias: "Doubao Seedance 2.0 Fast", enabled: true, modalities: ["video", "vision", "audio"] },
+  ];
+  return {
+    id: "volcengine-ark",
+    name: "火山方舟在线推理",
+    note: "Seedance 视频生成 API",
+    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    apiFormat: "custom",
+    authType: "bearer",
+    apiKey: "",
+    enabled: true,
+    isDefault: false,
+    modelMapping: { main: "", image: "", video: models[0].id },
+    models,
+    contextWindows: {},
+    modelModalities: Object.fromEntries(models.map((model) => [model.id, model.modalities])),
     networkProxy: createProviderNetworkProxy(),
   };
 }
@@ -166,7 +190,7 @@ export function createCustomProvider(): ModelProviderConfig {
     name: "自定义服务商",
     note: "通用 OpenAI 或 Anthropic 兼容接口",
     baseUrl: "",
-    apiFormat: "custom",
+    apiFormat: "openai",
     authType: "bearer",
     apiKey: "",
     enabled: true,
@@ -198,6 +222,7 @@ export function createModelProviderPreset(
   if (preset === "volcengine_agent_plan") {
     return createVolcengineAgentPlanProvider();
   }
+  if (preset === "volcengine_ark") return createVolcengineArkProvider();
   if (preset === "openrouter") return createOpenRouterProvider();
   if (preset === "ollama") return createOllamaProvider();
   return createCustomProvider();
@@ -220,6 +245,9 @@ export function identifyModelProviderPreset(
     /ark\.cn-beijing\.volces\.com\/api\/plan/i.test(provider.baseUrl)
   ) {
     return "volcengine_agent_plan";
+  }
+  if (/ark\.cn-beijing\.volces\.com\/api\/v3\/?$/i.test(provider.baseUrl)) {
+    return "volcengine_ark";
   }
   if (provider.apiFormat === "openrouter" || provider.id === "openrouter") {
     return "openrouter";

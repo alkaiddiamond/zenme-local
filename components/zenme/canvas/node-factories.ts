@@ -20,8 +20,10 @@ const CODE_NODE_DEFAULT_SIZE = { height: 420, width: 720 };
 const MARKDOWN_NODE_DEFAULT_SIZE = { height: 320, width: 560 };
 export const NANO_BANANA_2_IMAGE_MODEL =
   "google/gemini-3.1-flash-image-preview";
-const IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
+export const IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
 const IMAGE_RESULT_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
+const VIDEO_GENERATION_REQUEST_NODE_DEFAULT_SIZE = IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE;
+const VIDEO_RESULT_NODE_DEFAULT_SIZE = { height: 315, width: 560 };
 const TEXT_NODE_MIN_HEIGHT = 176;
 const TEXT_NODE_MAX_GENERATED_HEIGHT = 560;
 const TEXT_NODE_VERTICAL_PADDING = 56;
@@ -217,7 +219,13 @@ export function createReferencedImageGenerationCanvasNode(input: {
     data: {
       kind: "imageGeneration",
       imageOperation: "generate",
-      imageReferenceNodeIds: [input.sourceNode.id],
+      imageReferenceNodeIds:
+        input.sourceNode.data.kind === "image" &&
+        Boolean(
+          input.sourceNode.data.originalUrl || input.sourceNode.data.previewUrl,
+        )
+          ? [input.sourceNode.id]
+          : [],
       imageOutputAspectRatio:
         input.aspectRatio ?? DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
       title: "图片生成",
@@ -260,6 +268,74 @@ export function createImageGenerationCanvasNode(input: {
       imagePrompt: "",
       imageQuality: input.quality ?? DEFAULT_IMAGE_EDIT_QUALITY,
       imageStatus: "idle",
+    },
+  };
+}
+
+export function createVideoGenerationCanvasNode(input: {
+  id: string;
+  model?: string;
+  position: { x: number; y: number };
+  sourceNode?: CanvasNode;
+}): { edge: Edge | null; node: CanvasNode } {
+  return {
+    edge: input.sourceNode
+      ? createConnectedEdge(input.sourceNode.id, input.id)
+      : null,
+    node: {
+      id: input.id,
+      type: "videoGeneration",
+      position: input.position,
+      style: VIDEO_GENERATION_REQUEST_NODE_DEFAULT_SIZE,
+      data: {
+        kind: "videoGeneration",
+        title: "视频生成",
+        videoPrompt: "",
+        videoPromptMentions: [],
+        videoReferenceMode: "firstLast",
+        videoModel: input.model ?? "",
+        videoRatio: "adaptive",
+        videoResolution: "720p",
+        videoDuration: 5,
+        videoGenerateAudio: true,
+        videoStatus: "idle",
+      },
+    },
+  };
+}
+
+export function createPendingVideoResultChildCanvasNode(input: {
+  duration: number;
+  generateAudio: boolean;
+  id: string;
+  model: string;
+  position: { x: number; y: number };
+  prompt: string;
+  ratio: string;
+  resolution: string;
+  sourceNode: CanvasNode;
+  startedAt: string;
+}): { edge: Edge; node: CanvasNode } {
+  return {
+    edge: createConnectedEdge(input.sourceNode.id, input.id),
+    node: {
+      id: input.id,
+      type: "video",
+      position: input.position,
+      style: VIDEO_RESULT_NODE_DEFAULT_SIZE,
+      data: {
+        kind: "video",
+        title: "视频生成",
+        videoDuration: input.duration,
+        videoGenerateAudio: input.generateAudio,
+        videoGenerationResult: true,
+        videoModel: input.model,
+        videoPrompt: input.prompt,
+        videoRatio: input.ratio,
+        videoResolution: input.resolution,
+        videoStatus: "generating",
+        videoTaskStartedAt: input.startedAt,
+      },
     },
   };
 }
@@ -492,7 +568,8 @@ export function createConnectedPlaceholderCanvasNode(input: {
     | "managedText"
     | "task"
     | "textGeneration"
-    | "imageGeneration";
+    | "imageGeneration"
+    | "videoGeneration";
   model?: string;
   position?: { x: number; y: number };
   quality?: string;
@@ -521,6 +598,19 @@ export function createConnectedPlaceholderCanvasNode(input: {
 
   if (input.kind === "imageGeneration") {
     return createReferencedImageGenerationCanvasNode(input);
+  }
+
+  if (input.kind === "videoGeneration") {
+    const result = createVideoGenerationCanvasNode({
+      id: input.id,
+      model: input.model,
+      position: input.position ?? {
+        x: input.sourceNode.position.x + sourceSize.width + 80,
+        y: input.sourceNode.position.y,
+      },
+      sourceNode: input.sourceNode,
+    });
+    return { edge: result.edge as Edge, node: result.node };
   }
 
   if (input.kind === "task") {

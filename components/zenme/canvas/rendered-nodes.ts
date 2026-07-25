@@ -10,6 +10,7 @@ import {
   READER_COLLAPSED_SIZE,
   READER_DEFAULT_SIZE,
 } from "./geometry";
+import { IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE } from "./node-factories";
 import type { CanvasNode } from "./types";
 import {
   deriveTaskRelationships,
@@ -83,6 +84,8 @@ type RenderedCanvasNodeInput = {
     nodeId: string,
     input?: Parameters<NonNullable<CanvasNodeData["onSubmitImageNode"]>>[1],
   ) => Promise<void> | void;
+  onSubmitVideoNode?: NonNullable<CanvasNodeData["onSubmitVideoNode"]>;
+  onUpdateVideoNode?: NonNullable<CanvasNodeData["onUpdateVideoNode"]>;
   onUpdateImageNode: (
     nodeId: string,
     updates: Partial<
@@ -121,6 +124,8 @@ type RenderedNodeCacheEntry = {
   onCreateTextChildNode?: RenderedCanvasNodeInput["onCreateTextChildNode"];
   onSubmitTextGenerationNode?: RenderedCanvasNodeInput["onSubmitTextGenerationNode"];
   onSubmitImageNode?: RenderedCanvasNodeInput["onSubmitImageNode"];
+  onSubmitVideoNode?: RenderedCanvasNodeInput["onSubmitVideoNode"];
+  onUpdateVideoNode?: RenderedCanvasNodeInput["onUpdateVideoNode"];
   onUpdateTextGenerationNode?: RenderedCanvasNodeInput["onUpdateTextGenerationNode"];
   onUpdateImageNode?: RenderedCanvasNodeInput["onUpdateImageNode"];
   onUpdateTextNode?: RenderedCanvasNodeInput["onUpdateTextNode"];
@@ -154,8 +159,10 @@ export function getRenderedCanvasNodes({
   onUpdateMusicNode,
   onUpdateMusicPlayback,
   onSubmitImageNode,
+  onSubmitVideoNode,
   onSubmitTextGenerationNode,
   onUpdateImageNode,
+  onUpdateVideoNode,
   onUpdateTextGenerationNode,
   onUpdateTextNode,
   onUpdateTaskNode,
@@ -223,7 +230,8 @@ export function getRenderedCanvasNodes({
     const target = nodeById.get(edge.target);
     if (
       target?.data.aiStatus === "generating" ||
-      (target?.data.imageGenerationResult && target.data.imageStatus === "editing")
+      (target?.data.imageGenerationResult && target.data.imageStatus === "editing") ||
+      (target?.data.videoGenerationResult && target.data.videoStatus === "generating")
     ) {
       runningGenerationSourceIds.add(edge.source);
     }
@@ -265,6 +273,7 @@ export function getRenderedCanvasNodes({
         hasRunningGenerationChild: runningGenerationSourceIds.has(node.id),
         ...(
           nodeWithoutGroupDragLimit.data.kind === "imageGeneration" ||
+          nodeWithoutGroupDragLimit.data.kind === "videoGeneration" ||
           (nodeWithoutGroupDragLimit.data.kind === "image" &&
             nodeWithoutGroupDragLimit.data.imageGenerated)
             ? (() => {
@@ -501,6 +510,52 @@ export function getRenderedCanvasNodes({
       });
 
       return renderedImageGenerationNode;
+    }
+
+    if (
+      nodeWithConnectionState.data.kind === "videoGeneration" ||
+      nodeWithConnectionState.data.kind === "video"
+    ) {
+      const currentVideoStyle = nodeWithConnectionState.style as
+        | { height?: number; width?: number }
+        | undefined;
+      const usesLegacyPlaceholderSize =
+        nodeWithConnectionState.data.kind === "videoGeneration" &&
+        currentVideoStyle?.height === 315 &&
+        currentVideoStyle.width === 560;
+      const normalizedVideoNode = usesLegacyPlaceholderSize
+        ? {
+            ...nodeWithConnectionState,
+            style: {
+              ...nodeWithConnectionState.style,
+              ...IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE,
+            },
+          }
+        : nodeWithConnectionState;
+      const cached = renderedNodeCache.get(normalizedVideoNode);
+      if (
+        cached &&
+        cached.onSubmitVideoNode === onSubmitVideoNode &&
+        cached.onUpdateVideoNode === onUpdateVideoNode &&
+        cached.node.data.hasIncomingEdge === normalizedVideoNode.data.hasIncomingEdge &&
+        cached.node.data.hasOutgoingEdge === normalizedVideoNode.data.hasOutgoingEdge &&
+        cached.node.data.hasRunningGenerationChild === normalizedVideoNode.data.hasRunningGenerationChild
+      ) return cached.node;
+
+      const renderedVideoNode = {
+        ...normalizedVideoNode,
+        data: {
+          ...normalizedVideoNode.data,
+          onSubmitVideoNode,
+          onUpdateVideoNode,
+        },
+      };
+      renderedNodeCache.set(normalizedVideoNode, {
+        node: renderedVideoNode,
+        onSubmitVideoNode,
+        onUpdateVideoNode,
+      });
+      return renderedVideoNode;
     }
 
     if (

@@ -46,6 +46,14 @@ describe("direct image editing workflow", () => {
     expect(imageNodeSource).not.toContain(
       'isGeneratedImage ? "bg-zinc-950"',
     );
+    expect(imageNodeSource).not.toContain("min-w-[220px]");
+  });
+
+  it("sends upstream text context with a connected image-generation request", () => {
+    expect(canvasClientSource).toContain(
+      "context: collectTextGenerationContext({",
+    );
+    expect(canvasClientSource).toContain("prompt: requestPrompt,");
   });
 
   it("keeps generated-image option pickers interactive outside the canvas node", () => {
@@ -120,6 +128,29 @@ describe("direct image editing workflow", () => {
     expect(imageGenerationNodeSource).toContain("正在生成图片...");
     expect(imageGenerationNodeSource).toContain(
       "生成完成后，图片会显示在当前节点",
+    );
+  });
+
+  it("does not clear an already-selected reference when chosen from the picker", () => {
+    expect(imageGenerationNodeSource).toContain("if (!selected) {");
+    expect(imageGenerationNodeSource).toContain(
+      "toggleReference(candidate.nodeId);",
+    );
+    expect(imageGenerationNodeSource).toContain("setIsOpen(false);");
+    expect(imageGenerationNodeSource).toContain(
+      "onOpenChangeRef.current?.(true)",
+    );
+    expect(imageGenerationNodeSource).not.toContain(
+      "onOpenChange?.(isOpen)",
+    );
+  });
+
+  it("does not render an inline-style reference label before @ is used", () => {
+    expect(imageGenerationNodeSource).not.toContain(
+      "truncateReferenceTitle(reference.title)",
+    );
+    expect(imageGenerationNodeSource).not.toContain(
+      'className="mt-1.5 flex flex-wrap gap-1"',
     );
   });
 });

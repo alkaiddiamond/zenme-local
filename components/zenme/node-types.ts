@@ -80,6 +80,8 @@ export type CanvasNodeData = {
     | "task"
     | "textGeneration"
     | "imageGeneration"
+    | "videoGeneration"
+    | "video"
     | "agent"
     | "book"
     | "note"
@@ -197,6 +199,22 @@ export type CanvasNodeData = {
     url: string;
   }>;
   imageReferenceNodeIds?: string[];
+  videoPrompt?: string;
+  videoPromptMentions?: Array<{
+    nodeId: string;
+    offset: number;
+  }>;
+  videoModel?: string;
+  videoRatio?: string;
+  videoResolution?: string;
+  videoDuration?: number;
+  videoGenerateAudio?: boolean;
+  videoReferenceMode?: "firstLast" | "reference";
+  videoStatus?: "idle" | "generating" | "done" | "failed";
+  videoError?: string;
+  videoTaskStartedAt?: string;
+  videoTaskDurationMs?: number;
+  videoGenerationResult?: boolean;
   hasIncomingEdge?: boolean;
   hasOutgoingEdge?: boolean;
   isMultiSelection?: boolean;
@@ -318,6 +336,42 @@ export type CanvasNodeData = {
       model?: string;
       prompt?: string;
       quality?: string;
+    },
+  ) => Promise<void> | void;
+  onUpdateVideoNode?: (
+    nodeId: string,
+    updates: Partial<
+      Pick<
+        CanvasNodeData,
+        | "fileId"
+        | "imageReferenceNodeIds"
+        | "originalUrl"
+        | "title"
+        | "videoDuration"
+        | "videoError"
+        | "videoGenerateAudio"
+        | "videoModel"
+        | "videoPrompt"
+        | "videoPromptMentions"
+        | "videoReferenceMode"
+        | "videoRatio"
+        | "videoResolution"
+        | "videoStatus"
+        | "videoTaskDurationMs"
+        | "videoTaskStartedAt"
+      >
+    >,
+  ) => void;
+  onSubmitVideoNode?: (
+    nodeId: string,
+    input?: {
+      duration?: number;
+      generateAudio?: boolean;
+      model?: string;
+      prompt?: string;
+      ratio?: string;
+      referenceMode?: "firstLast" | "reference";
+      resolution?: string;
     },
   ) => Promise<void> | void;
 };

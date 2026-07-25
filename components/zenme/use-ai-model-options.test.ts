@@ -28,6 +28,18 @@ describe("AI model option preferences", () => {
     );
   });
 
+  it("uses a readable provider and model tooltip", () => {
+    expect(
+      createModelOption(
+        "provider-model:volcengine-agent-plan:ark-code-latest",
+        "Ark Code Latest",
+        "火山方舟 Agent Plan · ark-code-latest",
+      ),
+    ).toMatchObject({
+      tooltip: "火山方舟 Agent Plan · ark-code-latest",
+    });
+  });
+
   it("does not initialize selectors from static fallback models", () => {
     const source = readFileSync(
       new URL("./use-ai-model-options.ts", import.meta.url),

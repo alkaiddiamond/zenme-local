@@ -16,4 +16,9 @@ describe("Zenme control button styles", () => {
     expect(visualComponentsSource).toContain('"未配置模型"');
     expect(visualComponentsSource).toContain("disabled={!hasModels}");
   });
+
+  it("shows readable model metadata instead of the internal scoped id", () => {
+    expect(visualComponentsSource).toContain("title={option.tooltip}");
+    expect(visualComponentsSource).not.toContain("title={option.id}");
+  });
 });

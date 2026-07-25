@@ -16,7 +16,7 @@ export type ProviderModelSelection = {
 
 export function getProviderModelSelections(
   providers: ModelProviderConfig[],
-  modality: "image" | "text",
+  modality: "image" | "text" | "video",
 ) {
   const enabledProviders = providers.filter((provider) => provider.enabled);
   const modelIdCounts = new Map<string, number>();
@@ -53,7 +53,7 @@ export function getProviderModelSelections(
 
 export function getAllowedProviderModelValues(
   providers: ModelProviderConfig[],
-  modality: "image" | "text",
+  modality: "image" | "text" | "video",
 ) {
   const selections = getProviderModelSelections(providers, modality);
   return Array.from(
@@ -67,7 +67,7 @@ export function getAllowedProviderModelValues(
 export function resolveProviderModelSelection(
   value: string,
   providers: ModelProviderConfig[],
-  modality: "image" | "text",
+  modality: "image" | "text" | "video",
 ): ProviderModelSelection | null {
   const reference = parseProviderModelReference(value);
   const selections = getProviderModelSelections(providers, modality);

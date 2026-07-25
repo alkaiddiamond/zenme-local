@@ -13,20 +13,39 @@ describe("model provider settings", () => {
     expect(source).not.toContain("添加 Agent Plan");
   });
 
-  it.each([
-    "智谱 GLM",
-    "火山方舟 Agent Plan",
-    "OpenRouter",
-    "Ollama",
-    "自定义",
-  ])("offers the %s provider preset", (label) => {
+  it.each(["ChatGPT", "Ollama", "自定义"])("offers the %s provider type", (label) => {
     expect(source).toContain(`label: "${label}"`);
   });
 
-  it("shows generic protocol controls only for custom providers", () => {
-    expect(source).toContain("isCustomProvider ? (");
-    expect(source).toContain("GENERIC_API_FORMAT_OPTIONS");
+  it("describes custom providers by their compatible protocols", () => {
+    expect(source).toContain('description: "兼容 OpenAI 或 Anthropic 协议接口"');
+    expect(source).not.toContain("智谱、火山、OpenRouter 或其他兼容接口");
+  });
+
+  it("classifies hosted compatible services under the custom provider type", () => {
+    const providerTypes = source.slice(
+      source.indexOf("const MODEL_PROVIDER_PRESET_OPTIONS"),
+      source.indexOf("const AUTH_TYPE_OPTIONS"),
+    );
+
+    expect(providerTypes).not.toContain('value: "zhipu"');
+    expect(providerTypes).not.toContain('value: "volcengine_agent_plan"');
+    expect(providerTypes).not.toContain('value: "openrouter"');
+    expect(source).toContain(
+      'const isCustomProvider = providerPreset === "custom"',
+    );
+    expect(source).toContain("CUSTOM_PROVIDER_API_FORMAT_OPTIONS");
+    expect(source).toContain('label: "Zhipu GLM"');
+    expect(source).toContain('label: "火山方舟 Agent Plan"');
+    expect(source).toContain('label: "OpenRouter Images / Chat"');
     expect(source).toContain('draft.authType === "none"');
+  });
+
+  it("offers compatible-service presets inside the custom provider editor", () => {
+    expect(source).toContain("CUSTOM_PROVIDER_PRESET_OPTIONS.map");
+    expect(source).toContain("applyProviderPreset(option.value)");
+    expect(source).toContain('{isNewProvider ? "添加服务商" : "编辑服务商"}');
+    expect(source).toContain('["openai", "anthropic"].includes(option.value)');
   });
 
   it("configures network proxy independently for each provider", () => {

@@ -364,12 +364,18 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
 export function ImageReferencePicker({
   candidates,
   onChange,
+  onOpenChange,
+  onSelect,
   openRequest,
   references,
   required = false,
 }: {
   candidates: NonNullable<CanvasNodeData["imageReferenceCandidates"]>;
   onChange: (nodeIds: string[]) => void;
+  onOpenChange?: (open: boolean) => void;
+  onSelect?: (
+    reference: NonNullable<CanvasNodeData["imageReferenceCandidates"]>[number],
+  ) => void;
   openRequest: number;
   references: NonNullable<CanvasNodeData["imageReferences"]>;
   required?: boolean;
@@ -377,6 +383,8 @@ export function ImageReferencePicker({
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const previousOpenRequest = useRef(openRequest);
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
   const selectedIds = references.map((reference) => reference.nodeId);
   const filteredCandidates = candidates.filter((candidate) =>
     candidate.title.toLowerCase().includes(query.trim().toLowerCase()),
@@ -386,6 +394,7 @@ export function ImageReferencePicker({
     if (openRequest !== previousOpenRequest.current) {
       previousOpenRequest.current = openRequest;
       setIsOpen(true);
+      onOpenChangeRef.current?.(true);
     }
   }, [openRequest]);
 
@@ -424,7 +433,11 @@ export function ImageReferencePicker({
         <button
           aria-label="参考"
           className="nodrag nowheel flex size-11 items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900"
-          onClick={() => setIsOpen((current) => !current)}
+          onClick={() => setIsOpen((current) => {
+            const nextOpen = !current;
+            onOpenChangeRef.current?.(nextOpen);
+            return nextOpen;
+          })}
           title="参考"
           type="button"
         >
@@ -434,19 +447,6 @@ export function ImageReferencePicker({
           {references.length > 0 ? `${references.length} 张参考图片` : "输入 @ 或点击 + 添加参考"}
         </span>
       </div>
-      {references.length > 0 ? (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {references.map((reference) => (
-            <span className="flex max-w-40 items-center gap-1 rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-600" key={reference.nodeId}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img alt="" className="size-3 rounded-sm object-cover" src={reference.url} />
-              <span className="truncate" title={reference.title}>
-                {truncateReferenceTitle(reference.title)}
-              </span>
-            </span>
-          ))}
-        </div>
-      ) : null}
       {isOpen ? (
         <div className="zenme-shadow-dropdown nodrag nowheel absolute left-0 top-full z-50 mt-2 w-80 rounded-lg border border-zinc-200 bg-white p-2">
           <div className="relative mb-2">
@@ -468,8 +468,12 @@ export function ImageReferencePicker({
                   className={`flex h-10 w-full items-center gap-2 rounded-md px-2 text-left text-xs transition ${selected ? "bg-zinc-100 text-zinc-950" : "text-zinc-600 hover:bg-zinc-50"}`}
                   key={candidate.nodeId}
                   onClick={() => {
-                    toggleReference(candidate.nodeId);
+                    onSelect?.(candidate);
+                    if (!selected) {
+                      toggleReference(candidate.nodeId);
+                    }
                     setIsOpen(false);
+                    onOpenChangeRef.current?.(false);
                   }}
                   type="button"
                 >
@@ -488,13 +492,6 @@ export function ImageReferencePicker({
       ) : null}
     </div>
   );
-}
-
-function truncateReferenceTitle(title: string) {
-  const characters = Array.from(title);
-  return characters.length > 10
-    ? `${characters.slice(0, 10).join("")}...`
-    : title;
 }
 
 export function ImageEditSizePicker({

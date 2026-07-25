@@ -15,6 +15,12 @@ describe("model provider presets", () => {
       "bearer",
       "https://ark.cn-beijing.volces.com/api/plan",
     ],
+    [
+      "volcengine_ark",
+      "custom",
+      "bearer",
+      "https://ark.cn-beijing.volces.com/api/v3",
+    ],
     ["openrouter", "openrouter", "bearer", "https://openrouter.ai/api/v1"],
     ["ollama", "ollama", "none", "http://127.0.0.1:11434/v1"],
   ] satisfies Array<
@@ -39,7 +45,7 @@ describe("model provider presets", () => {
     const second = createModelProviderPreset("custom");
 
     expect(first).toMatchObject({
-      apiFormat: "custom",
+      apiFormat: "openai",
       authType: "bearer",
       baseUrl: "",
       name: "自定义服务商",

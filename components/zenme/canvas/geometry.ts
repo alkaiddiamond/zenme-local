@@ -56,6 +56,8 @@ export function getNodeSizeFallback(node: CanvasNode) {
       ? { height: 260, width: 520 }
       : { height: 260, width: 520 };
   }
+  if (node.data.kind === "videoGeneration") return { height: 315, width: 560 };
+  if (node.data.kind === "video") return { height: 315, width: 560 };
   if (node.data.kind === "managedText") return { height: 380, width: 560 };
   if (node.data.kind === "task") return { height: 460, width: 560 };
   return { height: 110, width: 288 };

@@ -237,7 +237,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
 
   if (imageUrl) {
     return (
-      <div className={`group relative h-full min-h-[190px] w-full min-w-[220px] ${isRenaming ? "zenme-node-renaming" : ""}`}>
+      <div className={`group relative h-full min-h-[190px] w-full ${isRenaming ? "zenme-node-renaming" : ""}`}>
         <ImageTaskTiming
           durationMs={nodeData.imageTaskDurationMs}
           running={isEditing}

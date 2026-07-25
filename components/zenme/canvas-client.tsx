@@ -55,6 +55,7 @@ import {
   getCanvasSnapshotFromApi,
   getProjectFromApi,
   generateOrEditImage,
+  generateVideo,
   saveProjectThumbnailToApi,
   uploadProjectFileToApi,
 } from "@/lib/zenme-api";
@@ -143,6 +144,7 @@ import {
   collectTextGenerationContext,
   getCanvasNodeContextText,
 } from "@/components/zenme/canvas/text-generation-context";
+import { buildContextualImageGenerationPrompt } from "@/components/zenme/canvas/image-generation-context";
 import {
   createConnectedEdge,
   createConnectedPlaceholderCanvasNode,
@@ -150,11 +152,13 @@ import {
   createManagedTextCanvasNode,
   createTaskCanvasNode,
   createPendingImageResultChildCanvasNode,
+  createPendingVideoResultChildCanvasNode,
   createDroppedReadingNoteCanvasNode,
   createAiResponseChildCanvasNode,
   createReadingNoteCanvasNode,
   createTextChildCanvasNode,
   createTextCanvasNode,
+  createVideoGenerationCanvasNode,
 } from "@/components/zenme/canvas/node-factories";
 import {
   getImageRequestReferenceUrls,
@@ -285,6 +289,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const [agentModel, setAgentModel] = useState("");
   const configuredModelOptions = useAiModelOptions();
   const configuredImageModelOptions = useAiModelOptions("image");
+  const configuredVideoModelOptions = useAiModelOptions("video");
   const configuredModelIds = useMemo(
     () => configuredModelOptions.map((option) => option.id),
     [configuredModelOptions],
@@ -2129,6 +2134,20 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     [appendCanvasItems, defaultTextModel, edges, reactFlow, setNodes],
   );
 
+  const updateVideoNode = useCallback((
+    nodeId: string,
+    updates: Parameters<NonNullable<CanvasNodeData["onUpdateVideoNode"]>>[1],
+  ) => {
+    const beforeNode = nodesRef.current.find((node) => node.id === nodeId);
+    if (!beforeNode) return;
+    const nextNodes = nodesRef.current.map((node) =>
+      node.id === nodeId ? { ...node, data: { ...node.data, ...updates } } : node,
+    );
+    skipNextHistoryEntryCount.current += 1;
+    setNodes(nextNodes);
+    pushNodeUpdateHistory(new Map([[nodeId, beforeNode]]), nextNodes);
+  }, [pushNodeUpdateHistory, setNodes]);
+
   useEffect(() => {
     if (
       !canvasHydrated ||
@@ -2212,6 +2231,17 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         return;
       }
 
+      const requestPrompt = operation === "generate"
+        ? buildContextualImageGenerationPrompt({
+            context: collectTextGenerationContext({
+              edges: currentEdges,
+              nodeId,
+              nodes: currentNodes,
+            }),
+            prompt,
+          })
+        : prompt;
+
       const model =
         input?.model ??
         sourceNode.data.imageModel ??
@@ -2256,7 +2286,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           imageDataUrls,
           model,
           operation,
-          prompt,
+          prompt: requestPrompt,
           quality,
         });
         const outputDataUrl = `data:${edited.mediaType};base64,${edited.b64Json}`;
@@ -2357,6 +2387,113 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     },
     [appendCanvasItems, configuredImageModelOptions, projectId, pushNodeUpdateHistory, reactFlow, setNodes],
   );
+
+  const submitVideoGenerationNode = useCallback(async (
+    nodeId: string,
+    input?: Parameters<NonNullable<CanvasNodeData["onSubmitVideoNode"]>>[1],
+  ) => {
+    const currentNodes = reactFlow?.getNodes() ?? nodesRef.current;
+    const currentEdges = reactFlow?.getEdges() ?? edgesRef.current;
+    const sourceNode = currentNodes.find(
+      (node) => node.id === nodeId && node.data.kind === "videoGeneration",
+    );
+    const prompt = input?.prompt?.trim() ?? sourceNode?.data.videoPrompt?.trim() ?? "";
+    const model = input?.model ?? sourceNode?.data.videoModel ?? configuredVideoModelOptions[0]?.id ?? "";
+    if (!sourceNode || !prompt || !model) return;
+
+    const duration = input?.duration ?? sourceNode.data.videoDuration ?? 5;
+    const generateAudio = input?.generateAudio ?? sourceNode.data.videoGenerateAudio !== false;
+    const ratio = input?.ratio ?? sourceNode.data.videoRatio ?? "adaptive";
+    const resolution = input?.resolution ?? sourceNode.data.videoResolution ?? "720p";
+    const referenceMode = input?.referenceMode ?? sourceNode.data.videoReferenceMode ?? "firstLast";
+    const referenceUrls = getOrderedImageReferenceUrls({
+      edges: currentEdges,
+      nodes: currentNodes,
+      selectedNodeIds: sourceNode.data.imageReferenceNodeIds,
+      targetNodeId: nodeId,
+    }).slice(0, referenceMode === "firstLast" ? 2 : 5);
+    const position = getNextConnectedChildNodePosition({
+      childFallbackSize: { height: 320, width: 560 },
+      edges: currentEdges,
+      nodes: currentNodes,
+      sourceFallbackSize: { height: 360, width: 560 },
+      sourceNode,
+      yOffsetWithoutChild: 0,
+    });
+    const taskStartedAt = Date.now();
+    const { edge: resultEdge, node: resultNode } = createPendingVideoResultChildCanvasNode({
+      duration,
+      generateAudio,
+      id: crypto.randomUUID(),
+      model,
+      position,
+      prompt,
+      ratio,
+      resolution,
+      sourceNode,
+      startedAt: new Date(taskStartedAt).toISOString(),
+    });
+    appendCanvasItems({
+      currentEdges,
+      currentNodes,
+      edges: [resultEdge],
+      nodes: [resultNode],
+    });
+
+    try {
+      const imageDataUrls = await Promise.all(referenceUrls.map(fetchImageAsDataUrl));
+      const generated = await generateVideo({
+        duration,
+        generateAudio,
+        imageDataUrls,
+        imageRoles: referenceMode === "firstLast"
+          ? imageDataUrls.map((_, index) => index === 0 ? "first_frame" as const : "last_frame" as const)
+          : imageDataUrls.map(() => "reference_image" as const),
+        model,
+        prompt,
+        ratio,
+        resolution,
+      });
+      const file = new File([generated.blob], `zenme-video-${Date.now()}.mp4`, {
+        type: generated.blob.type || "video/mp4",
+      });
+      const upload = await uploadProjectFileToApi({ projectId, file });
+      const nextNodes = nodesRef.current.map((node) =>
+        node.id === resultNode.id
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                fileId: upload.fileId,
+                originalUrl: upload.originalUrl,
+                videoError: undefined,
+                videoStatus: "done" as const,
+                videoTaskDurationMs: Date.now() - taskStartedAt,
+              },
+            }
+          : node,
+      );
+      nodesRef.current = nextNodes;
+      setNodes(nextNodes);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "视频生成失败，请稍后重试";
+      const nextNodes = nodesRef.current.map((node) =>
+        node.id === resultNode.id
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                videoError: message,
+                videoStatus: "failed" as const,
+                videoTaskDurationMs: Date.now() - taskStartedAt,
+              },
+            }
+          : node,
+      );
+      nodesRef.current = nextNodes;
+      setNodes(nextNodes);
+    }
+  }, [appendCanvasItems, configuredVideoModelOptions, projectId, reactFlow, setNodes]);
 
   function createTextNodeAt(position: { x: number; y: number }) {
     const nextNode = createTextCanvasNode({
@@ -2467,6 +2604,16 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       currentNodes: nodes,
       nodes: [nextNode],
     });
+    setCanvasAddMenu(null);
+  }
+
+  function createVideoGenerationNodeAt(position: { x: number; y: number }) {
+    const { node } = createVideoGenerationCanvasNode({
+      id: crypto.randomUUID(),
+      model: configuredVideoModelOptions[0]?.id,
+      position,
+    });
+    appendCanvasItems({ currentEdges: edges, currentNodes: nodes, nodes: [node] });
     setCanvasAddMenu(null);
   }
 
@@ -2717,13 +2864,24 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   );
 
   const handleCanvasNodeDragStop = useCallback(
-    (draggedNode: CanvasNode) => {
+    (draggedNode?: CanvasNode) => {
       isCanvasInteractionActive.current = false;
       setIsMiniMapSuspended(false);
       setIsNodeDragging(false);
       setAltDragPreviewNodes([]);
       setAltDragMovingNodeIds(new Set());
       tickCanvasInteractionSample(dragInteractionSample.current);
+      if (!draggedNode) {
+        altDragSourceNodeId.current = null;
+        dragStartNodeSnapshots.current = null;
+        groupDragPosition.current = null;
+        stopCanvasInteractionSample(dragInteractionSample.current, {
+          edges: edges.length,
+          nodes: nodes.length,
+        });
+        dragInteractionSample.current = null;
+        return;
+      }
       const currentNodes = (reactFlow?.getNodes() ?? nodes).filter(
         (node) => !isAltDragPreviewNode(node),
       );
@@ -3008,7 +3166,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       | "managedText"
       | "task"
       | "textGeneration"
-      | "imageGeneration",
+      | "imageGeneration"
+      | "videoGeneration",
   ) {
     if (!actionNode) {
       return;
@@ -3031,6 +3190,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         model:
           kind === "imageGeneration"
             ? imagePreferences.modelId ?? configuredImageModelOptions[0]?.id
+            : kind === "videoGeneration"
+              ? configuredVideoModelOptions[0]?.id
             : defaultTextModel,
         position,
         quality: kind === "imageGeneration" ? imagePreferences.quality : undefined,
@@ -3382,8 +3543,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         onResolveImageDimensions: resolveImageNodeDimensions,
         onCreateTextChildNode: createTextChildNode,
         onSubmitImageNode: submitImageGenerationNode,
+        onSubmitVideoNode: submitVideoGenerationNode,
         onSubmitTextGenerationNode: submitTextGenerationNode,
         onUpdateImageNode: updateImageGenerationNode,
+        onUpdateVideoNode: updateVideoNode,
         onUpdateTextGenerationNode: updateTextGenerationNode,
         onUpdateTextNode: updateTextNode,
         onUpdateTaskNode: updateTaskNode,
@@ -3414,9 +3577,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       projectId,
       resolveImageNodeDimensions,
       submitImageGenerationNode,
+      submitVideoGenerationNode,
       submitTextGenerationNode,
       toggleReaderCollapse,
       updateImageGenerationNode,
+      updateVideoNode,
       updateTextGenerationNode,
       updateTextNode,
       updateTaskNode,
@@ -3679,6 +3844,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             menu={canvasAddMenu}
             onClose={() => setCanvasAddMenu(null)}
             onCreateImageGenerationNode={createImageGenerationNodeAt}
+            onCreateVideoGenerationNode={createVideoGenerationNodeAt}
             onCreateManagedTextNode={createManagedTextNodeAt}
             onCreateTaskNode={createTaskNodeAt}
             onCreateTextNode={createTextNodeAt}

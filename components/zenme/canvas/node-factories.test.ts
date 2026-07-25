@@ -358,6 +358,27 @@ describe("canvas node factories", () => {
     expect(result.edge).toEqual(expectedEdge("image-source", "image-generation-2"));
   });
 
+  it("connects an AI reply as text context without treating it as an image reference", () => {
+    const sourceNode = {
+      ...textNode({ id: "agent-source" }),
+      type: "agent",
+      data: {
+        aiResponse: "一只猫坐在向日葵花田里。",
+        kind: "agent" as const,
+        title: "AI 回复",
+      },
+    } as CanvasNode;
+    const result = createReferencedImageGenerationCanvasNode({
+      id: "image-generation-from-agent",
+      sourceNode,
+    });
+
+    expect(result.node.data.imageReferenceNodeIds).toEqual([]);
+    expect(result.edge).toEqual(
+      expectedEdge("agent-source", "image-generation-from-agent"),
+    );
+  });
+
   it("creates reader and placeholder nodes with connected edges", () => {
     const reader = createReaderCanvasNode({
       id: "reader-1",

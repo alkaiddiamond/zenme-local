@@ -105,9 +105,23 @@ const API_FORMAT_OPTIONS: Array<{
   { label: "自定义", value: "custom" },
 ];
 
-const GENERIC_API_FORMAT_OPTIONS = API_FORMAT_OPTIONS.filter((option) =>
-  ["openai", "anthropic", "custom"].includes(option.value),
+const CUSTOM_PROVIDER_API_FORMAT_OPTIONS = API_FORMAT_OPTIONS.filter((option) =>
+  ["openai", "anthropic"].includes(option.value),
 );
+
+const CUSTOM_PROVIDER_PRESET_OPTIONS: Array<{
+  label: string;
+  value: Extract<
+    ModelProviderPresetId,
+    "zhipu" | "volcengine_agent_plan" | "volcengine_ark" | "openrouter" | "custom"
+  >;
+}> = [
+  { label: "智谱 GLM", value: "zhipu" },
+  { label: "火山方舟 Agent Plan", value: "volcengine_agent_plan" },
+  { label: "火山方舟在线推理", value: "volcengine_ark" },
+  { label: "OpenRouter", value: "openrouter" },
+  { label: "自定义", value: "custom" },
+];
 
 const MODEL_PROVIDER_PRESET_OPTIONS: Array<{
   description: string;
@@ -120,27 +134,12 @@ const MODEL_PROVIDER_PRESET_OPTIONS: Array<{
     value: "chatgpt",
   },
   {
-    description: "智谱官方 GLM 模型接口",
-    label: "智谱 GLM",
-    value: "zhipu",
-  },
-  {
-    description: "Responses API 与 Seedream",
-    label: "火山方舟 Agent Plan",
-    value: "volcengine_agent_plan",
-  },
-  {
-    description: "多模型聚合与图片模型",
-    label: "OpenRouter",
-    value: "openrouter",
-  },
-  {
     description: "连接本机运行的开源模型",
     label: "Ollama",
     value: "ollama",
   },
   {
-    description: "OpenAI 或 Anthropic 兼容接口",
+    description: "兼容 OpenAI 或 Anthropic 协议接口",
     label: "自定义",
     value: "custom",
   },
@@ -174,6 +173,7 @@ const MODALITY_OPTIONS: Array<{
   { description: "可生成或编辑图片", label: "图片", value: "image" },
   { description: "向量检索", label: "向量", value: "embedding" },
   { description: "语音输入输出", label: "音频", value: "audio" },
+  { description: "可生成视频", label: "视频", value: "video" },
   { description: "排序模型", label: "排序", value: "rerank" },
   { description: "支持工具调用", label: "工具", value: "tool" },
 ];
@@ -192,6 +192,7 @@ export function SettingsClient() {
   const [autoSaveIntervalMs, setAutoSaveIntervalMs] = useState(5_000);
   const [modelProviders, setModelProviders] = useState<ModelProviderConfig[]>([]);
   const [editingProvider, setEditingProvider] = useState<ModelProviderConfig | null>(null);
+  const [isCreatingProvider, setIsCreatingProvider] = useState(false);
   const [editingProxyProvider, setEditingProxyProvider] =
     useState<ModelProviderConfig | null>(null);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
@@ -466,12 +467,14 @@ export function SettingsClient() {
                         (provider) =>
                           identifyModelProviderPreset(provider) === preset,
                       );
-                setEditingProvider(
-                  existingProvider ?? createModelProviderPreset(preset),
-                );
+                setIsCreatingProvider(!existingProvider);
+                setEditingProvider(existingProvider ?? createModelProviderPreset(preset));
               }}
               onDeleteProvider={deleteProvider}
-              onEditProvider={setEditingProvider}
+              onEditProvider={(provider) => {
+                setIsCreatingProvider(false);
+                setEditingProvider(provider);
+              }}
               onEditProxyProvider={setEditingProxyProvider}
               chatGptAction={chatGptAction}
               chatGptMessage={chatGptMessage}
@@ -511,7 +514,11 @@ export function SettingsClient() {
 
       {editingProvider ? (
         <ProviderEditorModal
-          onClose={() => setEditingProvider(null)}
+          isCreating={isCreatingProvider}
+          onClose={() => {
+            setEditingProvider(null);
+            setIsCreatingProvider(false);
+          }}
           onSave={upsertProvider}
           provider={editingProvider}
         />
@@ -1051,15 +1058,18 @@ function ChatGptProviderCard({
 }
 
 function ProviderEditorModal({
+  isCreating,
   onClose,
   onSave,
   provider,
 }: {
+  isCreating: boolean;
   onClose: () => void;
   onSave: (provider: ModelProviderConfig) => Promise<ModelProviderConfig>;
   provider: ModelProviderConfig;
 }) {
   const [draft, setDraft] = useState<ModelProviderConfig>(provider);
+  const [isNewProvider, setIsNewProvider] = useState(isCreating);
   const [showApiKey, setShowApiKey] = useState(false);
   const [providerSaveState, setProviderSaveState] = useState<
     "idle" | "saving" | "saved" | "failed"
@@ -1082,11 +1092,25 @@ function ProviderEditorModal({
         prepareProviderForSave(draft),
       );
       setDraft(savedProvider);
+      setIsNewProvider(false);
       setProviderSaveState("saved");
       window.setTimeout(() => setProviderSaveState("idle"), 1400);
     } catch {
       setProviderSaveState("failed");
     }
+  }
+
+  function applyProviderPreset(preset: ModelProviderPresetId) {
+    const nextPreset = createModelProviderPreset(preset);
+    setDraft((current) => ({
+      ...nextPreset,
+      apiKey: current.apiKey,
+      id: current.id,
+      networkProxy: current.networkProxy,
+    }));
+    setFetchedModelIds([]);
+    setModelFetchMessage("");
+    setModelFetchState("idle");
   }
 
   function updateContextWindow(modelId: string, value: string) {
@@ -1165,6 +1189,10 @@ function ProviderEditorModal({
           current.modelMapping.image === previousId
             ? id
             : current.modelMapping.image,
+        video:
+          current.modelMapping.video === previousId
+            ? id
+            : current.modelMapping.video,
       },
     }));
   }
@@ -1198,6 +1226,10 @@ function ProviderEditorModal({
           current.modelMapping.image === modelId
             ? ""
             : current.modelMapping.image,
+        video:
+          current.modelMapping.video === modelId
+            ? ""
+            : current.modelMapping.video,
       },
     }));
   }
@@ -1245,7 +1277,7 @@ function ProviderEditorModal({
       <div className="zenme-shadow-overlay flex max-h-[calc(100vh-160px)] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white">
         <header className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
           <h2 className="text-lg font-medium text-[var(--color-text-primary)]">
-            编辑服务商
+            {isNewProvider ? "添加服务商" : "编辑服务商"}
           </h2>
           <button
             className="flex size-9 items-center justify-center rounded-full text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-container-low)]"
@@ -1258,6 +1290,33 @@ function ProviderEditorModal({
 
         <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
           <div className="grid gap-4">
+            {isNewProvider && identifyModelProviderPreset(provider) === "custom" ? (
+              <section>
+                <p className="mb-2 text-sm font-medium text-[var(--color-text-primary)]">
+                  预设
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {CUSTOM_PROVIDER_PRESET_OPTIONS.map((option) => {
+                    const active = providerPreset === option.value;
+                    return (
+                      <button
+                        className={`rounded-full border px-3.5 py-2 text-sm transition ${
+                          active
+                            ? "border-[#96573f] bg-[#96573f]/8 text-[#7f4532] shadow-sm"
+                            : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-focus)] hover:bg-[var(--color-surface-container-low)]"
+                        }`}
+                        key={option.value}
+                        onClick={() => applyProviderPreset(option.value)}
+                        type="button"
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+
             <Field label="名称" required>
               <Input
                 onChange={(event) =>
@@ -1294,8 +1353,8 @@ function ProviderEditorModal({
                         apiFormat: value as ModelProviderApiFormat,
                       }))
                     }
-                    options={GENERIC_API_FORMAT_OPTIONS}
-                    value={draft.apiFormat}
+                    options={CUSTOM_PROVIDER_API_FORMAT_OPTIONS}
+                    value={draft.apiFormat === "custom" ? "openai" : draft.apiFormat}
                   />
                 </Field>
                 <Field label="认证方式">
@@ -1361,7 +1420,7 @@ function ProviderEditorModal({
                     模型列表
                   </h3>
                   <p className="text-sm text-[var(--color-text-tertiary)]">
-                    文本节点只显示启用且包含“文本”模态的模型；图片生成节点只使用图片模型。
+                    文本、图片和视频节点只显示已启用且包含对应模态的模型。
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -1923,10 +1982,13 @@ function getProviderModelSummary(provider: ModelProviderConfig) {
   const imageCount = enabledModels.filter((model) =>
     model.modalities.includes("image"),
   ).length;
+  const videoCount = enabledModels.filter((model) =>
+    model.modalities.includes("video"),
+  ).length;
   if (enabledModels.length === 0) {
     return "未启用模型";
   }
-  return `${enabledModels.length} 个启用模型 · 文本 ${textCount} · 图片 ${imageCount}`;
+  return `${enabledModels.length} 个启用模型 · 文本 ${textCount} · 图片 ${imageCount} · 视频 ${videoCount}`;
 }
 
 function getApiFormatLabel(value: ModelProviderApiFormat) {
@@ -1938,6 +2000,9 @@ function getProviderProtocolSummary(preset: ModelProviderPresetId) {
   if (preset === "zhipu") return "Zhipu GLM · Bearer Token";
   if (preset === "volcengine_agent_plan") {
     return "Responses API / Seedream · Bearer Token";
+  }
+  if (preset === "volcengine_ark") {
+    return "视频生成任务 API · Bearer Token";
   }
   if (preset === "openrouter") {
     return "OpenRouter Images / Chat · Bearer Token";
@@ -1979,12 +2044,19 @@ function prepareProviderForSave(provider: ModelProviderConfig): ModelProviderCon
     models.find(
       (model) => model.enabled && model.modalities.includes("image"),
     )?.id ?? "";
+  const firstVideoModel =
+    models.find(
+      (model) => model.enabled && model.modalities.includes("video"),
+    )?.id ?? "";
   const main = models.some((model) => model.id === provider.modelMapping.main)
     ? provider.modelMapping.main
     : firstTextModel;
   const image = models.some((model) => model.id === provider.modelMapping.image)
     ? provider.modelMapping.image
     : firstImageModel;
+  const video = models.some((model) => model.id === provider.modelMapping.video)
+    ? provider.modelMapping.video
+    : firstVideoModel;
 
   return {
     ...provider,
@@ -1992,6 +2064,7 @@ function prepareProviderForSave(provider: ModelProviderConfig): ModelProviderCon
     modelMapping: {
       main,
       image,
+      video,
     },
     modelModalities,
     models,

@@ -168,6 +168,32 @@ export async function generateOrEditImage(input: {
   }));
 }
 
+export async function generateVideo(input: {
+  duration: number;
+  generateAudio: boolean;
+  imageDataUrls?: string[];
+  imageRoles?: Array<"first_frame" | "last_frame" | "reference_image">;
+  model: string;
+  prompt: string;
+  ratio: string;
+  resolution: string;
+}) {
+  const response = await fetch("/api/ai/video", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error ?? "视频生成失败");
+  }
+  return {
+    blob: await response.blob(),
+    model: response.headers.get("x-zenme-model") ?? input.model,
+    taskId: response.headers.get("x-zenme-task-id") ?? undefined,
+  };
+}
+
 function withProjectThumbnailUrl(project: ZenmeProject): ZenmeProject {
   if (!project.thumbnailPath) {
     return project;

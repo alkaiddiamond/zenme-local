@@ -14,6 +14,7 @@ export type ZenmeLocalSettings = {
   autoSaveIntervalMs: number;
   lastTextModelId?: string;
   lastImageModelId?: string;
+  lastVideoModelId?: string;
   lastImageAspectRatio?: string;
   lastImageQuality?: string;
   modelProviders: ModelProviderConfig[];
@@ -45,6 +46,7 @@ export type ModelModality =
   | "image"
   | "embedding"
   | "audio"
+  | "video"
   | "rerank"
   | "tool";
 
@@ -69,6 +71,7 @@ export type ModelProviderConfig = {
   modelMapping: {
     main: string;
     image?: string;
+    video?: string;
   };
   models: ModelConfig[];
   contextWindows: Record<string, number>;
@@ -138,6 +141,8 @@ function normalizeLocalSettings(
       typeof settings.lastTextModelId === "string" ? settings.lastTextModelId : undefined,
     lastImageModelId:
       typeof settings.lastImageModelId === "string" ? settings.lastImageModelId : undefined,
+    lastVideoModelId:
+      typeof settings.lastVideoModelId === "string" ? settings.lastVideoModelId : undefined,
     lastImageAspectRatio:
       typeof settings.lastImageAspectRatio === "string"
         ? settings.lastImageAspectRatio
@@ -293,6 +298,7 @@ function normalizeModelProvider(
       : typeof legacyImageModel === "string"
         ? legacyImageModel
         : "",
+    video: typeof modelMapping.video === "string" ? modelMapping.video : "",
   };
   const contextWindows = normalizeContextWindows(provider.contextWindows);
   const modelModalities = normalizeModelModalities(provider.modelModalities);
@@ -557,6 +563,7 @@ function isModelModality(value: unknown): value is ModelModality {
     value === "image" ||
     value === "embedding" ||
     value === "audio" ||
+    value === "video" ||
     value === "rerank" ||
     value === "tool"
   );

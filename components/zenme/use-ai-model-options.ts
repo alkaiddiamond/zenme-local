@@ -10,15 +10,20 @@ import {
 export type AiModelOption = {
   id: string;
   label: string;
+  tooltip: string;
 };
 
-type AiModelModality = "image" | "text";
+type AiModelModality = "image" | "text" | "video";
 
 const MODEL_PREFERENCE_EVENT = "zenme:ai-model-preference";
 const preferredModelCache: Partial<Record<AiModelModality, string>> = {};
 
-export function createModelOption(id: string, label = id): AiModelOption {
-  return { id, label };
+export function createModelOption(
+  id: string,
+  label = id,
+  tooltip = label,
+): AiModelOption {
+  return { id, label, tooltip };
 }
 
 export function resolveAiModelOptionId(
@@ -51,11 +56,11 @@ export async function rememberAiModelPreference(
   await fetch("/api/settings", {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(
-      modality === "image"
-        ? { lastImageModelId: modelId }
-        : { lastTextModelId: modelId },
-    ),
+    body: JSON.stringify(modality === "image"
+      ? { lastImageModelId: modelId }
+      : modality === "video"
+        ? { lastVideoModelId: modelId }
+        : { lastTextModelId: modelId }),
   }).catch(() => undefined);
 }
 
@@ -108,7 +113,12 @@ export function useAiModelOptions(modality: AiModelModality = "text") {
         }
 
         const payload = (await response.json()) as {
-          data?: Array<{ id?: string; label?: string }>;
+          data?: Array<{
+            id?: string;
+            label?: string;
+            modelId?: string;
+            providerName?: string;
+          }>;
           preferredModelId?: string | null;
         };
         const nextModels = Array.from(
@@ -119,7 +129,14 @@ export function useAiModelOptions(modality: AiModelModality = "text") {
           ),
         ).map((id) => {
           const item = payload.data?.find((model) => model.id?.trim() === id);
-          return createModelOption(id, item?.label?.trim() || id);
+          const label = item?.label?.trim() || id;
+          const providerName = item?.providerName?.trim();
+          const modelId = item?.modelId?.trim();
+          return createModelOption(
+            id,
+            label,
+            providerName && modelId ? `${providerName} · ${modelId}` : label,
+          );
         });
 
         if (!cancelled) {

@@ -26,7 +26,10 @@ export async function GET(request: Request) {
     }
 
     const url = new URL(request.url);
-    const modality = url.searchParams.get("modality") === "image" ? "image" : "text";
+    const requestedModality = url.searchParams.get("modality");
+    const modality = requestedModality === "image" || requestedModality === "video"
+      ? requestedModality
+      : "text";
     const settings = await getLocalSettings().catch(() => null);
     const configuredModels = settings
       ? getProviderModelSelections(settings.modelProviders, modality)
@@ -34,7 +37,9 @@ export async function GET(request: Request) {
     const models = configuredModels;
     const preferredModelId = modality === "image"
       ? settings?.lastImageModelId
-      : settings?.lastTextModelId;
+      : modality === "video"
+        ? settings?.lastVideoModelId
+        : settings?.lastTextModelId;
     const preferredModel = preferredModelId
       ? models.find((model) => model.id === preferredModelId) ??
         [...models].reverse().find(
@@ -53,7 +58,9 @@ export async function GET(request: Request) {
       data: orderedModels.map((model) => ({
         id: model.id,
         label: model.label,
+        modelId: model.modelId,
         object: "model",
+        providerName: model.provider.name,
       })),
       preferredModelId: orderedModels[0]?.id ?? null,
     });

@@ -16,6 +16,7 @@ import { MusicPlayerNode } from "@/components/zenme/nodes/music-player-node";
 import { LyricsNode } from "@/components/zenme/nodes/lyrics-node";
 import { ManagedTextNode } from "@/components/zenme/nodes/managed-text-node";
 import { TaskNode } from "@/components/zenme/nodes/task-node";
+import { VideoNode } from "@/components/zenme/nodes/video-node";
 
 export type { CanvasNodeData } from "@/components/zenme/node-types";
 export {
@@ -27,6 +28,8 @@ export const nodeTypes = {
   group: memo(GroupNode),
   image: memo(ImageNode),
   imageGeneration: memo(ImageGenerationNode),
+  videoGeneration: memo(VideoNode),
+  video: memo(VideoNode),
   file: memo(FileNode),
   music: memo(MusicNode),
   musicPlayer: memo(MusicPlayerNode),

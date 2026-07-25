@@ -17,6 +17,7 @@ const CONTEXT_CONSUMER_NODE_KINDS = new Set([
   "agent",
   "code",
   "imageGeneration",
+  "videoGeneration",
   "managedText",
   "markdown",
   "note",

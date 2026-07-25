@@ -6,6 +6,7 @@ import type { CanvasNode } from "./types";
 const CONNECTED_PLACEHOLDER_SIZE = {
   agent: { height: 180, width: 320 },
   imageGeneration: { height: 260, width: 520 },
+  videoGeneration: { height: 210, width: 620 },
   managedText: { height: 380, width: 560 },
   task: { height: 460, width: 560 },
   text: { height: 176, width: 560 },
@@ -51,6 +52,7 @@ export function getConnectedPlaceholderPosition(input: {
   kind:
     | "agent"
     | "imageGeneration"
+    | "videoGeneration"
     | "managedText"
     | "task"
     | "text"
