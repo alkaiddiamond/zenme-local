@@ -13,6 +13,17 @@ export type ImageEditPreferences = {
   quality: string;
 };
 
+export function resolveImageModelPreference(
+  modelIds: Array<{ id: string }>,
+  preferredModelId?: string,
+) {
+  const preferred = preferredModelId?.trim();
+  if (preferred && modelIds.some((model) => model.id === preferred)) {
+    return preferred;
+  }
+  return modelIds[0]?.id;
+}
+
 export function getImageEditPreferences(): ImageEditPreferences {
   const fallback = {
     aspectRatio: DEFAULT_IMAGE_EDIT_ASPECT_RATIO,

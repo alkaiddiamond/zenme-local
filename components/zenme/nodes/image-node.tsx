@@ -41,6 +41,7 @@ import {
 import {
   getImageEditPreferences,
   rememberImageEditPreferences,
+  resolveImageModelPreference,
 } from "@/components/zenme/image-edit-preferences";
 import { ZenmeModelPicker } from "@/components/zenme/visual-components";
 
@@ -66,9 +67,10 @@ export function ImageNode({ data, id, selected }: NodeProps) {
     nodeData.imageCameraControl,
   );
   const [model, setModel] = useState(
-    nodeData.imageModel ??
-      rememberedPreferences.modelId ??
-      imageModelOptions[0]?.id ??
+    resolveImageModelPreference(
+      imageModelOptions,
+      nodeData.imageModel ?? rememberedPreferences.modelId,
+    ) ??
       NANO_BANANA_2_IMAGE_MODEL,
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -148,10 +150,10 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   }
 
   useEffect(() => {
-    const nextModel =
-      nodeData.imageModel ??
-      getImageEditPreferences().modelId ??
-      imageModelOptions[0]?.id;
+    const nextModel = resolveImageModelPreference(
+      imageModelOptions,
+      nodeData.imageModel ?? getImageEditPreferences().modelId,
+    );
     if (nextModel) setModel(nextModel);
   }, [imageModelOptions, nodeData.imageModel]);
 

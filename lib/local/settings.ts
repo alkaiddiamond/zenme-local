@@ -207,7 +207,15 @@ function createDefaultModelProviders(): ModelProviderConfig[] {
   return [];
 }
 
-export const CHATGPT_IMAGE_MODEL_IDS = new Set(["gpt-5.6-sol"]);
+// ChatGPT OAuth 的模型清单会随账户订阅变化；仅将已由 Responses
+// image_generation 工具支持的模型标记为候选，最终仍以同步清单为准。
+export const CHATGPT_IMAGE_MODEL_IDS = new Set([
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "gpt-5.5",
+  "gpt-5.4-mini",
+]);
 
 function normalizeModelProviders(
   value: unknown,

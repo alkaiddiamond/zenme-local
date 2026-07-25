@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getImageEditPreferences,
   rememberImageEditPreferences,
+  resolveImageModelPreference,
 } from "./image-edit-preferences";
 
 function installWindowMock() {
@@ -55,5 +56,27 @@ describe("image edit preferences", () => {
       modelId: undefined,
       quality: "1K",
     });
+  });
+
+  it("keeps a configured model when it remains available", () => {
+    const models = [
+      { id: "chatgpt-official:gpt-5.6-terra" },
+      { id: "chatgpt-official:gpt-5.6-luna" },
+    ];
+
+    expect(
+      resolveImageModelPreference(models, "chatgpt-official:gpt-5.6-luna"),
+    ).toBe("chatgpt-official:gpt-5.6-luna");
+  });
+
+  it("falls back when a saved model is no longer available to the account", () => {
+    const models = [
+      { id: "chatgpt-official:gpt-5.6-terra" },
+      { id: "chatgpt-official:gpt-5.6-luna" },
+    ];
+
+    expect(resolveImageModelPreference(models, "chatgpt-official:gpt-5.6-sol")).toBe(
+      "chatgpt-official:gpt-5.6-terra",
+    );
   });
 });

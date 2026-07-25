@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  CHATGPT_PROVIDER_ID,
   getLocalSettings,
   getLocalSettingsPath,
   updateLocalSettings,
@@ -91,6 +92,39 @@ describe("local settings", () => {
     expect(settings.modelProviders.map((provider) => provider.id)).toEqual([
       "provider",
     ]);
+  });
+
+  it("marks the ChatGPT models available to free accounts as image-capable", async () => {
+    await fs.writeFile(
+      getLocalSettingsPath(dataDir),
+      JSON.stringify({
+        version: 1,
+        dataDir,
+        autoSaveIntervalMs: 5000,
+        modelProviders: [
+          {
+            id: CHATGPT_PROVIDER_ID,
+            name: "ChatGPT",
+            baseUrl: "https://chatgpt.com/backend-api/codex",
+            apiFormat: "openai_oauth",
+            authType: "none",
+            enabled: true,
+            modelMapping: { main: "gpt-5.6-terra" },
+            models: [
+              "gpt-5.6-terra",
+              "gpt-5.6-luna",
+              "gpt-5.5",
+              "gpt-5.4-mini",
+            ].map((id) => ({ id, enabled: true, modalities: ["text"] })),
+            contextWindows: {},
+            modelModalities: {},
+          },
+        ],
+      }),
+    );
+
+    const provider = (await getLocalSettings(dataDir)).modelProviders[0];
+    expect(provider.models.every((model) => model.modalities.includes("image"))).toBe(true);
   });
 
   it("provides the Agent Plan language and image model preset", () => {
