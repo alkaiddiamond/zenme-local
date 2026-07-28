@@ -2,6 +2,13 @@
 
 import type { ImageCameraControl } from "@/components/zenme/image-edit-options";
 import type { AppShellState } from "@/lib/local/app-shell-state";
+import type {
+  Execution,
+  ExecutionError,
+  ExecutionInputSnapshot,
+  ExecutionKind,
+  ExecutionStatus,
+} from "@/lib/execution/types";
 import type { CanvasSnapshotPayload, ZenmeProject } from "@/lib/zenme";
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -154,7 +161,9 @@ export async function generateOrEditImage(input: {
   operation?: "edit" | "generate";
   prompt: string;
   quality?: string;
+  signal?: AbortSignal;
 }) {
+  const { signal, ...body } = input;
   return readJson<{
     b64Json: string;
     mediaType: string;
@@ -164,7 +173,8 @@ export async function generateOrEditImage(input: {
   }>(await fetch("/api/ai/image-edit", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify(body),
+    signal,
   }));
 }
 
@@ -179,11 +189,14 @@ export async function createVideoTask(input: {
   prompt: string;
   ratio: string;
   resolution: string;
+  signal?: AbortSignal;
 }) {
+  const { signal, ...body } = input;
   const response = await fetch("/api/ai/video", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify(body),
+    signal,
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;
@@ -196,31 +209,129 @@ export async function createVideoTask(input: {
   }>(response);
 }
 
-export async function getVideoTaskStatus(input: { model: string; taskId: string }) {
+export async function createExecutionInApi(input: {
+  attemptId?: string;
+  executionId?: string;
+  kind: ExecutionKind;
+  input?: ExecutionInputSnapshot;
+  modelId?: string;
+  nodeId: string;
+  nodeRunId?: string;
+  projectId: string;
+  providerId?: string;
+  startedAt?: string;
+  triggerNodeId: string;
+}) {
+  return readJson<Execution>(await fetch(`/api/projects/${input.projectId}/executions`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  }));
+}
+
+export async function listRecoverableExecutionsFromApi(projectId: string) {
+  return readJson<Execution[]>(await fetch(
+    `/api/projects/${projectId}/executions?recoverable=1`,
+    { cache: "no-store" },
+  ));
+}
+
+export async function listExecutionsFromApi(projectId: string) {
+  return readJson<Execution[]>(await fetch(
+    `/api/projects/${projectId}/executions`,
+    { cache: "no-store" },
+  ));
+}
+
+export async function updateExecutionAttemptInApi(input: {
+  assetFileIds?: string[];
+  attemptId: string;
+  error?: ExecutionError | null;
+  executionId: string;
+  externalTaskId?: string;
+  outputText?: string;
+  nodeRunId: string;
+  projectId: string;
+  status: ExecutionStatus;
+}) {
+  return readJson<Execution>(await fetch(
+    `/api/projects/${input.projectId}/executions/${input.executionId}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...input, action: "updateAttempt" }),
+    },
+  ));
+}
+
+export async function retryNodeRunInApi(input: {
+  executionId: string;
+  modelId?: string;
+  nodeRunId: string;
+  projectId: string;
+  providerId?: string;
+}) {
+  return readJson<{ attempt: Execution["nodeRuns"][number]["attempts"][number]; execution: Execution }>(
+    await fetch(`/api/projects/${input.projectId}/executions/${input.executionId}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...input, action: "retry" }),
+    }),
+  );
+}
+
+export async function stopExecutionInApi(input: {
+  executionId: string;
+  projectId: string;
+}) {
+  return readJson<Execution>(await fetch(
+    `/api/projects/${input.projectId}/executions/${input.executionId}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "stop" }),
+    },
+  ));
+}
+
+export async function getVideoTaskStatus(input: { model: string; signal?: AbortSignal; taskId: string }) {
   const params = new URLSearchParams({ model: input.model, taskId: input.taskId });
   return readJson<{
     error?: string;
     status: VideoTaskStatus;
     taskId: string;
-  }>(await fetch(`/api/ai/video?${params.toString()}`, { cache: "no-store" }));
+  }>(await fetch(`/api/ai/video?${params.toString()}`, {
+    cache: "no-store",
+    signal: input.signal,
+  }));
 }
 
-export async function downloadVideoTask(input: { model: string; taskId: string }) {
+export async function downloadVideoTask(input: {
+  model: string;
+  projectId: string;
+  signal?: AbortSignal;
+  taskId: string;
+}) {
   const params = new URLSearchParams({
     download: "1",
     model: input.model,
+    projectId: input.projectId,
     taskId: input.taskId,
   });
-  const response = await fetch(`/api/ai/video?${params.toString()}`, { cache: "no-store" });
+  const response = await fetch(`/api/ai/video?${params.toString()}`, {
+    cache: "no-store",
+    signal: input.signal,
+  });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(body?.error ?? "生成视频下载失败");
   }
-  return {
-    blob: await response.blob(),
-    model: response.headers.get("x-zenme-model") ?? input.model,
-    taskId: response.headers.get("x-zenme-task-id") ?? input.taskId,
-  };
+  return readJson<{
+    fileId: string;
+    model: string;
+    originalUrl: string;
+    taskId: string;
+  }>(response);
 }
 
 function withProjectThumbnailUrl(project: ZenmeProject): ZenmeProject {

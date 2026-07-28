@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowUp, Sparkles } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import {
   CreateProjectCard,
@@ -29,6 +30,7 @@ import {
 } from "@/lib/zenme";
 
 export function DashboardClient() {
+  const router = useRouter();
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState("");
   const [projects, setProjects] = useState<ZenmeProject[]>([]);
@@ -75,12 +77,12 @@ export function DashboardClient() {
           });
         }
 
-        window.location.href = `/projects/${project.id}`;
+        router.push(`/projects/${project.id}`);
       } finally {
         setIsSubmitting(false);
       }
     },
-    [isSubmitting, model],
+    [isSubmitting, model, router],
   );
 
   const createBlankProject = useCallback(() => {

@@ -22,6 +22,7 @@ export async function PATCH(request: Request) {
     const body = await request.json() as Partial<ZenmeLocalSettings>;
     const updates: Partial<Omit<ZenmeLocalSettings, "version">> = {};
     if ("autoSaveIntervalMs" in body) updates.autoSaveIntervalMs = body.autoSaveIntervalMs!;
+    if ("theme" in body) updates.theme = body.theme!;
     if (typeof body.dataDir === "string") updates.dataDir = body.dataDir;
     if ("lastImageModelId" in body) updates.lastImageModelId = body.lastImageModelId;
     if ("lastVideoModelId" in body) updates.lastVideoModelId = body.lastVideoModelId;

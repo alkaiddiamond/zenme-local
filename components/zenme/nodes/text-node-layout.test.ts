@@ -16,4 +16,17 @@ describe("text node layout", () => {
     expect(textNodeSource).not.toContain("rounded-lg bg-white/90 p-1 shadow-sm ring-1");
     expect(textNodeSource).not.toContain("pr-24");
   });
+
+  it("keeps text paste events out of the canvas-level paste handler", () => {
+    const pasteHandler = textNodeSource.slice(
+      textNodeSource.indexOf("function handlePaste"),
+      textNodeSource.indexOf("function handleRichTextKeyDown"),
+    );
+
+    expect(pasteHandler).toContain("event.stopPropagation()");
+    expect(pasteHandler).toContain("event.preventDefault()");
+    expect(pasteHandler).toContain('document.execCommand("insertHTML"');
+    expect(pasteHandler).toContain("plainTextToRichTextFragment(text)");
+    expect(pasteHandler).not.toContain('document.execCommand("insertText"');
+  });
 });

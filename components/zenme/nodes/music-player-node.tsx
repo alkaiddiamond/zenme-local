@@ -1,7 +1,7 @@
 "use client";
 
 import type { NodeProps } from "@xyflow/react";
-import { Music2, Pause, Play, Repeat2, Volume2, VolumeX } from "lucide-react";
+import { Captions, Check, ChevronDown, ChevronUp, Music2, Pause, Play, Repeat2, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { CanvasNodeData } from "@/components/zenme/node-types";
@@ -11,7 +11,6 @@ import {
   normalizeMusicPlaybackTimes,
 } from "@/components/zenme/canvas/music-workflow";
 import { NodeFrame } from "@/components/zenme/nodes/node-frame";
-import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
 import { NodeActionHandle, NodeEdgeSourceHandle, NodeTargetHandle } from "@/components/zenme/node-ui";
 
 export function MusicPlayerNode({ data, selected, id }: NodeProps) {
@@ -20,9 +19,14 @@ export function MusicPlayerNode({ data, selected, id }: NodeProps) {
     node.musicDuration,
     node.musicCurrentTime,
   );
-  const waveform = node.musicWaveform?.length ? node.musicWaveform : null;
+  const sources = node.musicSources ?? [];
+  const activeSource = sources.find((source) => source.id === node.musicSourceNodeId) ?? sources[0];
+  const isSourceListExpanded = node.musicSourceListExpanded !== false;
+  const waveform = node.musicWaveform?.length &&
+    node.musicWaveformSourceNodeId === activeSource?.id
+    ? node.musicWaveform
+    : null;
   const displayedWaveform = waveform ? downsampleWaveform(waveform) : null;
-  const [isRenaming, setIsRenaming] = useState(false);
   const [waveformState, setWaveformState] = useState<"idle" | "loading" | "error">("idle");
   const onEnsureMusicWaveform = node.onEnsureMusicWaveform;
   const onEnsureMusicPlayback = node.onEnsureMusicPlayback;
@@ -33,7 +37,11 @@ export function MusicPlayerNode({ data, selected, id }: NodeProps) {
   }, [id, node.originalUrl, onEnsureMusicPlayback]);
 
   useEffect(() => {
-    if (waveform?.length && node.musicWaveformVersion === MUSIC_WAVEFORM_VERSION) {
+    if (
+      waveform?.length &&
+      node.musicWaveformSourceNodeId === activeSource?.id &&
+      node.musicWaveformVersion === MUSIC_WAVEFORM_VERSION
+    ) {
       setWaveformState("idle");
       return;
     }
@@ -46,13 +54,19 @@ export function MusicPlayerNode({ data, selected, id }: NodeProps) {
     return () => {
       cancelled = true;
     };
-  }, [id, node.musicWaveformVersion, node.originalUrl, onEnsureMusicWaveform, waveform]);
+  }, [activeSource?.id, id, node.musicWaveformSourceNodeId, node.musicWaveformVersion, node.originalUrl, onEnsureMusicWaveform, waveform]);
 
   return (
-    <NodeFrame className={`flex h-[176px] w-[560px] flex-col justify-between p-3 ${isRenaming ? "zenme-node-renaming" : ""}`} selected={Boolean(selected)}>
-      <EditableNodeTitle fallbackTitle="播放器" icon={<Music2 className="size-4" />} onCommit={(title) => node.onUpdateMusicNode?.(id, { title })} onEditingChange={setIsRenaming} title={node.title} />
+    <NodeFrame className="flex w-[560px] flex-col gap-2 p-3" selected={Boolean(selected)}>
+      <div className="zenme-node-title-bar absolute -top-8 left-1 flex h-5 items-center gap-2 text-xs font-medium text-zinc-500">
+        <Music2 className="size-4" />
+        <span>音乐播放器</span>
+      </div>
       <NodeTargetHandle visible={Boolean(node.hasIncomingEdge)} />
       <NodeEdgeSourceHandle visible={Boolean(node.hasOutgoingEdge)} />
+      <p aria-label="当前歌曲" className="h-5 shrink-0 truncate text-sm font-medium text-zinc-700" title={activeSource?.title}>
+        {activeSource?.title ?? "尚未连接音乐"}
+      </p>
       <div aria-label="音频波形" className="nodrag flex h-14 shrink-0 items-center gap-0.5 overflow-hidden rounded-md bg-zinc-50 px-2">
         {displayedWaveform ? displayedWaveform.map((value, index) => (
           <span
@@ -86,11 +100,69 @@ export function MusicPlayerNode({ data, selected, id }: NodeProps) {
         <select aria-label="播放速度" className="h-7 rounded-md border border-zinc-200 bg-white px-2 outline-none" onChange={(event) => node.onUpdateMusicPlayback?.(id, { playbackRate: Number(event.currentTarget.value) })} value={node.musicPlaybackRate ?? 1}>
           {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => <option key={rate} value={rate}>{rate}×</option>)}
         </select>
-        <button aria-label="循环播放" aria-pressed={Boolean(node.musicLoop)} className={`ml-auto flex size-7 items-center justify-center rounded-md ${node.musicLoop ? "bg-zinc-900 text-white" : "hover:bg-zinc-100"}`} onClick={() => node.onUpdateMusicPlayback?.(id, { loop: !node.musicLoop })} type="button"><Repeat2 className="size-4" /></button>
+        <button aria-label="循环播放" aria-pressed={Boolean(node.musicLoop)} className={`ml-auto ${musicOptionButtonClassName(Boolean(node.musicLoop))}`} onClick={() => node.onUpdateMusicPlayback?.(id, { loop: !node.musicLoop })} type="button"><Repeat2 className="size-4" /></button>
+        <button
+          aria-label={node.musicLyricsOverlayOpen ? "关闭歌词覆层" : "打开歌词覆层"}
+          aria-pressed={Boolean(node.musicLyricsOverlayOpen)}
+          className={musicOptionButtonClassName(Boolean(node.musicLyricsOverlayOpen))}
+          onClick={() => node.onToggleMusicLyricsOverlay?.(id)}
+          title={node.musicLyricsOverlayOpen ? "关闭歌词覆层" : "打开歌词覆层"}
+          type="button"
+        >
+          <Captions className="size-4" />
+        </button>
+        <button
+          aria-expanded={isSourceListExpanded}
+          aria-label={isSourceListExpanded ? "收起音乐列表" : "展开音乐列表"}
+          className={musicOptionButtonClassName(isSourceListExpanded)}
+          onClick={() => node.onUpdateMusicPlayback?.(id, { sourceListExpanded: !isSourceListExpanded })}
+          title={isSourceListExpanded ? "收起音乐列表" : "展开音乐列表"}
+          type="button"
+        >
+          {isSourceListExpanded ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+        </button>
       </div>
+      {isSourceListExpanded ? (
+        <section aria-label="已连接音乐列表" className="nodrag nowheel mt-1 shrink-0 overflow-hidden rounded-md border border-zinc-200 bg-white">
+          <div className="flex h-8 items-center gap-2 border-b border-zinc-100 px-2 text-xs text-zinc-600">
+            <span className="font-medium">已连接音乐</span>
+            <span className="text-zinc-400">{sources.length} 首</span>
+          </div>
+          {sources.length ? (
+            <ul className="max-h-[128px] overflow-y-auto">
+              {sources.map((source) => {
+                const isActive = source.id === activeSource?.id;
+                return (
+                  <li key={source.id}>
+                    <button
+                      aria-label={`选择歌曲 ${source.title}`}
+                      aria-pressed={isActive}
+                      className={`flex h-8 w-full items-center gap-2 px-2 text-left text-xs ${isActive ? "bg-zinc-100 text-zinc-900" : "text-zinc-600 hover:bg-zinc-50"}`}
+                      onClick={() => node.onSelectMusicSource?.(id, source.id)}
+                      title={source.title}
+                      type="button"
+                    >
+                      {isActive ? <Check className="size-3.5 shrink-0" /> : <Music2 className="size-3.5 shrink-0 text-zinc-400" />}
+                      <span className="truncate">{source.title}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="px-2 py-3 text-center text-xs text-zinc-400">连接音乐文件后将在这里显示</p>
+          )}
+        </section>
+      ) : null}
       <NodeActionHandle selected={Boolean(selected)} />
     </NodeFrame>
   );
 }
 
 function formatTime(seconds: number) { const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0; return `${Math.floor(safe / 60)}:${Math.floor(safe % 60).toString().padStart(2, "0")}`; }
+
+function musicOptionButtonClassName(active: boolean) {
+  return `nodrag nowheel flex size-9 shrink-0 items-center justify-center rounded-md border transition-colors ${active
+    ? "border-zinc-300 bg-zinc-100 text-zinc-900"
+    : "border-zinc-200 bg-zinc-50 text-zinc-500 hover:border-zinc-300 hover:bg-white hover:text-zinc-800"}`;
+}

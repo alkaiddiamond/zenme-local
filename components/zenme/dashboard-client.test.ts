@@ -21,6 +21,12 @@ describe("dashboard project composer", () => {
     expect(source).toContain("rememberHomePromptRequest(project.id");
   });
 
+  it("opens the created project without a full page navigation", () => {
+    expect(source).toContain('import { useRouter } from "next/navigation";');
+    expect(source).toContain("router.push(`/projects/${project.id}`)");
+    expect(source).not.toContain("window.location.href");
+  });
+
   it("has no input placeholder and follows the text composer keyboard behavior", () => {
     expect(source).not.toMatch(/\bplaceholder=/);
     expect(source).toContain('event.key !== "Enter"');

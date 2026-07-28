@@ -61,4 +61,27 @@ describe("music canvas persistence", () => {
       { start: 12, end: 18, text: "歌词" },
     ]);
   });
+
+  it("persists the player selection and folded state without derived source summaries", () => {
+    const node: CanvasNode = {
+      id: "player-1",
+      type: "musicPlayer",
+      position: { x: 0, y: 0 },
+      data: {
+        kind: "musicPlayer",
+        musicLyricsOverlayOpen: true,
+        musicSourceListExpanded: false,
+        musicSourceNodeId: "music-2",
+        musicSources: [{ id: "music-2", title: "第二首" }],
+        title: "音乐播放器",
+      },
+    };
+
+    const [persisted] = getPersistableCanvasNodes([node]);
+
+    expect(persisted.data.musicSourceListExpanded).toBe(false);
+    expect(persisted.data.musicLyricsOverlayOpen).toBeUndefined();
+    expect(persisted.data.musicSourceNodeId).toBe("music-2");
+    expect(persisted.data.musicSources).toBeUndefined();
+  });
 });

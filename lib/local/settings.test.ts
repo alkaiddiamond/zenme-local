@@ -27,6 +27,7 @@ describe("local settings", () => {
       autoSaveIntervalMs: 5000,
       dataDir,
       modelProviders: [],
+      theme: "light",
       version: 1,
     });
 
@@ -49,6 +50,25 @@ describe("local settings", () => {
     await expect(
       fs.readFile(getLocalSettingsPath(dataDir), "utf-8"),
     ).resolves.toContain('"lastImageAspectRatio": "auto"');
+  });
+
+  it("persists a theme and falls back safely for legacy or invalid values", async () => {
+    await expect(updateLocalSettings({ theme: "dark" }, dataDir)).resolves.toMatchObject({
+      theme: "dark",
+    });
+
+    await fs.writeFile(
+      getLocalSettingsPath(dataDir),
+      JSON.stringify({
+        version: 1,
+        dataDir,
+        autoSaveIntervalMs: 5000,
+        theme: "neon",
+        modelProviders: [],
+      }),
+    );
+
+    await expect(getLocalSettings(dataDir)).resolves.toMatchObject({ theme: "light" });
   });
 
   it("migrates a legacy global proxy to each provider", async () => {

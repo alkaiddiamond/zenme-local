@@ -1,6 +1,10 @@
 import { resolveProviderModelSelection } from "@/lib/ai/provider-model-resolution";
 import { getProxyFetchOptions } from "@/lib/api/proxy-fetch";
 import { getLocalSettings, type ModelProviderConfig } from "@/lib/local/settings";
+import { importLocalProjectFile } from "@/lib/local/project-files-repository";
+import { getLocalProject } from "@/lib/local/project-repository";
+
+const MAX_VIDEO_DOWNLOAD_BYTES = 512 * 1024 * 1024;
 
 type VideoRequestBody = {
   duration?: number;
@@ -96,9 +100,13 @@ export async function GET(request: Request) {
     const model = requestUrl.searchParams.get("model")?.trim();
     const taskId = requestUrl.searchParams.get("taskId")?.trim();
     const shouldDownload = requestUrl.searchParams.get("download") === "1";
+    const projectId = requestUrl.searchParams.get("projectId")?.trim();
     if (!model) return Response.json({ error: "缺少视频模型" }, { status: 400 });
     if (!taskId || taskId.length > 256) {
       return Response.json({ error: "缺少有效的视频任务 ID" }, { status: 400 });
+    }
+    if (shouldDownload && (!projectId || !(await getLocalProject(projectId)))) {
+      return Response.json({ error: "缺少有效的本地项目" }, { status: 400 });
     }
 
     const settings = await getLocalSettings();
@@ -136,6 +144,9 @@ export async function GET(request: Request) {
     }
     const videoUrl = task.content?.video_url;
     if (!videoUrl) return Response.json({ error: "视频任务未返回下载地址" }, { status: 502 });
+    if (!isTrustedVideoDownloadUrl(videoUrl)) {
+      return Response.json({ error: "视频任务返回了不受信任的下载地址" }, { status: 502 });
+    }
     const videoResponse = await fetch(videoUrl, {
       signal: AbortSignal.timeout(2 * 60 * 1000),
       ...getProxyFetchOptions(videoUrl, provider.networkProxy),
@@ -143,16 +154,47 @@ export async function GET(request: Request) {
     if (!videoResponse.ok) {
       return Response.json({ error: "生成视频下载失败" }, { status: 502 });
     }
-    return new Response(await videoResponse.arrayBuffer(), {
-      headers: {
-        "cache-control": "no-store",
-        "content-type": videoResponse.headers.get("content-type") || "video/mp4",
-        "x-zenme-model": selection.modelId,
-        "x-zenme-task-id": taskId,
-      },
+    const responseMimeType = videoResponse.headers.get("content-type") || "video/mp4";
+    if (!responseMimeType.toLowerCase().startsWith("video/")) {
+      return Response.json({ error: "生成结果不是有效的视频文件" }, { status: 502 });
+    }
+    const contentLength = Number(videoResponse.headers.get("content-length") ?? 0);
+    if (contentLength > MAX_VIDEO_DOWNLOAD_BYTES) {
+      return Response.json({ error: "生成视频超过 512 MB，无法保存" }, { status: 413 });
+    }
+    const bytes = Buffer.from(await videoResponse.arrayBuffer());
+    if (bytes.length === 0 || bytes.length > MAX_VIDEO_DOWNLOAD_BYTES) {
+      return Response.json({ error: "生成视频为空或超过 512 MB" }, { status: 413 });
+    }
+    const mimeType = responseMimeType;
+    const record = await importLocalProjectFile({
+      bytes,
+      fileName: `zenme-video-${Date.now()}.mp4`,
+      mimeType,
+      projectId: projectId!,
+    });
+    return Response.json({
+      fileId: record.id,
+      model: selection.modelId,
+      originalUrl: `/api/projects/${projectId}/files/${record.id}`,
+      taskId,
     });
   } catch {
     return Response.json({ error: "视频任务查询失败，请稍后重试" }, { status: 500 });
+  }
+}
+
+function isTrustedVideoDownloadUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    return url.protocol === "https:" && [
+      "volces.com",
+      "volccdn.com",
+      "byteimg.com",
+    ].some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+  } catch {
+    return false;
   }
 }
 

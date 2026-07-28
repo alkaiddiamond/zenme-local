@@ -8,9 +8,11 @@ import {
   getMusicApiErrorMessage,
   downsampleWaveform,
   extractMusicLyrics,
+  findLyricsNodesNeedingRefresh,
   findLyricsNodesNeedingRecovery,
   normalizeMusicPlaybackTimes,
   resolveMusicSourceNode,
+  resolveMusicSourceNodes,
 } from "./music-workflow";
 
 const musicNode: CanvasNode = {
@@ -57,6 +59,11 @@ describe("music workflow", () => {
     });
     const player = first.createdNodes[0];
     expect(player.id).toBe("music-player:music-1");
+    expect(player.data).toMatchObject({
+      musicSourceListExpanded: true,
+      musicSourceNodeId: musicNode.id,
+      title: "音乐播放器",
+    });
     expect(first.createdEdges[0]).toMatchObject({ source: "music-1", target: player.id });
 
     const repeated = createMusicPlayerUpdate({
@@ -81,6 +88,34 @@ describe("music workflow", () => {
       nodes: [musicNode, player],
       playerNodeId: player.id,
     })).toBe(musicNode);
+  });
+
+  it("resolves all connected music assets and honors the selected source", () => {
+    const secondMusic: CanvasNode = {
+      ...musicNode,
+      id: "music-2",
+      data: { ...musicNode.data, title: "第二首" },
+    };
+    const player: CanvasNode = {
+      id: "player-1",
+      type: "musicPlayer",
+      position: { x: 500, y: 200 },
+      data: { kind: "musicPlayer", title: "音乐播放器" },
+    };
+    const edges = [
+      { id: "edge-1", source: musicNode.id, target: player.id },
+      { id: "edge-2", source: secondMusic.id, target: player.id },
+      { id: "edge-duplicate", source: musicNode.id, target: player.id },
+    ];
+
+    expect(resolveMusicSourceNodes({ edges, nodes: [musicNode, secondMusic, player], playerNodeId: player.id }))
+      .toEqual([musicNode, secondMusic]);
+    expect(resolveMusicSourceNode({
+      edges,
+      nodes: [musicNode, secondMusic, player],
+      playerNodeId: player.id,
+      sourceNodeId: secondMusic.id,
+    })).toBe(secondMusic);
   });
 
   it("downsamples the complete waveform into a normalized RMS envelope", () => {
@@ -128,6 +163,7 @@ describe("music workflow", () => {
       playerNode: player, projectId: "project-1",
     });
     expect(first.createdEdges[0]).toMatchObject({ source: "player-1", target: first.focusNodeId });
+    expect(first.createdNodes[0].data.title).toBe("歌词");
     expect(first.createdNodes[0].data.musicParentPlayerNodeId).toBe("player-1");
     expect(first.createdNodes[0].style).toMatchObject({ height: 176, width: 560 });
 
@@ -169,5 +205,56 @@ describe("music workflow", () => {
     expect(findLyricsNodesNeedingRecovery([lyrics, intactLyrics])).toEqual([
       { childNodeId: "lyrics-1", playerNodeId: "player-1" },
     ]);
+  });
+
+  it("refreshes a lyrics child when the player selects another connected song", () => {
+    const secondMusic: CanvasNode = {
+      ...musicNode,
+      id: "music-2",
+      data: { ...musicNode.data, fileId: "file-2", title: "第二首" },
+    };
+    const player: CanvasNode = {
+      id: "player-1",
+      type: "musicPlayer",
+      position: { x: 0, y: 0 },
+      data: {
+        kind: "musicPlayer",
+        musicSourceNodeId: secondMusic.id,
+        title: "音乐播放器",
+      },
+    };
+    const lyrics: CanvasNode = {
+      id: "lyrics-1",
+      type: "lyrics",
+      position: { x: 0, y: 0 },
+      data: {
+        kind: "lyrics",
+        lyricsFetchStatus: "succeeded",
+        musicLyrics: [{ start: 1, text: "上一首歌词" }],
+        musicLyricsSourceNodeId: musicNode.id,
+        musicParentPlayerNodeId: player.id,
+        title: "歌词",
+      },
+    };
+    const edges = [
+      { id: "music-1-edge", source: musicNode.id, target: player.id },
+      { id: "music-2-edge", source: secondMusic.id, target: player.id },
+      { id: "lyrics-edge", source: player.id, target: lyrics.id },
+    ];
+
+    expect(findLyricsNodesNeedingRefresh({
+      edges,
+      nodes: [musicNode, secondMusic, player, lyrics],
+    })).toEqual([{
+      childNodeId: lyrics.id,
+      playerNodeId: player.id,
+      sourceNodeId: secondMusic.id,
+    }]);
+
+    lyrics.data.musicLyricsSourceNodeId = secondMusic.id;
+    expect(findLyricsNodesNeedingRefresh({
+      edges,
+      nodes: [musicNode, secondMusic, player, lyrics],
+    })).toEqual([]);
   });
 });

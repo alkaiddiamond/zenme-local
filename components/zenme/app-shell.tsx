@@ -41,11 +41,6 @@ import {
   type ZenmeProject,
 } from "@/lib/zenme";
 
-type AppShellProps = {
-  children: React.ReactNode;
-  active: "home" | "projects" | "canvas" | "settings";
-};
-
 const SIDEBAR_WIDTH = 280;
 const COLLAPSED_SIDEBAR_WIDTH = 48;
 const TITLEBAR_HEIGHT = 40;
@@ -84,9 +79,16 @@ function persistAppShellState(
   void updateAppShellStateInApi(updates).catch(() => undefined);
 }
 
-export function AppShell({ children, active }: AppShellProps) {
+export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const active = pathname === "/"
+    ? "home"
+    : pathname === "/projects"
+      ? "projects"
+      : pathname.startsWith("/settings")
+        ? "settings"
+        : "canvas";
   const [projects, setProjects] = useState<ZenmeProject[]>([]);
   const [query, setQuery] = useState("");
   const [openProjectIds, setOpenProjectIds] = useState<string[]>([]);

@@ -12,6 +12,7 @@ export type ZenmeLocalSettings = {
   version: 1;
   dataDir: string;
   autoSaveIntervalMs: number;
+  theme: ZenmeTheme;
   lastTextModelId?: string;
   lastImageModelId?: string;
   lastVideoModelId?: string;
@@ -19,6 +20,8 @@ export type ZenmeLocalSettings = {
   lastImageQuality?: string;
   modelProviders: ModelProviderConfig[];
 };
+
+export type ZenmeTheme = "light" | "dark" | "system";
 
 export type NetworkProxyMode = "environment" | "custom" | "direct";
 
@@ -84,6 +87,7 @@ export function createDefaultLocalSettings(dataDir = getZenmeDataDir()): ZenmeLo
     version: 1,
     dataDir,
     autoSaveIntervalMs: 5_000,
+    theme: "light",
     modelProviders: createDefaultModelProviders(),
   };
 }
@@ -137,6 +141,12 @@ function normalizeLocalSettings(
       Number.isFinite(settings.autoSaveIntervalMs)
         ? Math.min(300_000, Math.max(5_000, Math.floor(settings.autoSaveIntervalMs)))
         : defaults.autoSaveIntervalMs,
+    theme:
+      settings.theme === "dark" ||
+      settings.theme === "system" ||
+      settings.theme === "light"
+        ? settings.theme
+        : defaults.theme,
     lastTextModelId:
       typeof settings.lastTextModelId === "string" ? settings.lastTextModelId : undefined,
     lastImageModelId:

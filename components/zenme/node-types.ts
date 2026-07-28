@@ -1,4 +1,5 @@
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
+import type { AssetRef } from "@/lib/execution/types";
 import type { ImageCameraControl } from "@/components/zenme/image-edit-options";
 
 export type MusicChildNodeKind = "lyrics";
@@ -9,6 +10,11 @@ export type MusicLyricLine = {
   section?: string;
   start: number;
   text: string;
+};
+
+export type MusicSourceSummary = {
+  id: string;
+  title: string;
 };
 
 export type CanvasTagColor =
@@ -134,9 +140,15 @@ export type CanvasNodeData = {
   musicPlaybackRate?: number;
   musicVolume?: number;
   musicWaveform?: number[];
+  musicWaveformSourceNodeId?: string;
   musicWaveformVersion?: number;
   musicLyrics?: MusicLyricLine[];
+  musicLyricsSourceNodeId?: string;
   musicChildExpanded?: boolean;
+  musicSourceListExpanded?: boolean;
+  musicSourceNodeId?: string;
+  musicSources?: MusicSourceSummary[];
+  musicLyricsOverlayOpen?: boolean;
   musicPlayerNodeId?: string;
   musicParentPlayerNodeId?: string;
   onEnsureMusicWaveform?: (playerNodeId: string) => Promise<void>;
@@ -145,12 +157,15 @@ export type CanvasNodeData = {
   onToggleMusicPlayback?: (playerNodeId: string, playing: boolean) => void;
   onEnsureMusicPlayback?: (playerNodeId: string) => void;
   onSeekMusicPlayer?: (playerNodeId: string, seconds: number) => void;
+  onSelectMusicSource?: (playerNodeId: string, sourceNodeId: string) => void;
+  onToggleMusicLyricsOverlay?: (playerNodeId: string) => void;
   onCreateMusicChildNode?: (playerNodeId: string, kind: MusicChildNodeKind) => void;
   onUpdateMusicNode?: (nodeId: string, updates: { title?: string }) => void;
   onUpdateMusicPlayback?: (playerNodeId: string, updates: {
     loop?: boolean;
     muted?: boolean;
     playbackRate?: number;
+    sourceListExpanded?: boolean;
     volume?: number;
   }) => void;
   imageGenerated?: boolean;
@@ -200,6 +215,11 @@ export type CanvasNodeData = {
   }>;
   imageReferenceNodeIds?: string[];
   executionId?: string;
+  nodeRunId?: string;
+  attemptId?: string;
+  externalTaskId?: string;
+  assetRefs?: AssetRef[];
+  /** @deprecated Read legacy snapshots only; use externalTaskId. */
   providerTaskId?: string;
   videoPrompt?: string;
   videoPromptMentions?: Array<{

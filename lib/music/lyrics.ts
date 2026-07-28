@@ -9,6 +9,8 @@ export type TrackIdentity = {
   title: string;
 };
 
+export type TrackQuery = Pick<TrackIdentity, "artist" | "title">;
+
 export type LyricLine = {
   end: number;
   id: string;
@@ -73,6 +75,46 @@ export async function lookupLyrics(
   throw new LyricsLookupError("网易云和 LRCLIB 均未找到与当前歌曲可靠匹配的同步歌词");
 }
 
+export async function lookupLyricsByQuery(
+  query: TrackQuery,
+  fetchImpl: FetchLike = fetch,
+): Promise<LyricsLookupResult> {
+  const artist = query.artist.trim();
+  const title = query.title.trim();
+  if (!artist || !title) {
+    throw new LyricsLookupError("请输入歌名和歌手");
+  }
+
+  try {
+    const candidates = await searchNeteaseTracks({ artist, title }, fetchImpl);
+    const best = candidates
+      .map((candidate) => ({
+        ...candidate,
+        queryScore: queryIdentityScore({ artist, title }, candidate),
+      }))
+      .sort((left, right) => right.queryScore - left.queryScore)[0];
+    if (
+      !best ||
+      best.duration <= 0 ||
+      similarity(title, best.title) < 0.95 ||
+      !containsIdentity(artist, best.artist) ||
+      hasUnexpectedVersionMarker(title, best.title)
+    ) {
+      throw new LyricsLookupError("网易云未找到与歌名、歌手可靠匹配的歌曲");
+    }
+
+    return lookupLyrics({
+      album: best.album,
+      artist: best.artist,
+      duration: best.duration,
+      title: best.title,
+    }, fetchImpl);
+  } catch (error) {
+    if (error instanceof LyricsLookupError) throw error;
+    throw new LyricsLookupError("无法连接歌词来源，请稍后重试");
+  }
+}
+
 export function parseSyncedLyrics(
   value: string,
   duration: number,
@@ -106,33 +148,18 @@ export function parseSyncedLyrics(
 }
 
 async function lookupNeteaseLyrics(identity: TrackIdentity, fetchImpl: FetchLike) {
-  const search = new URL(`${NETEASE_BASE_URL}/search/get`);
-  search.search = new URLSearchParams({
-    limit: "5",
-    offset: "0",
-    s: `${identity.artist} ${identity.title}`,
-    sub: "false",
-    type: "1",
-  }).toString();
   try {
-    const payload = await fetchJson(search, fetchImpl, true) as {
-      result?: { songs?: unknown[] };
-    };
-    const candidates = (payload.result?.songs ?? []).flatMap((value) => {
-      if (!isObject(value)) return [];
-      const artists = Array.isArray(value.artists) ? value.artists : [];
-      const firstArtist = isObject(artists[0]) ? stringValue(artists[0].name) : "";
-      const album = isObject(value.album) ? stringValue(value.album.name) : "";
-      const duration = numberValue(value.duration) / 1_000;
-      return [{
-        album,
-        artist: firstArtist,
-        duration,
-        id: value.id,
-        score: identityScore(identity, stringValue(value.name), firstArtist, duration),
-        title: stringValue(value.name),
-      }];
-    });
+    const candidates = (await searchNeteaseTracks(identity, fetchImpl)).map(
+      (candidate) => ({
+        ...candidate,
+        score: identityScore(
+          identity,
+          candidate.title,
+          candidate.artist,
+          candidate.duration,
+        ),
+      }),
+    );
     const best = candidates.sort(compareCandidates)[0];
     if (!best || !isReliableMatch(identity, best)) return null;
     const lyricUrl = new URL(`${NETEASE_BASE_URL}/song/lyric`);
@@ -159,6 +186,36 @@ async function lookupNeteaseLyrics(identity: TrackIdentity, fetchImpl: FetchLike
   } catch {
     return null;
   }
+}
+
+async function searchNeteaseTracks(
+  query: TrackQuery,
+  fetchImpl: FetchLike,
+) {
+  const search = new URL(`${NETEASE_BASE_URL}/search/get`);
+  search.search = new URLSearchParams({
+    limit: "5",
+    offset: "0",
+    s: `${query.artist} ${query.title}`,
+    sub: "false",
+    type: "1",
+  }).toString();
+  const payload = await fetchJson(search, fetchImpl, true) as {
+    result?: { songs?: unknown[] };
+  };
+  return (payload.result?.songs ?? []).flatMap((value) => {
+    if (!isObject(value)) return [];
+    const artists = Array.isArray(value.artists) ? value.artists : [];
+    const firstArtist = isObject(artists[0]) ? stringValue(artists[0].name) : "";
+    const album = isObject(value.album) ? stringValue(value.album.name) : "";
+    return [{
+      album,
+      artist: firstArtist,
+      duration: numberValue(value.duration) / 1_000,
+      id: value.id,
+      title: stringValue(value.name),
+    }];
+  });
 }
 
 async function lookupLrclibLyrics(identity: TrackIdentity, fetchImpl: FetchLike) {
@@ -249,6 +306,31 @@ function identityScore(
     candidate.includes(normalized(marker)) && !expected.includes(normalized(marker))
   );
   return Math.max(0, 0.45 * titleScore + 0.35 * artistScore + 0.2 * durationScore - Math.min(0.24, mismatchedMarkers.length * 0.08));
+}
+
+function queryIdentityScore(
+  query: TrackQuery,
+  candidate: { artist: string; title: string },
+) {
+  const markerPenalty = hasUnexpectedVersionMarker(query.title, candidate.title)
+    ? 0.24
+    : 0;
+  return Math.max(
+    0,
+    0.58 * similarity(query.title, candidate.title) +
+      0.42 * similarity(query.artist, candidate.artist) -
+      markerPenalty,
+  );
+}
+
+function hasUnexpectedVersionMarker(expectedTitle: string, candidateTitle: string) {
+  const expected = normalized(expectedTitle);
+  const candidate = normalized(candidateTitle);
+  return VERSION_MARKERS.some(
+    (marker) =>
+      candidate.includes(normalized(marker)) &&
+      !expected.includes(normalized(marker)),
+  );
 }
 
 function isReliableMatch(

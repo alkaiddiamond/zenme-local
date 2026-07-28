@@ -6,6 +6,7 @@
 
 - [系统架构](architecture.md)
 - [本地数据与迁移](data-and-migrations.md)
+- [节点执行与恢复](execution-runtime.md)
 - [安全模型](security-model.md)
 - [发布手册](release.md)
 - [故障排查](troubleshooting.md)

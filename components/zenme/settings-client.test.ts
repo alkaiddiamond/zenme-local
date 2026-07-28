@@ -70,4 +70,13 @@ describe("model provider settings", () => {
     expect(source).not.toContain("/api/music/health");
     expect(source).not.toContain("getMusicServiceStatus");
   });
+
+  it("offers persistent light, black, and system themes", () => {
+    expect(source).toContain('label="外观"');
+    expect(source).toContain('label: "浅色"');
+    expect(source).toContain('label: "黑色"');
+    expect(source).toContain('label: "跟随系统"');
+    expect(source).toContain("announceThemePreference(nextTheme)");
+    expect(source).toContain("persistSettings({ theme: nextTheme })");
+  });
 });

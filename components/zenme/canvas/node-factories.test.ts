@@ -286,6 +286,11 @@ describe("canvas node factories", () => {
     });
     const result = createPendingImageResultChildCanvasNode({
       aspectRatio: "16:9",
+      execution: {
+        executionId: "image-execution",
+        nodeRunId: "image-node-run",
+        attemptId: "image-attempt",
+      },
       id: "image-result-1",
       model: "gpt-5.6-sol",
       position: { x: 720, y: 200 },

@@ -273,12 +273,26 @@ export function getClientPointFromConnectEnd(event: MouseEvent | TouchEvent) {
 }
 
 export function isEditableTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
+  const element = target instanceof Element
+    ? target
+    : target instanceof Node
+      ? target.parentElement
+      : null;
+  if (!element) return false;
 
   return Boolean(
-    target.closest("input, textarea, select, [contenteditable='true']"),
+    element.closest(
+      "input, textarea, select, [contenteditable]:not([contenteditable='false'])",
+    ) || (element as HTMLElement).isContentEditable,
+  );
+}
+
+export function isEditableClipboardEvent(
+  event: Pick<Event, "composedPath" | "target">,
+  activeElement: EventTarget | null,
+) {
+  return [event.target, activeElement, ...event.composedPath()].some(
+    isEditableTarget,
   );
 }
 

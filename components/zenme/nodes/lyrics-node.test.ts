@@ -13,6 +13,12 @@ const lyricsNodeSource = readFileSync(
 );
 
 describe("groupLyrics", () => {
+  it("shows a fixed external lyrics label without an internal title", () => {
+    expect(lyricsNodeSource).toContain('zenme-node-title-bar absolute -top-8 left-1');
+    expect(lyricsNodeSource).toContain("<span>歌词</span>");
+    expect(lyricsNodeSource).not.toContain("<EditableNodeTitle");
+  });
+
   it("accepts dedicated context connections from downstream text nodes", () => {
     expect(lyricsNodeSource).toContain("<NodeContextTargetHandle />");
   });
@@ -33,8 +39,8 @@ describe("groupLyrics", () => {
     ]);
   });
 
-  it("uses a stable fallback section", () => {
-    expect(groupLyrics([{ start: 1, text: "Line" }])[0]?.label).toBe("歌词");
+  it("does not add an internal heading when lyric sections are absent", () => {
+    expect(groupLyrics([{ start: 1, text: "Line" }])[0]?.label).toBe("");
   });
 
   it("formats every lyric line with timestamps and omits structure headings", () => {

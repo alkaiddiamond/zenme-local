@@ -38,17 +38,27 @@ export function resolveMusicSourceNode(input: {
   edges: Edge[];
   nodes: CanvasNode[];
   playerNodeId: string;
+  sourceNodeId?: string;
 }) {
-  const sourceIds = new Set(
-    input.edges
-      .filter((edge) => edge.target === input.playerNodeId)
-      .map((edge) => edge.source),
-  );
-  return input.nodes.find(
-    (node) => sourceIds.has(node.id) && node.data.kind === "music",
-  );
+  const sources = resolveMusicSourceNodes(input);
+  return sources.find((node) => node.id === input.sourceNodeId) ?? sources[0];
 }
 
+export function resolveMusicSourceNodes(input: {
+  edges: Edge[];
+  nodes: CanvasNode[];
+  playerNodeId: string;
+}) {
+  const nodeById = new Map(input.nodes.map((node) => [node.id, node]));
+  const seen = new Set<string>();
+  return input.edges.flatMap((edge) => {
+    if (edge.target !== input.playerNodeId || seen.has(edge.source)) return [];
+    const source = nodeById.get(edge.source);
+    if (source?.data.kind !== "music") return [];
+    seen.add(source.id);
+    return [source];
+  });
+}
 export function downsampleWaveform(values: number[], targetPoints = 160) {
   const safeValues = values.map((value) => Number.isFinite(value) ? Math.abs(value) : 0);
   if (!safeValues.length) return [];
@@ -108,9 +118,11 @@ export function createMusicPlayerUpdate(input: {
     position: { x: input.musicNode.position.x + 460, y: input.musicNode.position.y },
     data: {
       kind: "musicPlayer",
-      title: `${input.musicNode.data.title} · 播放器`,
+      title: "音乐播放器",
       projectId: input.projectId,
       musicPlayerNodeId: id,
+      musicSourceListExpanded: true,
+      musicSourceNodeId: input.musicNode.id,
       musicLoop: false,
       musicMuted: false,
       musicPlaybackRate: 1,
@@ -133,7 +145,7 @@ export function createLyricsNodeUpdate(input: {
   const id = `${musicChildNodeId(input.playerNode.id)}:${crypto.randomUUID()}`;
   const data: CanvasNodeData = {
     kind: "lyrics",
-    title: `${stripPlayerSuffix(input.playerNode.data.title)} · 歌词`,
+    title: "歌词",
     projectId: input.projectId,
     lyricsFetchStatus: "fetching",
     musicParentPlayerNodeId: input.playerNode.id,
@@ -170,7 +182,6 @@ export function extractMusicLyrics(result: Record<string, unknown> | undefined):
     }];
   });
 }
-
 export function findLyricsNodesNeedingRecovery(nodes: CanvasNode[]) {
   return nodes.flatMap((node) =>
     node.data.kind === "lyrics" &&
@@ -182,6 +193,35 @@ export function findLyricsNodesNeedingRecovery(nodes: CanvasNode[]) {
   );
 }
 
-function stripPlayerSuffix(title: string) {
-  return title.replace(/\s*·\s*播放器$/, "");
+export function findLyricsNodesNeedingRefresh(input: {
+  edges: Edge[];
+  nodes: CanvasNode[];
+}) {
+  const nodeById = new Map(input.nodes.map((node) => [node.id, node]));
+  return input.nodes.flatMap((node) => {
+    if (node.data.kind !== "lyrics") return [];
+    const playerNodeId = input.edges.find((edge) => {
+      if (edge.target !== node.id) return false;
+      return nodeById.get(edge.source)?.data.kind === "musicPlayer";
+    })?.source ?? node.data.musicParentPlayerNodeId;
+    if (!playerNodeId) return [];
+    const playerNode = nodeById.get(playerNodeId);
+    if (playerNode?.data.kind !== "musicPlayer") return [];
+    const sourceNode = resolveMusicSourceNode({
+      edges: input.edges,
+      nodes: input.nodes,
+      playerNodeId,
+      sourceNodeId: playerNode.data.musicSourceNodeId,
+    });
+    const needsMissingLyricsRecovery =
+      node.data.musicLyricsSourceNodeId === undefined &&
+      node.data.lyricsFetchStatus === "succeeded" &&
+      !node.data.musicLyrics?.length;
+    if (
+      !sourceNode ||
+      (node.data.musicLyricsSourceNodeId === sourceNode.id &&
+        !needsMissingLyricsRecovery)
+    ) return [];
+    return [{ childNodeId: node.id, playerNodeId, sourceNodeId: sourceNode.id }];
+  });
 }

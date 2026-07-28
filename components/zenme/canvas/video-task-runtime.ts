@@ -20,7 +20,7 @@ export function recoverInterruptedVideoTasks(nodes: CanvasNode[]) {
     ) {
       return node;
     }
-    if (node.data.providerTaskId && node.data.videoModel) {
+    if ((node.data.externalTaskId || node.data.providerTaskId) && node.data.videoModel) {
       resumable.push(node);
       return node;
     }

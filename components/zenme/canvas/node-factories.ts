@@ -9,6 +9,12 @@ import {
 } from "@/components/zenme/image-edit-options";
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 
+type ExecutionIdentity = {
+  attemptId: string;
+  executionId: string;
+  nodeRunId: string;
+};
+
 import { readNodeSize } from "./geometry";
 import type { CanvasNode } from "./types";
 
@@ -306,7 +312,7 @@ export function createVideoGenerationCanvasNode(input: {
 
 export function createPendingVideoResultChildCanvasNode(input: {
   duration: number;
-  executionId: string;
+  execution: ExecutionIdentity;
   generateAudio: boolean;
   id: string;
   model: string;
@@ -325,7 +331,7 @@ export function createPendingVideoResultChildCanvasNode(input: {
       position: input.position,
       style: VIDEO_RESULT_NODE_DEFAULT_SIZE,
       data: {
-        executionId: input.executionId,
+        ...input.execution,
         kind: "video",
         title: "视频生成",
         videoDuration: input.duration,
@@ -419,6 +425,7 @@ export function createTextChildCanvasNode(input: {
 }
 
 export function createAiResponseChildCanvasNode(input: {
+  execution?: ExecutionIdentity;
   id: string;
   model?: string;
   position?: { x: number; y: number };
@@ -443,6 +450,7 @@ export function createAiResponseChildCanvasNode(input: {
       width: 620,
     },
     data: {
+      ...input.execution,
       kind: "agent",
       title: "AI 回复",
       aiPrompt: input.prompt,
@@ -466,6 +474,7 @@ export function createAiResponseChildCanvasNode(input: {
 export function createPendingImageResultChildCanvasNode(input: {
   aspectRatio?: string;
   cameraControl?: ImageCameraControl;
+  execution: ExecutionIdentity;
   id: string;
   model?: string;
   position: { x: number; y: number };
@@ -483,6 +492,7 @@ export function createPendingImageResultChildCanvasNode(input: {
       width: IMAGE_RESULT_NODE_DEFAULT_SIZE.width,
     },
     data: {
+      ...input.execution,
       kind: "imageGeneration",
       title: "图片生成",
       imageOperation: "generate",

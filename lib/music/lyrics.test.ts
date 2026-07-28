@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { lookupLyrics, parseSyncedLyrics, type TrackIdentity } from "./lyrics";
+import {
+  lookupLyrics,
+  lookupLyricsByQuery,
+  parseSyncedLyrics,
+  type TrackIdentity,
+} from "./lyrics";
 
 const identity: TrackIdentity = {
   album: "测试专辑",
@@ -55,5 +60,45 @@ describe("local lyrics resolver", () => {
     expect(result.source).toBe("lrclib");
     expect(result.warnings[0]).toContain("网易云");
     expect(result.lyrics[0].text).toBe("后备歌词");
+  });
+
+  it("resolves title and artist through NetEase before reusing lyrics lookup", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/search/get")) return Response.json({ result: { songs: [{
+        album: { name: "城市" }, artists: [{ name: "张悬" }],
+        duration: 292_000, id: 42, name: "关于我爱你",
+      }] } });
+      if (url.includes("/song/lyric")) {
+        return Response.json({ lrc: { lyric: "[00:01.00]第一句\n[00:04.00]第二句" } });
+      }
+      throw new Error("LRCLIB must not be called");
+    });
+
+    const result = await lookupLyricsByQuery(
+      { artist: "张悬", title: "关于我爱你" },
+      fetchImpl as typeof fetch,
+    );
+
+    expect(result.identity).toMatchObject({
+      artist: "张悬",
+      duration: 292,
+      title: "关于我爱你",
+    });
+    expect(result.lyrics.map((line) => line.text)).toEqual(["第一句", "第二句"]);
+  });
+
+  it("rejects title-only manual lookup and mismatched versions", async () => {
+    await expect(lookupLyricsByQuery({ artist: "", title: "关于我爱你" }))
+      .rejects.toThrow("请输入歌名和歌手");
+
+    const fetchImpl = vi.fn(async () => Response.json({ result: { songs: [{
+      album: { name: "现场" }, artists: [{ name: "张悬" }],
+      duration: 292_000, id: 42, name: "关于我爱你 Live",
+    }] } }));
+    await expect(lookupLyricsByQuery(
+      { artist: "张悬", title: "关于我爱你" },
+      fetchImpl as typeof fetch,
+    )).rejects.toThrow("可靠匹配");
   });
 });

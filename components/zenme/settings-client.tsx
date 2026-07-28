@@ -11,6 +11,8 @@ import {
   FolderOpen,
   HardDrive,
   ImageIcon,
+  Monitor,
+  Moon,
   LogIn,
   LogOut,
   Plus,
@@ -18,6 +20,7 @@ import {
   Save,
   Server,
   Settings2,
+  Sun,
   Trash2,
   Upload,
   X,
@@ -38,7 +41,9 @@ import type {
   ModelProviderConfig,
   NetworkProxyConfig,
   ZenmeLocalSettings,
+  ZenmeTheme,
 } from "@/lib/local/settings";
+import { announceThemePreference } from "@/components/zenme/theme-controller";
 import {
   createModelProviderPreset,
   identifyModelProviderPreset,
@@ -61,7 +66,7 @@ type ZenmeDesktopApi = {
   }>;
 };
 
-type SettingsTab = "models" | "usage" | "local" | "save";
+type SettingsTab = "appearance" | "models" | "usage" | "local" | "save";
 
 type TokenUsagePayload = {
   summary: {
@@ -192,6 +197,7 @@ export function SettingsClient() {
   const [isDesktop, setIsDesktop] = useState(false);
   const [activeTab, setActiveTab] = useState<SettingsTab>("models");
   const [autoSaveIntervalMs, setAutoSaveIntervalMs] = useState(5_000);
+  const [theme, setTheme] = useState<ZenmeTheme>("light");
   const [modelProviders, setModelProviders] = useState<ModelProviderConfig[]>([]);
   const [editingProvider, setEditingProvider] = useState<ModelProviderConfig | null>(null);
   const [isCreatingProvider, setIsCreatingProvider] = useState(false);
@@ -230,6 +236,7 @@ export function SettingsClient() {
       const nextPayload = await response.json() as SettingsPayload;
       setPayload(nextPayload);
       setAutoSaveIntervalMs(nextPayload.settings.autoSaveIntervalMs);
+      setTheme(nextPayload.settings.theme);
       setModelProviders(nextPayload.settings.modelProviders);
       const status = await loadChatGptStatus();
       if (status?.loggedIn && !status.modelSyncing && status.modelCount === 0) {
@@ -320,6 +327,7 @@ export function SettingsClient() {
   async function persistSettings(updates: {
     autoSaveIntervalMs?: number;
     modelProviders?: ModelProviderConfig[];
+    theme?: ZenmeTheme;
   }) {
     setSaveState("saving");
     try {
@@ -336,6 +344,7 @@ export function SettingsClient() {
       const nextPayload = await response.json() as SettingsPayload;
       setPayload(nextPayload);
       setModelProviders(nextPayload.settings.modelProviders);
+      setTheme(nextPayload.settings.theme);
       setSaveState("saved");
       window.setTimeout(() => setSaveState("idle"), 1400);
       return nextPayload;
@@ -435,6 +444,12 @@ export function SettingsClient() {
           </div>
           <nav className="space-y-1">
             <SettingsNavButton
+              active={activeTab === "appearance"}
+              icon={<Sun className="size-5" />}
+              label="外观"
+              onClick={() => setActiveTab("appearance")}
+            />
+            <SettingsNavButton
               active={activeTab === "usage"}
               icon={<ChartNoAxesColumn className="size-5" />}
               label="Token 用量"
@@ -467,6 +482,22 @@ export function SettingsClient() {
         </aside>
 
         <main className="px-10 py-8">
+          {activeTab === "appearance" ? (
+            <AppearanceSettings
+              onChange={(nextTheme) => {
+                const previousTheme = theme;
+                setTheme(nextTheme);
+                announceThemePreference(nextTheme);
+                void persistSettings({ theme: nextTheme }).then((saved) => {
+                  if (saved) return;
+                  setTheme(previousTheme);
+                  announceThemePreference(previousTheme);
+                });
+              }}
+              saveState={saveState}
+              theme={theme}
+            />
+          ) : null}
           {activeTab === "models" ? (
             <ModelProviderSettings
               onAddProvider={(preset) => {
@@ -550,6 +581,110 @@ export function SettingsClient() {
         />
       ) : null}
     </div>
+  );
+}
+
+const THEME_OPTIONS: Array<{
+  description: string;
+  icon: React.ReactNode;
+  label: string;
+  value: ZenmeTheme;
+}> = [
+  {
+    description: "明亮、清爽的默认工作界面",
+    icon: <Sun className="size-5" />,
+    label: "浅色",
+    value: "light",
+  },
+  {
+    description: "纯黑工作区与低眩光控件",
+    icon: <Moon className="size-5" />,
+    label: "黑色",
+    value: "dark",
+  },
+  {
+    description: "自动匹配系统外观设置",
+    icon: <Monitor className="size-5" />,
+    label: "跟随系统",
+    value: "system",
+  },
+];
+
+function AppearanceSettings({
+  onChange,
+  saveState,
+  theme,
+}: {
+  onChange: (theme: ZenmeTheme) => void;
+  saveState: "idle" | "saving" | "saved" | "failed";
+  theme: ZenmeTheme;
+}) {
+  return (
+    <section className="max-w-3xl space-y-5">
+      <div>
+        <h2 className="text-xl font-medium text-[var(--color-text-primary)]">外观</h2>
+        <p className="mt-1 text-sm text-[var(--color-text-tertiary)]">
+          主题会应用到工作台、画布、节点、阅读器和所有弹层。
+        </p>
+      </div>
+      <div className="grid grid-cols-3 gap-4" role="radiogroup" aria-label="界面主题">
+        {THEME_OPTIONS.map((option) => {
+          const selected = theme === option.value;
+          return (
+            <button
+              aria-checked={selected}
+              className={`group overflow-hidden rounded-xl border text-left transition focus-visible:outline-none focus-visible:shadow-[var(--shadow-focus-ring)] ${
+                selected
+                  ? "border-[var(--color-border-focus)] ring-1 ring-[var(--color-border-focus)]"
+                  : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
+              }`}
+              key={option.value}
+              onClick={() => onChange(option.value)}
+              role="radio"
+              type="button"
+            >
+              <ThemePreview theme={option.value} />
+              <span className="flex items-start gap-3 bg-[var(--color-surface-container-lowest)] px-4 py-3.5">
+                <span className="mt-0.5 text-[var(--color-text-secondary)]">{option.icon}</span>
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
+                    {option.label}
+                    {selected ? <Check className="size-4" /> : null}
+                  </span>
+                  <span className="mt-1 block text-xs leading-5 text-[var(--color-text-tertiary)]">
+                    {option.description}
+                  </span>
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <p aria-live="polite" className="text-sm text-[var(--color-text-tertiary)]">
+        {saveState === "saving"
+          ? "正在保存主题…"
+          : saveState === "saved"
+            ? "主题已保存"
+            : saveState === "failed"
+              ? "主题保存失败，请重试"
+              : "切换后立即生效。"}
+      </p>
+    </section>
+  );
+}
+
+function ThemePreview({ theme }: { theme: ZenmeTheme }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="zenme-theme-preview relative block h-28 overflow-hidden border-b"
+      data-preview-theme={theme}
+    >
+      <span className="zenme-theme-preview-sidebar absolute inset-y-0 left-0 w-9" />
+      <span className="zenme-theme-preview-line absolute left-12 right-3 top-4 h-3 rounded" />
+      <span className="zenme-theme-preview-card absolute left-12 top-10 h-12 w-20 rounded-md border" />
+      <span className="zenme-theme-preview-card absolute left-[8.75rem] right-3 top-10 h-12 rounded-md border" />
+    </span>
   );
 }
 
@@ -795,7 +930,7 @@ function UsageBars({ items, valueKey }: { items: UsageChartItem[]; valueKey: "to
         {items.map((item) => (
           <div className="group relative flex min-w-0 flex-1 items-end" key={item.date} title={`${item.date} · ${formatTokenCount(item[valueKey])} Token`}>
             <span
-              className="w-full rounded-t-sm bg-[#c48668] transition group-hover:bg-[#96573f]"
+              className="w-full rounded-t-sm bg-[var(--color-brand-container)] transition group-hover:bg-[var(--color-brand)]"
               style={{ height: `${Math.max(item[valueKey] ? 4 : 1, item[valueKey] / max * 100)}%` }}
             />
           </div>
@@ -1041,7 +1176,7 @@ function ChatGptProviderCard({
           <div className="flex items-center gap-2">
             <span className={`size-2.5 rounded-full ${status?.loggedIn ? "bg-emerald-500" : "bg-zinc-300"}`} />
             <h3 className="text-base font-medium text-[var(--color-text-primary)]">ChatGPT</h3>
-            <span className="rounded-md bg-[#ead9d1] px-2 py-0.5 text-xs font-medium text-[#96573f]">官方</span>
+            <span className="rounded-md bg-[var(--color-brand-soft)] px-2 py-0.5 text-xs font-medium text-[var(--color-brand)]">官方</span>
           </div>
           <p className="mt-1 text-sm text-[var(--color-text-secondary)]">通过 ChatGPT 账号完成 OpenAI OAuth，无需 API 密钥</p>
         </div>
@@ -1328,7 +1463,7 @@ function ProviderEditorModal({
                       <button
                         className={`rounded-full border px-3.5 py-2 text-sm transition ${
                           active
-                            ? "border-[#96573f] bg-[#96573f]/8 text-[#7f4532] shadow-sm"
+                            ? "border-[var(--color-brand)] bg-[var(--color-brand-soft)] text-[var(--color-brand)] shadow-sm"
                             : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-focus)] hover:bg-[var(--color-surface-container-low)]"
                         }`}
                         key={option.value}
@@ -1562,7 +1697,7 @@ function ProviderEditorModal({
                           <button
                             className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
                               checked
-                                ? "border-[#96573f] bg-[#ead9d1] text-[#96573f]"
+                                ? "border-[var(--color-brand)] bg-[var(--color-brand-soft)] text-[var(--color-brand)]"
                                 : "border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-container-low)]"
                             }`}
                             key={option.value}

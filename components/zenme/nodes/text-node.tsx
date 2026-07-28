@@ -2,6 +2,7 @@
 
 import {
   type ClipboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   useEffect,
   useMemo,
@@ -36,12 +37,18 @@ import { renderHighlightedCode } from "@/components/zenme/nodes/renderers/code-h
 import { renderMarkdown } from "@/components/zenme/nodes/renderers/markdown";
 import {
   escapeHtml,
+  normalizeRichTextHtml,
   plainTextToRichTextHtml,
+  plainTextToRichTextFragment,
   stripLegacyRichTextHtml,
 } from "@/components/zenme/nodes/renderers/rich-text";
 import { TextNodeComposer } from "@/components/zenme/nodes/text-node-composer";
 import { ImageTaskTiming } from "@/components/zenme/nodes/image-task-timing";
 import { getWordSelectionOffsets } from "@/components/zenme/nodes/text-selection";
+import {
+  insertTabSpaces,
+  TEXT_EDITOR_TAB_SPACES,
+} from "@/components/zenme/nodes/text-editor-keyboard";
 import { writeTextToClipboard } from "@/lib/clipboard";
 
 type TextDisplayMode = "code" | "markdown" | "plain";
@@ -62,9 +69,9 @@ export function TextNode({ data, id, selected }: NodeProps) {
   const isSwitchingMode = useRef(false);
   const initialRichTextHtml = useMemo(
     () =>
-      nodeData.richTextHtml ||
-      plainTextToRichTextHtml(nodeData.plainText) ||
-      "",
+      normalizeRichTextHtml(
+        nodeData.richTextHtml || plainTextToRichTextHtml(nodeData.plainText),
+      ),
     [nodeData.plainText, nodeData.richTextHtml],
   );
   const initialPlainText = useMemo(
@@ -165,7 +172,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
 
     return {
       plainText: editor?.innerText ?? "",
-      richTextHtml: editor?.innerHTML ?? "",
+      richTextHtml: normalizeRichTextHtml(editor?.innerHTML),
     };
   }
 
@@ -375,10 +382,37 @@ export function TextNode({ data, id, selected }: NodeProps) {
   }
 
   function handlePaste(event: ClipboardEvent<HTMLDivElement>) {
+    event.stopPropagation();
     event.preventDefault();
     const text = event.clipboardData.getData("text/plain");
-    document.execCommand("insertText", false, text);
+    document.execCommand("insertHTML", false, plainTextToRichTextFragment(text));
     handlePlainTextInput();
+  }
+
+  function handleRichTextKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab") return;
+    event.preventDefault();
+    event.stopPropagation();
+    document.execCommand("insertText", false, TEXT_EDITOR_TAB_SPACES);
+    handlePlainTextInput();
+  }
+
+  function handleTextareaKeyDown(event: ReactKeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Tab") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const editor = event.currentTarget;
+    const update = insertTabSpaces(
+      editor.value,
+      editor.selectionStart,
+      editor.selectionEnd,
+    );
+    rememberText(update.value);
+    schedulePlainTextSync(update.value);
+    window.requestAnimationFrame(() => {
+      editor.focus();
+      editor.setSelectionRange(update.cursor, update.cursor);
+    });
   }
 
   function focusPlainTextArea(editor: HTMLTextAreaElement | null) {
@@ -456,6 +490,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
               }}
               onFocus={() => setIsEditing(true)}
               onInput={handlePlainTextInput}
+              onKeyDown={handleRichTextKeyDown}
               onPaste={handlePaste}
               ref={editorRef}
               tabIndex={0}
@@ -503,6 +538,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
                   schedulePlainTextSync(nextText);
                 }}
                 onFocus={() => setIsEditing(true)}
+                onKeyDown={handleTextareaKeyDown}
                 onMouseDown={(event) => {
                   if (isEditing) {
                     return;
@@ -561,6 +597,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
                   schedulePlainTextSync(nextText);
                 }}
                 onFocus={() => setIsEditing(true)}
+                onKeyDown={handleTextareaKeyDown}
                 onMouseDown={(event) => {
                   if (isEditing) {
                     return;

@@ -33,6 +33,7 @@ describe("settings API", () => {
         method: "PATCH",
         body: JSON.stringify({
           autoSaveIntervalMs: 45000,
+          theme: "dark",
           lastImageAspectRatio: "auto",
           lastImageQuality: "1K",
           lastTextModelId: "glm-5.2",
@@ -44,6 +45,7 @@ describe("settings API", () => {
       mode: "local",
       settings: {
         autoSaveIntervalMs: 45000,
+        theme: "dark",
         lastImageAspectRatio: "auto",
         lastImageQuality: "1K",
         lastTextModelId: "glm-5.2",

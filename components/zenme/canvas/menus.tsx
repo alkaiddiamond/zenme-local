@@ -174,35 +174,15 @@ export function NodeActionMenu({
 }: NodeActionMenuProps) {
   if (
     actionNode?.data.kind === "text" ||
-    actionNode?.data.kind === "agent"
+    actionNode?.data.kind === "agent" ||
+    actionNode?.data.kind === "managedText" ||
+    actionNode?.data.kind === "task"
   ) {
     return (
       <FloatingMenu left={menu.x + 12} top={menu.y - 8}>
         <FloatingMenuHeader onClose={onClose} title="添加节点" />
         <NodeCreationMenuItems
           includeUpload={false}
-          onCreateImageGenerationNode={() =>
-            onCreateConnectedPlaceholder("imageGeneration")
-          }
-          onCreateManagedTextNode={() =>
-            onCreateConnectedPlaceholder("managedText")
-          }
-          onCreateVideoGenerationNode={() =>
-            onCreateConnectedPlaceholder("videoGeneration")
-          }
-          onCreateTaskNode={() => onCreateConnectedPlaceholder("task")}
-          onCreateTextNode={() => onCreateConnectedPlaceholder("text")}
-          onUploadFiles={onUploadConnectedFiles}
-        />
-      </FloatingMenu>
-    );
-  }
-
-  if (actionNode?.data.kind === "task") {
-    return (
-      <FloatingMenu left={menu.x + 12} top={menu.y - 8}>
-        <FloatingMenuHeader onClose={onClose} title="添加节点" />
-        <NodeCreationMenuItems
           onCreateImageGenerationNode={() =>
             onCreateConnectedPlaceholder("imageGeneration")
           }

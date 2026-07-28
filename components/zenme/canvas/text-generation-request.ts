@@ -6,6 +6,7 @@ type TextGenerationRequestInput = {
   fetcher?: typeof fetch;
   model: string;
   prompt: string;
+  signal?: AbortSignal;
 };
 
 export const DEFAULT_TEXT_GENERATION_PROMPT = "请基于当前节点内容继续生成。";
@@ -19,12 +20,14 @@ export async function requestTextGenerationResponse({
   fetcher = fetch,
   model,
   prompt,
+  signal,
 }: TextGenerationRequestInput) {
   const response = await requestAiChatStream({
     context: context || "没有可用的上游上下文。",
     fetcher,
     messages: [{ role: "user", content: resolveTextGenerationPrompt(prompt) }],
     model,
+    signal,
   });
 
   if (!response.ok) {

@@ -357,4 +357,57 @@ describe("rendered canvas nodes", () => {
       .toEqual(persistedLyrics);
   });
 
+  it("renders every connected music source and derives media from the selected source", () => {
+    const onSelectMusicSource = vi.fn();
+    const onToggleMusicLyricsOverlay = vi.fn();
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [
+        { source: "music-a", target: "player" },
+        { source: "music-b", target: "player" },
+      ],
+      musicLyricsOverlayPlayerNodeId: "player",
+      nodes: [
+        node({
+          data: { kind: "music", originalUrl: "/a.mp3", title: "歌曲 A" },
+          id: "music-a",
+          type: "music",
+        }),
+        node({
+          data: { kind: "music", originalUrl: "/b.mp3", title: "歌曲 B" },
+          id: "music-b",
+          type: "music",
+        }),
+        node({
+          data: { kind: "musicPlayer", musicSourceNodeId: "music-b", title: "旧播放器名称" },
+          id: "player",
+          type: "musicPlayer",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSelectMusicSource,
+      onToggleMusicLyricsOverlay,
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    expect(renderedNodes.find((item) => item.id === "player")?.data).toMatchObject({
+      musicSourceNodeId: "music-b",
+      musicLyricsOverlayOpen: true,
+      musicSources: [
+        { id: "music-a", title: "歌曲 A" },
+        { id: "music-b", title: "歌曲 B" },
+      ],
+      onSelectMusicSource,
+      onToggleMusicLyricsOverlay,
+      originalUrl: "/b.mp3",
+      title: "音乐播放器",
+    });
+  });
+
 });

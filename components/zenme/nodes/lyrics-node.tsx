@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from "react";
 
 import type { CanvasNodeData, MusicLyricLine } from "@/components/zenme/node-types";
 import { NodeFrame } from "@/components/zenme/nodes/node-frame";
-import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
 import {
   NodeActionHandle,
   NodeContextTargetHandle,
@@ -18,7 +17,7 @@ import { writeTextToClipboard } from "@/lib/clipboard";
 
 export function groupLyrics(lines: MusicLyricLine[]) {
   return lines.reduce<Array<{ label: string; lines: MusicLyricLine[] }>>((groups, line) => {
-    const label = line.section?.trim() || "歌词";
+    const label = line.section?.trim() || "";
     const last = groups.at(-1);
     if (last?.label === label) last.lines.push(line);
     else groups.push({ label, lines: [line] });
@@ -34,7 +33,6 @@ export function formatLyricsForClipboard(lines: MusicLyricLine[]) {
 
 export function LyricsNode({ data, selected, id }: NodeProps) {
   const node = data as CanvasNodeData;
-  const [isRenaming, setIsRenaming] = useState(false);
   const [copied, setCopied] = useState(false);
   const lines = node.musicLyrics ?? [];
   const activeTime = node.musicCurrentTime ?? 0;
@@ -55,7 +53,6 @@ export function LyricsNode({ data, selected, id }: NodeProps) {
     },
     [],
   );
-
   async function copyLyrics() {
     const text = formatLyricsForClipboard(lines);
     if (!text || !(await writeTextToClipboard(text))) {
@@ -70,7 +67,11 @@ export function LyricsNode({ data, selected, id }: NodeProps) {
   }
 
   return (
-    <NodeFrame className={`flex h-full min-h-[176px] w-full min-w-[420px] flex-col p-4 ${isRenaming ? "zenme-node-renaming" : ""}`} selected={Boolean(selected)}>
+    <NodeFrame className="flex h-full min-h-[176px] w-full min-w-[420px] flex-col p-4" selected={Boolean(selected)}>
+      <div className="zenme-node-title-bar absolute -top-8 left-1 flex h-5 items-center gap-2 text-xs font-medium text-zinc-500">
+        <FileText className="size-4" />
+        <span>歌词</span>
+      </div>
       <MusicChildExpandButton className="right-12" node={node} nodeId={id} />
       <button
         aria-label={copied ? "歌词已复制" : "复制歌词"}
@@ -86,7 +87,6 @@ export function LyricsNode({ data, selected, id }: NodeProps) {
           <Copy className="size-3.5" />
         )}
       </button>
-      <EditableNodeTitle fallbackTitle="歌词" icon={<FileText className="size-4" />} onCommit={(title) => node.onUpdateMusicNode?.(id, { title })} onEditingChange={setIsRenaming} title={node.title} />
       {node.lyricsFetchDurationMs !== undefined ? (
         <span className="pointer-events-none absolute -top-8 right-1 h-5 text-xs tabular-nums text-zinc-400">
           {formatCompactDuration(node.lyricsFetchDurationMs)}
@@ -105,7 +105,7 @@ export function LyricsNode({ data, selected, id }: NodeProps) {
         </div>
       ) : null}
       <div className="nodrag nowheel min-h-0 flex-1 space-y-4 overflow-auto pr-1">
-        {groupLyrics(lines).map((group, groupIndex) => <section key={`${group.label}-${groupIndex}`}><p className={`sticky top-0 bg-white py-1 text-[11px] font-medium ${activeLine?.section === group.label ? "text-zinc-950" : "text-zinc-400"}`}>{group.label}</p><div className="space-y-0.5">{group.lines.map((line, index) => {
+        {groupLyrics(lines).map((group, groupIndex) => <section key={`${group.label}-${groupIndex}`}>{group.label ? <p className={`sticky top-0 bg-white py-1 text-[11px] font-medium ${activeLine?.section === group.label ? "text-zinc-950" : "text-zinc-400"}`}>{group.label}</p> : null}<div className="space-y-0.5">{group.lines.map((line, index) => {
           const active = activeTime >= line.start && activeTime < (line.end ?? Number.POSITIVE_INFINITY);
           return <button className={`flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left text-sm ${active ? "bg-zinc-100 text-zinc-950" : "text-zinc-600 hover:bg-zinc-50"}`} key={line.id || `${line.start}-${index}`} onClick={() => node.musicParentPlayerNodeId && node.onSeekMusicPlayer?.(node.musicParentPlayerNodeId, line.start)} ref={active ? activeLineRef : undefined} type="button"><span className="w-10 shrink-0 pt-0.5 font-mono text-[10px] text-zinc-400">{formatTime(line.start)}</span><span>{line.text}</span></button>;
         })}</div></section>)}

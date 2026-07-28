@@ -12,21 +12,11 @@ import {
 } from "@/components/zenme/node-types";
 
 import { isTextGenerationContextNode } from "./text-generation-context";
+import { acceptsCanvasContext } from "./node-capabilities";
 
-const CONTEXT_CONSUMER_NODE_KINDS = new Set([
-  "agent",
-  "code",
-  "imageGeneration",
-  "videoGeneration",
-  "managedText",
-  "markdown",
-  "note",
-  "task",
-  "text",
-  "textGeneration",
-]);
-
-export function isCanvasConnectionValid(connection: Connection | Edge) {
+export function isCanvasConnectionValid(
+  connection: Connection | Edge,
+) {
   const startsFromContextHandle =
     connection.sourceHandle === NODE_CONTEXT_HANDLE_ID;
   const endsAtContextTarget =
@@ -60,7 +50,7 @@ export function normalizeCanvasConnection(
   }
 
   if (
-    CONTEXT_CONSUMER_NODE_KINDS.has(sourceNode.data.kind) &&
+    acceptsCanvasContext(sourceNode.data.kind) &&
     connection.sourceHandle === NODE_CONTEXT_HANDLE_ID
   ) {
     return {
@@ -74,7 +64,7 @@ export function normalizeCanvasConnection(
 
   if (
     isTextGenerationContextNode(sourceNode) &&
-    CONTEXT_CONSUMER_NODE_KINDS.has(targetNode.data.kind)
+    acceptsCanvasContext(targetNode.data.kind)
   ) {
     return {
       ...connection,

@@ -13,6 +13,12 @@ vi.mock("@/lib/ai/provider-model-resolution", () => ({
   })),
 }));
 vi.mock("@/lib/api/proxy-fetch", () => ({ getProxyFetchOptions: vi.fn(() => ({})) }));
+vi.mock("@/lib/local/project-repository", () => ({
+  getLocalProject: vi.fn(async () => ({ id: "project-1" })),
+}));
+vi.mock("@/lib/local/project-files-repository", () => ({
+  importLocalProjectFile: vi.fn(async () => ({ id: "file-1" })),
+}));
 
 import { GET, POST } from "./route";
 
@@ -51,10 +57,10 @@ describe("video task API", () => {
     expect(upstreamFetch).toHaveBeenCalledTimes(1);
   });
 
-  it("任务成功后由本地接口代理下载视频", async () => {
+  it("任务成功后安全下载并直接保存为本地项目资产", async () => {
     const upstreamFetch = vi.fn()
       .mockResolvedValueOnce(Response.json({
-        content: { video_url: "https://example.test/result.mp4" },
+        content: { video_url: "https://example.volces.com/result.mp4" },
         id: "cgt-123",
         status: "succeeded",
       }))
@@ -64,12 +70,35 @@ describe("video task API", () => {
     vi.stubGlobal("fetch", upstreamFetch);
 
     const response = await GET(new Request(
-      "http://localhost/api/ai/video?download=1&model=provider%2Fmodel&taskId=cgt-123",
+      "http://localhost/api/ai/video?download=1&model=provider%2Fmodel&projectId=project-1&taskId=cgt-123",
     ));
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("x-zenme-task-id")).toBe("cgt-123");
-    expect(await response.text()).toBe("video-data");
+    await expect(response.json()).resolves.toEqual({
+      fileId: "file-1",
+      model: "doubao-seedance-test",
+      originalUrl: "/api/projects/project-1/files/file-1",
+      taskId: "cgt-123",
+    });
     expect(upstreamFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("拒绝供应商返回的不受信任下载地址", async () => {
+    const upstreamFetch = vi.fn(async () => Response.json({
+      content: { video_url: "http://127.0.0.1/private.mp4" },
+      id: "cgt-123",
+      status: "succeeded",
+    }));
+    vi.stubGlobal("fetch", upstreamFetch);
+
+    const response = await GET(new Request(
+      "http://localhost/api/ai/video?download=1&model=provider%2Fmodel&projectId=project-1&taskId=cgt-123",
+    ));
+
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toEqual({
+      error: "视频任务返回了不受信任的下载地址",
+    });
+    expect(upstreamFetch).toHaveBeenCalledTimes(1);
   });
 });

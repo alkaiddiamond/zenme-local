@@ -23,11 +23,56 @@ export function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
+export function plainTextToRichTextFragment(value: string) {
+  return escapeHtml(value).replace(/\r\n?|\n/g, "<br>");
+}
+
+function removeRedundantEditorSpans(value: string) {
+  const redundantEditorSpan =
+    /<span\s+style=(["'])([^"']*)\1\s*>((?:(?!<\/?span\b)[\s\S])*)<\/span>/gi;
+
+  return value.replace(
+    redundantEditorSpan,
+    (match, _quote: string, style: string, content: string) => {
+      const declarations = style
+        .split(";")
+        .map((declaration) =>
+          declaration.trim().toLowerCase().replace(/\s*:\s*/, ":"),
+        )
+        .filter(Boolean);
+      const isRedundant =
+        declarations.length > 0 &&
+        declarations.every(
+          (declaration) =>
+            declaration === "font-size:1rem" ||
+            declaration === "caret-color:currentcolor",
+        );
+
+      return isRedundant ? content : match;
+    },
+  );
+}
+
+export function normalizeRichTextHtml(html?: string) {
+  if (!html) {
+    return "";
+  }
+
+  const fragment = removeRedundantEditorSpans(html)
+    .trim()
+    .replace(/<(p|div)(?:\s[^>]*)?>/gi, "")
+    .replace(/<\/(p|div)>/gi, "<br>")
+    .replace(/^(?:\s*<br\s*\/?>)+/gi, "")
+    .replace(/(?:<br\s*\/?>\s*)+$/gi, "");
+
+  return fragment ? `<p>${fragment}</p>` : "";
+}
+
 export function plainTextToRichTextHtml(value?: string) {
   const text = value ?? "";
   if (!text) {
     return "";
   }
 
-  return `<p>${text.split(/\r?\n/).map(escapeHtml).join("<br>")}</p>`;
+  return `<p>${plainTextToRichTextFragment(text)}</p>`;
 }

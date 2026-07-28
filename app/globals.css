@@ -161,8 +161,44 @@
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
+    --color-surface: #080808;
+    --color-surface-sidebar: #0b0b0c;
+    --color-surface-topbar: #101011;
+    --color-surface-container: #111113;
+    --color-surface-container-low: #0d0d0f;
+    --color-surface-container-high: #1c1c1f;
+    --color-surface-container-lowest: #121214;
+    --color-text-primary: #f4f4f5;
+    --color-text-secondary: #b4b4bc;
+    --color-text-tertiary: #7f7f89;
+    --color-border: #29292d;
+    --color-border-strong: #3b3b40;
+    --color-border-focus: #71717a;
+    --color-brand: #dca98f;
+    --color-brand-container: #7f4532;
+    --color-brand-soft: #241713;
+    --color-run: #3b2923;
+    --color-run-hover: #4a332b;
+    --color-tab-active: #efd0c2;
+    --color-info: #a1a1aa;
+    --color-danger: #f87171;
+    --color-success: #4ade80;
+    --color-canvas-grid: #343438;
+    --color-canvas-minimap-mask: rgba(255, 255, 255, 0.05);
+    --shadow-dropdown: 0 18px 48px rgba(0, 0, 0, 0.5);
+    --shadow-canvas: 0 12px 32px rgba(0, 0, 0, 0.42);
+    --shadow-node:
+      0 22px 32px -10px rgba(0, 0, 0, 0.72),
+      0 8px 14px -8px rgba(0, 0, 0, 0.65);
+    --shadow-overlay: 0 24px 72px rgba(0, 0, 0, 0.68);
+    --shadow-focus-ring: 0 0 0 3px rgba(161, 161, 170, 0.3);
     --gradient-btn-primary: linear-gradient(180deg, #fafafa 0%, #e4e4e7 100%);
     --gradient-btn-primary-hover: linear-gradient(180deg, #ffffff 0%, #f4f4f5 100%);
+  }
+
+  :root:not(.dark) {
+    --color-canvas-grid: #e4e4e7;
+    --color-canvas-minimap-mask: rgba(24, 24, 27, 0.05);
   }
 }
 
@@ -175,6 +211,7 @@
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    transition: background-color 160ms ease, color 160ms ease;
   }
 
   [data-desktop-drag-region] {
@@ -207,6 +244,137 @@
     background: rgba(234, 213, 207, 0.86);
     color: #0f172a;
   }
+}
+
+/*
+ * Legacy canvas and reader surfaces use zinc utilities directly. These
+ * compatibility mappings keep every existing node type theme-aware while new
+ * UI continues to use the semantic tokens above.
+ */
+html.dark .bg-white { background-color: var(--color-surface-container-lowest) !important; }
+html.dark .bg-white\/70 { background-color: color-mix(in srgb, var(--color-surface-container-lowest) 70%, transparent) !important; }
+html.dark .bg-white\/80 { background-color: color-mix(in srgb, var(--color-surface-container-lowest) 80%, transparent) !important; }
+html.dark .bg-white\/85 { background-color: color-mix(in srgb, var(--color-surface-container-lowest) 85%, transparent) !important; }
+html.dark .bg-white\/95 { background-color: color-mix(in srgb, var(--color-surface-container-lowest) 95%, transparent) !important; }
+html.dark .\!bg-white\/95 { background-color: color-mix(in srgb, var(--color-surface-container-lowest) 95%, transparent) !important; }
+html.dark .bg-zinc-50 { background-color: var(--color-surface-container-low) !important; }
+html.dark .bg-zinc-50\/35 { background-color: color-mix(in srgb, var(--color-surface-container-low) 35%, transparent) !important; }
+html.dark .bg-zinc-50\/70 { background-color: color-mix(in srgb, var(--color-surface-container-low) 70%, transparent) !important; }
+html.dark .bg-zinc-100,
+html.dark .bg-zinc-100\/70,
+html.dark .bg-zinc-100\/80 { background-color: var(--color-surface-container-high) !important; }
+html.dark .bg-zinc-200 { background-color: #29292d !important; }
+html.dark .bg-zinc-300 { background-color: #3b3b40 !important; }
+
+html.dark .text-zinc-950,
+html.dark .text-zinc-900,
+html.dark .text-zinc-800 { color: var(--color-text-primary) !important; }
+html.dark .text-zinc-700,
+html.dark .text-zinc-600 { color: var(--color-text-secondary) !important; }
+html.dark .text-zinc-500 { color: #a1a1aa !important; }
+html.dark .text-zinc-400 { color: var(--color-text-tertiary) !important; }
+html.dark .text-zinc-300,
+html.dark .text-zinc-100 { color: #e4e4e7 !important; }
+
+html.dark .border-zinc-100,
+html.dark .border-zinc-200 { border-color: var(--color-border) !important; }
+html.dark .border-zinc-300 { border-color: var(--color-border-strong) !important; }
+html.dark .border-zinc-400,
+html.dark .border-zinc-500 { border-color: var(--color-border-focus) !important; }
+html.dark .border-zinc-900,
+html.dark .border-zinc-950 { border-color: #d4d4d8 !important; }
+html.dark .border-black\/5 { border-color: rgba(255, 255, 255, 0.08) !important; }
+html.dark .ring-zinc-200,
+html.dark .ring-zinc-200\/80 { --tw-ring-color: var(--color-border) !important; }
+html.dark .ring-zinc-300 { --tw-ring-color: var(--color-border-strong) !important; }
+html.dark .ring-zinc-400 { --tw-ring-color: var(--color-border-focus) !important; }
+
+html.dark .hover\:bg-white:hover { background-color: var(--color-surface-container-high) !important; }
+html.dark .hover\:bg-white\/70:hover { background-color: color-mix(in srgb, var(--color-surface-container-high) 70%, transparent) !important; }
+html.dark .hover\:bg-zinc-50:hover,
+html.dark .hover\:bg-zinc-100:hover { background-color: var(--color-surface-container-high) !important; }
+html.dark .hover\:text-zinc-950:hover,
+html.dark .hover\:text-zinc-900:hover,
+html.dark .hover\:text-zinc-800:hover { color: var(--color-text-primary) !important; }
+html.dark .hover\:border-zinc-300:hover,
+html.dark .hover\:border-zinc-400:hover { border-color: var(--color-border-focus) !important; }
+
+html.dark .zenme-canvas .react-flow__edge.zenme-edge-idle .react-flow__edge-path {
+  stroke: rgba(161, 161, 170, 0.48) !important;
+}
+html.dark .zenme-canvas .react-flow__edge.zenme-edge-node-related .react-flow__edge-path,
+html.dark .zenme-canvas .react-flow__edge:hover .react-flow__edge-path {
+  stroke: rgba(212, 212, 216, 0.68) !important;
+}
+html.dark .zenme-canvas .react-flow__edge.selected .react-flow__edge-path,
+html.dark .zenme-canvas .react-flow__edge:focus-visible .react-flow__edge-path {
+  filter: drop-shadow(0 0 3px rgba(244, 244, 245, 0.2));
+  stroke: rgba(244, 244, 245, 0.86) !important;
+}
+html.dark .zenme-canvas .react-flow__node-reader.selected .zenme-reader-workspace {
+  border-color: #e4e4e7 !important;
+}
+html.dark .zenme-canvas .zenme-managed-text-editor,
+html.dark .zenme-canvas .zenme-managed-name-input,
+html.dark .zenme-canvas .zenme-task-name-input,
+html.dark .zenme-managed-tag-input,
+html.dark .zenme-canvas .zenme-node-title-input,
+html.dark .zenme-canvas .zenme-code-editor,
+html.dark .zenme-canvas .zenme-markdown-editor {
+  caret-color: #f4f4f5 !important;
+}
+html.dark .zenme-canvas .zenme-markdown-preview { color: #e4e4e7; }
+html.dark .zenme-canvas .zenme-text-node-editor code {
+  background: #1c1c1f;
+  border-color: #343438;
+  color: #f4f4f5;
+}
+html.dark ::selection {
+  background: rgba(143, 72, 47, 0.72);
+  color: #fafafa;
+}
+
+.zenme-theme-preview[data-preview-theme="light"] {
+  background: #fafafa;
+  border-color: #e4e4e7;
+}
+.zenme-theme-preview[data-preview-theme="light"] .zenme-theme-preview-sidebar {
+  background: rgba(255, 255, 255, 0.8);
+}
+.zenme-theme-preview[data-preview-theme="light"] .zenme-theme-preview-line {
+  background: #e4e4e7;
+}
+.zenme-theme-preview[data-preview-theme="light"] .zenme-theme-preview-card {
+  background: #fff;
+  border-color: #e4e4e7;
+}
+.zenme-theme-preview[data-preview-theme="dark"] {
+  background: #050505;
+  border-color: #27272a;
+}
+.zenme-theme-preview[data-preview-theme="dark"] .zenme-theme-preview-sidebar {
+  background: #18181b;
+}
+.zenme-theme-preview[data-preview-theme="dark"] .zenme-theme-preview-line {
+  background: #27272a;
+}
+.zenme-theme-preview[data-preview-theme="dark"] .zenme-theme-preview-card {
+  background: #09090b;
+  border-color: #3f3f46;
+}
+.zenme-theme-preview[data-preview-theme="system"] {
+  background: linear-gradient(110deg, #fafafa 0%, #fafafa 49%, #050505 50%, #050505 100%);
+  border-color: #71717a;
+}
+.zenme-theme-preview[data-preview-theme="system"] .zenme-theme-preview-sidebar {
+  background: linear-gradient(110deg, rgba(255,255,255,.85) 0%, rgba(255,255,255,.85) 49%, #18181b 50%, #18181b 100%);
+}
+.zenme-theme-preview[data-preview-theme="system"] .zenme-theme-preview-line {
+  background: linear-gradient(110deg, #e4e4e7 0%, #e4e4e7 38%, #27272a 62%, #27272a 100%);
+}
+.zenme-theme-preview[data-preview-theme="system"] .zenme-theme-preview-card {
+  background: linear-gradient(110deg, #fff 0%, #fff 44%, #09090b 58%, #09090b 100%);
+  border-color: #71717a;
 }
 
 @layer components {

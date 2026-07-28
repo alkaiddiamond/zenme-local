@@ -36,6 +36,10 @@ import {
   EmptyCanvasHint,
 } from "@/components/zenme/canvas/controls";
 import {
+  MusicLyricsOverlay,
+  type MusicLyricsOverlayPosition,
+} from "@/components/zenme/canvas/music-lyrics-overlay";
+import {
   getConnectedPlaceholderPosition,
   getNextConnectedChildNodePosition,
 } from "@/components/zenme/canvas/child-layout";
@@ -55,16 +59,20 @@ import {
   getCanvasSnapshotFromApi,
   getProjectFromApi,
   createVideoTask,
+  createExecutionInApi,
   downloadVideoTask,
   generateOrEditImage,
   getVideoTaskStatus,
+  listExecutionsFromApi,
   saveProjectThumbnailToApi,
   uploadProjectFileToApi,
+  updateExecutionAttemptInApi,
 } from "@/lib/zenme-api";
 import {
   ZENME_AGENT_KEY_PREFIX,
 } from "@/lib/zenme";
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
+import { parseProviderModelReference } from "@/lib/ai/model-reference";
 import { createDroppedFileCanvasNodes } from "@/components/zenme/canvas/drop-files";
 import {
   createCanvasNodeClipboardPayload,
@@ -111,6 +119,7 @@ import {
   getCanvasHistorySignature,
   getClientPointFromConnectEnd,
   isEditableTarget,
+  isEditableClipboardEvent,
   isNodeDimensionChange,
   normalizeGroupNodeRelations,
   recoverInterruptedImageTasks,
@@ -148,6 +157,12 @@ import {
   getCanvasNodeContextText,
 } from "@/components/zenme/canvas/text-generation-context";
 import { buildContextualImageGenerationPrompt } from "@/components/zenme/canvas/image-generation-context";
+import { inspectCanvasNodeExecution } from "@/components/zenme/canvas/execution-preflight";
+import {
+  createTimedExecutionController,
+  isExecutionTimeout,
+} from "@/components/zenme/canvas/execution-abort";
+import { reconcileCanvasExecutions } from "@/components/zenme/canvas/execution-recovery";
 import {
   recoverInterruptedVideoTasks,
   waitForVideoTaskCompletion,
@@ -223,7 +238,7 @@ import {
   createLyricsNodeUpdate,
   createMusicPlayerUpdate,
   extractMusicLyrics,
-  findLyricsNodesNeedingRecovery,
+  findLyricsNodesNeedingRefresh,
   getMusicApiErrorMessage,
   MUSIC_WAVEFORM_VERSION,
   resolveMusicSourceNode,
@@ -245,6 +260,7 @@ import {
   NODE_CONTEXT_HANDLE_ID,
   type CanvasNodeData,
   type MusicChildNodeKind,
+  type MusicLyricLine,
   type ProjectTagAction,
 } from "@/components/zenme/node-types";
 
@@ -252,8 +268,20 @@ type CanvasClientProps = {
   projectId: string;
 };
 
-const THUMBNAIL_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
-const MISSING_THUMBNAIL_REFRESH_DELAY_MS = 1200;
+type MusicLyricsOverlayState = {
+  playerNodeId: string;
+  position: MusicLyricsOverlayPosition;
+};
+
+type MusicLyricsOverlayContent = {
+  error?: string;
+  lines: MusicLyricLine[];
+  sourceNodeId?: string;
+  status: "idle" | "loading" | "succeeded" | "failed";
+};
+
+const THUMBNAIL_PERIODIC_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const THUMBNAIL_CHANGE_REFRESH_DELAY_MS = 1200;
 const DEFAULT_EDGE_OPTIONS = {
   interactionWidth: 24,
   type: "default",
@@ -287,6 +315,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const [lastSavedAt, setLastSavedAt] = useState<string>();
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [canvasNotice, setCanvasNotice] = useState<string | null>(null);
+  const [musicLyricsOverlay, setMusicLyricsOverlay] =
+    useState<MusicLyricsOverlayState>();
+  const [musicLyricsOverlayContent, setMusicLyricsOverlayContent] =
+    useState<MusicLyricsOverlayContent>({ lines: [], status: "idle" });
   const [agentContext, setAgentContext] = useState<string>();
   const [agentError, setAgentError] = useState<string | null>(null);
   const [agentInput, setAgentInput] = useState("");
@@ -328,9 +360,17 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const isRefreshingUrls = useRef(false);
   const nodesRef = useRef<CanvasNode[]>(nodes);
   const edgesRef = useRef<Edge[]>(edges);
+  const activeExecutionSourceNodeIdsRef = useRef(new Set<string>());
+  const activeExecutionControllersRef = useRef(new Map<string, AbortController>());
   const activeVideoTaskControllersRef = useRef(new Map<string, AbortController>());
   const defaultTextModelRef = useRef(defaultTextModel);
   defaultTextModelRef.current = defaultTextModel;
+
+  useEffect(() => () => {
+    activeExecutionControllersRef.current.forEach((controller) => controller.abort());
+    activeExecutionControllersRef.current.clear();
+    activeExecutionSourceNodeIdsRef.current.clear();
+  }, [projectId]);
   const canvasViewportStateRef = useRef<Viewport>(canvasViewport);
   const reactFlowRef = useRef<ReactFlowInstance<CanvasNode, Edge> | null>(null);
   const fileUploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -370,7 +410,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const groupDragPosition = useRef<GroupDragPosition | null>(null);
   const musicPlayersRef = useRef(new Map<string, HTMLAudioElement>());
   const musicWaveformTasksRef = useRef(new Map<string, Promise<void>>());
-  const recoveringLyricsNodeIdsRef = useRef(new Set<string>());
+  const refreshingLyricsKeysRef = useRef(new Set<string>());
 
   const agentKey = `${ZENME_AGENT_KEY_PREFIX}${projectId}`;
 
@@ -1083,8 +1123,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       });
     }
 
-    async function handlePaste(event: ClipboardEvent) {
-      if (!event.clipboardData) return;
+  async function handlePaste(event: ClipboardEvent) {
+      if (
+        !event.clipboardData ||
+        isEditableClipboardEvent(event, document.activeElement)
+      ) {
+        return;
+      }
       const clipboardData = event.clipboardData;
       const imageFiles = getClipboardImageFiles(clipboardData);
       if (imageFiles.length > 0) {
@@ -1103,7 +1148,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         return;
       }
 
-      if (isEditableTarget(event.target)) return;
       const customPayload = parseCanvasNodeClipboardPayload(
         clipboardData.getData(ZENME_NODE_CLIPBOARD_MIME),
       );
@@ -1593,7 +1637,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   useEffect(() => {
     saveTimer.current = setInterval(() => {
       void saveCanvasRef.current({ includeThumbnail: true });
-    }, THUMBNAIL_REFRESH_INTERVAL_MS);
+    }, THUMBNAIL_PERIODIC_REFRESH_INTERVAL_MS);
 
     return () => {
       if (saveTimer.current) {
@@ -1656,9 +1700,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }
 
       void saveCanvasRef.current({ includeThumbnail: true });
-    }, hasProjectThumbnail
-      ? THUMBNAIL_REFRESH_INTERVAL_MS
-      : MISSING_THUMBNAIL_REFRESH_DELAY_MS);
+    }, THUMBNAIL_CHANGE_REFRESH_DELAY_MS);
 
     return () => {
       if (thumbnailTimer.current) {
@@ -2048,22 +2090,38 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     [setNodes],
   );
 
+  const persistExecutionTaskNodes = useCallback(async (nextNodes: CanvasNode[]) => {
+    await saveCanvasSnapshot({
+      edges: edgesRef.current,
+      nodes: nextNodes,
+      projectId,
+      thumbnail: null,
+      viewport: reactFlowRef.current?.getViewport() ?? canvasViewportStateRef.current,
+    });
+  }, [projectId]);
+
   const submitTextGenerationNode = useCallback(
     async (nodeId: string, input?: { model?: string; prompt?: string }) => {
       const currentNodes = reactFlow?.getNodes() ?? nodesRef.current;
       const currentEdges = reactFlow?.getEdges() ?? edges;
       const sourceNode = currentNodes.find((node) => node.id === nodeId);
-      const prompt = resolveTextGenerationPrompt(
-        input?.prompt?.trim() ??
-        sourceNode?.data.textGenerationPrompt?.trim() ??
-        "",
-      );
-      const model =
-        input?.model ?? sourceNode?.data.textGenerationModel ?? defaultTextModel;
-
       if (!sourceNode) {
         return;
       }
+      if (activeExecutionSourceNodeIdsRef.current.has(nodeId)) return;
+      const preflight = inspectCanvasNodeExecution({
+        availableModelIds: configuredModelIds,
+        node: sourceNode,
+        requestedModel: input?.model ?? sourceNode.data.textGenerationModel ?? defaultTextModel,
+        requestedPrompt: input?.prompt,
+      });
+      if (!preflight.ok) {
+        setCanvasNotice(preflight.issues[0]?.message ?? "文本生成检查失败");
+        return;
+      }
+      const prompt = resolveTextGenerationPrompt(preflight.prompt);
+      const model = preflight.model;
+      activeExecutionSourceNodeIdsRef.current.add(nodeId);
 
       const ownContext = getCanvasNodeContextText(sourceNode);
       const upstreamContext = collectTextGenerationContext({
@@ -2080,12 +2138,38 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         sourceNode,
         yOffsetWithoutChild: 0,
       });
+      const executionIdentity = {
+        executionId: crypto.randomUUID(),
+        nodeRunId: crypto.randomUUID(),
+        attemptId: crypto.randomUUID(),
+      };
+      const resultNodeId = crypto.randomUUID();
+      const taskStartedAt = Date.now();
+      try {
+        await createExecutionInApi({
+          ...executionIdentity,
+          projectId,
+          kind: "text",
+          input: { context, prompt },
+          triggerNodeId: sourceNode.id,
+          nodeId: resultNodeId,
+          modelId: model,
+          providerId: getProviderId(model),
+          startedAt: new Date(taskStartedAt).toISOString(),
+        });
+      } catch (error) {
+        activeExecutionSourceNodeIdsRef.current.delete(nodeId);
+        setCanvasNotice(error instanceof Error ? error.message : "无法创建文本执行任务");
+        return;
+      }
       const { edge: nextEdge, node: nextNode } =
         createAiResponseChildCanvasNode({
-          id: crypto.randomUUID(),
+          execution: executionIdentity,
+          id: resultNodeId,
           model,
           position,
           prompt,
+          startedAt: new Date(taskStartedAt).toISOString(),
           sourceNode,
         });
 
@@ -2096,16 +2180,25 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodes: [nextNode],
       });
 
-      const taskStartedAt = Date.now();
+      const executionController = createTimedExecutionController(2 * 60 * 1000);
+      activeExecutionControllersRef.current.set(resultNodeId, executionController.controller);
       try {
+        await persistExecutionTaskNodes(nodesRef.current);
         const result = await requestTextGenerationResponse({
           context,
           model,
           prompt,
+          signal: executionController.controller.signal,
         });
         if (!result) {
           throw new Error("模型未返回内容");
         }
+        await updateExecutionAttemptInApi({
+          ...executionIdentity,
+          projectId,
+          outputText: result,
+          status: "succeeded",
+        });
 
         const nextNodes = nodesRef.current.map((node) =>
           node.id === nextNode.id
@@ -2125,7 +2218,21 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "文本生成失败";
+        const timedOut = isExecutionTimeout(executionController.controller.signal);
+        const message = timedOut
+          ? "文本生成超过 2 分钟，已停止，请重试"
+          : error instanceof Error ? error.message : "文本生成失败";
+        await updateExecutionAttemptInApi({
+          ...executionIdentity,
+          projectId,
+          status: timedOut ? "timedOut" : "failed",
+          error: {
+            code: timedOut ? "text_generation_timed_out" : "text_generation_failed",
+            message,
+            retryable: true,
+            stage: "submit",
+          },
+        }).catch(() => undefined);
         const nextNodes = nodesRef.current.map((node) =>
           node.id === nextNode.id
             ? {
@@ -2141,9 +2248,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         );
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
+      } finally {
+        executionController.dispose();
+        activeExecutionControllersRef.current.delete(resultNodeId);
+        activeExecutionSourceNodeIdsRef.current.delete(nodeId);
       }
     },
-    [appendCanvasItems, defaultTextModel, edges, reactFlow, setNodes],
+    [appendCanvasItems, configuredModelIds, defaultTextModel, edges, persistExecutionTaskNodes, projectId, reactFlow, setNodes],
   );
 
   const updateVideoNode = useCallback((
@@ -2239,9 +2350,27 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         ? "edit" as const
         : "generate" as const;
 
-      if (!sourceNode || !prompt) {
+      if (!sourceNode) {
         return;
       }
+      if (activeExecutionSourceNodeIdsRef.current.has(nodeId)) return;
+
+      const model =
+        input?.model ??
+        sourceNode.data.imageModel ??
+        configuredImageModelOptions[0]?.id ??
+        "";
+      const preflight = inspectCanvasNodeExecution({
+        availableModelIds: configuredImageModelOptions.map((option) => option.id),
+        node: sourceNode,
+        requestedModel: model,
+        requestedPrompt: prompt,
+      });
+      if (!preflight.ok) {
+        setCanvasNotice(preflight.issues[0]?.message ?? "图片生成检查失败");
+        return;
+      }
+      activeExecutionSourceNodeIdsRef.current.add(nodeId);
 
       const requestPrompt = operation === "generate"
         ? buildContextualImageGenerationPrompt({
@@ -2254,11 +2383,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           })
         : prompt;
 
-      const model =
-        input?.model ??
-        sourceNode.data.imageModel ??
-        configuredImageModelOptions[0]?.id ??
-        "";
       const position = getNextConnectedChildNodePosition({
         childFallbackSize: { height: 320, width: 420 },
         edges: currentEdges,
@@ -2268,11 +2392,43 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         yOffsetWithoutChild: 0,
       });
       const taskStartedAt = Date.now();
+      const executionIdentity = {
+        executionId: crypto.randomUUID(),
+        nodeRunId: crypto.randomUUID(),
+        attemptId: crypto.randomUUID(),
+      };
+      const resultNodeId = crypto.randomUUID();
+      try {
+        await createExecutionInApi({
+          ...executionIdentity,
+          projectId,
+          kind: "image",
+          input: {
+            context: collectTextGenerationContext({
+              edges: currentEdges,
+              nodeId,
+              nodes: currentNodes,
+            }),
+            parameters: { aspectRatio, operation, quality },
+            prompt,
+          },
+          triggerNodeId: sourceNode.id,
+          nodeId: resultNodeId,
+          modelId: model,
+          providerId: getProviderId(model),
+          startedAt: new Date(taskStartedAt).toISOString(),
+        });
+      } catch (error) {
+        activeExecutionSourceNodeIdsRef.current.delete(nodeId);
+        setCanvasNotice(error instanceof Error ? error.message : "无法创建图片执行任务");
+        return;
+      }
       const { edge: resultEdge, node: resultNode } =
         createPendingImageResultChildCanvasNode({
           aspectRatio,
           cameraControl,
-          id: crypto.randomUUID(),
+          execution: executionIdentity,
+          id: resultNodeId,
           model,
           position,
           prompt,
@@ -2288,7 +2444,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodes: [resultNode],
       });
 
+      const executionController = createTimedExecutionController(5 * 60 * 1000);
+      activeExecutionControllersRef.current.set(resultNodeId, executionController.controller);
       try {
+        await persistExecutionTaskNodes(nodesRef.current);
         const imageDataUrls = await Promise.all(
           referenceImageUrls.map((url) => fetchImageAsDataUrl(url)),
         );
@@ -2300,6 +2459,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           operation,
           prompt: requestPrompt,
           quality,
+          signal: executionController.controller.signal,
         });
         const outputDataUrl = `data:${edited.mediaType};base64,${edited.b64Json}`;
         const outputDimensions = await getImageDimensions(outputDataUrl);
@@ -2311,6 +2471,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           projectId,
           file: outputFile,
         });
+        const completedExecution = await updateExecutionAttemptInApi({
+          ...executionIdentity,
+          projectId,
+          assetFileIds: [upload.fileId],
+          status: "succeeded",
+        });
+        const assetRefs = completedExecution.nodeRuns[0]?.attempts.at(-1)?.assetRefs ?? [];
         const nextCurrentNodes = nodesRef.current;
         const outputAspectRatio = outputDimensions.width / outputDimensions.height;
         const resultNodeSize = getImageDisplaySize(outputAspectRatio);
@@ -2328,6 +2495,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
                 data: {
                   ...node.data,
                   fileId: upload.fileId,
+                  assetRefs,
                   imageCameraControl: cameraControl,
                   imageOutputAspectRatio: aspectRatio,
                   imageError: undefined,
@@ -2378,8 +2546,21 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             : "未保存",
         );
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "图片编辑失败，请稍后重试";
+        const timedOut = isExecutionTimeout(executionController.controller.signal);
+        const message = timedOut
+          ? "图片生成超过 5 分钟，已停止，请重试"
+          : error instanceof Error ? error.message : "图片编辑失败，请稍后重试";
+        await updateExecutionAttemptInApi({
+          ...executionIdentity,
+          projectId,
+          status: timedOut ? "timedOut" : "failed",
+          error: {
+            code: timedOut ? "image_generation_timed_out" : "image_generation_failed",
+            message,
+            retryable: true,
+            stage: "submit",
+          },
+        }).catch(() => undefined);
         const nextNodes = nodesRef.current.map((node) =>
           node.id === resultNode.id
             ? {
@@ -2395,24 +2576,21 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         );
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
+      } finally {
+        executionController.dispose();
+        activeExecutionControllersRef.current.delete(resultNodeId);
+        activeExecutionSourceNodeIdsRef.current.delete(nodeId);
       }
     },
-    [appendCanvasItems, configuredImageModelOptions, projectId, pushNodeUpdateHistory, reactFlow, setNodes],
+    [appendCanvasItems, configuredImageModelOptions, persistExecutionTaskNodes, projectId, pushNodeUpdateHistory, reactFlow, setNodes],
   );
 
-  const persistVideoTaskNodes = useCallback(async (nextNodes: CanvasNode[]) => {
-    await saveCanvasSnapshot({
-      edges: edgesRef.current,
-      nodes: nextNodes,
-      projectId,
-      thumbnail: null,
-      viewport: reactFlowRef.current?.getViewport() ?? canvasViewportStateRef.current,
-    });
-  }, [projectId]);
-
   const runVideoTask = useCallback(async (input: {
+    attemptId: string;
+    executionId: string;
     model: string;
     nodeId: string;
+    nodeRunId: string;
     startedAt: string;
     taskId: string;
   }) => {
@@ -2422,23 +2600,42 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     const startedAtMs = Date.parse(input.startedAt);
     try {
       await waitForVideoTaskCompletion({
-        getStatus: () => getVideoTaskStatus({ model: input.model, taskId: input.taskId }),
+        getStatus: () => getVideoTaskStatus({
+          model: input.model,
+          signal: controller.signal,
+          taskId: input.taskId,
+        }),
         signal: controller.signal,
         startedAt: input.startedAt,
       });
-      const generated = await downloadVideoTask({ model: input.model, taskId: input.taskId });
-      const file = new File([generated.blob], `zenme-video-${Date.now()}.mp4`, {
-        type: generated.blob.type || "video/mp4",
+      const generated = await downloadVideoTask({
+        model: input.model,
+        projectId,
+        signal: controller.signal,
+        taskId: input.taskId,
       });
-      const upload = await uploadProjectFileToApi({ projectId, file });
+      const completedExecution = await updateExecutionAttemptInApi({
+        projectId,
+        executionId: input.executionId,
+        nodeRunId: input.nodeRunId,
+        attemptId: input.attemptId,
+        externalTaskId: input.taskId,
+        assetFileIds: [generated.fileId],
+        status: "succeeded",
+      });
+      const assetRefs = completedExecution.nodeRuns
+        .find((nodeRun) => nodeRun.id === input.nodeRunId)
+        ?.attempts.find((attempt) => attempt.id === input.attemptId)
+        ?.assetRefs ?? [];
       const nextNodes = nodesRef.current.map((node) =>
         node.id === input.nodeId
           ? {
               ...node,
               data: {
                 ...node.data,
-                fileId: upload.fileId,
-                originalUrl: upload.originalUrl,
+                fileId: generated.fileId,
+                assetRefs,
+                originalUrl: generated.originalUrl,
                 videoError: undefined,
                 videoStatus: "done" as const,
                 videoTaskDurationMs: Date.now() - (Number.isFinite(startedAtMs) ? startedAtMs : Date.now()),
@@ -2448,10 +2645,25 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       );
       nodesRef.current = nextNodes;
       setNodes(nextNodes);
-      await persistVideoTaskNodes(nextNodes).catch(() => undefined);
+      await persistExecutionTaskNodes(nextNodes).catch(() => undefined);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       const message = error instanceof Error ? error.message : "视频生成失败，请稍后重试";
+      const timedOut = message.includes("超过 15 分钟");
+      await updateExecutionAttemptInApi({
+        projectId,
+        executionId: input.executionId,
+        nodeRunId: input.nodeRunId,
+        attemptId: input.attemptId,
+        externalTaskId: input.taskId,
+        status: timedOut ? "timedOut" : "failed",
+        error: {
+          code: timedOut ? "video_task_timed_out" : "video_task_failed",
+          message,
+          retryable: true,
+          stage: "poll",
+        },
+      }).catch(() => undefined);
       const nextNodes = nodesRef.current.map((node) =>
         node.id === input.nodeId
           ? {
@@ -2467,32 +2679,127 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       );
       nodesRef.current = nextNodes;
       setNodes(nextNodes);
-      await persistVideoTaskNodes(nextNodes).catch(() => undefined);
+      await persistExecutionTaskNodes(nextNodes).catch(() => undefined);
     } finally {
       if (activeVideoTaskControllersRef.current.get(input.nodeId) === controller) {
         activeVideoTaskControllersRef.current.delete(input.nodeId);
       }
     }
-  }, [persistVideoTaskNodes, projectId, setNodes]);
+  }, [persistExecutionTaskNodes, projectId, setNodes]);
 
   useEffect(() => {
     if (!canvasHydrated) return;
     const taskControllers = activeVideoTaskControllersRef.current;
-    const { resumable } = recoverInterruptedVideoTasks(nodesRef.current);
-    resumable.forEach((node) => {
-      if (!node.data.providerTaskId || !node.data.videoModel) return;
-      void runVideoTask({
-        model: node.data.videoModel,
-        nodeId: node.id,
-        startedAt: node.data.videoTaskStartedAt ?? new Date().toISOString(),
-        taskId: node.data.providerTaskId,
+    let disposed = false;
+    void (async () => {
+      const executions = await listExecutionsFromApi(projectId).catch(() => []);
+      if (disposed) return;
+      const reconciled = reconcileCanvasExecutions({
+        executions,
+        nodes: nodesRef.current,
+        projectId,
       });
-    });
+      await Promise.all(reconciled.interruptedAttempts.map((record) =>
+        updateExecutionAttemptInApi({
+          projectId,
+          executionId: record.execution.id,
+          nodeRunId: record.nodeRun.id,
+          attemptId: record.attempt.id,
+          externalTaskId: record.attempt.externalTaskId,
+          status: "failed",
+          error: {
+            code: "execution_interrupted",
+            message: record.nodeRun.kind === "video"
+              ? "视频任务缺少服务商任务 ID，请重试"
+              : `${record.nodeRun.kind === "text" ? "文本" : "图片"}请求因应用重启而中断，请重试`,
+            retryable: true,
+            stage: "recovery",
+          },
+        }).catch(() => undefined),
+      ));
+      if (reconciled.changed) {
+        nodesRef.current = reconciled.nodes;
+        setNodes(reconciled.nodes);
+        await persistExecutionTaskNodes(reconciled.nodes).catch(() => undefined);
+      }
+      const recoveredByNodeId = new Map(
+        reconciled.recoverableVideos.map((record) => [record.nodeRun.nodeId, record]),
+      );
+      const executionRecordByNodeId = new Map(executions.flatMap((execution) =>
+        execution.nodeRuns.flatMap((nodeRun) => {
+          const attempt = nodeRun.attempts.find(
+            (candidate) => candidate.id === nodeRun.currentAttemptId,
+          );
+          return attempt ? [[nodeRun.nodeId, { execution, nodeRun, attempt }] as const] : [];
+        }),
+      ));
+      const { resumable } = recoverInterruptedVideoTasks(reconciled.nodes);
+      for (const node of resumable) {
+        const recovered = recoveredByNodeId.get(node.id);
+        const existingRecord = executionRecordByNodeId.get(node.id);
+        const taskId = recovered?.attempt.externalTaskId ?? node.data.externalTaskId ?? node.data.providerTaskId;
+        if (!taskId || !node.data.videoModel) continue;
+        let identity = recovered
+          ? {
+              executionId: recovered.execution.id,
+              nodeRunId: recovered.nodeRun.id,
+              attemptId: recovered.attempt.id,
+            }
+          : existingRecord
+            ? {
+                executionId: existingRecord.execution.id,
+                nodeRunId: existingRecord.nodeRun.id,
+                attemptId: existingRecord.attempt.id,
+              }
+          : node.data.executionId && node.data.nodeRunId && node.data.attemptId
+            ? {
+                executionId: node.data.executionId,
+                nodeRunId: node.data.nodeRunId,
+                attemptId: node.data.attemptId,
+              }
+            : null;
+        if (!recovered) {
+          identity ??= {
+            executionId: node.data.executionId ?? crypto.randomUUID(),
+            nodeRunId: crypto.randomUUID(),
+            attemptId: crypto.randomUUID(),
+          };
+          if (!executions.some((execution) => execution.id === identity?.executionId)) {
+            await createExecutionInApi({
+              ...identity,
+              projectId,
+              kind: "video",
+              triggerNodeId: node.id,
+              nodeId: node.id,
+              modelId: node.data.videoModel,
+              providerId: getProviderId(node.data.videoModel),
+              startedAt: node.data.videoTaskStartedAt,
+            });
+          }
+          await updateExecutionAttemptInApi({
+            ...identity,
+            projectId,
+            externalTaskId: taskId,
+            status: "polling",
+          });
+        }
+        if (!identity) continue;
+        if (disposed) return;
+        void runVideoTask({
+          ...identity,
+          model: node.data.videoModel,
+          nodeId: node.id,
+          startedAt: node.data.videoTaskStartedAt ?? new Date().toISOString(),
+          taskId,
+        });
+      }
+    })();
     return () => {
+      disposed = true;
       taskControllers.forEach((controller) => controller.abort());
       taskControllers.clear();
     };
-  }, [canvasHydrated, projectId, runVideoTask]);
+  }, [canvasHydrated, persistExecutionTaskNodes, projectId, runVideoTask, setNodes]);
 
   const submitVideoGenerationNode = useCallback(async (
     nodeId: string,
@@ -2505,7 +2812,19 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     );
     const prompt = input?.prompt?.trim() ?? sourceNode?.data.videoPrompt?.trim() ?? "";
     const model = input?.model ?? sourceNode?.data.videoModel ?? configuredVideoModelOptions[0]?.id ?? "";
-    if (!sourceNode || !prompt || !model) return;
+    if (!sourceNode) return;
+    const preflight = inspectCanvasNodeExecution({
+      availableModelIds: configuredVideoModelOptions.map((option) => option.id),
+      node: sourceNode,
+      requestedModel: model,
+      requestedPrompt: prompt,
+    });
+    if (!preflight.ok) {
+      setCanvasNotice(preflight.issues[0]?.message ?? "视频生成检查失败");
+      return;
+    }
+    if (activeExecutionSourceNodeIdsRef.current.has(nodeId)) return;
+    activeExecutionSourceNodeIdsRef.current.add(nodeId);
 
     const duration = input?.duration ?? sourceNode.data.videoDuration ?? 5;
     const generateAudio = input?.generateAudio ?? sourceNode.data.videoGenerateAudio !== false;
@@ -2526,13 +2845,44 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       sourceNode,
       yOffsetWithoutChild: 0,
     });
-    const executionId = crypto.randomUUID();
+    const executionIdentity = {
+      executionId: crypto.randomUUID(),
+      nodeRunId: crypto.randomUUID(),
+      attemptId: crypto.randomUUID(),
+    };
+    const resultNodeId = crypto.randomUUID();
     const taskStartedAt = Date.now();
+    try {
+      await createExecutionInApi({
+        ...executionIdentity,
+        projectId,
+        kind: "video",
+        input: {
+          parameters: {
+            duration,
+            generateAudio,
+            ratio,
+            referenceMode,
+            resolution,
+          },
+          prompt,
+        },
+        triggerNodeId: sourceNode.id,
+        nodeId: resultNodeId,
+        modelId: model,
+        providerId: getProviderId(model),
+        startedAt: new Date(taskStartedAt).toISOString(),
+      });
+    } catch (error) {
+      activeExecutionSourceNodeIdsRef.current.delete(nodeId);
+      setCanvasNotice(error instanceof Error ? error.message : "无法创建视频执行任务");
+      return;
+    }
     const { edge: resultEdge, node: resultNode } = createPendingVideoResultChildCanvasNode({
       duration,
-      executionId,
+      execution: executionIdentity,
       generateAudio,
-      id: crypto.randomUUID(),
+      id: resultNodeId,
       model,
       position,
       prompt,
@@ -2548,7 +2898,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       nodes: [resultNode],
     });
 
+    const submitController = createTimedExecutionController(2 * 60 * 1000);
+    activeExecutionControllersRef.current.set(resultNodeId, submitController.controller);
     try {
+      await persistExecutionTaskNodes(nodesRef.current);
       const imageDataUrls = await Promise.all(referenceUrls.map(fetchImageAsDataUrl));
       const created = await createVideoTask({
         duration,
@@ -2561,6 +2914,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         prompt,
         ratio,
         resolution,
+        signal: submitController.controller.signal,
+      });
+      await updateExecutionAttemptInApi({
+        ...executionIdentity,
+        projectId,
+        externalTaskId: created.taskId,
+        status: "polling",
       });
       const nextNodes = nodesRef.current.map((node) =>
         node.id === resultNode.id
@@ -2568,6 +2928,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
               ...node,
               data: {
                 ...node.data,
+                externalTaskId: created.taskId,
                 providerTaskId: created.taskId,
               },
             }
@@ -2575,15 +2936,30 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       );
       nodesRef.current = nextNodes;
       setNodes(nextNodes);
-      await persistVideoTaskNodes(nextNodes).catch(() => undefined);
+      await persistExecutionTaskNodes(nextNodes).catch(() => undefined);
       await runVideoTask({
+        ...executionIdentity,
         model,
         nodeId: resultNode.id,
         startedAt: new Date(taskStartedAt).toISOString(),
         taskId: created.taskId,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "视频生成失败，请稍后重试";
+      const timedOut = isExecutionTimeout(submitController.controller.signal);
+      const message = timedOut
+        ? "视频任务提交超过 2 分钟，已停止，请重试"
+        : error instanceof Error ? error.message : "视频生成失败，请稍后重试";
+      await updateExecutionAttemptInApi({
+        ...executionIdentity,
+        projectId,
+        status: timedOut ? "timedOut" : "failed",
+        error: {
+          code: timedOut ? "video_submit_timed_out" : "video_submit_failed",
+          message,
+          retryable: true,
+          stage: "submit",
+        },
+      }).catch(() => undefined);
       const nextNodes = nodesRef.current.map((node) =>
         node.id === resultNode.id
           ? {
@@ -2599,12 +2975,17 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       );
       nodesRef.current = nextNodes;
       setNodes(nextNodes);
-      await persistVideoTaskNodes(nextNodes).catch(() => undefined);
+      await persistExecutionTaskNodes(nextNodes).catch(() => undefined);
+    } finally {
+      submitController.dispose();
+      activeExecutionControllersRef.current.delete(resultNodeId);
+      activeExecutionSourceNodeIdsRef.current.delete(nodeId);
     }
   }, [
     appendCanvasItems,
     configuredVideoModelOptions,
-    persistVideoTaskNodes,
+    persistExecutionTaskNodes,
+    projectId,
     reactFlow,
     runVideoTask,
     setNodes,
@@ -3377,10 +3758,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       edges: edgesRef.current,
       nodes: nodesRef.current,
       playerNodeId,
+      sourceNodeId: playerNode?.data.musicSourceNodeId,
     });
-    const source = playerNode?.data.originalUrl ?? (
-      sourceNode?.data.kind === "music" ? sourceNode.data.originalUrl : undefined
-    );
+    const source = sourceNode?.data.kind === "music"
+      ? sourceNode.data.originalUrl
+      : playerNode?.data.originalUrl;
     if (!playerNode || !source) return undefined;
 
     let audio = musicPlayersRef.current.get(playerNodeId);
@@ -3469,6 +3851,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     loop?: boolean;
     muted?: boolean;
     playbackRate?: number;
+    sourceListExpanded?: boolean;
     volume?: number;
   }) => {
     const audio = musicPlayersRef.current.get(playerNodeId);
@@ -3486,7 +3869,35 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             ...(updates.loop === undefined ? {} : { musicLoop: updates.loop }),
             ...(updates.muted === undefined ? {} : { musicMuted: updates.muted }),
             ...(updates.playbackRate === undefined ? {} : { musicPlaybackRate: updates.playbackRate }),
+            ...(updates.sourceListExpanded === undefined ? {} : { musicSourceListExpanded: updates.sourceListExpanded }),
             ...(updates.volume === undefined ? {} : { musicVolume: updates.volume }),
+          },
+        }
+      : node));
+  }, [setNodes]);
+
+  const selectMusicSource = useCallback((playerNodeId: string, sourceNodeId: string) => {
+    const isConnectedMusicSource = edgesRef.current.some((edge) => {
+      if (edge.source !== sourceNodeId || edge.target !== playerNodeId) return false;
+      return nodesRef.current.find((node) => node.id === sourceNodeId)?.data.kind === "music";
+    });
+    if (!isConnectedMusicSource) return;
+
+    musicPlayersRef.current.get(playerNodeId)?.pause();
+    musicPlayersRef.current.delete(playerNodeId);
+    setNodes((current) => current.map((node) => node.id === playerNodeId
+      ? {
+          ...node,
+          data: {
+            ...node.data,
+            musicCurrentTime: 0,
+            musicDuration: undefined,
+            musicError: undefined,
+            musicIsPlaying: false,
+            musicSourceNodeId: sourceNodeId,
+            musicWaveform: undefined,
+            musicWaveformSourceNodeId: undefined,
+            musicWaveformVersion: undefined,
           },
         }
       : node));
@@ -3501,45 +3912,54 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }, [setNodes]);
 
   const ensureMusicWaveform = useCallback((playerNodeId: string) => {
-    const existing = musicWaveformTasksRef.current.get(playerNodeId);
+    const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
+    const sourceNode = resolveMusicSourceNode({
+      edges: edgesRef.current,
+      nodes: nodesRef.current,
+      playerNodeId,
+      sourceNodeId: playerNode?.data.musicSourceNodeId,
+    });
+    const taskKey = `${playerNodeId}:${sourceNode?.id ?? "missing"}`;
+    const existing = musicWaveformTasksRef.current.get(taskKey);
     if (existing) return existing;
 
     const task = (async () => {
-      const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
       if (
         playerNode?.data.musicWaveform?.length &&
+        playerNode.data.musicWaveformSourceNodeId === sourceNode?.id &&
         playerNode.data.musicWaveformVersion === MUSIC_WAVEFORM_VERSION
       ) return;
-      const sourceNode = resolveMusicSourceNode({
-        edges: edgesRef.current,
-        nodes: nodesRef.current,
-        playerNodeId,
-      });
       const sourceUrl =
-        playerNode?.data.originalUrl ??
-        (sourceNode?.data.kind === "music"
+        sourceNode?.data.kind === "music"
           ? sourceNode.data.originalUrl
-          : undefined);
-      if (!playerNode || !sourceUrl) {
+          : playerNode?.data.originalUrl;
+      if (!playerNode || !sourceNode || !sourceUrl) {
         throw new Error("播放器没有可生成波形的本地音乐文件");
       }
 
       const result = await generateLocalAudioWaveform(sourceUrl);
       setNodes((current) => current.map((node) => node.id === playerNodeId
+        && resolveMusicSourceNode({
+          edges: edgesRef.current,
+          nodes: current,
+          playerNodeId,
+          sourceNodeId: node.data.musicSourceNodeId,
+        })?.id === sourceNode.id
         ? {
             ...node,
             data: {
               ...node.data,
               musicDuration: result.duration || node.data.musicDuration,
               musicWaveform: result.waveform,
+              musicWaveformSourceNodeId: sourceNode.id,
               musicWaveformVersion: MUSIC_WAVEFORM_VERSION,
             },
           }
         : node));
     })().finally(() => {
-      musicWaveformTasksRef.current.delete(playerNodeId);
+      musicWaveformTasksRef.current.delete(taskKey);
     });
-    musicWaveformTasksRef.current.set(playerNodeId, task);
+    musicWaveformTasksRef.current.set(taskKey, task);
     return task;
   }, [setNodes]);
 
@@ -3552,16 +3972,39 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       edges: edgesRef.current,
       nodes: nodesRef.current,
       playerNodeId,
+      sourceNodeId: playerNode?.data.musicSourceNodeId,
     });
-    const fileId = playerNode?.data.fileId ?? sourceNode?.data.fileId;
-    if (!playerNode || !fileId) {
+    const fileId = sourceNode?.data.fileId;
+    if (!playerNode || !sourceNode || !fileId) {
       setNodes((current) => current.map((node) => node.id === childNodeId
-        ? { ...node, data: { ...node.data, musicError: "播放器没有可获取歌词的上游音乐文件", lyricsFetchStatus: "failed" as const } }
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              musicError: "播放器没有可获取歌词的上游音乐文件",
+              lyricsFetchStatus: "failed" as const,
+              musicLyrics: [],
+              musicLyricsSourceNodeId: sourceNode?.id,
+            },
+          }
         : node));
       return;
     }
     try {
       const startedAt = Date.now();
+      setNodes((current) => current.map((node) => node.id === childNodeId
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              lyricsFetchStatus: "fetching" as const,
+              lyricsWarnings: undefined,
+              musicError: undefined,
+              musicLyrics: [],
+              musicLyricsSourceNodeId: sourceNode.id,
+            },
+          }
+        : node));
       const response = await fetch("/api/music/lyrics", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -3572,8 +4015,16 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       const warnings = Array.isArray(result?.warnings)
         ? result.warnings.filter((warning): warning is string => typeof warning === "string")
         : [];
-      setNodes((current) => current.map((node) => node.id === childNodeId
-        ? {
+      setNodes((current) => {
+        const currentPlayer = current.find((node) => node.id === playerNodeId);
+        const currentSource = resolveMusicSourceNode({
+          edges: edgesRef.current,
+          nodes: current,
+          playerNodeId,
+          sourceNodeId: currentPlayer?.data.musicSourceNodeId,
+        });
+        if (currentSource?.id !== sourceNode.id) return current;
+        return current.map((node) => node.id === childNodeId ? {
             ...node,
             data: {
               ...node.data,
@@ -3581,30 +4032,142 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
               lyricsFetchDurationMs: Date.now() - startedAt,
               lyricsFetchStatus: "succeeded" as const,
               musicLyrics: extractMusicLyrics(result ?? undefined),
+              musicLyricsSourceNodeId: sourceNode.id,
               lyricsWarnings: warnings,
             },
           }
-        : node));
+        : node);
+      });
     } catch (error) {
-      setNodes((current) => current.map((node) => node.id === childNodeId
-        ? { ...node, data: { ...node.data, musicError: error instanceof Error ? error.message : "歌词获取失败", lyricsFetchStatus: "failed" as const } }
-        : node));
+      setNodes((current) => {
+        const currentPlayer = current.find((node) => node.id === playerNodeId);
+        const currentSource = resolveMusicSourceNode({
+          edges: edgesRef.current,
+          nodes: current,
+          playerNodeId,
+          sourceNodeId: currentPlayer?.data.musicSourceNodeId,
+        });
+        if (currentSource?.id !== sourceNode.id) return current;
+        return current.map((node) => node.id === childNodeId
+          ? { ...node, data: { ...node.data, musicError: error instanceof Error ? error.message : "歌词获取失败", lyricsFetchStatus: "failed" as const } }
+          : node);
+      });
     }
   }, [projectId, setNodes]);
 
   useEffect(() => {
-    const recoveries = findLyricsNodesNeedingRecovery(nodes).filter(
-      ({ childNodeId }) =>
-        !recoveringLyricsNodeIdsRef.current.has(childNodeId),
-    );
-    for (const recovery of recoveries) {
-      recoveringLyricsNodeIdsRef.current.add(recovery.childNodeId);
-      void fetchLyrics(
-        recovery.childNodeId,
-        recovery.playerNodeId,
-      );
+    const refreshes = findLyricsNodesNeedingRefresh({ edges, nodes });
+    for (const refresh of refreshes) {
+      const refreshKey = `${refresh.childNodeId}:${refresh.sourceNodeId}`;
+      if (refreshingLyricsKeysRef.current.has(refreshKey)) continue;
+      refreshingLyricsKeysRef.current.add(refreshKey);
+      void fetchLyrics(refresh.childNodeId, refresh.playerNodeId).finally(() => {
+        refreshingLyricsKeysRef.current.delete(refreshKey);
+      });
     }
-  }, [fetchLyrics, nodes]);
+  }, [edges, fetchLyrics, nodes]);
+
+  const musicLyricsOverlayPlayer = musicLyricsOverlay
+    ? nodes.find((node) => node.id === musicLyricsOverlay.playerNodeId)
+    : undefined;
+  const musicLyricsOverlaySource = musicLyricsOverlayPlayer?.data.kind === "musicPlayer"
+    ? resolveMusicSourceNode({
+        edges,
+        nodes,
+        playerNodeId: musicLyricsOverlayPlayer.id,
+        sourceNodeId: musicLyricsOverlayPlayer.data.musicSourceNodeId,
+      })
+    : undefined;
+  const linkedMusicLyricsNode = musicLyricsOverlayPlayer
+    ? edges.flatMap((edge) => {
+        if (edge.source !== musicLyricsOverlayPlayer.id) return [];
+        const target = nodes.find((node) => node.id === edge.target);
+        return target?.data.kind === "lyrics" ? [target] : [];
+      })[0]
+    : undefined;
+  const musicLyricsOverlayPlayerId = musicLyricsOverlay?.playerNodeId;
+  const musicLyricsOverlayPlayerExists =
+    musicLyricsOverlayPlayer?.data.kind === "musicPlayer";
+  const musicLyricsOverlaySourceId = musicLyricsOverlaySource?.id;
+  const musicLyricsOverlaySourceFileId = musicLyricsOverlaySource?.data.fileId;
+  const linkedMusicLyricsSourceId = linkedMusicLyricsNode?.data.musicLyricsSourceNodeId;
+  const linkedMusicLyricsLines = linkedMusicLyricsNode?.data.musicLyrics;
+  const linkedMusicLyricsStatus = linkedMusicLyricsNode?.data.lyricsFetchStatus;
+  const linkedMusicLyricsError = linkedMusicLyricsNode?.data.musicError;
+
+  useEffect(() => {
+    if (!musicLyricsOverlayPlayerId) return;
+    if (!musicLyricsOverlayPlayerExists) {
+      setMusicLyricsOverlay(undefined);
+      return;
+    }
+    if (!musicLyricsOverlaySourceId || !musicLyricsOverlaySourceFileId) {
+      setMusicLyricsOverlayContent({
+        error: "当前播放器没有可获取歌词的音乐文件",
+        lines: [],
+        status: "failed",
+      });
+      return;
+    }
+
+    const sourceNodeId = musicLyricsOverlaySourceId;
+    if (linkedMusicLyricsNode) {
+      if (linkedMusicLyricsSourceId !== sourceNodeId) {
+        setMusicLyricsOverlayContent({ lines: [], sourceNodeId, status: "loading" });
+        return;
+      }
+      setMusicLyricsOverlayContent({
+        error: linkedMusicLyricsError,
+        lines: linkedMusicLyricsLines ?? [],
+        sourceNodeId,
+        status: linkedMusicLyricsStatus ?? "idle",
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    setMusicLyricsOverlayContent({ lines: [], sourceNodeId, status: "loading" });
+    void (async () => {
+      try {
+        const response = await fetch("/api/music/lyrics", {
+          body: JSON.stringify({
+            fileId: musicLyricsOverlaySourceFileId,
+            projectId,
+          }),
+          headers: { "content-type": "application/json" },
+          method: "POST",
+          signal: controller.signal,
+        });
+        const result = await response.json().catch(() => null) as Record<string, unknown> | null;
+        if (!response.ok) throw new Error(getMusicApiErrorMessage(result));
+        setMusicLyricsOverlayContent({
+          lines: extractMusicLyrics(result ?? undefined),
+          sourceNodeId,
+          status: "succeeded",
+        });
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setMusicLyricsOverlayContent({
+          error: error instanceof Error ? error.message : "歌词获取失败",
+          lines: [],
+          sourceNodeId,
+          status: "failed",
+        });
+      }
+    })();
+    return () => controller.abort();
+  }, [
+    linkedMusicLyricsError,
+    linkedMusicLyricsLines,
+    linkedMusicLyricsNode,
+    linkedMusicLyricsSourceId,
+    linkedMusicLyricsStatus,
+    musicLyricsOverlayPlayerExists,
+    musicLyricsOverlayPlayerId,
+    musicLyricsOverlaySourceFileId,
+    musicLyricsOverlaySourceId,
+    projectId,
+  ]);
 
   const createMusicChild = useCallback((
     playerNodeId: string,
@@ -3627,14 +4190,28 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       });
     }
     focusCanvasNode(update.focusNodeId, { preserveZoom: true });
-    window.setTimeout(() => {
-      void fetchLyrics(update.focusNodeId, playerNodeId);
-    }, 0);
-  }, [appendCanvasItems, fetchLyrics, focusCanvasNode, projectId]);
+  }, [appendCanvasItems, focusCanvasNode, projectId]);
 
   const locateMusicPlayer = useCallback((_musicNodeId: string, playerNodeId: string) => {
     focusCanvasNode(playerNodeId);
   }, [focusCanvasNode]);
+
+  const toggleMusicLyricsOverlay = useCallback((playerNodeId: string) => {
+    setMusicLyricsOverlay((current) => {
+      if (current?.playerNodeId === playerNodeId) return undefined;
+      const canvasWidth = canvasViewportRef.current?.clientWidth ?? 960;
+      const canvasHeight = canvasViewportRef.current?.clientHeight ?? 640;
+      const overlayWidth = Math.min(680, Math.max(0, canvasWidth - 32));
+      return {
+        playerNodeId,
+        position: {
+          x: Math.max(16, (canvasWidth - overlayWidth) / 2),
+          y: Math.max(16, canvasHeight * 0.12),
+        },
+      };
+    });
+    setMusicLyricsOverlayContent({ lines: [], status: "idle" });
+  }, []);
 
   const locateTaskNode = useCallback((nodeId: string) => {
     focusCanvasNode(nodeId);
@@ -3645,6 +4222,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       getRenderedCanvasNodes({
         createNoteNode,
         edges,
+        musicLyricsOverlayPlayerNodeId: musicLyricsOverlay?.playerNodeId,
         nodes,
         onCreateMusicChildNode: createMusicChild,
         onCreateMusicPlayerNode: createMusicPlayer,
@@ -3652,6 +4230,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         onEnsureMusicWaveform: ensureMusicWaveform,
         onLocateMusicPlayerNode: locateMusicPlayer,
         onSeekMusicPlayer: seekMusicPlayer,
+        onSelectMusicSource: selectMusicSource,
+        onToggleMusicLyricsOverlay: toggleMusicLyricsOverlay,
         onToggleMusicPlayback: toggleMusicPlayback,
         onUpdateMusicNode: updateMusicNode,
         onUpdateMusicPlayback: updateMusicPlayback,
@@ -3685,7 +4265,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       edges,
       nodes,
       locateMusicPlayer,
+      musicLyricsOverlay?.playerNodeId,
       seekMusicPlayer,
+      selectMusicSource,
+      toggleMusicLyricsOverlay,
       toggleMusicPlayback,
       updateMusicNode,
       updateMusicPlayback,
@@ -3874,7 +4457,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           zoomOnScroll={false}
         >
           <Background
-            color="#e4e4e7"
+            color="var(--color-canvas-grid)"
             gap={16}
             size={1}
             variant={BackgroundVariant.Dots}
@@ -3888,20 +4471,35 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           ) : null}
           {showMiniMap && !isMiniMapSuspended ? (
             <MiniMap
-              bgColor="#ffffff"
+              bgColor="var(--color-surface-container-lowest)"
               className={MINI_MAP_CLASS}
-              maskColor="rgba(24,24,27,0.05)"
-              maskStrokeColor="#d4d4d8"
+              maskColor="var(--color-canvas-minimap-mask)"
+              maskStrokeColor="var(--color-border-strong)"
               maskStrokeWidth={1}
               nodeBorderRadius={4}
-              nodeColor="#d4d4d8"
-              nodeStrokeColor="#a1a1aa"
+              nodeColor="var(--color-surface-container-high)"
+              nodeStrokeColor="var(--color-text-tertiary)"
               nodeStrokeWidth={1}
               pannable
               zoomable
             />
           ) : null}
         </ReactFlow>
+
+        {musicLyricsOverlay ? (
+          <MusicLyricsOverlay
+            currentTime={musicLyricsOverlayPlayer?.data.musicCurrentTime ?? 0}
+            error={musicLyricsOverlayContent.error}
+            lines={musicLyricsOverlayContent.lines}
+            onClose={() => setMusicLyricsOverlay(undefined)}
+            onMove={(position) => setMusicLyricsOverlay((current) => current
+              ? { ...current, position }
+              : current)}
+            position={musicLyricsOverlay.position}
+            songTitle={musicLyricsOverlaySource?.data.title || "当前歌曲歌词"}
+            status={musicLyricsOverlayContent.status}
+          />
+        ) : null}
 
         {selectionToolbarPosition && !isNodeDragging ? (
           <CanvasSelectionToolbar
@@ -4048,4 +4646,8 @@ function getImageExtension(mediaType: string) {
     return "svg";
   }
   return "png";
+}
+
+function getProviderId(modelId: string) {
+  return parseProviderModelReference(modelId)?.providerId ?? "chatgpt";
 }

@@ -35,12 +35,15 @@ type RenderedCanvasNodeInput = {
     },
   ) => void;
   nodes: CanvasNode[];
+  musicLyricsOverlayPlayerNodeId?: string;
   onEnsureMusicPlayback?: NonNullable<CanvasNodeData["onEnsureMusicPlayback"]>;
   onEnsureMusicWaveform?: NonNullable<CanvasNodeData["onEnsureMusicWaveform"]>;
   onCreateMusicChildNode?: NonNullable<CanvasNodeData["onCreateMusicChildNode"]>;
   onCreateMusicPlayerNode?: NonNullable<CanvasNodeData["onCreateMusicPlayerNode"]>;
   onLocateMusicPlayerNode?: NonNullable<CanvasNodeData["onLocateMusicPlayerNode"]>;
   onSeekMusicPlayer?: NonNullable<CanvasNodeData["onSeekMusicPlayer"]>;
+  onSelectMusicSource?: NonNullable<CanvasNodeData["onSelectMusicSource"]>;
+  onToggleMusicLyricsOverlay?: NonNullable<CanvasNodeData["onToggleMusicLyricsOverlay"]>;
   onToggleMusicPlayback?: NonNullable<CanvasNodeData["onToggleMusicPlayback"]>;
   onUpdateMusicNode?: NonNullable<CanvasNodeData["onUpdateMusicNode"]>;
   onUpdateMusicPlayback?: NonNullable<CanvasNodeData["onUpdateMusicPlayback"]>;
@@ -147,6 +150,7 @@ export function getRenderedCanvasNodes({
   createNoteNode,
   edges,
   nodes,
+  musicLyricsOverlayPlayerNodeId,
   onResolveImageDimensions,
   onCreateTextChildNode,
   onEnsureMusicPlayback,
@@ -155,6 +159,8 @@ export function getRenderedCanvasNodes({
   onCreateMusicPlayerNode,
   onLocateMusicPlayerNode,
   onSeekMusicPlayer,
+  onSelectMusicSource,
+  onToggleMusicLyricsOverlay,
   onToggleMusicPlayback,
   onUpdateMusicNode,
   onUpdateMusicPlayback,
@@ -199,14 +205,18 @@ export function getRenderedCanvasNodes({
   }, {});
   const musicPlayerIdByMusicId = new Map<string, string>();
   const taskRelationships = deriveTaskRelationships(nodes, edges);
-  const musicSourceByPlayerId = new Map<string, CanvasNode>();
+  const musicSourcesByPlayerId = new Map<string, CanvasNode[]>();
   const playerByChildId = new Map<string, CanvasNode>();
   for (const edge of edges) {
     const source = nodeById.get(edge.source);
     const target = nodeById.get(edge.target);
     if (source?.data.kind === "music" && target?.data.kind === "musicPlayer") {
       musicPlayerIdByMusicId.set(source.id, target.id);
-      musicSourceByPlayerId.set(target.id, source);
+      const musicSources = musicSourcesByPlayerId.get(target.id) ?? [];
+      if (!musicSources.some((item) => item.id === source.id)) {
+        musicSources.push(source);
+        musicSourcesByPlayerId.set(target.id, musicSources);
+      }
     }
     if (source?.data.kind === "musicPlayer" && target?.data.kind === "lyrics") {
       playerByChildId.set(target.id, source);
@@ -320,11 +330,15 @@ export function getRenderedCanvasNodes({
     }
 
     if (nodeWithConnectionState.data.kind === "musicPlayer") {
-      const source = musicSourceByPlayerId.get(nodeWithConnectionState.id);
+      const sources = musicSourcesByPlayerId.get(nodeWithConnectionState.id) ?? [];
+      const source = sources.find(
+        (item) => item.id === nodeWithConnectionState.data.musicSourceNodeId,
+      ) ?? sources[0];
       return {
         ...nodeWithConnectionState,
         data: {
           ...nodeWithConnectionState.data,
+          title: "音乐播放器",
           coverUrl: source?.data.coverUrl,
           fileId: source?.data.fileId,
           fileName: source?.data.fileName,
@@ -332,10 +346,19 @@ export function getRenderedCanvasNodes({
           mimeType: source?.data.mimeType,
           originalUrl: source?.data.originalUrl,
           previewUrl: source?.data.previewUrl,
+          musicSourceNodeId: source?.id,
+          musicLyricsOverlayOpen:
+            musicLyricsOverlayPlayerNodeId === nodeWithConnectionState.id,
+          musicSources: sources.map((item) => ({
+            id: item.id,
+            title: item.data.title || item.data.fileName || "未命名音乐",
+          })),
           onCreateMusicChildNode,
           onEnsureMusicPlayback,
           onEnsureMusicWaveform,
           onSeekMusicPlayer,
+          onSelectMusicSource,
+          onToggleMusicLyricsOverlay,
           onToggleMusicPlayback,
           onUpdateMusicNode,
           onUpdateMusicPlayback,
@@ -354,6 +377,7 @@ export function getRenderedCanvasNodes({
         },
         data: {
           ...nodeWithConnectionState.data,
+          title: "歌词",
           musicCurrentTime: player?.data.musicCurrentTime,
           musicParentPlayerNodeId: player?.id ?? nodeWithConnectionState.data.musicParentPlayerNodeId,
           musicLyrics: nodeWithConnectionState.data.musicLyrics ?? [],
