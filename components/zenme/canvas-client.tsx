@@ -174,6 +174,7 @@ import {
 import {
   createConnectedEdge,
   createConnectedPlaceholderCanvasNode,
+  createDerivedImageChildCanvasNode,
   createImageGenerationCanvasNode,
   createManagedTextCanvasNode,
   createTaskCanvasNode,
@@ -193,6 +194,7 @@ import {
 import {
   createAiResponseExpansionUpdate,
   createImageGenerationNodeDataUpdate,
+  createImagePromptExpansionUpdate,
   createMusicChildExpansionUpdate,
   createTextGenerationNodeDataUpdate,
   createTextNodeExpansionUpdate,
@@ -2105,6 +2107,84 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }));
     },
     [setNodes],
+  );
+
+  const toggleImagePromptExpanded = useCallback(
+    (nodeId: string, expanded: boolean) => {
+      const update = createImagePromptExpansionUpdate({
+        expanded,
+        nodeId,
+        nodes: nodesRef.current,
+      });
+      if (!update) return;
+
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const createDerivedImageNode = useCallback(
+    async (
+      sourceNodeId: string,
+      input: {
+        file: File;
+        height: number;
+        operation: "brush" | "crop";
+        width: number;
+      },
+    ) => {
+      const initialSourceNode = (reactFlow?.getNodes() ?? nodesRef.current)
+        .find((node) => node.id === sourceNodeId);
+      if (!initialSourceNode || initialSourceNode.data.kind !== "image") {
+        throw new Error("找不到来源图片节点");
+      }
+
+      try {
+        const upload = await uploadProjectFileToApi({ file: input.file, projectId });
+        const currentNodes = reactFlow?.getNodes() ?? nodesRef.current;
+        const currentEdges = reactFlow?.getEdges() ?? edgesRef.current;
+        const sourceNode = currentNodes.find((node) => node.id === sourceNodeId);
+        if (!sourceNode || sourceNode.data.kind !== "image") {
+          throw new Error("来源图片节点已被移除");
+        }
+        const position = getNextConnectedChildNodePosition({
+          childFallbackSize: getImageDisplaySize(input.width / input.height),
+          edges: currentEdges,
+          nodes: currentNodes,
+          sourceFallbackSize: getImageDisplaySize(
+            sourceNode.data.imageAspectRatio ?? input.width / input.height,
+          ),
+          sourceNode,
+          yOffsetWithoutChild: 0,
+        });
+        const result = createDerivedImageChildCanvasNode({
+          fileId: upload.fileId,
+          fileName: input.file.name,
+          height: input.height,
+          id: crypto.randomUUID(),
+          mimeType: input.file.type || "image/png",
+          originalUrl: upload.originalUrl,
+          position,
+          previewUrl: upload.previewUrl,
+          sourceNode,
+          title: input.operation === "brush" ? "图片标记" : "图片裁剪",
+          width: input.width,
+        });
+        appendCanvasItems({
+          currentEdges,
+          currentNodes,
+          edges: [result.edge],
+          nodes: [result.node],
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "图片处理结果保存失败";
+        setCanvasNotice(message);
+        throw new Error(message);
+      }
+    },
+    [appendCanvasItems, projectId, reactFlow],
   );
 
   const persistExecutionTaskNodes = useCallback(async (nextNodes: CanvasNode[]) => {
@@ -4212,7 +4292,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         error: linkedMusicLyricsError,
         lines: linkedMusicLyricsLines ?? [],
         sourceNodeId,
-        status: linkedMusicLyricsStatus ?? "idle",
+        status:
+          linkedMusicLyricsStatus === "fetching"
+            ? "loading"
+            : linkedMusicLyricsStatus ?? "idle",
       });
       return;
     }
@@ -4328,6 +4411,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         onUpdateMusicNode: updateMusicNode,
         onUpdateMusicPlayback: updateMusicPlayback,
         onResolveImageDimensions: resolveImageNodeDimensions,
+        onCreateDerivedImageNode: createDerivedImageNode,
         onCreateTextChildNode: createTextChildNode,
         onSubmitImageNode: submitImageGenerationNode,
         onSubmitVideoNode: submitVideoGenerationNode,
@@ -4342,6 +4426,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         onToggleTaskChildren: toggleTaskChildren,
         onToggleAiResponseExpanded: toggleAiResponseExpanded,
         onToggleTextExpanded: toggleTextExpanded,
+        onToggleImagePromptExpanded: toggleImagePromptExpanded,
         onToggleMusicChildExpanded: toggleMusicChildExpanded,
         onUpdateProjectTag: updateProjectTag,
         projectId,
@@ -4351,6 +4436,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       createNoteNode,
       createMusicChild,
       createMusicPlayer,
+      createDerivedImageNode,
       ensureMusicPlayback,
       ensureMusicWaveform,
       createTextChildNode,
@@ -4380,6 +4466,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       toggleTaskChildren,
       toggleAiResponseExpanded,
       toggleTextExpanded,
+      toggleImagePromptExpanded,
       toggleMusicChildExpanded,
       updateProjectTag,
     ],

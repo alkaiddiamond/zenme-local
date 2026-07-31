@@ -52,6 +52,9 @@ type RenderedCanvasNodeInput = {
     nodeId: string,
     dimensions: { height: number; width: number },
   ) => void;
+  onCreateDerivedImageNode?: NonNullable<
+    CanvasNodeData["onCreateDerivedImageNode"]
+  >;
   onUpdateTextNode: (
     nodeId: string,
     updates: Partial<
@@ -76,6 +79,9 @@ type RenderedCanvasNodeInput = {
     CanvasNodeData["onToggleAiResponseExpanded"]
   >;
   onToggleTextExpanded?: NonNullable<CanvasNodeData["onToggleTextExpanded"]>;
+  onToggleImagePromptExpanded?: NonNullable<
+    CanvasNodeData["onToggleImagePromptExpanded"]
+  >;
   onToggleMusicChildExpanded?: NonNullable<
     CanvasNodeData["onToggleMusicChildExpanded"]
   >;
@@ -134,6 +140,7 @@ type RenderedNodeCacheEntry = {
   onUpdateVideoNode?: RenderedCanvasNodeInput["onUpdateVideoNode"];
   onUpdateTextGenerationNode?: RenderedCanvasNodeInput["onUpdateTextGenerationNode"];
   onUpdateImageNode?: RenderedCanvasNodeInput["onUpdateImageNode"];
+  onCreateDerivedImageNode?: RenderedCanvasNodeInput["onCreateDerivedImageNode"];
   onUpdateTextNode?: RenderedCanvasNodeInput["onUpdateTextNode"];
   onUpdateTaskNode?: RenderedCanvasNodeInput["onUpdateTaskNode"];
   onSetTaskParent?: RenderedCanvasNodeInput["onSetTaskParent"];
@@ -141,6 +148,7 @@ type RenderedNodeCacheEntry = {
   onToggleTaskChildren?: RenderedCanvasNodeInput["onToggleTaskChildren"];
   onToggleAiResponseExpanded?: RenderedCanvasNodeInput["onToggleAiResponseExpanded"];
   onToggleTextExpanded?: RenderedCanvasNodeInput["onToggleTextExpanded"];
+  onToggleImagePromptExpanded?: RenderedCanvasNodeInput["onToggleImagePromptExpanded"];
   onToggleMusicChildExpanded?: RenderedCanvasNodeInput["onToggleMusicChildExpanded"];
   onUpdateProjectTag?: RenderedCanvasNodeInput["onUpdateProjectTag"];
   projectId?: string;
@@ -155,6 +163,7 @@ export function getRenderedCanvasNodes({
   nodes,
   musicLyricsOverlayPlayerNodeId,
   onResolveImageDimensions,
+  onCreateDerivedImageNode,
   onCreateTextChildNode,
   onEnsureMusicPlayback,
   onEnsureMusicWaveform,
@@ -180,6 +189,7 @@ export function getRenderedCanvasNodes({
   onToggleTaskChildren,
   onToggleAiResponseExpanded,
   onToggleTextExpanded,
+  onToggleImagePromptExpanded,
   onToggleMusicChildExpanded,
   onUpdateProjectTag,
   projectId,
@@ -350,7 +360,7 @@ export function getRenderedCanvasNodes({
             : {}
         ),
         ...(nodeWithoutGroupDragLimit.data.kind === "image"
-          ? { onResolveImageDimensions }
+          ? { onCreateDerivedImageNode, onResolveImageDimensions }
           : {}),
       },
     };
@@ -549,6 +559,7 @@ export function getRenderedCanvasNodes({
 
       if (
         cached?.onSubmitImageNode === onSubmitImageNode &&
+        cached.onToggleImagePromptExpanded === onToggleImagePromptExpanded &&
         cached.onUpdateImageNode === onUpdateImageNode &&
         cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
         cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
@@ -562,6 +573,7 @@ export function getRenderedCanvasNodes({
         data: {
           ...nodeWithConnectionState.data,
           onSubmitImageNode,
+          onToggleImagePromptExpanded,
           onUpdateImageNode,
         },
       };
@@ -569,6 +581,7 @@ export function getRenderedCanvasNodes({
       renderedNodeCache.set(nodeWithConnectionState, {
         node: renderedImageGenerationNode,
         onSubmitImageNode,
+        onToggleImagePromptExpanded,
         onUpdateImageNode,
       });
 
@@ -643,6 +656,7 @@ export function getRenderedCanvasNodes({
 
       if (
         cached?.onSubmitImageNode === onSubmitImageNode &&
+        cached.onCreateDerivedImageNode === onCreateDerivedImageNode &&
         cached.onUpdateImageNode === onUpdateImageNode &&
         cached.node.data.hasIncomingEdge === generatedImageNode.data.hasIncomingEdge &&
         cached.node.data.hasOutgoingEdge === generatedImageNode.data.hasOutgoingEdge &&
@@ -655,6 +669,7 @@ export function getRenderedCanvasNodes({
         ...generatedImageNode,
         data: {
           ...generatedImageNode.data,
+          onCreateDerivedImageNode,
           onSubmitImageNode,
           onUpdateImageNode,
         },
@@ -662,6 +677,7 @@ export function getRenderedCanvasNodes({
 
       renderedNodeCache.set(generatedImageNode, {
         node: renderedGeneratedImageNode,
+        onCreateDerivedImageNode,
         onSubmitImageNode,
         onUpdateImageNode,
       });
@@ -674,6 +690,7 @@ export function getRenderedCanvasNodes({
 
       if (
         cached?.onUpdateImageNode === onUpdateImageNode &&
+        cached.onCreateDerivedImageNode === onCreateDerivedImageNode &&
         cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
         cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
         cached.node.data.hasRunningGenerationChild === nodeWithConnectionState.data.hasRunningGenerationChild
@@ -685,12 +702,14 @@ export function getRenderedCanvasNodes({
         ...nodeWithConnectionState,
         data: {
           ...nodeWithConnectionState.data,
+          onCreateDerivedImageNode,
           onUpdateImageNode,
         },
       };
 
       renderedNodeCache.set(nodeWithConnectionState, {
         node: renderedImageNode,
+        onCreateDerivedImageNode,
         onUpdateImageNode,
       });
 

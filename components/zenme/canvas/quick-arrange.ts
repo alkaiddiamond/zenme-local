@@ -17,6 +17,7 @@ import {
   shouldHideReaderChildEdge,
 } from "./geometry";
 import type { CanvasNode } from "./types";
+import { IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE } from "./node-factories";
 
 const HORIZONTAL_GAP = 72;
 const VERTICAL_GAP = 48;
@@ -218,6 +219,13 @@ function collapseExpandableNodes(nodes: CanvasNode[], edges: Edge[]) {
         return withCollapsedSize(node, TEXT_NODE_DEFAULT_SIZE, {
           textExpanded: false,
         });
+      }
+      if (node.data.kind === "imageGeneration") {
+        return withCollapsedSize(
+          node,
+          IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE,
+          { imagePromptExpanded: false },
+        );
       }
       if (node.data.kind === "agent") {
         return withCollapsedSize(node, AI_RESPONSE_DEFAULT_SIZE, {

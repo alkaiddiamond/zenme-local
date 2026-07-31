@@ -5,6 +5,7 @@ import {
   AI_RESPONSE_READING_PANEL_SIZE,
   createAiResponseExpansionUpdate,
   createCodeNodeDataUpdate,
+  createImagePromptExpansionUpdate,
   createMusicChildExpansionUpdate,
   createProjectTagUpdate,
   createTaskChildrenVisibilityUpdate,
@@ -91,6 +92,36 @@ describe("canvas node data update helpers", () => {
     expect(collapsed?.nextNodes[0]).toMatchObject({
       style: { height: 176, width: 560 },
       data: { textExpanded: false },
+    });
+  });
+
+  it("expands an image prompt to an A4 panel and collapses to its creation size", () => {
+    const imagePrompt = node({
+      data: { imagePrompt: "详细提示词", kind: "imageGeneration" },
+      id: "image-prompt",
+    });
+    imagePrompt.style = { height: 460, width: 680 };
+
+    const expanded = createImagePromptExpansionUpdate({
+      expanded: true,
+      nodeId: "image-prompt",
+      nodes: [imagePrompt],
+    });
+
+    expect(expanded?.nextNodes[0]).toMatchObject({
+      style: AI_RESPONSE_READING_PANEL_SIZE,
+      data: { imagePromptExpanded: true },
+    });
+
+    const collapsed = createImagePromptExpansionUpdate({
+      expanded: false,
+      nodeId: "image-prompt",
+      nodes: expanded?.nextNodes ?? [],
+    });
+
+    expect(collapsed?.nextNodes[0]).toMatchObject({
+      style: { height: 260, width: 520 },
+      data: { imagePromptExpanded: false },
     });
   });
 

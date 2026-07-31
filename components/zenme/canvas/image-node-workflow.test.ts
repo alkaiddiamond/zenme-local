@@ -25,6 +25,10 @@ const visualComponentsSource = readFileSync(
   new URL("../visual-components.tsx", import.meta.url),
   "utf8",
 );
+const globalStylesSource = readFileSync(
+  new URL("../../../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 describe("direct image editing workflow", () => {
   it("opens the AI composer for any image with local content", () => {
@@ -57,6 +61,18 @@ describe("direct image editing workflow", () => {
     expect(canvasClientSource).toContain("prompt: requestPrompt,");
     expect(canvasClientSource).toContain(
       "sourceNodeIds: selectedTextReferenceNodeIds",
+    );
+  });
+
+  it("keeps image source handles white in the dark theme", () => {
+    expect(
+      imageNodeSource.match(/className="zenme-image-source-handle"/g),
+    ).toHaveLength(2);
+    expect(globalStylesSource).toContain(
+      "html.dark .zenme-canvas .zenme-image-source-handle",
+    );
+    expect(globalStylesSource).toContain(
+      "background-color: #fff !important;",
     );
   });
 
@@ -133,6 +149,28 @@ describe("direct image editing workflow", () => {
     );
   });
 
+  it("keeps long image-generation prompts inside the node boundary", () => {
+    expect(imageGenerationNodeSource).toContain(
+      "flex h-full min-h-[176px] flex-col overflow-hidden rounded-xl",
+    );
+    expect(imageGenerationNodeSource).toContain(
+      "zenme-text-ai-input nodrag nowheel min-h-0 flex-1 overflow-auto",
+    );
+  });
+
+  it("adds text-style expand and copy actions to image prompts", () => {
+    expect(imageGenerationNodeSource).toContain(
+      "aria-expanded={isPromptExpanded}",
+    );
+    expect(imageGenerationNodeSource).toContain(
+      "nodeData.onToggleImagePromptExpanded?.(",
+    );
+    expect(imageGenerationNodeSource).toContain('title="复制提示词"');
+    expect(imageGenerationNodeSource).toContain(
+      "writeTextToClipboard(content)",
+    );
+  });
+
   it("keeps progress feedback only for a submitted result node", () => {
     expect(imageGenerationNodeSource).toContain(
       "{isResultNode ? (",
@@ -172,5 +210,14 @@ describe("direct image editing workflow", () => {
     expect(canvasClientSource).toContain("const requestText = prompt.trim();");
     expect(canvasClientSource).not.toContain("expandImagePromptMentions(");
     expect(canvasClientSource).toContain("mergeReferenceNodeIds(");
+  });
+
+  it("creates connected non-destructive image nodes from brush and crop tools", () => {
+    expect(imageNodeSource).toContain('onBrush={() => setTransformMode("brush")}');
+    expect(imageNodeSource).toContain('onCrop={() => setTransformMode("crop")}');
+    expect(imageNodeSource).toContain("onCreateDerivedImageNode(id");
+    expect(canvasClientSource).toContain("createDerivedImageChildCanvasNode({");
+    expect(canvasClientSource).toContain("edges: [result.edge]");
+    expect(canvasClientSource).toContain("nodes: [result.node]");
   });
 });

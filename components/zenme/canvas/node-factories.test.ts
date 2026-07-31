@@ -8,6 +8,7 @@ import {
   createAiResponseChildCanvasNode,
   createCodeCanvasNode,
   createConnectedPlaceholderCanvasNode,
+  createDerivedImageChildCanvasNode,
   createDroppedReadingNoteCanvasNode,
   createReferencedImageGenerationCanvasNode,
   createImageGenerationCanvasNode,
@@ -307,6 +308,42 @@ describe("canvas node factories", () => {
       kind: "imageGeneration",
     });
     expect(result.node.style).toEqual({ height: 260, width: 520 });
+  });
+
+  it("creates a connected image child for a local brush or crop result", () => {
+    const sourceNode = {
+      ...textNode({ id: "source-image" }),
+      type: "image",
+      data: { kind: "image" as const, title: "原图" },
+    } as CanvasNode;
+
+    const result = createDerivedImageChildCanvasNode({
+      fileId: "file-crop",
+      fileName: "cropped.png",
+      height: 600,
+      id: "crop-result",
+      mimeType: "image/png",
+      originalUrl: "/api/projects/project/files/file-crop",
+      sourceNode,
+      title: "图片裁剪",
+      width: 800,
+    });
+
+    expect(result.edge).toEqual(expectedEdge("source-image", "crop-result"));
+    expect(result.node).toMatchObject({
+      position: { x: 740, y: 200 },
+      type: "image",
+      data: {
+        fileId: "file-crop",
+        fileName: "cropped.png",
+        imageAspectRatio: 4 / 3,
+        imageHeight: 600,
+        imageWidth: 800,
+        kind: "image",
+        title: "图片裁剪",
+        uploadStatus: "uploaded",
+      },
+    });
   });
 
   it("creates a standalone image generation node without a source image", () => {

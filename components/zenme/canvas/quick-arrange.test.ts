@@ -100,6 +100,19 @@ describe("quick canvas arrange", () => {
       },
       {
         ...node({
+          id: "image-prompt",
+          kind: "imageGeneration",
+          height: 1123,
+          width: 794,
+        }),
+        data: {
+          imagePromptExpanded: true,
+          kind: "imageGeneration",
+          title: "图片生成",
+        },
+      },
+      {
+        ...node({
           id: "lyrics",
           kind: "lyrics",
           height: 1123,
@@ -129,6 +142,11 @@ describe("quick canvas arrange", () => {
       height: 260,
       width: 620,
       data: { aiResponseExpanded: false },
+    });
+    expect(byId.get("image-prompt")).toMatchObject({
+      height: 260,
+      width: 520,
+      data: { imagePromptExpanded: false },
     });
     expect(byId.get("lyrics")).toMatchObject({
       height: 176,

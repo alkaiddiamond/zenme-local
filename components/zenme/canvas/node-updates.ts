@@ -8,6 +8,7 @@ import {
   readNodeSize,
 } from "./geometry";
 import type { CanvasNode } from "./types";
+import { IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE } from "./node-factories";
 
 type NodeUpdateResult = {
   beforeNodeSnapshots: Map<string, CanvasNode>;
@@ -310,6 +311,51 @@ export function createTextNodeExpansionUpdate(input: {
             data: {
               ...node.data,
               textExpanded: input.expanded,
+            },
+          }
+        : node,
+    ),
+  };
+}
+
+export function createImagePromptExpansionUpdate(input: {
+  expanded: boolean;
+  nodeId: string;
+  nodes: CanvasNode[];
+}): NodeUpdateResult | null {
+  const sourceNode = input.nodes.find(
+    (node) =>
+      node.id === input.nodeId && node.data.kind === "imageGeneration",
+  );
+  if (
+    !sourceNode ||
+    Boolean(sourceNode.data.imagePromptExpanded) === input.expanded
+  ) {
+    return null;
+  }
+
+  const nextSize = input.expanded
+    ? AI_RESPONSE_READING_PANEL_SIZE
+    : IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE;
+
+  return {
+    beforeNodeSnapshots: new Map([
+      [input.nodeId, createCanvasHistoryNodeSnapshot(sourceNode)],
+    ]),
+    nextNodes: input.nodes.map((node) =>
+      node.id === input.nodeId
+        ? {
+            ...node,
+            height: nextSize.height,
+            measured: { ...nextSize },
+            style: {
+              ...(node.style ?? {}),
+              ...nextSize,
+            },
+            width: nextSize.width,
+            data: {
+              ...node.data,
+              imagePromptExpanded: input.expanded,
             },
           }
         : node,

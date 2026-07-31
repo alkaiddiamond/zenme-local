@@ -14,10 +14,13 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  Copy,
   FileText,
   ImageIcon,
   ImagePlus,
   Loader2,
+  Maximize2,
+  Minimize2,
   Plus,
   Search,
   Sparkles,
@@ -57,6 +60,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { writeTextToClipboard } from "@/lib/clipboard";
 
 type ImagePromptImageReference = NonNullable<CanvasNodeData["imageReferenceCandidates"]>[number];
 type ImagePromptTextReference = NonNullable<CanvasNodeData["imageTextReferenceCandidates"]>[number];
@@ -73,6 +77,7 @@ export type ImagePromptEditorHandle = {
 
 export function ImageGenerationNode({ data, id, selected }: NodeProps) {
   const nodeData = data as CanvasNodeData;
+  const isPromptExpanded = Boolean(nodeData.imagePromptExpanded);
   const imageModelOptions = useAiModelOptions("image");
   const rememberedPreferences = getImageEditPreferences();
   const [prompt, setPrompt] = useState(nodeData.imagePrompt ?? "");
@@ -234,7 +239,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
           onSubmit={submit}
         >
           <div
-            className={`zenme-shadow-node flex h-full min-h-[176px] flex-col rounded-xl border bg-white p-3 ${
+            className={`zenme-shadow-node flex h-full min-h-[176px] flex-col overflow-hidden rounded-xl border bg-white p-3 ${
               selected ? "border-zinc-900" : "border-zinc-200"
             }`}
           >
@@ -288,7 +293,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
             />
             <ImagePromptEditor
               candidates={nodeData.imageReferenceCandidates ?? []}
-              className="zenme-text-ai-input nodrag nowheel min-h-10 flex-1 whitespace-pre-wrap break-words bg-transparent px-1 py-0.5 text-sm leading-5 text-zinc-900 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
+              className="zenme-text-ai-input nodrag nowheel min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-transparent px-1 py-0.5 text-sm leading-5 text-zinc-900 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
               mentions={promptMentions}
               onBlur={(nextPrompt, nextMentions) => {
                 setPrompt(nextPrompt);
@@ -402,6 +407,39 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
                 ) : (
                   <ArrowUp className="size-5" strokeWidth={1.75} />
                 )}
+              </button>
+            </div>
+            <div className="zenme-text-node-floating-actions nodrag absolute right-3 top-3 z-30 flex items-center gap-1">
+              <button
+                aria-expanded={isPromptExpanded}
+                className="flex size-7 shrink-0 items-center justify-center rounded-md bg-white/80 text-zinc-400 opacity-55 backdrop-blur transition hover:bg-zinc-100 hover:text-zinc-900 hover:opacity-100 focus-visible:bg-zinc-100 focus-visible:text-zinc-900 focus-visible:opacity-100"
+                onClick={() =>
+                  nodeData.onToggleImagePromptExpanded?.(
+                    id,
+                    !isPromptExpanded,
+                  )
+                }
+                title={
+                  isPromptExpanded ? "收起提示词" : "展开为 A4 阅读面板"
+                }
+                type="button"
+              >
+                {isPromptExpanded ? (
+                  <Minimize2 className="size-4" />
+                ) : (
+                  <Maximize2 className="size-4" />
+                )}
+              </button>
+              <button
+                className="flex size-7 shrink-0 items-center justify-center rounded-md bg-white/80 text-zinc-400 opacity-55 backdrop-blur transition hover:bg-zinc-100 hover:text-zinc-900 hover:opacity-100 focus-visible:bg-zinc-100 focus-visible:text-zinc-900 focus-visible:opacity-100"
+                onClick={() => {
+                  const content = prompt.trim();
+                  if (content) void writeTextToClipboard(content);
+                }}
+                title="复制提示词"
+                type="button"
+              >
+                <Copy className="size-4" />
               </button>
             </div>
           </div>

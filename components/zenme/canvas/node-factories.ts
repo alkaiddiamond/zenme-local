@@ -4,6 +4,7 @@ import { NODE_RIGHT_HANDLE_ID } from "@/components/zenme/node-types";
 import {
   DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
   DEFAULT_IMAGE_EDIT_QUALITY,
+  getImageDisplaySize,
   getImageEditResultNodeSize,
   type ImageCameraControl,
 } from "@/components/zenme/image-edit-options";
@@ -831,4 +832,47 @@ function escapeHtml(value: string) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+export function createDerivedImageChildCanvasNode(input: {
+  fileId: string;
+  fileName: string;
+  height: number;
+  id: string;
+  mimeType: string;
+  originalUrl: string;
+  position?: { x: number; y: number };
+  previewUrl?: string;
+  sourceNode: CanvasNode;
+  title: string;
+  width: number;
+}): { edge: Edge; node: CanvasNode } {
+  const sourceSize = readNodeSize(input.sourceNode, IMAGE_RESULT_NODE_DEFAULT_SIZE);
+  const imageAspectRatio = input.width / input.height;
+  const resultSize = getImageDisplaySize(imageAspectRatio);
+  return {
+    edge: createConnectedEdge(input.sourceNode.id, input.id),
+    node: {
+      id: input.id,
+      type: "image",
+      position: input.position ?? {
+        x: input.sourceNode.position.x + sourceSize.width + 80,
+        y: input.sourceNode.position.y,
+      },
+      style: resultSize,
+      data: {
+        fileId: input.fileId,
+        fileName: input.fileName,
+        imageAspectRatio,
+        imageHeight: input.height,
+        imageWidth: input.width,
+        kind: "image",
+        mimeType: input.mimeType,
+        originalUrl: input.originalUrl,
+        previewUrl: input.previewUrl ?? input.originalUrl,
+        title: input.title,
+        uploadStatus: "uploaded",
+      },
+    },
+  };
 }

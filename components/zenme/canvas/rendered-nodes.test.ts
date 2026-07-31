@@ -21,6 +21,27 @@ function node(input: {
 }
 
 describe("rendered canvas nodes", () => {
+  it("injects the derived-image callback into image nodes", () => {
+    const onCreateDerivedImageNode = vi.fn();
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [],
+      nodes: [node({ data: { kind: "image" }, id: "image", type: "image" })],
+      onCreateDerivedImageNode,
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    expect(renderedNodes[0].data.onCreateDerivedImageNode)
+      .toBe(onCreateDerivedImageNode);
+  });
+
   it("marks selected nodes when the canvas has a multi-selection", () => {
     const first = node({ id: "first" });
     const second = node({ id: "second" });
@@ -51,6 +72,7 @@ describe("rendered canvas nodes", () => {
 
   it("injects text composer update handlers into text-like nodes", () => {
     const onToggleAiResponseExpanded = vi.fn();
+    const onToggleImagePromptExpanded = vi.fn();
     const onToggleTextExpanded = vi.fn();
     const onUpdateTextGenerationNode = vi.fn();
     const renderedNodes = getRenderedCanvasNodes({
@@ -68,11 +90,17 @@ describe("rendered canvas nodes", () => {
           id: "agent",
           type: "agent",
         }),
+        node({
+          data: { imagePrompt: "prompt", kind: "imageGeneration" },
+          id: "image-prompt",
+          type: "imageGeneration",
+        }),
       ],
       onCreateTextChildNode: vi.fn(),
       onSubmitImageNode: vi.fn(),
       onSubmitTextGenerationNode: vi.fn(),
       onToggleAiResponseExpanded,
+      onToggleImagePromptExpanded,
       onToggleTextExpanded,
       onUpdateImageNode: vi.fn(),
       onUpdateTextGenerationNode,
@@ -95,6 +123,8 @@ describe("rendered canvas nodes", () => {
         onToggleAiResponseExpanded,
         onUpdateTextGenerationNode,
       });
+    expect(renderedNodes.find((item) => item.id === "image-prompt")?.data)
+      .toMatchObject({ onToggleImagePromptExpanded });
   });
 
   it("shares project tag options across managed text nodes", () => {

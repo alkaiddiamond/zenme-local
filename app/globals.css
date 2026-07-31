@@ -796,6 +796,10 @@ html.dark ::selection {
   cursor: crosshair !important;
 }
 
+html.dark .zenme-canvas .zenme-image-source-handle {
+  background-color: #fff !important;
+}
+
 .zenme-canvas
   .react-flow__node:hover
   .zenme-connected-source-handle,

@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import { type NodeProps, useUpdateNodeInternals, useViewport } from "@xyflow/react";
 import {
   ArrowUp,
+  Brush,
+  Crop,
   Download,
   ImageIcon,
   Loader2,
@@ -35,6 +37,10 @@ import {
   ImageReferencePicker,
 } from "@/components/zenme/nodes/image-edit-node";
 import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
+import {
+  ImageTransformEditor,
+  type ImageTransformMode,
+} from "@/components/zenme/nodes/image-transform-editor";
 import { ImageTaskTiming } from "@/components/zenme/nodes/image-task-timing";
 import { ImageCameraControlPicker } from "@/components/zenme/nodes/image-camera-control-picker";
 import {
@@ -85,6 +91,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   const [referencePickerRequest, setReferencePickerRequest] = useState(0);
   const promptEditorRef = useRef<ImagePromptEditorHandle>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [transformMode, setTransformMode] = useState<ImageTransformMode>();
   const [detectedAspectRatio, setDetectedAspectRatio] = useState<number | undefined>(
     nodeData.imageAspectRatio,
   );
@@ -217,6 +224,8 @@ export function ImageNode({ data, id, selected }: NodeProps) {
 
   const imageControls = imageUrl ? (
     <ImageNodeControls
+      onBrush={() => setTransformMode("brush")}
+      onCrop={() => setTransformMode("crop")}
       onDownload={() => void downloadImage()}
       onOpenPreview={() => setIsPreviewOpen(true)}
     />
@@ -233,6 +242,25 @@ export function ImageNode({ data, id, selected }: NodeProps) {
         onDownload={() => void downloadImage()}
         prompt={nodeData.imagePrompt}
         qualityLabel={qualityOption.label}
+        title={imageTitle}
+      />
+    ) : null;
+
+  const transformOverlay =
+    transformMode && imageUrl ? (
+      <ImageTransformEditor
+        imageUrl={imageUrl}
+        mode={transformMode}
+        onApply={async (input) => {
+          if (!nodeData.onCreateDerivedImageNode) {
+            throw new Error("画布暂不支持创建处理后的图片节点");
+          }
+          await nodeData.onCreateDerivedImageNode(id, {
+            ...input,
+            operation: transformMode,
+          });
+        }}
+        onClose={() => setTransformMode(undefined)}
         title={imageTitle}
       />
     ) : null;
@@ -258,6 +286,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
           visible={Boolean(nodeData.hasIncomingEdge)}
         />
         <NodeEdgeSourceHandle
+          className="zenme-image-source-handle"
           visible={Boolean(nodeData.hasOutgoingEdge)}
         />
         <form
@@ -484,6 +513,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
           selected={Boolean(selected && !isRenaming)}
         />
         {previewOverlay}
+        {transformOverlay}
       </div>
     );
   }
@@ -508,6 +538,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
         visible={Boolean(nodeData.hasIncomingEdge)}
       />
       <NodeEdgeSourceHandle
+        className="zenme-image-source-handle"
         visible={Boolean(nodeData.hasOutgoingEdge)}
       />
       <div
@@ -545,14 +576,19 @@ export function ImageNode({ data, id, selected }: NodeProps) {
         selected={Boolean(selected && !isRenaming)}
       />
       {previewOverlay}
+      {transformOverlay}
     </div>
   );
 }
 
 function ImageNodeControls({
+  onBrush,
+  onCrop,
   onDownload,
   onOpenPreview,
 }: {
+  onBrush: () => void;
+  onCrop: () => void;
   onDownload: () => void;
   onOpenPreview: () => void;
 }) {
@@ -562,6 +598,24 @@ function ImageNodeControls({
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
     >
+      <button
+        aria-label="画笔标记"
+        className="flex size-9 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-950 focus-visible:bg-zinc-100 focus-visible:text-zinc-950"
+        onClick={onBrush}
+        title="画笔标记"
+        type="button"
+      >
+        <Brush className="size-4" />
+      </button>
+      <button
+        aria-label="裁剪图片"
+        className="flex size-9 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-950 focus-visible:bg-zinc-100 focus-visible:text-zinc-950"
+        onClick={onCrop}
+        title="裁剪图片"
+        type="button"
+      >
+        <Crop className="size-4" />
+      </button>
       <button
         className="flex size-9 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-950 focus-visible:bg-zinc-100 focus-visible:text-zinc-950"
         onClick={onOpenPreview}

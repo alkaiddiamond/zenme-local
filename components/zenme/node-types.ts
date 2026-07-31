@@ -197,6 +197,7 @@ export type CanvasNodeData = {
   textGenerationPrompt?: string;
   textGenerationModel?: string;
   imagePrompt?: string;
+  imagePromptExpanded?: boolean;
   imagePromptMentions?: Array<{
     nodeId: string;
     offset: number;
@@ -290,6 +291,10 @@ export type CanvasNodeData = {
     nodeId: string,
     expanded: boolean,
   ) => void;
+  onToggleImagePromptExpanded?: (
+    nodeId: string,
+    expanded: boolean,
+  ) => void;
   onToggleMusicChildExpanded?: (
     nodeId: string,
     expanded: boolean,
@@ -298,6 +303,15 @@ export type CanvasNodeData = {
     nodeId: string,
     dimensions: { height: number; width: number },
   ) => void;
+  onCreateDerivedImageNode?: (
+    nodeId: string,
+    input: {
+      file: File;
+      height: number;
+      operation: "brush" | "crop";
+      width: number;
+    },
+  ) => Promise<void> | void;
   onCreateNoteNode?: (
     note: ReadingNote,
     asset: ReadingAsset,
