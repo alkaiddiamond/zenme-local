@@ -22,10 +22,10 @@ GET https://chatgpt.com/backend-api/codex/models?client_version={client_version}
 
 请求使用 ChatGPT OAuth 凭据，并声明 Codex CLI 协议身份：
 
-- `originator: codex_cli_rs`
-- `User-Agent: codex-cli/{client_version}`
+- `originator: codex_exec`
+- `User-Agent: codex_exec/{runtime_version}`
 
-当前代码中的兼容版本常量为 `0.150.0`，位于 `lib/ai/openai-oauth.ts`。该值用于服务端兼容性判断，不代表 Zenme 内嵌或安装了 `0.150.0` 版本的 Codex CLI。
+当前代码中的模型列表兼容版本为 `0.146.0`，请求运行时身份为 `0.146.0-alpha.3.1`，均位于 `lib/ai/openai-oauth.ts`。这些值用于服务端协议兼容，不代表 Zenme 内嵌或安装了 Codex CLI。
 
 ## 3. 版本语义
 
@@ -44,7 +44,7 @@ GET https://chatgpt.com/backend-api/codex/models?client_version={client_version}
 
 `client_version` 是发送给 ChatGPT Codex 模型接口的兼容性声明。服务端会用它与模型的最低客户端要求比较。
 
-Zenme 当前使用的 `0.150.0` 是经过实际接口探测并验证可用的兼容声明值。它不是从本机 Codex 可执行文件、本机后端或官方版本清单自动读取出来的。
+Zenme 当前使用的 `0.146.0` 与 2026-07-29 官方公开 Codex CLI stable 版本保持一致，并高于 GPT-5.6 系列返回的最低客户端版本 `0.144.0`。
 
 ### 3.3 模型最低客户端版本
 
@@ -114,9 +114,17 @@ feat: establish unified local canvas milestone
 
 结论：2026-07-10 至 2026-07-14 之间，当前账号可见模型集合没有变化。`0.150.0` 仍满足现有模型的兼容要求；继续提高声明值没有获得更多账号可见模型。
 
+### 4.3 2026-07-29 版本对齐验证
+
+在同一 ChatGPT 账号可通过官方 Codex 调用 GPT-5.6 Sol、但 Zenme 调用失败的情况下，将 Zenme 的兼容声明从未公开发布的 `0.150.0` 调整为当日官方 stable 版本 `0.146.0`。短请求恢复后，带 13,815 字符画布上下文的请求仍被上游拒绝，因此 GPT-5.6 文本调用同时改用官方 `0.146.0` 的 Responses Lite 请求结构。相同长上下文随后调用成功，确认版本身份与请求协议需要一并对齐。
+
+随后再次出现统一的 `Our servers are currently overloaded` 错误。对本机 `0.146.0-alpha.3.1` 运行时进行本地抓包后确认，当前请求身份已经从旧的 `codex_cli_rs` / `codex-cli` 改为 `codex_exec` / `codex_exec`。Zenme 对齐该身份后，普通文本请求与带网页资料的 GPT-5.6 Sol 请求均恢复成功。
+
+Responses Lite 的 `web.run` 是服务端保留工具，第三方客户端直接声明会收到 schema 校验错误。Zenme 因此不冒充该保留工具：当请求包含 URL 或明确要求当前信息时，先调用同一 OAuth 协议的独立搜索端点获取网页上下文，再将结果作为开发者上下文交给模型生成答案。该路径已用 `https://www.myvix.net/about.html` 做真实回归。
+
 ## 5. 当前产品决策
 
-- 保留 `CODEX_CLIENT_VERSION = "0.150.0"`，本次不修改代码常量。
+- 使用 `CODEX_CLIENT_VERSION = "0.146.0"`，与当日官方 stable 版本保持一致，并继续满足 GPT-5.6 的最低版本要求。
 - 将该常量定义为“已验证的协议兼容声明版本”，不对外描述为 Zenme 使用的真实 Codex CLI 版本。
 - 模型列表以远程接口实际返回为准，并继续过滤 `visibility=hide` 的内部模型。
 - 不通过任意填写更大的未来版本号来猜测或强制解锁模型。

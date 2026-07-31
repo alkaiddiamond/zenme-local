@@ -252,6 +252,98 @@ describe("rendered canvas nodes", () => {
       ]);
   });
 
+  it("keeps an incoming image available as an @ candidate on a generated image", () => {
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [{ source: "reference", target: "generated" }],
+      nodes: [
+        node({
+          data: {
+            imageGenerated: true,
+            kind: "image",
+            previewUrl: "/reference.webp",
+            title: "人物参考",
+          },
+          id: "reference",
+          type: "image",
+        }),
+        node({
+          data: {
+            imageGenerated: true,
+            kind: "image",
+            originalUrl: "/generated.webp",
+          },
+          id: "generated",
+          type: "image",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    expect(renderedNodes.find((item) => item.id === "generated")?.data.imageReferenceCandidates)
+      .toEqual([
+        { nodeId: "reference", title: "人物参考", url: "/reference.webp" },
+      ]);
+  });
+
+  it("derives selectable text references from incoming text edges", () => {
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [
+        { source: "prompt-a", target: "generation" },
+        { source: "prompt-b", target: "generation" },
+      ],
+      nodes: [
+        node({
+          data: {
+            imagePrompt: "庭院提示词",
+            kind: "imageGeneration",
+            title: "构图提示",
+          },
+          id: "prompt-a",
+          type: "imageGeneration",
+        }),
+        node({
+          data: { kind: "text", plainText: "秋日光线", title: "光影提示" },
+          id: "prompt-b",
+          type: "text",
+        }),
+        node({
+          data: {
+            imageTextReferenceNodeIds: ["prompt-b"],
+            kind: "imageGeneration",
+          },
+          id: "generation",
+          type: "imageGeneration",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+    const generation = renderedNodes.find((item) => item.id === "generation");
+
+    expect(generation?.data.imageTextReferenceCandidates).toEqual([
+      { nodeId: "prompt-a", title: "构图提示" },
+      { nodeId: "prompt-b", title: "光影提示" },
+    ]);
+    expect(generation?.data.imageTextReferences).toEqual([
+      { nodeId: "prompt-b", title: "光影提示" },
+    ]);
+  });
+
   it("shows only explicitly selected reference candidates", () => {
     const renderedNodes = getRenderedCanvasNodes({
       createNoteNode: vi.fn(),

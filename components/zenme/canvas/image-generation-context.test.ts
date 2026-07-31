@@ -43,4 +43,32 @@ describe("buildContextualImageGenerationPrompt", () => {
       prompt: "  一只晒太阳的猫  ",
     })).toBe("一只晒太阳的猫");
   });
+
+  it("collects only selected direct text references when a selection is provided", () => {
+    const context = collectTextGenerationContext({
+      edges: [
+        { id: "a-to-image", source: "text-a", target: "image-request" },
+        { id: "b-to-image", source: "text-b", target: "image-request" },
+      ],
+      nodeId: "image-request",
+      nodes: [
+        {
+          id: "text-a",
+          position: { x: 0, y: 0 },
+          data: { kind: "text", plainText: "不要使用", title: "提示 A" },
+        },
+        {
+          id: "text-b",
+          position: { x: 0, y: 0 },
+          data: { kind: "text", plainText: "秋日柔光", title: "提示 B" },
+        },
+      ],
+      sourceNodeIds: ["text-b"],
+    });
+
+    expect(context).toContain("提示 B");
+    expect(context).toContain("秋日柔光");
+    expect(context).not.toContain("提示 A");
+    expect(context).not.toContain("不要使用");
+  });
 });

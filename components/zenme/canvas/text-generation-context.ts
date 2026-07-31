@@ -6,10 +6,12 @@ const TEXT_GENERATION_CONTEXT_NODE_KINDS = new Set([
   "agent",
   "book",
   "code",
+  "imageGeneration",
   "markdown",
   "note",
   "reader",
   "text",
+  "textGeneration",
   "managedText",
   "lyrics",
 ]);
@@ -19,6 +21,7 @@ export function collectTextGenerationContext(input: {
   maxDepth?: number;
   nodeId: string;
   nodes: CanvasNode[];
+  sourceNodeIds?: string[];
 }) {
   const maxDepth = input.maxDepth ?? 3;
   const nodeById = new Map(input.nodes.map((node) => [node.id, node]));
@@ -29,7 +32,9 @@ export function collectTextGenerationContext(input: {
     return result;
   }, new Map<string, string[]>());
   const visited = new Set<string>([input.nodeId]);
-  const queue = (inboundByTarget.get(input.nodeId) ?? []).map((nodeId) => ({
+  const queue = (
+    input.sourceNodeIds ?? inboundByTarget.get(input.nodeId) ?? []
+  ).map((nodeId) => ({
     depth: 1,
     nodeId,
   }));
@@ -155,6 +160,11 @@ export function getCanvasNodeContextText(node: CanvasNode) {
       .map((line) => `${formatTimestamp(line.start)} ${line.text.trim()}`)
       .join("\n");
     return lyrics ? `歌词节点「${title}」\n${lyrics}` : "";
+  }
+
+  if (node.data.kind === "imageGeneration") {
+    const prompt = node.data.imagePrompt?.trim();
+    return prompt ? `图片提示词节点「${title}」\n${prompt}` : "";
   }
 
   if (node.data.kind === "textGeneration") {

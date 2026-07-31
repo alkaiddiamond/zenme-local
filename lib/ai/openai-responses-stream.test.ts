@@ -21,4 +21,37 @@ describe("openAiResponsesToChatStream", () => {
     expect(output).toContain("data: [DONE]");
     expect(usage).toEqual({ inputTokens: 12, outputTokens: 5, totalTokens: 17 });
   });
+
+  it("recovers text from the completed response when no delta event arrives", async () => {
+    const source = new Response(
+      'event: response.completed\ndata: {"type":"response.completed","response":{"output":[{"type":"message","content":[{"type":"output_text","text":"完整结果"}]}]}}\n\n',
+    ).body!;
+
+    const output = await new Response(openAiResponsesToChatStream(source)).text();
+
+    expect(output).toContain('"content":"完整结果"');
+    expect(output).toContain("data: [DONE]");
+  });
+
+  it("forwards a failed Responses event as a readable chat stream error", async () => {
+    const source = new Response(
+      'event: response.failed\ndata: {"type":"response.failed","response":{"error":{"code":"context_length_exceeded","message":"too long"}}}\n\n',
+    ).body!;
+
+    const output = await new Response(openAiResponsesToChatStream(source)).text();
+
+    expect(output).toContain("发送给模型的上下文过长");
+    expect(output).toContain("data: [DONE]");
+  });
+
+  it("reads account usage errors nested in an error event", async () => {
+    const source = new Response(
+      'event: error\ndata: {"type":"error","error":{"type":"usage_limit_error","code":"usage_limit_reached","message":"usage limit reached"}}\n\n',
+    ).body!;
+
+    const output = await new Response(openAiResponsesToChatStream(source)).text();
+
+    expect(output).toContain("当前账号的模型用量已达到限制");
+    expect(output).not.toContain("usage limit reached");
+  });
 });

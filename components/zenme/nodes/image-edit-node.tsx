@@ -1,8 +1,11 @@
 "use client";
 
 import {
+  forwardRef,
   type FormEvent,
+  type KeyboardEvent,
   useEffect,
+  useImperativeHandle,
   useRef,
   useState,
 } from "react";
@@ -11,6 +14,7 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  FileText,
   ImageIcon,
   ImagePlus,
   Loader2,
@@ -34,6 +38,8 @@ import {
   NodeTargetHandle,
 } from "@/components/zenme/node-ui";
 import { NANO_BANANA_2_IMAGE_MODEL } from "@/components/zenme/canvas/node-factories";
+import type { ImagePromptMention } from "@/components/zenme/canvas/image-prompt-mentions";
+import { createOutsidePointerHandler } from "@/components/zenme/nodes/outside-interaction";
 import {
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
@@ -52,11 +58,27 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+type ImagePromptImageReference = NonNullable<CanvasNodeData["imageReferenceCandidates"]>[number];
+type ImagePromptTextReference = NonNullable<CanvasNodeData["imageTextReferenceCandidates"]>[number];
+export type ImagePromptReference = (ImagePromptImageReference & { kind: "image" }) |
+  (ImagePromptTextReference & { kind: "text" });
+
+export type ImagePromptEditorHandle = {
+  clearPendingReference: () => void;
+  insertPendingReference: (reference: ImagePromptReference) => false | {
+    mentions: ImagePromptMention[];
+    prompt: string;
+  };
+};
+
 export function ImageGenerationNode({ data, id, selected }: NodeProps) {
   const nodeData = data as CanvasNodeData;
   const imageModelOptions = useAiModelOptions("image");
   const rememberedPreferences = getImageEditPreferences();
   const [prompt, setPrompt] = useState(nodeData.imagePrompt ?? "");
+  const [promptMentions, setPromptMentions] = useState(
+    nodeData.imagePromptMentions ?? [],
+  );
   const [aspectRatio, setAspectRatio] = useState<string>(
     getImageEditAspectRatioOption(
       nodeData.imageOutputAspectRatio ?? rememberedPreferences.aspectRatio,
@@ -80,6 +102,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [referencePickerRequest, setReferencePickerRequest] = useState(0);
+  const promptEditorRef = useRef<ImagePromptEditorHandle>(null);
   const isEditing = isSubmitting || nodeData.imageStatus === "editing";
   const isSubmissionLocked = isSubmitting || Boolean(nodeData.hasRunningGenerationChild);
   const isResultNode = Boolean(nodeData.imageGenerationResult);
@@ -93,6 +116,10 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
   useEffect(() => {
     setPrompt(nodeData.imagePrompt ?? "");
   }, [nodeData.imagePrompt]);
+
+  useEffect(() => {
+    setPromptMentions(nodeData.imagePromptMentions ?? []);
+  }, [nodeData.imagePromptMentions]);
 
   useEffect(() => {
     if (!nodeData.imageOutputAspectRatio) return;
@@ -118,16 +145,6 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
     if (nextModel) setModel(nextModel);
   }, [imageModelOptions, nodeData.imageModel]);
 
-  function syncPrompt() {
-    nodeData.onUpdateImageNode?.(id, {
-      imageCameraControl: cameraControl,
-      imageOutputAspectRatio: aspectRatio,
-      imageModel: model,
-      imagePrompt: prompt,
-      imageQuality: quality,
-    });
-  }
-
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextPrompt = prompt.trim();
@@ -140,7 +157,8 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
       imageCameraControl: cameraControl,
       imageOutputAspectRatio: aspectRatio,
       imageModel: model,
-      imagePrompt: nextPrompt,
+      imagePrompt: prompt,
+      imagePromptMentions: promptMentions,
       imageQuality: quality,
     });
 
@@ -149,7 +167,8 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
         aspectRatio,
         cameraControl,
         model,
-        prompt: nextPrompt,
+        prompt,
+        promptMentions,
         quality,
       });
     } finally {
@@ -224,36 +243,76 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
               onChange={(nodeIds) =>
                 nodeData.onUpdateImageNode?.(id, { imageReferenceNodeIds: nodeIds })
               }
+              onTextChange={(nodeIds) =>
+                nodeData.onUpdateImageNode?.(id, {
+                  imageTextReferenceNodeIds: nodeIds,
+                })
+              }
+              mentionOnly
+              onOpenChange={(open) => {
+                if (!open) promptEditorRef.current?.clearPendingReference();
+              }}
+              onSelect={(reference) => {
+                const content = promptEditorRef.current?.insertPendingReference({
+                  ...reference,
+                  kind: "image",
+                });
+                if (!content) return false;
+                setPrompt(content.prompt);
+                setPromptMentions(content.mentions);
+                nodeData.onUpdateImageNode?.(id, {
+                  imagePrompt: content.prompt,
+                  imagePromptMentions: content.mentions,
+                });
+                return true;
+              }}
+              onTextSelect={(reference) => {
+                const content = promptEditorRef.current?.insertPendingReference({
+                  ...reference,
+                  kind: "text",
+                });
+                if (!content) return false;
+                setPrompt(content.prompt);
+                setPromptMentions(content.mentions);
+                nodeData.onUpdateImageNode?.(id, {
+                  imagePrompt: content.prompt,
+                  imagePromptMentions: content.mentions,
+                });
+                return true;
+              }}
               openRequest={referencePickerRequest}
               references={nodeData.imageReferences ?? []}
               required={false}
+              textCandidates={nodeData.imageTextReferenceCandidates ?? []}
+              textReferences={nodeData.imageTextReferences ?? []}
             />
-            <textarea
-              className="zenme-text-ai-input nodrag nowheel min-h-10 flex-1 resize-none bg-transparent px-1 py-0.5 text-sm leading-5 text-zinc-900 outline-none placeholder:text-zinc-400"
-              onBlur={syncPrompt}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (/(^|\s)@$/.test(value)) {
-                  setPrompt(value.slice(0, -1));
-                  setReferencePickerRequest((current) => current + 1);
-                  return;
-                }
-                setPrompt(value);
+            <ImagePromptEditor
+              candidates={nodeData.imageReferenceCandidates ?? []}
+              className="zenme-text-ai-input nodrag nowheel min-h-10 flex-1 whitespace-pre-wrap break-words bg-transparent px-1 py-0.5 text-sm leading-5 text-zinc-900 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
+              mentions={promptMentions}
+              onBlur={(nextPrompt, nextMentions) => {
+                setPrompt(nextPrompt);
+                setPromptMentions(nextMentions);
+                nodeData.onUpdateImageNode?.(id, {
+                  imageCameraControl: cameraControl,
+                  imageOutputAspectRatio: aspectRatio,
+                  imageModel: model,
+                  imagePrompt: nextPrompt,
+                  imagePromptMentions: nextMentions,
+                  imageQuality: quality,
+                });
               }}
-              onKeyDown={(event) => {
-                if (
-                  event.key !== "Enter" ||
-                  event.shiftKey ||
-                  event.nativeEvent.isComposing
-                ) {
-                  return;
-                }
-
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
+              onChange={(nextPrompt, nextMentions) => {
+                setPrompt(nextPrompt);
+                setPromptMentions(nextMentions);
               }}
+              onReferenceRequest={() =>
+                setReferencePickerRequest((current) => current + 1)
+              }
               placeholder="描述想要生成的图片，或说明如何使用参考图"
-              value={prompt}
+              prompt={prompt}
+              ref={promptEditorRef}
+              textCandidates={nodeData.imageTextReferenceCandidates ?? []}
             />
             {nodeData.imageError ? (
               <p className="mt-1 rounded-md bg-red-50 px-2 py-1 text-xs leading-4 text-red-600">
@@ -363,31 +422,51 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
 
 export function ImageReferencePicker({
   candidates,
+  mentionOnly = false,
   onChange,
   onOpenChange,
   onSelect,
+  onTextChange,
+  onTextSelect,
   openRequest,
   references,
   required = false,
+  showReferenceBar = true,
+  textCandidates = [],
+  textReferences = [],
 }: {
   candidates: NonNullable<CanvasNodeData["imageReferenceCandidates"]>;
+  mentionOnly?: boolean;
   onChange: (nodeIds: string[]) => void;
   onOpenChange?: (open: boolean) => void;
   onSelect?: (
     reference: NonNullable<CanvasNodeData["imageReferenceCandidates"]>[number],
-  ) => void;
+  ) => boolean | void;
+  onTextChange?: (nodeIds: string[]) => void;
+  onTextSelect?: (
+    reference: NonNullable<CanvasNodeData["imageTextReferenceCandidates"]>[number],
+  ) => boolean | void;
   openRequest: number;
   references: NonNullable<CanvasNodeData["imageReferences"]>;
   required?: boolean;
+  showReferenceBar?: boolean;
+  textCandidates?: NonNullable<CanvasNodeData["imageTextReferenceCandidates"]>;
+  textReferences?: NonNullable<CanvasNodeData["imageTextReferences"]>;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const pickerRef = useRef<HTMLDivElement | null>(null);
   const previousOpenRequest = useRef(openRequest);
   const onOpenChangeRef = useRef(onOpenChange);
   onOpenChangeRef.current = onOpenChange;
   const selectedIds = references.map((reference) => reference.nodeId);
+  const selectedTextIds = textReferences.map((reference) => reference.nodeId);
+  const normalizedQuery = query.trim().toLowerCase();
   const filteredCandidates = candidates.filter((candidate) =>
-    candidate.title.toLowerCase().includes(query.trim().toLowerCase()),
+    candidate.title.toLowerCase().includes(normalizedQuery),
+  );
+  const filteredTextCandidates = textCandidates.filter((candidate) =>
+    candidate.title.toLowerCase().includes(normalizedQuery),
   );
 
   useEffect(() => {
@@ -397,6 +476,21 @@ export function ImageReferencePicker({
       onOpenChangeRef.current?.(true);
     }
   }, [openRequest]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handlePointerDown = createOutsidePointerHandler(
+      () => pickerRef.current,
+      () => {
+        setIsOpen(false);
+        onOpenChangeRef.current?.(false);
+      },
+    );
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [isOpen]);
 
   function toggleReference(nodeId: string) {
     if (required && selectedIds.length === 1 && selectedIds[0] === nodeId) {
@@ -409,12 +503,29 @@ export function ImageReferencePicker({
     );
   }
 
+  function toggleTextReference(nodeId: string) {
+    onTextChange?.(
+      selectedTextIds.includes(nodeId)
+        ? selectedTextIds.filter((id) => id !== nodeId)
+        : [...selectedTextIds, nodeId],
+    );
+  }
+
+  const referenceSummary = [
+    references.length > 0 ? `${references.length} 张图片` : "",
+    textReferences.length > 0 ? `${textReferences.length} 条文本` : "",
+  ].filter(Boolean).join("、");
+
   return (
-    <div className="relative mb-2">
-      <div className="flex min-h-11 items-center gap-2">
+    <div
+      className={showReferenceBar ? "relative mb-2" : "relative h-0"}
+      ref={pickerRef}
+    >
+      {showReferenceBar ? (
+      <div className="flex min-h-11 flex-wrap items-center gap-2">
         {references.map((reference) => (
           <div
-            className="group/reference-image nodrag nowheel relative size-11 shrink-0 overflow-hidden rounded-md border border-zinc-200 bg-zinc-100 shadow-sm"
+            className="group/reference-item nodrag nowheel relative size-11 shrink-0 overflow-hidden rounded-md border border-zinc-200 bg-zinc-100 shadow-sm"
             key={reference.nodeId}
             title={reference.title}
           >
@@ -422,8 +533,28 @@ export function ImageReferencePicker({
             <img alt={reference.title} className="h-full w-full object-cover" src={reference.url} />
             <button
               aria-label={`取消引用 ${reference.title}`}
-              className="absolute right-0.5 top-0.5 hidden size-4 items-center justify-center rounded-full bg-zinc-950/80 text-white group-hover/reference-image:flex"
+              className="absolute right-0.5 top-0.5 hidden size-4 items-center justify-center rounded-full bg-zinc-950/80 text-white group-hover/reference-item:flex"
               onClick={() => toggleReference(reference.nodeId)}
+              type="button"
+            >
+              <X className="size-2.5" />
+            </button>
+          </div>
+        ))}
+        {textReferences.map((reference) => (
+          <div
+            className="group/reference-item nodrag nowheel relative flex size-11 shrink-0 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-md border border-zinc-200 bg-zinc-50 px-1 text-zinc-600 shadow-sm"
+            key={reference.nodeId}
+            title={reference.title}
+          >
+            <FileText className="size-4 shrink-0" />
+            <span className="w-full truncate text-center text-[10px] leading-3">
+              {reference.title}
+            </span>
+            <button
+              aria-label={`取消引用 ${reference.title}`}
+              className="absolute right-0.5 top-0.5 hidden size-4 items-center justify-center rounded-full bg-zinc-950/80 text-white group-hover/reference-item:flex"
+              onClick={() => toggleTextReference(reference.nodeId)}
               type="button"
             >
               <X className="size-2.5" />
@@ -444,18 +575,19 @@ export function ImageReferencePicker({
           <Plus className="size-4" />
         </button>
         <span className="min-w-0 truncate text-xs text-zinc-400">
-          {references.length > 0 ? `${references.length} 张参考图片` : "输入 @ 或点击 + 添加参考"}
+          {referenceSummary || "点击 + 添加参考；输入 @ 在提示词中引用"}
         </span>
       </div>
+      ) : null}
       {isOpen ? (
-        <div className="zenme-shadow-dropdown nodrag nowheel absolute left-0 top-full z-50 mt-2 w-80 rounded-lg border border-zinc-200 bg-white p-2">
+        <div className={`zenme-shadow-dropdown nodrag nowheel absolute left-0 z-50 w-80 rounded-lg border border-zinc-200 bg-white p-2 ${showReferenceBar ? "top-full mt-2" : "top-0"}`}>
           <div className="relative mb-2">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
             <input
               autoFocus
               className="h-8 w-full rounded-md border border-zinc-200 bg-zinc-50 pl-8 pr-2 text-xs outline-none focus:border-zinc-400"
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索已连接图片"
+              placeholder="搜索已连接节点"
               value={query}
             />
           </div>
@@ -468,8 +600,8 @@ export function ImageReferencePicker({
                   className={`flex h-10 w-full items-center gap-2 rounded-md px-2 text-left text-xs transition ${selected ? "bg-zinc-100 text-zinc-950" : "text-zinc-600 hover:bg-zinc-50"}`}
                   key={candidate.nodeId}
                   onClick={() => {
-                    onSelect?.(candidate);
-                    if (!selected) {
+                    const handled = onSelect?.(candidate) === true;
+                    if (!selected && !(mentionOnly && handled)) {
                       toggleReference(candidate.nodeId);
                     }
                     setIsOpen(false);
@@ -484,8 +616,32 @@ export function ImageReferencePicker({
                 </button>
               );
             })}
-            {filteredCandidates.length === 0 ? (
-              <p className="px-2 py-4 text-center text-xs text-zinc-400">暂无可选的已连接图片</p>
+            {filteredTextCandidates.map((candidate) => {
+              const selected = selectedTextIds.includes(candidate.nodeId);
+              return (
+                <button
+                  className={`flex h-10 w-full items-center gap-2 rounded-md px-2 text-left text-xs transition ${selected ? "bg-zinc-100 text-zinc-950" : "text-zinc-600 hover:bg-zinc-50"}`}
+                  key={candidate.nodeId}
+                  onClick={() => {
+                    const handled = onTextSelect?.(candidate) === true;
+                    if (!selected && !(mentionOnly && handled)) {
+                      toggleTextReference(candidate.nodeId);
+                    }
+                    setIsOpen(false);
+                    onOpenChangeRef.current?.(false);
+                  }}
+                  type="button"
+                >
+                  <span className="flex size-7 items-center justify-center rounded bg-zinc-100 text-zinc-500">
+                    <FileText className="size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{candidate.title}</span>
+                  {selected ? <span className="text-zinc-500">已选</span> : null}
+                </button>
+              );
+            })}
+            {filteredCandidates.length === 0 && filteredTextCandidates.length === 0 ? (
+              <p className="px-2 py-4 text-center text-xs text-zinc-400">暂无可选的已连接节点</p>
             ) : null}
           </div>
         </div>
@@ -493,6 +649,253 @@ export function ImageReferencePicker({
     </div>
   );
 }
+
+export const ImagePromptEditor = forwardRef<ImagePromptEditorHandle, {
+  candidates: ImagePromptImageReference[];
+  className?: string;
+  mentions: ImagePromptMention[];
+  onBlur: (prompt: string, mentions: ImagePromptMention[]) => void;
+  onChange: (prompt: string, mentions: ImagePromptMention[]) => void;
+  onReferenceRequest: () => void;
+  placeholder: string;
+  prompt: string;
+  textCandidates: ImagePromptTextReference[];
+}>(function ImagePromptEditor(
+  {
+    candidates,
+    className,
+    mentions,
+    onBlur,
+    onChange,
+    onReferenceRequest,
+    placeholder,
+    prompt,
+    textCandidates,
+  },
+  forwardedRef,
+) {
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const initializedRef = useRef(false);
+  const pendingReferenceAnchor = useRef<HTMLElement | null>(null);
+  const initialContentRef = useRef({ candidates, mentions, prompt, textCandidates });
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  function syncContent() {
+    const content = readImagePromptEditor(editorRef.current);
+    onChangeRef.current(content.prompt, content.mentions);
+    return content;
+  }
+
+  useImperativeHandle(forwardedRef, () => ({
+    clearPendingReference() {
+      pendingReferenceAnchor.current?.remove();
+      pendingReferenceAnchor.current = null;
+    },
+    insertPendingReference(reference) {
+      const editor = editorRef.current;
+      const anchor = pendingReferenceAnchor.current;
+      if (!editor || !anchor || !editor.contains(anchor)) return false;
+
+      const chip = createImagePromptReferenceChip(reference);
+      const trailingSpace = document.createTextNode("\u00a0");
+      anchor.replaceWith(chip, trailingSpace);
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.setStartAfter(trailingSpace);
+      range.collapse(true);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      pendingReferenceAnchor.current = null;
+      editor.focus();
+      return syncContent();
+    },
+  }));
+
+  function openReferenceMenuAtRange(range: Range) {
+    pendingReferenceAnchor.current?.remove();
+    const anchor = document.createElement("span");
+    anchor.contentEditable = "false";
+    anchor.dataset.imagePromptReferenceAnchor = "true";
+    range.deleteContents();
+    range.insertNode(anchor);
+    pendingReferenceAnchor.current = anchor;
+    onReferenceRequest();
+  }
+
+  function handleInput() {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+    const triggerRange = getTypedImageReferenceTriggerRange(range, editor);
+    if (triggerRange) {
+      openReferenceMenuAtRange(triggerRange);
+    }
+    syncContent();
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.nativeEvent.isComposing) return;
+    if (event.key === "@") {
+      event.preventDefault();
+      const selection = window.getSelection();
+      const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+      if (range && editorRef.current?.contains(range.commonAncestorContainer)) {
+        openReferenceMenuAtRange(range);
+      }
+      return;
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.closest("form")?.requestSubmit();
+    }
+  }
+
+  return (
+    <div
+      className={className}
+      contentEditable
+      data-placeholder={placeholder}
+      onBlur={() => {
+        const content = syncContent();
+        onBlur(content.prompt, content.mentions);
+      }}
+      onInput={handleInput}
+      onKeyDown={handleKeyDown}
+      ref={(editor) => {
+        editorRef.current = editor;
+        if (!editor || initializedRef.current) return;
+        initializedRef.current = true;
+        const initial = initialContentRef.current;
+        renderImagePromptEditor(
+          editor,
+          initial.prompt,
+          initial.mentions,
+          initial.candidates,
+          initial.textCandidates,
+        );
+      }}
+      role="textbox"
+      suppressContentEditableWarning
+    />
+  );
+});
+
+function getTypedImageReferenceTriggerRange(
+  selectionRange: Range | null,
+  editor: HTMLDivElement | null,
+) {
+  if (
+    !selectionRange ||
+    !selectionRange.collapsed ||
+    !editor?.contains(selectionRange.startContainer)
+  ) {
+    return null;
+  }
+
+  const container = selectionRange.startContainer;
+  const offset = selectionRange.startOffset;
+  if (container.nodeType === Node.TEXT_NODE) {
+    const text = container.textContent ?? "";
+    if (offset < 1 || text[offset - 1] !== "@") return null;
+    const triggerRange = document.createRange();
+    triggerRange.setStart(container, offset - 1);
+    triggerRange.setEnd(container, offset);
+    return triggerRange;
+  }
+
+  const previousChild = container.childNodes[offset - 1];
+  const previousText = previousChild?.textContent ?? "";
+  if (previousChild?.nodeType !== Node.TEXT_NODE || !previousText.endsWith("@")) {
+    return null;
+  }
+  const triggerRange = document.createRange();
+  triggerRange.setStart(previousChild, previousText.length - 1);
+  triggerRange.setEnd(previousChild, previousText.length);
+  return triggerRange;
+}
+
+function createImagePromptReferenceChip(reference: ImagePromptReference) {
+  const chip = document.createElement("span");
+  chip.className = "mx-0.5 inline-flex max-w-44 items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5 align-middle text-xs font-medium text-zinc-700";
+  chip.contentEditable = "false";
+  chip.dataset.imagePromptReferenceId = reference.nodeId;
+  chip.dataset.imagePromptReferenceKind = reference.kind;
+  chip.title = reference.title;
+
+  if (reference.kind === "image") {
+    const image = document.createElement("img");
+    image.alt = "";
+    image.className = "size-4 shrink-0 rounded object-cover";
+    image.src = reference.url;
+    chip.append(image);
+  } else {
+    const icon = document.createElement("span");
+    icon.className = "flex size-4 shrink-0 items-center justify-center rounded bg-white text-[10px]";
+    icon.textContent = "T";
+    chip.append(icon);
+  }
+  const label = document.createElement("span");
+  label.className = "truncate";
+  label.textContent = reference.title;
+  chip.append(label);
+  return chip;
+}
+
+function renderImagePromptEditor(
+  editor: HTMLDivElement,
+  prompt: string,
+  mentions: ImagePromptMention[],
+  candidates: ImagePromptImageReference[],
+  textCandidates: ImagePromptTextReference[],
+) {
+  const referencesById = new Map<string, ImagePromptReference>([
+    ...candidates.map((candidate) => [candidate.nodeId, { ...candidate, kind: "image" as const }] as const),
+    ...textCandidates.map((candidate) => [candidate.nodeId, { ...candidate, kind: "text" as const }] as const),
+  ]);
+  const fragment = document.createDocumentFragment();
+  let cursor = 0;
+  for (const mention of [...mentions].sort((left, right) => left.offset - right.offset)) {
+    const reference = referencesById.get(mention.nodeId);
+    if (!reference) continue;
+    const offset = Math.max(cursor, Math.min(mention.offset, prompt.length));
+    if (offset > cursor) fragment.append(document.createTextNode(prompt.slice(cursor, offset)));
+    fragment.append(createImagePromptReferenceChip(reference));
+    cursor = offset;
+  }
+  if (cursor < prompt.length) fragment.append(document.createTextNode(prompt.slice(cursor)));
+  editor.replaceChildren(fragment);
+}
+
+function readImagePromptEditor(editor: HTMLDivElement | null) {
+  const mentions: ImagePromptMention[] = [];
+  let prompt = "";
+
+  function visit(node: Node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      prompt += node.textContent?.replaceAll("\u00a0", " ") ?? "";
+      return;
+    }
+    if (!(node instanceof HTMLElement)) return;
+    const referenceId = node.dataset.imagePromptReferenceId;
+    if (referenceId) {
+      mentions.push({ nodeId: referenceId, offset: prompt.length });
+      return;
+    }
+    if (node.dataset.imagePromptReferenceAnchor) return;
+    if (node.tagName === "BR") {
+      prompt += "\n";
+      return;
+    }
+    const isBlock = node.tagName === "DIV" || node.tagName === "P";
+    if (isBlock && prompt && !prompt.endsWith("\n")) prompt += "\n";
+    for (const child of node.childNodes) visit(child);
+  }
+
+  if (editor) for (const child of editor.childNodes) visit(child);
+  return { mentions, prompt };
+}
+
 
 export function ImageEditSizePicker({
   aspectRatio,

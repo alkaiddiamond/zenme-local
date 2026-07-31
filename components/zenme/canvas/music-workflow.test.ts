@@ -10,7 +10,10 @@ import {
   extractMusicLyrics,
   findLyricsNodesNeedingRefresh,
   findLyricsNodesNeedingRecovery,
+  getNextMusicLoopMode,
+  getNextMusicSourceId,
   normalizeMusicPlaybackTimes,
+  normalizeMusicLoopMode,
   resolveMusicSourceNode,
   resolveMusicSourceNodes,
 } from "./music-workflow";
@@ -60,6 +63,7 @@ describe("music workflow", () => {
     const player = first.createdNodes[0];
     expect(player.id).toBe("music-player:music-1");
     expect(player.data).toMatchObject({
+      musicLoopMode: "off",
       musicSourceListExpanded: true,
       musicSourceNodeId: musicNode.id,
       title: "音乐播放器",
@@ -88,6 +92,26 @@ describe("music workflow", () => {
       nodes: [musicNode, player],
       playerNodeId: player.id,
     })).toBe(musicNode);
+  });
+
+  it("normalizes legacy loop state and cycles all three loop modes", () => {
+    expect(normalizeMusicLoopMode(undefined, false)).toBe("off");
+    expect(normalizeMusicLoopMode(undefined, true)).toBe("one");
+    expect(normalizeMusicLoopMode("all", true)).toBe("all");
+    expect([
+      getNextMusicLoopMode("off"),
+      getNextMusicLoopMode("one"),
+      getNextMusicLoopMode("all"),
+    ]).toEqual(["one", "all", "off"]);
+  });
+
+  it("advances and wraps connected music sources for list loop", () => {
+    const sourceIds = ["music-1", "music-2", "music-3"];
+    expect(getNextMusicSourceId(sourceIds, "music-1")).toBe("music-2");
+    expect(getNextMusicSourceId(sourceIds, "music-3")).toBe("music-1");
+    expect(getNextMusicSourceId(sourceIds, "missing")).toBe("music-1");
+    expect(getNextMusicSourceId(["music-1"], "music-1")).toBe("music-1");
+    expect(getNextMusicSourceId([], "music-1")).toBeUndefined();
   });
 
   it("resolves all connected music assets and honors the selected source", () => {

@@ -21,6 +21,7 @@ import {
   createNodeUpdateHistoryEntry,
   getCanvasHistoryState,
   getCanvasPersistableSignature,
+  preserveCanvasHistoryTransientData,
 } from "./history-state";
 import {
   collectTextGenerationContext,
@@ -105,6 +106,47 @@ describe("canvas state and context helpers", () => {
       type: "deleteCanvasItems",
       edges: [edgeAB],
       nodes: [nodeA],
+    });
+  });
+
+  it("preserves live music playback data when restoring canvas history", () => {
+    const historicalPlayer = canvasNode({
+      data: {
+        kind: "musicPlayer",
+        musicLoopMode: "off",
+        musicSourceNodeId: "music-1",
+        musicVolume: 1,
+        title: "历史播放器名称",
+      },
+      id: "player-1",
+      type: "musicPlayer",
+    });
+    const currentPlayer = canvasNode({
+      data: {
+        kind: "musicPlayer",
+        musicCurrentTime: 42,
+        musicIsPlaying: true,
+        musicLoopMode: "all",
+        musicSourceNodeId: "music-2",
+        musicVolume: 0.4,
+        title: "当前播放器名称",
+      },
+      id: "player-1",
+      type: "musicPlayer",
+    });
+
+    const [restored] = preserveCanvasHistoryTransientData(
+      [historicalPlayer],
+      [currentPlayer],
+    );
+
+    expect(restored.data).toMatchObject({
+      musicCurrentTime: 42,
+      musicIsPlaying: true,
+      musicLoopMode: "all",
+      musicSourceNodeId: "music-2",
+      musicVolume: 0.4,
+      title: "历史播放器名称",
     });
   });
 
@@ -268,6 +310,33 @@ describe("canvas state and context helpers", () => {
       }),
     ).toContain(
       "强管理节点「世界杯选题」\n标签：体育、采访\n整理可能的冷门故事",
+    );
+  });
+
+  it("includes a connected image-generation prompt as text context", () => {
+    const promptNode = canvasNode({
+      data: {
+        imagePrompt: "生成角色头部和全身三视图，画布比例 3:4",
+        kind: "imageGeneration",
+        title: "角色提示词",
+      },
+      id: "image-prompt",
+      type: "imageGeneration",
+    });
+    const generator = canvasNode({
+      data: { kind: "imageGeneration", title: "图片生成" },
+      id: "generator",
+      type: "imageGeneration",
+    });
+
+    expect(
+      collectTextGenerationContext({
+        edges: [edge("image-prompt", "generator")],
+        nodeId: "generator",
+        nodes: [promptNode, generator],
+      }),
+    ).toContain(
+      "图片提示词节点「角色提示词」\n生成角色头部和全身三视图，画布比例 3:4",
     );
   });
 

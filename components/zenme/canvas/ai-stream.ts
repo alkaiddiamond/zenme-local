@@ -52,16 +52,23 @@ function emitAiChatEventChunkDeltas(
       continue;
     }
 
+    let json: {
+      choices?: { delta?: { content?: string } }[];
+      error?: string;
+    };
     try {
-      const json = JSON.parse(data) as {
-        choices?: { delta?: { content?: string } }[];
-      };
-      const delta = json.choices?.[0]?.delta?.content;
-      if (delta) {
-        onDelta(delta);
-      }
+      json = JSON.parse(data) as typeof json;
     } catch {
       // 忽略无法解析的流式片段。
+      continue;
+    }
+
+    if (json.error) {
+      throw new Error(json.error);
+    }
+    const delta = json.choices?.[0]?.delta?.content;
+    if (delta) {
+      onDelta(delta);
     }
   }
 }

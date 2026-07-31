@@ -16,6 +16,7 @@ import {
   deriveTaskRelationships,
   getTaskParentOptions,
 } from "./task-relationships";
+import { getCanvasNodeContextText } from "./text-generation-context";
 
 type RenderedCanvasNodeInput = {
   createNoteNode: (
@@ -101,8 +102,10 @@ type RenderedCanvasNodeInput = {
         | "imageModel"
         | "imageQuality"
         | "imagePrompt"
+        | "imagePromptMentions"
         | "imageStatus"
         | "imageReferenceNodeIds"
+        | "imageTextReferenceNodeIds"
         | "imageTaskDurationMs"
         | "imageTaskStartedAt"
         | "originalUrl"
@@ -250,17 +253,33 @@ export function getRenderedCanvasNodes({
     string,
     NonNullable<CanvasNodeData["imageReferences"]>
   >();
+  const imageTextReferencesByTargetId = new Map<
+    string,
+    NonNullable<CanvasNodeData["imageTextReferences"]>
+  >();
   for (const edge of edges) {
     const source = nodeById.get(edge.source);
     const url = source?.data.originalUrl ?? source?.data.previewUrl;
-    if (source?.data.kind !== "image" || !url) continue;
-    const references = imageReferencesByTargetId.get(edge.target) ?? [];
-    references.push({
-      nodeId: source.id,
-      title: source.data.title || "图片",
-      url: source.data.previewUrl ?? url,
-    });
-    imageReferencesByTargetId.set(edge.target, references);
+    if (source?.data.kind === "image" && url) {
+      const references = imageReferencesByTargetId.get(edge.target) ?? [];
+      references.push({
+        nodeId: source.id,
+        title: source.data.title || "图片",
+        url: source.data.previewUrl ?? url,
+      });
+      imageReferencesByTargetId.set(edge.target, references);
+    }
+
+    if (source && getCanvasNodeContextText(source).trim()) {
+      const references = imageTextReferencesByTargetId.get(edge.target) ?? [];
+      if (!references.some((reference) => reference.nodeId === source.id)) {
+        references.push({
+          nodeId: source.id,
+          title: source.data.title || "文本",
+        });
+        imageTextReferencesByTargetId.set(edge.target, references);
+      }
+    }
   }
 
   return nodes.map((node) => {
@@ -289,6 +308,10 @@ export function getRenderedCanvasNodes({
             ? (() => {
                 const candidates = imageReferencesByTargetId.get(node.id) ?? [];
                 const selectedIds = nodeWithoutGroupDragLimit.data.imageReferenceNodeIds;
+                const textCandidates =
+                  imageTextReferencesByTargetId.get(node.id) ?? [];
+                const selectedTextIds =
+                  nodeWithoutGroupDragLimit.data.imageTextReferenceNodeIds;
                 return {
                   imageReferenceCandidates: candidates,
                   imageReferences: selectedIds === undefined
@@ -304,6 +327,22 @@ export function getRenderedCanvasNodes({
                             reference,
                           ): reference is NonNullable<
                             CanvasNodeData["imageReferences"]
+                          >[number] => Boolean(reference),
+                        ),
+                  imageTextReferenceCandidates: textCandidates,
+                  imageTextReferences: selectedTextIds === undefined
+                    ? textCandidates
+                    : selectedTextIds
+                        .map((selectedId) =>
+                          textCandidates.find(
+                            (reference) => reference.nodeId === selectedId,
+                          ),
+                        )
+                        .filter(
+                          (
+                            reference,
+                          ): reference is NonNullable<
+                            CanvasNodeData["imageTextReferences"]
                           >[number] => Boolean(reference),
                         ),
                 };

@@ -485,7 +485,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="h-[100dvh] overflow-hidden bg-[var(--color-surface)] text-[var(--color-text-primary)]">
       <aside
         className="fixed bottom-0 left-0 top-0 z-50 flex flex-col overflow-hidden border-r border-[var(--color-border)] bg-[var(--color-surface-sidebar)] transition-[width] duration-150 ease-out"
-        data-desktop-no-drag
         style={{ width: sidebarWidth }}
       >
         <div
@@ -493,10 +492,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             "flex h-10 items-center border-b border-[var(--color-border)]",
             isSidebarCollapsed ? "justify-center px-1" : "gap-2 px-2",
           )}
+          data-desktop-drag-region
         >
           <button
             aria-label={isSidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
             className="flex size-8 shrink-0 items-center justify-center rounded-md text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-container-high)] hover:text-[var(--color-text-primary)]"
+            data-desktop-no-drag
             onClick={toggleSidebar}
             title={isSidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
             type="button"
@@ -505,7 +506,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
 
           {!isSidebarCollapsed ? (
-            <Link className="flex min-w-0 items-center gap-2" href="/" title="Zenme">
+            <Link
+              className="flex min-w-0 items-center gap-2"
+              data-desktop-no-drag
+              href="/"
+              title="Zenme"
+            >
               <Image
                 alt="Zenme"
                 className="size-6 shrink-0 object-contain"

@@ -1,13 +1,15 @@
 "use client";
 
 import type { NodeProps } from "@xyflow/react";
-import { Captions, Check, ChevronDown, ChevronUp, Music2, Pause, Play, Repeat2, Volume2, VolumeX } from "lucide-react";
+import { Captions, Check, ChevronDown, ChevronUp, Music2, Pause, Play, Repeat1, Repeat2, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { CanvasNodeData } from "@/components/zenme/node-types";
 import {
   downsampleWaveform,
+  getNextMusicLoopMode,
   MUSIC_WAVEFORM_VERSION,
+  normalizeMusicLoopMode,
   normalizeMusicPlaybackTimes,
 } from "@/components/zenme/canvas/music-workflow";
 import { NodeFrame } from "@/components/zenme/nodes/node-frame";
@@ -22,6 +24,8 @@ export function MusicPlayerNode({ data, selected, id }: NodeProps) {
   const sources = node.musicSources ?? [];
   const activeSource = sources.find((source) => source.id === node.musicSourceNodeId) ?? sources[0];
   const isSourceListExpanded = node.musicSourceListExpanded !== false;
+  const loopMode = normalizeMusicLoopMode(node.musicLoopMode, node.musicLoop);
+  const loopModeLabel = getMusicLoopModeLabel(loopMode);
   const waveform = node.musicWaveform?.length &&
     node.musicWaveformSourceNodeId === activeSource?.id
     ? node.musicWaveform
@@ -100,7 +104,16 @@ export function MusicPlayerNode({ data, selected, id }: NodeProps) {
         <select aria-label="播放速度" className="h-7 rounded-md border border-zinc-200 bg-white px-2 outline-none" onChange={(event) => node.onUpdateMusicPlayback?.(id, { playbackRate: Number(event.currentTarget.value) })} value={node.musicPlaybackRate ?? 1}>
           {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => <option key={rate} value={rate}>{rate}×</option>)}
         </select>
-        <button aria-label="循环播放" aria-pressed={Boolean(node.musicLoop)} className={`ml-auto ${musicOptionButtonClassName(Boolean(node.musicLoop))}`} onClick={() => node.onUpdateMusicPlayback?.(id, { loop: !node.musicLoop })} type="button"><Repeat2 className="size-4" /></button>
+        <button
+          aria-label={`循环模式：${loopModeLabel}`}
+          aria-pressed={loopMode !== "off"}
+          className={`ml-auto ${musicOptionButtonClassName(loopMode !== "off")}`}
+          onClick={() => node.onUpdateMusicPlayback?.(id, { loopMode: getNextMusicLoopMode(loopMode) })}
+          title={`循环模式：${loopModeLabel}，点击切换`}
+          type="button"
+        >
+          {loopMode === "one" ? <Repeat1 className="size-4" /> : <Repeat2 className="size-4" />}
+        </button>
         <button
           aria-label={node.musicLyricsOverlayOpen ? "关闭歌词覆层" : "打开歌词覆层"}
           aria-pressed={Boolean(node.musicLyricsOverlayOpen)}
@@ -165,4 +178,10 @@ function musicOptionButtonClassName(active: boolean) {
   return `nodrag nowheel flex size-9 shrink-0 items-center justify-center rounded-md border transition-colors ${active
     ? "border-zinc-300 bg-zinc-100 text-zinc-900"
     : "border-zinc-200 bg-zinc-50 text-zinc-500 hover:border-zinc-300 hover:bg-white hover:text-zinc-800"}`;
+}
+
+function getMusicLoopModeLabel(mode: "off" | "one" | "all") {
+  if (mode === "one") return "单曲循环";
+  if (mode === "all") return "列表循环";
+  return "不循环";
 }

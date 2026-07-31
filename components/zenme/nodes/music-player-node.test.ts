@@ -16,7 +16,7 @@ describe("music player node", () => {
   });
 
   it("places the list toggle after loop and the list below the player controls", () => {
-    const loopIndex = source.indexOf('aria-label="循环播放"');
+    const loopIndex = source.indexOf("循环模式：");
     const toggleIndex = source.indexOf('aria-expanded={isSourceListExpanded}');
     const listIndex = source.indexOf('aria-label="已连接音乐列表"');
 
@@ -25,12 +25,20 @@ describe("music player node", () => {
   });
 
   it("uses the same visual style helper for loop and list controls", () => {
-    expect(source).toContain("musicOptionButtonClassName(Boolean(node.musicLoop))");
+    expect(source).toContain('musicOptionButtonClassName(loopMode !== "off")');
     expect(source).toContain("musicOptionButtonClassName(isSourceListExpanded)");
   });
 
+  it("cycles between off, single-track loop, and playlist loop", () => {
+    expect(source).toContain("getNextMusicLoopMode(loopMode)");
+    expect(source).toContain("<Repeat1");
+    expect(source).toContain("单曲循环");
+    expect(source).toContain("列表循环");
+    expect(source).toContain("不循环");
+  });
+
   it("opens the movable lyrics overlay beside the loop control", () => {
-    const loopIndex = source.indexOf('aria-label="循环播放"');
+    const loopIndex = source.indexOf("循环模式：");
     const lyricsOverlayIndex = source.indexOf("打开歌词覆层");
 
     expect(lyricsOverlayIndex).toBeGreaterThan(loopIndex);

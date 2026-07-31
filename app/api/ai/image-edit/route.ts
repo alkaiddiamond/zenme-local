@@ -152,12 +152,6 @@ async function generateWithVolcengineAgentPlan(input: {
   provider: ModelProviderConfig;
   quality?: string;
 }) {
-  if (input.operation === "edit" || input.imageDataUrls.length > 0) {
-    throw new ImageApiError(
-      "火山方舟 Agent Plan 当前仅接入 Seedream 文生图，暂不支持参考图编辑",
-    );
-  }
-
   const apiKey =
     input.provider.apiKey?.trim() ||
     process.env.VOLCENGINE_AGENT_PLAN_API_KEY?.trim();
@@ -167,8 +161,6 @@ async function generateWithVolcengineAgentPlan(input: {
     );
   }
 
-  const fullPrompt =
-    `${buildImageGenerationSystemPrompt(input)}\n\n用户生成指令：\n${input.prompt}`;
   const upstream = await fetch(
     `${normalizeProviderApiBaseUrl(
       input.provider.baseUrl,
@@ -180,14 +172,7 @@ async function generateWithVolcengineAgentPlan(input: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: input.model,
-        prompt: fullPrompt,
-        response_format: "b64_json",
-        sequential_image_generation: "disabled",
-        size: getVolcengineSeedreamSize(input),
-        n: 1,
-      }),
+      body: JSON.stringify(createVolcengineAgentPlanImageRequestBody(input)),
       signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS),
       ...getProxyFetchOptions(
         input.provider.baseUrl,
@@ -218,6 +203,34 @@ async function generateWithVolcengineAgentPlan(input: {
     mediaType: image.media_type ?? "image/png",
     revisedPrompt: undefined,
     usage: normalizeStreamTokenUsage(payload?.usage),
+  };
+}
+
+export function createVolcengineAgentPlanImageRequestBody(input: {
+  aspectRatio?: string;
+  cameraControl?: ImageCameraControl;
+  imageDataUrls: string[];
+  model: string;
+  operation: "edit" | "generate";
+  prompt: string;
+  quality?: string;
+}) {
+  const isEditing = input.operation === "edit" || input.imageDataUrls.length > 0;
+  const prompt = isEditing
+    ? buildImageEditPrompt({
+        ...input,
+        referenceCount: input.imageDataUrls.length,
+      })
+    : `${buildImageGenerationSystemPrompt(input)}\n\n用户生成指令：\n${input.prompt}`;
+
+  return {
+    model: input.model,
+    prompt,
+    ...(input.imageDataUrls.length > 0 ? { image: input.imageDataUrls } : {}),
+    response_format: "b64_json",
+    sequential_image_generation: "disabled",
+    size: getVolcengineSeedreamSize(input),
+    n: 1,
   };
 }
 

@@ -410,8 +410,10 @@ export function createImageGenerationNodeDataUpdate(input: {
       | "imageModel"
       | "imageQuality"
       | "imagePrompt"
+      | "imagePromptMentions"
       | "imageStatus"
       | "imageReferenceNodeIds"
+      | "imageTextReferenceNodeIds"
       | "imageTaskDurationMs"
       | "imageTaskStartedAt"
       | "originalUrl"
@@ -430,8 +432,10 @@ export function createImageGenerationNodeDataUpdate(input: {
       "imageModel",
       "imageQuality",
       "imagePrompt",
+      "imagePromptMentions",
       "imageStatus",
       "imageReferenceNodeIds",
+      "imageTextReferenceNodeIds",
       "imageTaskDurationMs",
       "imageTaskStartedAt",
       "originalUrl",

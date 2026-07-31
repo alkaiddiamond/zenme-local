@@ -19,9 +19,11 @@ const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const CALLBACK_PORT = 1455;
 const CALLBACK_PATH = "/auth/callback";
 const REDIRECT_URI = `http://localhost:${CALLBACK_PORT}${CALLBACK_PATH}`;
-const CODEX_CLIENT_VERSION = "0.150.0";
+const CODEX_CLIENT_VERSION = "0.146.0";
+const CODEX_RUNTIME_VERSION = "0.146.0-alpha.3.1";
 const MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLIENT_VERSION}`;
 export const RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
+export const SEARCH_URL = "https://chatgpt.com/backend-api/codex/alpha/search";
 const SESSION_TTL_MS = 5 * 60 * 1000;
 
 type StoredTokens = {
@@ -188,8 +190,8 @@ export async function ensureFreshOpenAiTokens() {
 export function createOpenAiAuthHeaders(tokens: StoredTokens) {
   return {
     Authorization: `Bearer ${tokens.accessToken}`,
-    originator: "codex_cli_rs",
-    "User-Agent": `codex-cli/${CODEX_CLIENT_VERSION}`,
+    originator: "codex_exec",
+    "User-Agent": `codex_exec/${CODEX_RUNTIME_VERSION}`,
     ...(tokens.accountId ? { "ChatGPT-Account-Id": tokens.accountId } : {}),
   };
 }

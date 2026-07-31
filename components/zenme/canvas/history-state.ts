@@ -1,6 +1,7 @@
 import type { Edge } from "@xyflow/react";
 
 import {
+  CANVAS_HISTORY_TRANSIENT_DATA_KEYS,
   createCanvasHistoryEdgeSnapshot,
   createCanvasHistoryNodeSnapshot,
   getCanvasHistorySignature,
@@ -15,6 +16,33 @@ import type {
   CanvasNode,
   Viewport,
 } from "@/components/zenme/canvas/types";
+
+export function preserveCanvasHistoryTransientData(
+  historyNodes: CanvasNode[],
+  currentNodes: CanvasNode[],
+) {
+  const currentNodesById = new Map(currentNodes.map((node) => [node.id, node]));
+  return historyNodes.map((historyNode) => {
+    const currentNode = currentNodesById.get(historyNode.id);
+    if (!currentNode || currentNode.data.kind !== historyNode.data.kind) {
+      return historyNode;
+    }
+
+    const transientData = Object.fromEntries(
+      Object.entries(currentNode.data).filter(([key]) =>
+        CANVAS_HISTORY_TRANSIENT_DATA_KEYS.has(key),
+      ),
+    ) as Partial<CanvasNode["data"]>;
+
+    return {
+      ...historyNode,
+      data: {
+        ...historyNode.data,
+        ...transientData,
+      },
+    };
+  });
+}
 
 export function getCanvasHistoryState(history: CanvasHistoryEntry[]) {
   return history.reduce<CanvasHistorySnapshotEntry | null>((state, entry) => {

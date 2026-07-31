@@ -73,4 +73,15 @@ describe("AI chat stream reader", () => {
 
     expect(deltas).toEqual(["你", "好呀"]);
   });
+
+  it("surfaces provider errors delivered after the stream starts", async () => {
+    await expect(
+      readAiChatStream(
+        streamFromChunks([
+          'data: {"error":"模型请求过于频繁，请稍后重试"}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      ),
+    ).rejects.toThrow("模型请求过于频繁，请稍后重试");
+  });
 });

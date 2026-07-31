@@ -3,6 +3,7 @@ import type { AssetRef } from "@/lib/execution/types";
 import type { ImageCameraControl } from "@/components/zenme/image-edit-options";
 
 export type MusicChildNodeKind = "lyrics";
+export type MusicLoopMode = "off" | "one" | "all";
 
 export type MusicLyricLine = {
   end?: number;
@@ -136,6 +137,7 @@ export type CanvasNodeData = {
   musicCurrentTime?: number;
   musicIsPlaying?: boolean;
   musicLoop?: boolean;
+  musicLoopMode?: MusicLoopMode;
   musicMuted?: boolean;
   musicPlaybackRate?: number;
   musicVolume?: number;
@@ -163,6 +165,7 @@ export type CanvasNodeData = {
   onUpdateMusicNode?: (nodeId: string, updates: { title?: string }) => void;
   onUpdateMusicPlayback?: (playerNodeId: string, updates: {
     loop?: boolean;
+    loopMode?: MusicLoopMode;
     muted?: boolean;
     playbackRate?: number;
     sourceListExpanded?: boolean;
@@ -194,6 +197,10 @@ export type CanvasNodeData = {
   textGenerationPrompt?: string;
   textGenerationModel?: string;
   imagePrompt?: string;
+  imagePromptMentions?: Array<{
+    nodeId: string;
+    offset: number;
+  }>;
   imageModel?: string;
   imageCameraControl?: ImageCameraControl;
   imageOutputAspectRatio?: string;
@@ -214,6 +221,15 @@ export type CanvasNodeData = {
     url: string;
   }>;
   imageReferenceNodeIds?: string[];
+  imageTextReferences?: Array<{
+    nodeId: string;
+    title: string;
+  }>;
+  imageTextReferenceCandidates?: Array<{
+    nodeId: string;
+    title: string;
+  }>;
+  imageTextReferenceNodeIds?: string[];
   executionId?: string;
   nodeRunId?: string;
   attemptId?: string;
@@ -340,8 +356,10 @@ export type CanvasNodeData = {
         | "imageModel"
         | "imageQuality"
         | "imagePrompt"
+        | "imagePromptMentions"
         | "imageStatus"
         | "imageReferenceNodeIds"
+        | "imageTextReferenceNodeIds"
         | "imageTaskDurationMs"
         | "imageTaskStartedAt"
         | "originalUrl"
@@ -357,6 +375,7 @@ export type CanvasNodeData = {
       cameraControl?: ImageCameraControl;
       model?: string;
       prompt?: string;
+      promptMentions?: Array<{ nodeId: string; offset: number }>;
       quality?: string;
     },
   ) => Promise<void> | void;

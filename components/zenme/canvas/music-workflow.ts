@@ -1,10 +1,36 @@
 import type { Edge } from "@xyflow/react";
 
-import type { CanvasNodeData, MusicLyricLine } from "@/components/zenme/node-types";
+import type { CanvasNodeData, MusicLoopMode, MusicLyricLine } from "@/components/zenme/node-types";
 
 import type { CanvasNode } from "./types";
 
 export const MUSIC_WAVEFORM_VERSION = 3;
+
+export function normalizeMusicLoopMode(
+  mode?: MusicLoopMode,
+  legacyLoop = false,
+): MusicLoopMode {
+  if (mode === "one" || mode === "all") return mode;
+  if (mode === "off") return "off";
+  return legacyLoop ? "one" : "off";
+}
+
+export function getNextMusicLoopMode(mode: MusicLoopMode): MusicLoopMode {
+  if (mode === "off") return "one";
+  if (mode === "one") return "all";
+  return "off";
+}
+
+export function getNextMusicSourceId(
+  sourceIds: string[],
+  currentSourceId?: string,
+) {
+  if (!sourceIds.length) return undefined;
+  const currentIndex = currentSourceId
+    ? sourceIds.indexOf(currentSourceId)
+    : -1;
+  return sourceIds[currentIndex < 0 ? 0 : (currentIndex + 1) % sourceIds.length];
+}
 
 export function normalizeMusicPlaybackTimes(
   durationValue?: number,
@@ -124,6 +150,7 @@ export function createMusicPlayerUpdate(input: {
       musicSourceListExpanded: true,
       musicSourceNodeId: input.musicNode.id,
       musicLoop: false,
+      musicLoopMode: "off",
       musicMuted: false,
       musicPlaybackRate: 1,
       musicVolume: 1,

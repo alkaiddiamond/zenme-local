@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties, type FormEvent, useEffect, useState } from "react";
+import { type CSSProperties, type FormEvent, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { type NodeProps, useUpdateNodeInternals, useViewport } from "@xyflow/react";
 import {
@@ -30,6 +30,8 @@ import {
 import { NANO_BANANA_2_IMAGE_MODEL } from "@/components/zenme/canvas/node-factories";
 import {
   ImageEditSizePicker,
+  ImagePromptEditor,
+  type ImagePromptEditorHandle,
   ImageReferencePicker,
 } from "@/components/zenme/nodes/image-edit-node";
 import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
@@ -53,6 +55,9 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   const rememberedPreferences = getImageEditPreferences();
   const isGeneratedImage = Boolean(nodeData.imageGenerated);
   const [prompt, setPrompt] = useState(nodeData.imagePrompt ?? "");
+  const [promptMentions, setPromptMentions] = useState(
+    nodeData.imagePromptMentions ?? [],
+  );
   const [aspectRatio, setAspectRatio] = useState<string>(
     getImageEditAspectRatioOption(
       nodeData.imageOutputAspectRatio ?? rememberedPreferences.aspectRatio,
@@ -78,6 +83,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
   const [isCameraPickerOpen, setIsCameraPickerOpen] = useState(false);
   const [referencePickerRequest, setReferencePickerRequest] = useState(0);
+  const promptEditorRef = useRef<ImagePromptEditorHandle>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [detectedAspectRatio, setDetectedAspectRatio] = useState<number | undefined>(
     nodeData.imageAspectRatio,
@@ -106,6 +112,10 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   useEffect(() => {
     setPrompt(nodeData.imagePrompt ?? "");
   }, [nodeData.imagePrompt]);
+
+  useEffect(() => {
+    setPromptMentions(nodeData.imagePromptMentions ?? []);
+  }, [nodeData.imagePromptMentions]);
 
   useEffect(() => {
     if (!nodeData.imageOutputAspectRatio) return;
@@ -157,16 +167,6 @@ export function ImageNode({ data, id, selected }: NodeProps) {
     if (nextModel) setModel(nextModel);
   }, [imageModelOptions, nodeData.imageModel]);
 
-  function syncPrompt() {
-    nodeData.onUpdateImageNode?.(id, {
-      imageCameraControl: cameraControl,
-      imageOutputAspectRatio: aspectRatio,
-      imageModel: model,
-      imagePrompt: prompt,
-      imageQuality: quality,
-    });
-  }
-
   async function submitImageEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextPrompt = prompt.trim();
@@ -179,7 +179,8 @@ export function ImageNode({ data, id, selected }: NodeProps) {
       imageCameraControl: cameraControl,
       imageOutputAspectRatio: aspectRatio,
       imageModel: model,
-      imagePrompt: nextPrompt,
+      imagePrompt: prompt,
+      imagePromptMentions: promptMentions,
       imageQuality: quality,
     });
 
@@ -188,7 +189,8 @@ export function ImageNode({ data, id, selected }: NodeProps) {
         aspectRatio,
         cameraControl,
         model,
-        prompt: nextPrompt,
+        prompt,
+        promptMentions,
         quality,
       });
     } finally {
@@ -303,40 +305,80 @@ export function ImageNode({ data, id, selected }: NodeProps) {
                 onChange={(nodeIds) =>
                   nodeData.onUpdateImageNode?.(id, { imageReferenceNodeIds: nodeIds })
                 }
+                onTextChange={(nodeIds) =>
+                  nodeData.onUpdateImageNode?.(id, {
+                    imageTextReferenceNodeIds: nodeIds,
+                  })
+                }
+                mentionOnly
+                onOpenChange={(open) => {
+                  if (!open) promptEditorRef.current?.clearPendingReference();
+                }}
+                onSelect={(reference) => {
+                  const content = promptEditorRef.current?.insertPendingReference({
+                    ...reference,
+                    kind: "image",
+                  });
+                  if (!content) return false;
+                  setPrompt(content.prompt);
+                  setPromptMentions(content.mentions);
+                  nodeData.onUpdateImageNode?.(id, {
+                    imagePrompt: content.prompt,
+                    imagePromptMentions: content.mentions,
+                  });
+                  return true;
+                }}
+                onTextSelect={(reference) => {
+                  const content = promptEditorRef.current?.insertPendingReference({
+                    ...reference,
+                    kind: "text",
+                  });
+                  if (!content) return false;
+                  setPrompt(content.prompt);
+                  setPromptMentions(content.mentions);
+                  nodeData.onUpdateImageNode?.(id, {
+                    imagePrompt: content.prompt,
+                    imagePromptMentions: content.mentions,
+                  });
+                  return true;
+                }}
                 openRequest={referencePickerRequest}
                 references={nodeData.imageReferences ?? []}
                 required={false}
+                textCandidates={nodeData.imageTextReferenceCandidates ?? []}
+                textReferences={nodeData.imageTextReferences ?? []}
               />
-              <textarea
-                className="zenme-text-ai-input min-h-24 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-6 text-zinc-900 outline-none placeholder:text-zinc-400"
-                onBlur={syncPrompt}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  if (/(^|\s)@$/.test(value)) {
-                    setPrompt(value.slice(0, -1));
-                    setReferencePickerRequest((current) => current + 1);
-                    return;
-                  }
-                  setPrompt(value);
+              <ImagePromptEditor
+                candidates={nodeData.imageReferenceCandidates ?? []}
+                className="zenme-text-ai-input min-h-24 flex-1 whitespace-pre-wrap break-words bg-transparent px-1 py-1 text-sm leading-6 text-zinc-900 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
+                mentions={promptMentions}
+                onBlur={(nextPrompt, nextMentions) => {
+                  setPrompt(nextPrompt);
+                  setPromptMentions(nextMentions);
+                  nodeData.onUpdateImageNode?.(id, {
+                    imageCameraControl: cameraControl,
+                    imageOutputAspectRatio: aspectRatio,
+                    imageModel: model,
+                    imagePrompt: nextPrompt,
+                    imagePromptMentions: nextMentions,
+                    imageQuality: quality,
+                  });
                 }}
-                onKeyDown={(event) => {
-                  if (
-                    event.key !== "Enter" ||
-                    event.shiftKey ||
-                    event.nativeEvent.isComposing
-                  ) {
-                    return;
-                  }
-
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
+                onChange={(nextPrompt, nextMentions) => {
+                  setPrompt(nextPrompt);
+                  setPromptMentions(nextMentions);
                 }}
+                onReferenceRequest={() =>
+                  setReferencePickerRequest((current) => current + 1)
+                }
                 placeholder={
                   isGeneratedImage
                     ? "继续描述想如何编辑这张图片"
                     : "描述想如何编辑这张图片"
                 }
-                value={prompt}
+                prompt={prompt}
+                ref={promptEditorRef}
+                textCandidates={nodeData.imageTextReferenceCandidates ?? []}
               />
               {nodeData.imageError ? (
                 <p className="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-xs leading-5 text-red-600">

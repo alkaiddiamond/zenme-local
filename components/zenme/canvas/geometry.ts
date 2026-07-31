@@ -11,6 +11,31 @@ export const READER_COLLAPSED_SIZE = { height: 110, width: 288 };
 export const GROUP_PADDING = 28;
 export const GROUP_NODE_GAP = 28;
 
+export const CANVAS_HISTORY_TRANSIENT_DATA_KEYS = new Set([
+  "lyricsFetchDurationMs",
+  "lyricsFetchStatus",
+  "lyricsWarnings",
+  "musicChildExpanded",
+  "musicCurrentTime",
+  "musicDuration",
+  "musicError",
+  "musicIsPlaying",
+  "musicLoop",
+  "musicLoopMode",
+  "musicLyrics",
+  "musicLyricsOverlayOpen",
+  "musicLyricsSourceNodeId",
+  "musicMuted",
+  "musicPlaybackRate",
+  "musicSourceListExpanded",
+  "musicSourceNodeId",
+  "musicSources",
+  "musicVolume",
+  "musicWaveform",
+  "musicWaveformSourceNodeId",
+  "musicWaveformVersion",
+]);
+
 export function createWelcomeNodes(): CanvasNode[] {
   return [];
 }
@@ -320,7 +345,9 @@ export function createCanvasHistoryEntry(
       type: "snapshot",
       ...snapshot,
     } satisfies CanvasHistorySnapshotEntry,
-    signature: serializedSnapshot,
+    signature: JSON.stringify(
+      getCanvasHistorySignatureSnapshot(historyNodes, historyEdges),
+    ),
   };
 }
 
@@ -336,7 +363,29 @@ export function getCanvasHistorySignature(
   historyNodes: CanvasNode[],
   historyEdges: Edge[],
 ) {
-  return JSON.stringify(getCanvasHistorySnapshot(historyNodes, historyEdges));
+  return JSON.stringify(
+    getCanvasHistorySignatureSnapshot(historyNodes, historyEdges),
+  );
+}
+
+function getCanvasHistorySignatureSnapshot(
+  historyNodes: CanvasNode[],
+  historyEdges: Edge[],
+) {
+  return {
+    nodes: historyNodes.map((node) => {
+      const historyNode = getCanvasHistoryNode(node);
+      return {
+        ...historyNode,
+        data: Object.fromEntries(
+          Object.entries(historyNode.data).filter(
+            ([key]) => !CANVAS_HISTORY_TRANSIENT_DATA_KEYS.has(key),
+          ),
+        ),
+      };
+    }),
+    edges: historyEdges.map(getCanvasHistoryEdge),
+  };
 }
 
 function getCanvasHistorySnapshot(

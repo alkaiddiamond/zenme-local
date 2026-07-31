@@ -9,9 +9,13 @@ import {
   createOpenAiAuthHeaders,
   ensureFreshOpenAiTokens,
   RESPONSES_URL,
+  SEARCH_URL,
 } from "@/lib/ai/openai-oauth";
 import { openAiResponsesToChatStream } from "@/lib/ai/openai-responses-stream";
 import { normalizeStreamTokenUsage } from "@/lib/ai/openai-responses-stream";
+import {
+  createOpenAiWebSearchCommands,
+} from "@/lib/ai/openai-responses-tools";
 import { observeChatUsageStream } from "@/lib/ai/chat-usage-stream";
 import { checkRateLimit, getClientIp } from "@/lib/api/rate-limit";
 import { normalizeProviderApiBaseUrl } from "@/lib/api/provider-url";
@@ -266,18 +270,7 @@ async function fetchProviderChatCompletion(input: {
       if (!tokens) {
         return { error: "ChatGPT 登录已失效，请到设置 > 模型配置中重新登录。" };
       }
-      return await fetch(RESPONSES_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...createOpenAiAuthHeaders(tokens),
-        },
-        body: JSON.stringify(createOpenAiOAuthRequestBody(input)),
-        ...getProxyFetchOptions(
-          RESPONSES_URL,
-          input.provider.networkProxy,
-        ),
-      });
+      return await fetchOpenAiOAuthChat(input, tokens);
     }
 
     if (input.provider.apiFormat === "anthropic") {
@@ -356,6 +349,81 @@ async function fetchProviderChatCompletion(input: {
   }
 }
 
+async function fetchOpenAiOAuthChat(
+  input: {
+    messages: ChatMessage[];
+    provider: Exclude<ChatProviderConfig, { error: string }>;
+    systemContent: string;
+  },
+  tokens: NonNullable<Awaited<ReturnType<typeof ensureFreshOpenAiTokens>>>,
+): Promise<Response | { error: string }> {
+  const responsesLite = input.provider.model.startsWith("gpt-5.6-");
+  const commands = responsesLite
+    ? createOpenAiWebSearchCommands(input.messages)
+    : null;
+  const baseRequestBody = createOpenAiOAuthRequestBody(input) as Record<string, unknown>;
+  const webContext = commands
+    ? await fetchOpenAiWebContext({
+        commands,
+        model: input.provider.model,
+        requestBody: baseRequestBody,
+        tokens,
+        networkProxy: input.provider.networkProxy,
+      })
+    : undefined;
+  const requestBody = createOpenAiOAuthRequestBody(input, webContext);
+
+  return await fetch(RESPONSES_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...createOpenAiAuthHeaders(tokens),
+      ...(responsesLite
+        ? { "x-openai-internal-codex-responses-lite": "true" }
+        : {}),
+    },
+    body: JSON.stringify(requestBody),
+    ...getProxyFetchOptions(RESPONSES_URL, input.provider.networkProxy),
+  });
+}
+
+async function fetchOpenAiWebContext(input: {
+  commands: Record<string, unknown>;
+  model: string;
+  requestBody: Record<string, unknown>;
+  tokens: NonNullable<Awaited<ReturnType<typeof ensureFreshOpenAiTokens>>>;
+  networkProxy: ModelProviderConfig["networkProxy"];
+}) {
+  try {
+    const response = await fetch(SEARCH_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...createOpenAiAuthHeaders(input.tokens),
+      },
+      body: JSON.stringify({
+        id: crypto.randomUUID(),
+        model: input.model,
+        input: input.requestBody.input,
+        commands: input.commands,
+        settings: {
+          allowed_callers: ["direct"],
+          external_web_access: true,
+        },
+        max_output_tokens: 10_000,
+      }),
+      ...getProxyFetchOptions(SEARCH_URL, input.networkProxy),
+    });
+    if (!response.ok) return undefined;
+    const payload = await response.json() as { output?: unknown };
+    return typeof payload.output === "string" && payload.output.trim()
+      ? payload.output
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function createVolcengineAgentPlanResponsesRequestBody(input: {
   messages: ChatMessage[];
   provider: { model: string };
@@ -380,7 +448,47 @@ export function createOpenAiOAuthRequestBody(input: {
   messages: ChatMessage[];
   provider: { model: string };
   systemContent: string;
-}) {
+}, webContext?: string) {
+  if (input.provider.model.startsWith("gpt-5.6-")) {
+    return {
+      model: input.provider.model,
+      input: [
+        {
+          type: "message" as const,
+          role: "developer" as const,
+          content: [{
+            type: "input_text" as const,
+            text: webContext
+              ? `${input.systemContent}\n\n以下是本次请求的网页检索结果。请以这些资料为依据回答，并使用资料中的原始网页 URL 提供 Markdown 来源链接；不要向用户暴露内部引用编号：\n${webContext}`
+              : input.systemContent,
+          }],
+        },
+        ...input.messages
+          .filter((message) => message.role !== "system")
+          .map((message) => ({
+            type: "message" as const,
+            role: message.role,
+            content: [
+              {
+                type: message.role === "assistant" ? "output_text" as const : "input_text" as const,
+                text: message.content,
+              },
+            ],
+          })),
+      ],
+      tool_choice: "auto" as const,
+      parallel_tool_calls: false,
+      reasoning: {
+        effort: input.provider.model === "gpt-5.6-sol" ? "low" as const : "medium" as const,
+        context: "all_turns" as const,
+      },
+      store: false,
+      stream: true,
+      include: ["reasoning.encrypted_content"],
+      text: { verbosity: "low" as const },
+    };
+  }
+
   return {
     model: input.provider.model,
     instructions: input.systemContent,
@@ -425,18 +533,13 @@ async function createSafeProviderError(
   const trimmed = upstreamText.trim().slice(0, 600);
 
   if (trimmed) {
-    console.warn("[Zenme AI] provider request failed", {
-      model: provider.model,
-      provider: provider.name,
-      status,
-      upstream: trimmed,
-    });
+    console.warn(
+      `[Zenme AI] provider request failed provider=${provider.name} model=${provider.model} status=${status} upstream=${trimmed}`,
+    );
   } else {
-    console.warn("[Zenme AI] provider request failed", {
-      model: provider.model,
-      provider: provider.name,
-      status,
-    });
+    console.warn(
+      `[Zenme AI] provider request failed provider=${provider.name} model=${provider.model} status=${status}`,
+    );
   }
 
   if (status === 401 || status === 403) {

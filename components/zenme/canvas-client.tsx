@@ -151,12 +151,16 @@ import {
   createNodeUpdateHistoryEntry,
   getCanvasHistoryState,
   getCanvasPersistableSignature,
+  preserveCanvasHistoryTransientData,
 } from "@/components/zenme/canvas/history-state";
 import {
   collectTextGenerationContext,
   getCanvasNodeContextText,
 } from "@/components/zenme/canvas/text-generation-context";
 import { buildContextualImageGenerationPrompt } from "@/components/zenme/canvas/image-generation-context";
+import {
+  mergeReferenceNodeIds,
+} from "@/components/zenme/canvas/image-prompt-mentions";
 import { inspectCanvasNodeExecution } from "@/components/zenme/canvas/execution-preflight";
 import {
   createTimedExecutionController,
@@ -239,9 +243,12 @@ import {
   createMusicPlayerUpdate,
   extractMusicLyrics,
   findLyricsNodesNeedingRefresh,
+  getNextMusicSourceId,
   getMusicApiErrorMessage,
   MUSIC_WAVEFORM_VERSION,
+  normalizeMusicLoopMode,
   resolveMusicSourceNode,
+  resolveMusicSourceNodes,
 } from "@/components/zenme/canvas/music-workflow";
 import { generateLocalAudioWaveform } from "@/components/zenme/canvas/local-audio-waveform";
 import { releaseRemovedMusicPlayers } from "@/components/zenme/canvas/music-player-runtime";
@@ -260,6 +267,7 @@ import {
   NODE_CONTEXT_HANDLE_ID,
   type CanvasNodeData,
   type MusicChildNodeKind,
+  type MusicLoopMode,
   type MusicLyricLine,
   type ProjectTagAction,
 } from "@/components/zenme/node-types";
@@ -409,6 +417,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   >(() => {});
   const groupDragPosition = useRef<GroupDragPosition | null>(null);
   const musicPlayersRef = useRef(new Map<string, HTMLAudioElement>());
+  const musicEndedHandlerRef = useRef<(playerNodeId: string) => void>(() => {});
   const musicWaveformTasksRef = useRef(new Map<string, Promise<void>>());
   const refreshingLyricsKeysRef = useRef(new Set<string>());
 
@@ -1220,8 +1229,14 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           previous.nodes,
           previous.edges,
         );
+        const restoredNodes = preserveCanvasHistoryTransientData(
+          previous.nodes,
+          nodesRef.current,
+        );
         skipNextHistoryEntryCount.current += 1;
-        setNodes(previous.nodes);
+        nodesRef.current = restoredNodes;
+        edgesRef.current = previous.edges;
+        setNodes(restoredNodes);
         setEdges(previous.edges);
         setNodeActionMenu(null);
         setCanvasAddMenu(null);
@@ -2032,8 +2047,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         imageModel?: string;
         imageQuality?: string;
         imagePrompt?: string;
+        imagePromptMentions?: Array<{ nodeId: string; offset: number }>;
         imageStatus?: "idle" | "editing" | "done" | "failed";
         imageReferenceNodeIds?: string[];
+        imageTextReferenceNodeIds?: string[];
         imageTaskDurationMs?: number;
         imageTaskStartedAt?: string;
         originalUrl?: string;
@@ -2299,6 +2316,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         cameraControl?: ImageCameraControl;
         model?: string;
         prompt?: string;
+        promptMentions?: Array<{ nodeId: string; offset: number }>;
         quality?: string;
       },
     ) => {
@@ -2318,8 +2336,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           Boolean(node.data.originalUrl || node.data.previewUrl)
         );
       });
-      const prompt =
-        input?.prompt?.trim() ?? sourceNode?.data.imagePrompt?.trim() ?? "";
+      const prompt = input?.prompt ?? sourceNode?.data.imagePrompt ?? "";
+      const promptMentions =
+        input?.promptMentions ?? sourceNode?.data.imagePromptMentions ?? [];
       const aspectRatio =
         input?.aspectRatio ??
         sourceNode?.data.imageOutputAspectRatio ??
@@ -2335,7 +2354,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       const standaloneImageUrl = sourceNode?.data.kind === "imageGeneration"
         ? undefined
         : sourceNode?.data.originalUrl ?? sourceNode?.data.previewUrl;
-      const selectedReferenceNodeIds = sourceNode?.data.imageReferenceNodeIds;
+      const imageReferenceCandidates = sourceNode?.data.imageReferenceCandidates ?? [];
+      const textReferenceCandidates = sourceNode?.data.imageTextReferenceCandidates ?? [];
+      const selectedReferenceNodeIds = mergeReferenceNodeIds(
+        sourceNode?.data.imageReferenceNodeIds,
+        promptMentions,
+        imageReferenceCandidates,
+      );
       const connectedReferenceImageUrls = getOrderedImageReferenceUrls({
         edges: currentEdges,
         nodes: currentNodes,
@@ -2372,16 +2397,22 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }
       activeExecutionSourceNodeIdsRef.current.add(nodeId);
 
-      const requestPrompt = operation === "generate"
-        ? buildContextualImageGenerationPrompt({
-            context: collectTextGenerationContext({
-              edges: currentEdges,
-              nodeId,
-              nodes: currentNodes,
-            }),
-            prompt,
-          })
-        : prompt;
+      const selectedTextReferenceNodeIds = mergeReferenceNodeIds(
+        sourceNode.data.imageTextReferenceNodeIds,
+        promptMentions,
+        textReferenceCandidates,
+      );
+      const requestText = prompt.trim();
+      const textContext = collectTextGenerationContext({
+        edges: currentEdges,
+        nodeId,
+        nodes: currentNodes,
+        sourceNodeIds: selectedTextReferenceNodeIds,
+      });
+      const requestPrompt = buildContextualImageGenerationPrompt({
+        context: textContext,
+        prompt: requestText,
+      });
 
       const position = getNextConnectedChildNodePosition({
         childFallbackSize: { height: 320, width: 420 },
@@ -2404,13 +2435,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           projectId,
           kind: "image",
           input: {
-            context: collectTextGenerationContext({
-              edges: currentEdges,
-              nodeId,
-              nodes: currentNodes,
-            }),
+            context: textContext,
             parameters: { aspectRatio, operation, quality },
-            prompt,
+            prompt: requestText,
           },
           triggerNodeId: sourceNode.id,
           nodeId: resultNodeId,
@@ -2431,7 +2458,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           id: resultNodeId,
           model,
           position,
-          prompt,
+          prompt: requestText,
           quality,
           sourceNode,
           startedAt: new Date(taskStartedAt).toISOString(),
@@ -3770,7 +3797,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       audio?.pause();
       const nextAudio = new Audio(source);
       nextAudio.preload = "metadata";
-      nextAudio.loop = Boolean(playerNode.data.musicLoop);
+      nextAudio.loop = normalizeMusicLoopMode(
+        playerNode.data.musicLoopMode,
+        playerNode.data.musicLoop,
+      ) === "one";
       nextAudio.muted = Boolean(playerNode.data.musicMuted);
       nextAudio.playbackRate = playerNode.data.musicPlaybackRate ?? 1;
       nextAudio.volume = playerNode.data.musicVolume ?? 1;
@@ -3809,16 +3839,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           : node));
       });
       nextAudio.addEventListener("ended", () => {
-        setNodes((current) => current.map((node) => node.id === playerNodeId
-          ? {
-              ...node,
-              data: {
-                ...node.data,
-                musicCurrentTime: nextAudio.currentTime,
-                musicIsPlaying: false,
-              },
-            }
-          : node));
+        musicEndedHandlerRef.current(playerNodeId);
       });
       audio = nextAudio;
     }
@@ -3849,14 +3870,18 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
   const updateMusicPlayback = useCallback((playerNodeId: string, updates: {
     loop?: boolean;
+    loopMode?: MusicLoopMode;
     muted?: boolean;
     playbackRate?: number;
     sourceListExpanded?: boolean;
     volume?: number;
   }) => {
     const audio = musicPlayersRef.current.get(playerNodeId);
+    const nextLoopMode = updates.loopMode ?? (
+      updates.loop === undefined ? undefined : updates.loop ? "one" : "off"
+    );
     if (audio) {
-      if (updates.loop !== undefined) audio.loop = updates.loop;
+      if (nextLoopMode !== undefined) audio.loop = nextLoopMode === "one";
       if (updates.muted !== undefined) audio.muted = updates.muted;
       if (updates.playbackRate !== undefined) audio.playbackRate = updates.playbackRate;
       if (updates.volume !== undefined) audio.volume = updates.volume;
@@ -3866,7 +3891,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           ...node,
           data: {
             ...node.data,
-            ...(updates.loop === undefined ? {} : { musicLoop: updates.loop }),
+            ...(nextLoopMode === undefined ? {} : {
+              musicLoop: nextLoopMode === "one",
+              musicLoopMode: nextLoopMode,
+            }),
             ...(updates.muted === undefined ? {} : { musicMuted: updates.muted }),
             ...(updates.playbackRate === undefined ? {} : { musicPlaybackRate: updates.playbackRate }),
             ...(updates.sourceListExpanded === undefined ? {} : { musicSourceListExpanded: updates.sourceListExpanded }),
@@ -3885,7 +3913,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
     musicPlayersRef.current.get(playerNodeId)?.pause();
     musicPlayersRef.current.delete(playerNodeId);
-    setNodes((current) => current.map((node) => node.id === playerNodeId
+    const nextNodes = nodesRef.current.map((node) => node.id === playerNodeId
       ? {
           ...node,
           data: {
@@ -3900,8 +3928,72 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             musicWaveformVersion: undefined,
           },
         }
-      : node));
+      : node);
+    nodesRef.current = nextNodes;
+    setNodes(nextNodes);
   }, [setNodes]);
+
+  const handleMusicPlaybackEnded = useCallback((playerNodeId: string) => {
+    const playerNode = nodesRef.current.find(
+      (node) => node.id === playerNodeId && node.data.kind === "musicPlayer",
+    );
+    if (!playerNode) return;
+
+    const loopMode = normalizeMusicLoopMode(
+      playerNode.data.musicLoopMode,
+      playerNode.data.musicLoop,
+    );
+    const audio = musicPlayersRef.current.get(playerNodeId);
+
+    if (loopMode === "one" && audio) {
+      audio.currentTime = 0;
+      void audio.play().catch((error) => {
+        setNodes((current) => current.map((node) => node.id === playerNodeId
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                musicError: error instanceof Error ? error.message : "无法播放音乐",
+                musicIsPlaying: false,
+              },
+            }
+          : node));
+      });
+      return;
+    }
+
+    if (loopMode === "all") {
+      const sourceIds = resolveMusicSourceNodes({
+        edges: edgesRef.current,
+        nodes: nodesRef.current,
+        playerNodeId,
+      }).map((source) => source.id);
+      const nextSourceId = getNextMusicSourceId(
+        sourceIds,
+        playerNode.data.musicSourceNodeId,
+      );
+      if (nextSourceId) {
+        selectMusicSource(playerNodeId, nextSourceId);
+        toggleMusicPlayback(playerNodeId, true);
+        return;
+      }
+    }
+
+    setNodes((current) => current.map((node) => node.id === playerNodeId
+      ? {
+          ...node,
+          data: {
+            ...node.data,
+            musicCurrentTime: audio?.currentTime ?? node.data.musicCurrentTime,
+            musicIsPlaying: false,
+          },
+        }
+      : node));
+  }, [selectMusicSource, setNodes, toggleMusicPlayback]);
+
+  useEffect(() => {
+    musicEndedHandlerRef.current = handleMusicPlaybackEnded;
+  }, [handleMusicPlaybackEnded]);
 
   const seekMusicPlayer = useCallback((playerNodeId: string, seconds: number) => {
     const audio = musicPlayersRef.current.get(playerNodeId);
@@ -4356,6 +4448,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           }
         }}
         onDoubleClick={handleCanvasDoubleClick}
+        onMouseDownCapture={(event) => {
+          if (shouldPreventNativeCanvasAuxClick(event.nativeEvent)) {
+            event.preventDefault();
+          }
+        }}
         onPointerMove={(event) => {
           lastCanvasPointer.current = { x: event.clientX, y: event.clientY };
         }}

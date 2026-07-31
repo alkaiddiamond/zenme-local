@@ -51,9 +51,21 @@ describe("direct image editing workflow", () => {
 
   it("sends upstream text context with a connected image-generation request", () => {
     expect(canvasClientSource).toContain(
-      "context: collectTextGenerationContext({",
+      "const textContext = collectTextGenerationContext({",
     );
+    expect(canvasClientSource).toContain("context: textContext,");
     expect(canvasClientSource).toContain("prompt: requestPrompt,");
+    expect(canvasClientSource).toContain(
+      "sourceNodeIds: selectedTextReferenceNodeIds",
+    );
+  });
+
+  it("shows connected image and text nodes in both the reference bar and @ candidates", () => {
+    expect(imageGenerationNodeSource).toContain("imageTextReferenceCandidates");
+    expect(imageGenerationNodeSource).toContain("imageTextReferences");
+    expect(imageGenerationNodeSource).toContain("toggleTextReference");
+    expect(imageGenerationNodeSource).toContain("imageTextReferences");
+    expect(imageGenerationNodeSource).not.toContain("showReferenceBar={false}");
   });
 
   it("keeps generated-image option pickers interactive outside the canvas node", () => {
@@ -132,7 +144,9 @@ describe("direct image editing workflow", () => {
   });
 
   it("does not clear an already-selected reference when chosen from the picker", () => {
-    expect(imageGenerationNodeSource).toContain("if (!selected) {");
+    expect(imageGenerationNodeSource).toContain(
+      "if (!selected && !(mentionOnly && handled)) {",
+    );
     expect(imageGenerationNodeSource).toContain(
       "toggleReference(candidate.nodeId);",
     );
@@ -145,12 +159,18 @@ describe("direct image editing workflow", () => {
     );
   });
 
-  it("does not render an inline-style reference label before @ is used", () => {
-    expect(imageGenerationNodeSource).not.toContain(
-      "truncateReferenceTitle(reference.title)",
+  it("keeps top references separate from inline @ mentions", () => {
+    expect(imageGenerationNodeSource).toContain("ImagePromptEditor");
+    expect(imageGenerationNodeSource).toContain("dataset.imagePromptReferenceId");
+    expect(imageGenerationNodeSource).toContain("mentionOnly");
+    expect(imageGenerationNodeSource).toContain("onTextSelect");
+    expect(imageGenerationNodeSource).toContain(
+      "getTypedImageReferenceTriggerRange(range, editor)",
     );
-    expect(imageGenerationNodeSource).not.toContain(
-      'className="mt-1.5 flex flex-wrap gap-1"',
-    );
+    expect(imageGenerationNodeSource).toContain("onInput={handleInput}");
+    expect(imageGenerationNodeSource).not.toContain("/(^|\\s)@$/");
+    expect(canvasClientSource).toContain("const requestText = prompt.trim();");
+    expect(canvasClientSource).not.toContain("expandImagePromptMentions(");
+    expect(canvasClientSource).toContain("mergeReferenceNodeIds(");
   });
 });
