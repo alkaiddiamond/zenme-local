@@ -155,11 +155,14 @@ import {
 } from "@/components/zenme/canvas/history-state";
 import {
   collectTextGenerationContext,
+  collectTextGenerationImageUrls,
   getCanvasNodeContextText,
 } from "@/components/zenme/canvas/text-generation-context";
 import { buildContextualImageGenerationPrompt } from "@/components/zenme/canvas/image-generation-context";
 import {
+  expandImagePromptMentions,
   mergeReferenceNodeIds,
+  normalizeImagePromptContent,
 } from "@/components/zenme/canvas/image-prompt-mentions";
 import { inspectCanvasNodeExecution } from "@/components/zenme/canvas/execution-preflight";
 import {
@@ -2226,6 +2229,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodeId,
         nodes: currentNodes,
       });
+      const imageUrls = collectTextGenerationImageUrls({
+        edges: currentEdges,
+        nodeId,
+        nodes: currentNodes,
+      });
       const context = [ownContext, upstreamContext].filter(Boolean).join("\n\n---\n\n");
       const position = getNextConnectedChildNodePosition({
         childFallbackSize: { height: 260, width: 620 },
@@ -2281,8 +2289,12 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       activeExecutionControllersRef.current.set(resultNodeId, executionController.controller);
       try {
         await persistExecutionTaskNodes(nodesRef.current);
+        const imageDataUrls = await Promise.all(
+          imageUrls.map((url) => fetchImageAsDataUrl(url)),
+        );
         const result = await requestTextGenerationResponse({
           context,
+          imageDataUrls,
           model,
           prompt,
           signal: executionController.controller.signal,
@@ -2482,7 +2494,27 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         promptMentions,
         textReferenceCandidates,
       );
-      const requestText = prompt.trim();
+      const normalizedPromptContent = normalizeImagePromptContent(
+        prompt,
+        promptMentions,
+      );
+      const requestText = expandImagePromptMentions({
+        imageReferenceNodeIds: selectedReferenceNodeIds,
+        mentions: normalizedPromptContent.mentions,
+        prompt: normalizedPromptContent.prompt,
+        references: [
+          ...imageReferenceCandidates.map((reference) => ({
+            kind: "image" as const,
+            nodeId: reference.nodeId,
+            title: reference.title,
+          })),
+          ...textReferenceCandidates.map((reference) => ({
+            kind: "text" as const,
+            nodeId: reference.nodeId,
+            title: reference.title,
+          })),
+        ],
+      });
       const textContext = collectTextGenerationContext({
         edges: currentEdges,
         nodeId,
@@ -2538,7 +2570,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           id: resultNodeId,
           model,
           position,
-          prompt: requestText,
+          prompt: normalizedPromptContent.prompt.trim(),
           quality,
           sourceNode,
           startedAt: new Date(taskStartedAt).toISOString(),

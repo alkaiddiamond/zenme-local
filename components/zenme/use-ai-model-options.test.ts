@@ -40,14 +40,21 @@ describe("AI model option preferences", () => {
     });
   });
 
-  it("does not initialize selectors from static fallback models", () => {
+  it("initializes new selectors from the shared model cache", () => {
     const source = readFileSync(
       new URL("./use-ai-model-options.ts", import.meta.url),
       "utf8",
     ).replaceAll("\r\n", "\n");
 
     expect(source).not.toContain("fallbackModelOptions");
-    expect(source).toContain("useState<AiModelOption[]>(\n    [],");
+    expect(source).toContain(
+      "() => modelOptionsCache[modality] ?? []",
+    );
+    expect(source).toContain("modelOptionsCache[modality] = orderedModels");
+    expect(source).toContain(
+      "window.addEventListener(MODEL_OPTIONS_EVENT, handleModelOptionsChange)",
+    );
+    expect(source).toContain("new CustomEvent(MODEL_OPTIONS_EVENT");
   });
 
   it("maps a legacy bare model id to the first provider-scoped option", () => {

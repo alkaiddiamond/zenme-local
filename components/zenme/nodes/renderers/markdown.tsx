@@ -129,12 +129,12 @@ export function renderMarkdown(markdown: string) {
     if (block.type === "table") {
       return (
         <div className="my-3 max-w-full overflow-x-auto rounded-md border border-zinc-200" key={block.key}>
-          <table className="w-full min-w-max border-collapse text-left text-sm text-zinc-800">
+          <table className="w-full table-fixed border-collapse text-left text-sm text-zinc-800">
             <thead className="bg-zinc-100 text-zinc-950">
               <tr>
                 {block.headers?.map((header, index) => (
                   <th
-                    className="border-b border-r border-zinc-200 px-3 py-2 font-semibold last:border-r-0"
+                    className="break-words border-b border-r border-zinc-200 px-3 py-2 font-semibold [overflow-wrap:anywhere] last:border-r-0"
                     key={`header-${index}`}
                     style={{ textAlign: block.alignments?.[index] ?? "left" }}
                   >
@@ -148,7 +148,7 @@ export function renderMarkdown(markdown: string) {
                 <tr className="border-b border-zinc-200 last:border-b-0" key={`row-${rowIndex}`}>
                   {(block.headers ?? []).map((_, columnIndex) => (
                     <td
-                      className="border-r border-zinc-200 px-3 py-2 align-top last:border-r-0"
+                      className="break-words border-r border-zinc-200 px-3 py-2 align-top [overflow-wrap:anywhere] last:border-r-0"
                       key={`cell-${rowIndex}-${columnIndex}`}
                       style={{ textAlign: block.alignments?.[columnIndex] ?? "left" }}
                     >

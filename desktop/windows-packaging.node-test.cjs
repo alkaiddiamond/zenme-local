@@ -6,6 +6,19 @@ const test = require("node:test");
 
 const projectRoot = path.resolve(__dirname, "..");
 const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, "package.json"), "utf8"));
+const desktopMain = fs.readFileSync(
+  path.join(projectRoot, "desktop", "main.cjs"),
+  "utf8",
+);
+
+test("Windows keeps standard editing shortcuts without showing a native menu bar", () => {
+  assert.doesNotMatch(desktopMain, /Menu\.setApplicationMenu\(null\)/);
+  assert.match(
+    desktopMain,
+    /process\.platform !== "darwin"[\s\S]*Menu\.buildFromTemplate\(\[\{ role: "editMenu" \}\]\)/,
+  );
+  assert.match(desktopMain, /autoHideMenuBar: true/);
+});
 
 test("Windows release targets an x64 NSIS installer without deleting user data", () => {
   assert.deepEqual(packageJson.build.win.target, [{ target: "nsis", arch: ["x64"] }]);

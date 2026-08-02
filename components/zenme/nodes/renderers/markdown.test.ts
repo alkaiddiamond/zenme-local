@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
 
-import { parseMarkdownBlocks } from "./markdown";
+import { parseMarkdownBlocks, renderMarkdown } from "./markdown";
 
 describe("parseMarkdownBlocks", () => {
   it("parses headings, quotes, list items and paragraphs", () => {
@@ -49,5 +50,15 @@ describe("parseMarkdownBlocks", () => {
     expect(parseMarkdownBlocks("| 只是 | 普通文本 |")[0]).toMatchObject({
       type: "p",
     });
+  });
+
+  it("keeps rendered tables within the node and wraps long cell content", () => {
+    const html = renderToStaticMarkup(
+      renderMarkdown("| 名词 | 文稿对应实例 |\n|---|---|\n| 示例 | 一段很长的单元格内容 |"),
+    );
+
+    expect(html).toContain("w-full table-fixed");
+    expect(html).not.toContain("min-w-max");
+    expect(html.match(/\[overflow-wrap:anywhere\]/g)).toHaveLength(4);
   });
 });

@@ -25,6 +25,7 @@ import {
 } from "./history-state";
 import {
   collectTextGenerationContext,
+  collectTextGenerationImageUrls,
   isTextGenerationContextNode,
 } from "./text-generation-context";
 import type { CanvasHistoryEntry, CanvasNode } from "./types";
@@ -338,6 +339,35 @@ describe("canvas state and context helpers", () => {
     ).toContain(
       "图片提示词节点「角色提示词」\n生成角色头部和全身三视图，画布比例 3:4",
     );
+  });
+
+  it("collects upstream image files for multimodal text generation", () => {
+    const image = canvasNode({
+      data: {
+        kind: "image",
+        originalUrl: "/api/projects/project/files/image/original",
+        previewUrl: "/api/projects/project/files/image/preview",
+        title: "误谬图",
+      },
+      id: "image",
+      type: "image",
+    });
+    const text = canvasNode({
+      data: { kind: "text", plainText: "识别图片内容", title: "文本" },
+      id: "text",
+    });
+
+    expect(collectTextGenerationImageUrls({
+      edges: [edge("image", "text")],
+      nodeId: "text",
+      nodes: [image, text],
+    })).toEqual(["/api/projects/project/files/image/original"]);
+    expect(collectTextGenerationContext({
+      edges: [edge("image", "text")],
+      nodeId: "text",
+      nodes: [image, text],
+    })).toContain("图片内容已作为视觉输入提供");
+    expect(isTextGenerationContextNode(image)).toBe(true);
   });
 
   it("includes every timestamped lyric line in text generation context", () => {

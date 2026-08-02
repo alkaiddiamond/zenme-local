@@ -41,7 +41,10 @@ import {
   NodeTargetHandle,
 } from "@/components/zenme/node-ui";
 import { NANO_BANANA_2_IMAGE_MODEL } from "@/components/zenme/canvas/node-factories";
-import type { ImagePromptMention } from "@/components/zenme/canvas/image-prompt-mentions";
+import {
+  type ImagePromptMention,
+  normalizeImagePromptContent,
+} from "@/components/zenme/canvas/image-prompt-mentions";
 import { createOutsidePointerHandler } from "@/components/zenme/nodes/outside-interaction";
 import {
   useAiModelOptions,
@@ -715,9 +718,25 @@ export const ImagePromptEditor = forwardRef<ImagePromptEditorHandle, {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const initializedRef = useRef(false);
   const pendingReferenceAnchor = useRef<HTMLElement | null>(null);
-  const initialContentRef = useRef({ candidates, mentions, prompt, textCandidates });
+  const initialContentRef = useRef({
+    candidates,
+    originalMentions: mentions,
+    originalPrompt: prompt,
+    ...normalizeImagePromptContent(prompt, mentions),
+    textCandidates,
+  });
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+
+  useEffect(() => {
+    const initial = initialContentRef.current;
+    if (
+      initial.prompt !== initial.originalPrompt ||
+      JSON.stringify(initial.mentions) !== JSON.stringify(initial.originalMentions)
+    ) {
+      onChangeRef.current(initial.prompt, initial.mentions);
+    }
+  }, []);
 
   function syncContent() {
     const content = readImagePromptEditor(editorRef.current);
@@ -782,10 +801,6 @@ export const ImagePromptEditor = forwardRef<ImagePromptEditorHandle, {
         openReferenceMenuAtRange(range);
       }
       return;
-    }
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      event.currentTarget.closest("form")?.requestSubmit();
     }
   }
 
@@ -887,21 +902,24 @@ function renderImagePromptEditor(
   candidates: ImagePromptImageReference[],
   textCandidates: ImagePromptTextReference[],
 ) {
+  const normalized = normalizeImagePromptContent(prompt, mentions);
   const referencesById = new Map<string, ImagePromptReference>([
     ...candidates.map((candidate) => [candidate.nodeId, { ...candidate, kind: "image" as const }] as const),
     ...textCandidates.map((candidate) => [candidate.nodeId, { ...candidate, kind: "text" as const }] as const),
   ]);
   const fragment = document.createDocumentFragment();
   let cursor = 0;
-  for (const mention of [...mentions].sort((left, right) => left.offset - right.offset)) {
+  for (const mention of normalized.mentions) {
     const reference = referencesById.get(mention.nodeId);
     if (!reference) continue;
-    const offset = Math.max(cursor, Math.min(mention.offset, prompt.length));
-    if (offset > cursor) fragment.append(document.createTextNode(prompt.slice(cursor, offset)));
+    const offset = Math.max(cursor, Math.min(mention.offset, normalized.prompt.length));
+    if (offset > cursor) fragment.append(document.createTextNode(normalized.prompt.slice(cursor, offset)));
     fragment.append(createImagePromptReferenceChip(reference));
     cursor = offset;
   }
-  if (cursor < prompt.length) fragment.append(document.createTextNode(prompt.slice(cursor)));
+  if (cursor < normalized.prompt.length) {
+    fragment.append(document.createTextNode(normalized.prompt.slice(cursor)));
+  }
   editor.replaceChildren(fragment);
 }
 
@@ -931,7 +949,7 @@ function readImagePromptEditor(editor: HTMLDivElement | null) {
   }
 
   if (editor) for (const child of editor.childNodes) visit(child);
-  return { mentions, prompt };
+  return normalizeImagePromptContent(prompt, mentions);
 }
 
 
@@ -1016,9 +1034,6 @@ export function ImageEditSizePicker({
               ))}
             </div>
           </div>
-          <p className="px-1 text-xs leading-5 text-zinc-400">
-            尺寸选项会写入图片编辑 system prompt。
-          </p>
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

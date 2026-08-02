@@ -4,6 +4,7 @@ import { readAiChatStream } from "@/components/zenme/canvas/ai-stream";
 type TextGenerationRequestInput = {
   context: string;
   fetcher?: typeof fetch;
+  imageDataUrls?: string[];
   model: string;
   prompt: string;
   signal?: AbortSignal;
@@ -18,6 +19,7 @@ export function resolveTextGenerationPrompt(prompt?: string) {
 export async function requestTextGenerationResponse({
   context,
   fetcher = fetch,
+  imageDataUrls,
   model,
   prompt,
   signal,
@@ -25,6 +27,7 @@ export async function requestTextGenerationResponse({
   const response = await requestAiChatStream({
     context: context || "没有可用的上游上下文。",
     fetcher,
+    imageDataUrls,
     messages: [{ role: "user", content: resolveTextGenerationPrompt(prompt) }],
     model,
     signal,

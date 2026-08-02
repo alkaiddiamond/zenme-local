@@ -3,6 +3,7 @@ import type { AgentMessage } from "@/components/zenme/agent-types";
 type AiChatStreamRequestInput = {
   context?: string;
   fetcher?: typeof fetch;
+  imageDataUrls?: string[];
   messages: AgentMessage[];
   model: string;
   signal?: AbortSignal;
@@ -15,6 +16,7 @@ type AiChatStreamRequestResult =
 export async function requestAiChatStream({
   context,
   fetcher = fetch,
+  imageDataUrls,
   messages,
   model,
   signal,
@@ -25,6 +27,7 @@ export async function requestAiChatStream({
     signal,
     body: JSON.stringify({
       context,
+      imageDataUrls,
       messages,
       model,
     }),

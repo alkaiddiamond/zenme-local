@@ -16,7 +16,9 @@ export type AiModelOption = {
 type AiModelModality = "image" | "text" | "video";
 
 const MODEL_PREFERENCE_EVENT = "zenme:ai-model-preference";
+const MODEL_OPTIONS_EVENT = "zenme:ai-model-options";
 const preferredModelCache: Partial<Record<AiModelModality, string>> = {};
+const modelOptionsCache: Partial<Record<AiModelModality, AiModelOption[]>> = {};
 
 export function createModelOption(
   id: string,
@@ -80,12 +82,10 @@ export function orderModelOptionsByPreference(
 
 export function useAiModelOptions(modality: AiModelModality = "text") {
   const [models, setModels] = useState<AiModelOption[]>(
-    [],
+    () => modelOptionsCache[modality] ?? [],
   );
 
   useEffect(() => {
-    let cancelled = false;
-
     function handlePreferenceChange(event: Event) {
       const detail = (event as CustomEvent<{
         modality?: AiModelModality;
@@ -96,12 +96,27 @@ export function useAiModelOptions(modality: AiModelModality = "text") {
       }
 
       preferredModelCache[modality] = detail.modelId;
-      setModels((current) =>
-        orderModelOptionsByPreference(current, detail.modelId),
-      );
+      setModels((current) => {
+        const nextModels = orderModelOptionsByPreference(
+          current,
+          detail.modelId,
+        );
+        modelOptionsCache[modality] = nextModels;
+        return nextModels;
+      });
+    }
+
+    function handleModelOptionsChange(event: Event) {
+      const detail = (event as CustomEvent<{
+        modality?: AiModelModality;
+        models?: AiModelOption[];
+      }>).detail;
+      if (detail?.modality !== modality || !detail.models) return;
+      setModels(detail.models);
     }
 
     window.addEventListener(MODEL_PREFERENCE_EVENT, handlePreferenceChange);
+    window.addEventListener(MODEL_OPTIONS_EVENT, handleModelOptionsChange);
 
     async function loadModels() {
       try {
@@ -139,16 +154,21 @@ export function useAiModelOptions(modality: AiModelModality = "text") {
           );
         });
 
-        if (!cancelled) {
-          const preferredModelId =
-            payload.preferredModelId ?? preferredModelCache[modality];
-          if (preferredModelId) {
-            preferredModelCache[modality] = preferredModelId;
-          }
-          setModels(
-            orderModelOptionsByPreference(nextModels, preferredModelId),
-          );
+        const preferredModelId =
+          payload.preferredModelId ?? preferredModelCache[modality];
+        if (preferredModelId) {
+          preferredModelCache[modality] = preferredModelId;
         }
+        const orderedModels = orderModelOptionsByPreference(
+          nextModels,
+          preferredModelId,
+        );
+        modelOptionsCache[modality] = orderedModels;
+        window.dispatchEvent(
+          new CustomEvent(MODEL_OPTIONS_EVENT, {
+            detail: { modality, models: orderedModels },
+          }),
+        );
       } catch {
         // Keep the selector empty when settings cannot be loaded.
       }
@@ -157,10 +177,13 @@ export function useAiModelOptions(modality: AiModelModality = "text") {
     void loadModels();
 
     return () => {
-      cancelled = true;
       window.removeEventListener(
         MODEL_PREFERENCE_EVENT,
         handlePreferenceChange,
+      );
+      window.removeEventListener(
+        MODEL_OPTIONS_EVENT,
+        handleModelOptionsChange,
       );
     };
   }, [modality]);
