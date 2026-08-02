@@ -99,6 +99,16 @@ describe("direct image editing workflow", () => {
     );
   });
 
+  it("shows the original image resolution in the maximized preview", () => {
+    expect(imageNodeSource).toContain("imageHeight={nodeData.imageHeight}");
+    expect(imageNodeSource).toContain("imageWidth={nodeData.imageWidth}");
+    expect(imageNodeSource).toContain("image.naturalWidth || image.width");
+    expect(imageNodeSource).toContain("分辨率：</span>");
+    expect(imageNodeSource).toContain(
+      "`${resolution.width} × ${resolution.height} px`",
+    );
+  });
+
   it("switches the hovered camera-control column with a throttled mouse wheel", () => {
     expect(imageCameraControlSource).toContain("onWheel={handleWheel}");
     expect(imageCameraControlSource).toContain("event.preventDefault()");
@@ -114,12 +124,11 @@ describe("direct image editing workflow", () => {
     );
   });
 
-  it("does not create an empty image-generation node from an image action menu", () => {
-    expect(menuSource).not.toContain(
-      'actionNode?.data.kind !== "image"',
-    );
-    expect(menuSource).not.toContain(
-      'onClick={() => onCreateConnectedPlaceholder("imageGeneration")}\n        title="图片生成"',
+  it("uses the text-node creation menu for image action handles", () => {
+    expect(menuSource).toContain('actionNode?.data.kind === "image" ||');
+    expect(menuSource).toContain("<NodeCreationMenuItems");
+    expect(menuSource).toContain(
+      'onCreateConnectedPlaceholder("imageGeneration")',
     );
   });
 
@@ -132,6 +141,21 @@ describe("direct image editing workflow", () => {
     );
     expect(imageGenerationNodeSource).not.toContain("showComposer");
     expect(imageGenerationNodeSource).not.toContain("composerStyle");
+  });
+
+  it("does not expose internal prompt implementation details in the size picker", () => {
+    expect(imageGenerationNodeSource).not.toContain(
+      "尺寸选项会写入图片编辑 system prompt。",
+    );
+  });
+
+  it("does not submit image generation when pressing Enter in the prompt", () => {
+    expect(imageGenerationNodeSource).not.toContain(
+      'event.key === "Enter" && !event.shiftKey',
+    );
+    expect(imageGenerationNodeSource).not.toContain(
+      'closest("form")?.requestSubmit()',
+    );
   });
 
   it("allows dragging the image-generation request from blank panel areas", () => {
@@ -207,8 +231,10 @@ describe("direct image editing workflow", () => {
     );
     expect(imageGenerationNodeSource).toContain("onInput={handleInput}");
     expect(imageGenerationNodeSource).not.toContain("/(^|\\s)@$/");
-    expect(canvasClientSource).toContain("const requestText = prompt.trim();");
-    expect(canvasClientSource).not.toContain("expandImagePromptMentions(");
+    expect(canvasClientSource).toContain(
+      "const normalizedPromptContent = normalizeImagePromptContent(",
+    );
+    expect(canvasClientSource).toContain("expandImagePromptMentions({");
     expect(canvasClientSource).toContain("mergeReferenceNodeIds(");
   });
 

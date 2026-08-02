@@ -6,6 +6,7 @@ const TEXT_GENERATION_CONTEXT_NODE_KINDS = new Set([
   "agent",
   "book",
   "code",
+  "image",
   "imageGeneration",
   "markdown",
   "note",
@@ -66,6 +67,52 @@ export function collectTextGenerationContext(input: {
   }
 
   return sections.join("\n\n---\n\n");
+}
+
+export function collectTextGenerationImageUrls(input: {
+  edges: Edge[];
+  maxDepth?: number;
+  maxImages?: number;
+  nodeId: string;
+  nodes: CanvasNode[];
+  sourceNodeIds?: string[];
+}) {
+  const maxDepth = input.maxDepth ?? 3;
+  const maxImages = input.maxImages ?? 4;
+  const nodeById = new Map(input.nodes.map((node) => [node.id, node]));
+  const inboundByTarget = input.edges.reduce((result, edge) => {
+    const sources = result.get(edge.target) ?? [];
+    sources.push(edge.source);
+    result.set(edge.target, sources);
+    return result;
+  }, new Map<string, string[]>());
+  const visited = new Set<string>([input.nodeId]);
+  const queue = (
+    input.sourceNodeIds ?? inboundByTarget.get(input.nodeId) ?? []
+  ).map((nodeId) => ({ depth: 1, nodeId }));
+  const urls: string[] = [];
+
+  while (queue.length > 0 && urls.length < maxImages) {
+    const current = queue.shift();
+    if (!current || current.depth > maxDepth || visited.has(current.nodeId)) {
+      continue;
+    }
+
+    visited.add(current.nodeId);
+    const node = nodeById.get(current.nodeId);
+    if (!node) continue;
+
+    if (node.data.kind === "image") {
+      const url = node.data.originalUrl ?? node.data.previewUrl;
+      if (url && !urls.includes(url)) urls.push(url);
+    }
+
+    for (const parentId of inboundByTarget.get(current.nodeId) ?? []) {
+      queue.push({ depth: current.depth + 1, nodeId: parentId });
+    }
+  }
+
+  return urls;
 }
 
 export function isTextGenerationContextNode(node: CanvasNode) {
@@ -165,6 +212,12 @@ export function getCanvasNodeContextText(node: CanvasNode) {
   if (node.data.kind === "imageGeneration") {
     const prompt = node.data.imagePrompt?.trim();
     return prompt ? `图片提示词节点「${title}」\n${prompt}` : "";
+  }
+
+  if (node.data.kind === "image") {
+    return node.data.originalUrl || node.data.previewUrl
+      ? `图片节点「${title}」（图片内容已作为视觉输入提供）`
+      : `图片节点「${title}」（暂无可用图片内容）`;
   }
 
   if (node.data.kind === "textGeneration") {

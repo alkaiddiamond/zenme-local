@@ -73,6 +73,28 @@ describe("text generation request", () => {
     });
   });
 
+  it("includes upstream images as multimodal input", async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      body: streamFromText("识别结果"),
+      ok: true,
+    });
+
+    await requestTextGenerationResponse({
+      context: "图片节点已连接",
+      fetcher,
+      imageDataUrls: ["data:image/png;base64,aW1hZ2U="],
+      model: "gpt-5.6-sol",
+      prompt: "识别图片内容",
+    });
+
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
+      context: "图片节点已连接",
+      imageDataUrls: ["data:image/png;base64,aW1hZ2U="],
+      messages: [{ role: "user", content: "识别图片内容" }],
+      model: "gpt-5.6-sol",
+    });
+  });
+
   it("uses a fallback context when no upstream context is available", async () => {
     const fetcher = vi.fn().mockResolvedValue({
       body: streamFromText("结果"),

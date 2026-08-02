@@ -22,9 +22,10 @@ describe("canvas floating menus", () => {
     expect(menuSource).not.toContain("shadow-2xl backdrop-blur");
   });
 
-  it("uses the upload-free child-node menu for text, AI response, managed text, and task nodes", () => {
+  it("uses the same upload-free child-node menu for image, text, AI response, managed text, and task nodes", () => {
     const menuSource = readProjectFile("components/zenme/canvas/menus.tsx");
 
+    expect(menuSource).toContain('actionNode?.data.kind === "image" ||');
     expect(menuSource).toContain('actionNode?.data.kind === "text" ||');
     expect(menuSource).toContain('actionNode?.data.kind === "agent"');
     expect(menuSource).toContain('actionNode?.data.kind === "managedText"');

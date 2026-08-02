@@ -118,12 +118,35 @@ describe("canvas clipboard", () => {
   });
 
   it("reads image files from clipboard items and files without duplicates", () => {
+    const itemImage = new File(["image"], "photo.png", {
+      lastModified: 1,
+      type: "image/png",
+    });
+    const mirroredFileImage = new File(["image"], "photo.png", {
+      lastModified: 2,
+      type: "image/png",
+    });
+    const files = getClipboardImageFiles({
+      files: [mirroredFileImage] as unknown as FileList,
+      items: [
+        {
+          getAsFile: () => itemImage,
+          kind: "file",
+          type: "image/png",
+        },
+      ] as unknown as DataTransferItemList,
+    });
+
+    expect(files).toEqual([itemImage]);
+  });
+
+  it("falls back to clipboard files when items contain no usable image", () => {
     const image = new File(["image"], "photo.png", { type: "image/png" });
     const files = getClipboardImageFiles({
       files: [image] as unknown as FileList,
       items: [
         {
-          getAsFile: () => image,
+          getAsFile: () => null,
           kind: "file",
           type: "image/png",
         },

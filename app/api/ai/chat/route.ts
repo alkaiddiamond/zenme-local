@@ -59,6 +59,7 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json()) as {
+      imageDataUrls?: string[];
       model?: string;
       messages?: ChatMessage[];
       context?: string;
@@ -91,6 +92,7 @@ export async function POST(request: Request) {
 
     // 以 SSE 流式转发 OpenAI-compatible chat/completions，前端可逐 token 渲染。
     const upstream = await fetchProviderChatCompletion({
+      imageDataUrls: body.imageDataUrls,
       messages: body.messages,
       provider: providerConfig,
       systemContent,
@@ -260,6 +262,7 @@ function createProviderHeaders(provider: Exclude<ChatProviderConfig, { error: st
 }
 
 async function fetchProviderChatCompletion(input: {
+  imageDataUrls?: string[];
   messages: ChatMessage[];
   provider: Exclude<ChatProviderConfig, { error: string }>;
   systemContent: string;
@@ -283,7 +286,7 @@ async function fetchProviderChatCompletion(input: {
         },
         body: JSON.stringify({
           max_tokens: 4096,
-          messages: input.messages.filter((message) => message.role !== "system"),
+          messages: createAnthropicMessages(input.messages, input.imageDataUrls),
           model: input.provider.model,
           stream: false,
           system: input.systemContent,
@@ -326,7 +329,7 @@ async function fetchProviderChatCompletion(input: {
         model: input.provider.model,
         messages: [
           { role: "system", content: input.systemContent },
-          ...input.messages,
+          ...createOpenAiChatMessages(input.messages, input.imageDataUrls),
         ],
         stream: true,
         stream_options: { include_usage: true },
@@ -351,6 +354,7 @@ async function fetchProviderChatCompletion(input: {
 
 async function fetchOpenAiOAuthChat(
   input: {
+    imageDataUrls?: string[];
     messages: ChatMessage[];
     provider: Exclude<ChatProviderConfig, { error: string }>;
     systemContent: string;
@@ -425,6 +429,7 @@ async function fetchOpenAiWebContext(input: {
 }
 
 export function createVolcengineAgentPlanResponsesRequestBody(input: {
+  imageDataUrls?: string[];
   messages: ChatMessage[];
   provider: { model: string };
   systemContent: string;
@@ -432,19 +437,26 @@ export function createVolcengineAgentPlanResponsesRequestBody(input: {
   return {
     model: input.provider.model,
     instructions: input.systemContent,
-    input: input.messages
-      .filter((message) => message.role !== "system")
-      .map((message) => ({
-        type: "message",
-        role: message.role,
-        content: message.content,
-      })),
+    input: input.imageDataUrls?.length
+      ? createResponsesMessages(input.messages, input.imageDataUrls).map((message) => ({
+          type: "message",
+          role: message.role,
+          content: message.content,
+        }))
+      : input.messages
+          .filter((message) => message.role !== "system")
+          .map((message) => ({
+            type: "message",
+            role: message.role,
+            content: message.content,
+          })),
     stream: true,
     store: false,
   };
 }
 
 export function createOpenAiOAuthRequestBody(input: {
+  imageDataUrls?: string[];
   messages: ChatMessage[];
   provider: { model: string };
   systemContent: string;
@@ -463,17 +475,11 @@ export function createOpenAiOAuthRequestBody(input: {
               : input.systemContent,
           }],
         },
-        ...input.messages
-          .filter((message) => message.role !== "system")
+        ...createResponsesMessages(input.messages, input.imageDataUrls)
           .map((message) => ({
             type: "message" as const,
             role: message.role,
-            content: [
-              {
-                type: message.role === "assistant" ? "output_text" as const : "input_text" as const,
-                text: message.content,
-              },
-            ],
+            content: message.content,
           })),
       ],
       tool_choice: "auto" as const,
@@ -492,17 +498,95 @@ export function createOpenAiOAuthRequestBody(input: {
   return {
     model: input.provider.model,
     instructions: input.systemContent,
-    input: input.messages
-      .filter((message) => message.role !== "system")
-      .map((message) => ({
-        type: "message",
-        role: message.role,
-        content: message.content,
-      })),
+    input: input.imageDataUrls?.length
+      ? createResponsesMessages(input.messages, input.imageDataUrls)
+          .map((message) => ({
+            type: "message",
+            role: message.role,
+            content: message.content,
+          }))
+      : input.messages
+          .filter((message) => message.role !== "system")
+          .map((message) => ({
+            type: "message",
+            role: message.role,
+            content: message.content,
+          })),
     stream: true,
     store: false,
     tools: [{ type: "web_search" as const }],
   };
+}
+
+function createResponsesMessages(messages: ChatMessage[], imageDataUrls: string[] = []) {
+  const filtered = messages.filter((message) => message.role !== "system");
+  const lastUserIndex = findLastUserMessageIndex(filtered);
+
+  return filtered.map((message, index) => ({
+    role: message.role,
+    content: [
+      {
+        type: message.role === "assistant" ? "output_text" as const : "input_text" as const,
+        text: message.content,
+      },
+      ...(index === lastUserIndex
+        ? imageDataUrls.map((imageUrl) => ({
+            type: "input_image" as const,
+            image_url: imageUrl,
+          }))
+        : []),
+    ],
+  }));
+}
+
+function createOpenAiChatMessages(messages: ChatMessage[], imageDataUrls: string[] = []) {
+  const filtered = messages.filter((message) => message.role !== "system");
+  const lastUserIndex = findLastUserMessageIndex(filtered);
+
+  return filtered.map((message, index) => ({
+    role: message.role,
+    content: index === lastUserIndex && imageDataUrls.length
+      ? [
+          { type: "text" as const, text: message.content },
+          ...imageDataUrls.map((url) => ({
+            type: "image_url" as const,
+            image_url: { url },
+          })),
+        ]
+      : message.content,
+  }));
+}
+
+function createAnthropicMessages(messages: ChatMessage[], imageDataUrls: string[] = []) {
+  const filtered = messages.filter((message) => message.role !== "system");
+  const lastUserIndex = findLastUserMessageIndex(filtered);
+
+  return filtered.map((message, index) => ({
+    role: message.role,
+    content: index === lastUserIndex && imageDataUrls.length
+      ? [
+          { type: "text" as const, text: message.content },
+          ...imageDataUrls.map((dataUrl) => {
+            const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/.exec(dataUrl);
+            return {
+              type: "image" as const,
+              source: {
+                type: "base64" as const,
+                media_type: match?.[1] ?? "image/png",
+                data: match?.[2] ?? "",
+              },
+            };
+          }),
+        ]
+      : message.content,
+  }));
+}
+
+function findLastUserMessageIndex(messages: ChatMessage[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user") return index;
+  }
+  return -1;
 }
 
 function createTextSseResponse(content: string, usage?: Record<string, unknown>) {

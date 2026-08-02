@@ -72,15 +72,24 @@ export function parseCanvasNodeClipboardPayload(value: string) {
 export function getClipboardImageFiles(
   clipboardData: Pick<DataTransfer, "files" | "items">,
 ) {
-  const candidates = [
-    ...Array.from(clipboardData.items)
+  const itemImages = normalizeClipboardImageFiles(
+    Array.from(clipboardData.items)
       .filter((item) => item.kind === "file")
       .map((item) => ({ file: item.getAsFile(), typeHint: item.type })),
-    ...Array.from(clipboardData.files).map((file) => ({
+  );
+  if (itemImages.length > 0) return itemImages;
+
+  return normalizeClipboardImageFiles(
+    Array.from(clipboardData.files).map((file) => ({
       file,
       typeHint: file.type,
     })),
-  ];
+  );
+}
+
+function normalizeClipboardImageFiles(
+  candidates: Array<{ file: File | null; typeHint: string }>,
+) {
   const seen = new Set<string>();
 
   return candidates.flatMap(({ file, typeHint }, index) => {

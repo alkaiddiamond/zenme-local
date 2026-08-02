@@ -51,4 +51,21 @@ describe("AI request policy", () => {
       }),
     ).toBe("单条消息过长，请缩短后重试");
   });
+
+  it("accepts image data URLs and rejects invalid multimodal input", () => {
+    expect(validateChatBody({
+      imageDataUrls: ["data:image/png;base64,aW1hZ2U="],
+      messages: [{ role: "user", content: "识别图片" }],
+    })).toBeNull();
+
+    expect(validateChatBody({
+      imageDataUrls: ["https://example.com/image.png"],
+      messages: [{ role: "user", content: "识别图片" }],
+    })).toBe("图片输入格式不正确或图片过大");
+
+    expect(validateChatBody({
+      imageDataUrls: Array.from({ length: 5 }, () => "data:image/png;base64,YQ=="),
+      messages: [{ role: "user", content: "识别图片" }],
+    })).toBe("单次对话最多支持 4 张图片");
+  });
 });

@@ -51,7 +51,7 @@ function getLegacyElectronDataDir() {
 
 function configureApplicationMenu() {
   if (process.platform !== "darwin") {
-    Menu.setApplicationMenu(null);
+    Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: "editMenu" }]));
     return;
   }
 

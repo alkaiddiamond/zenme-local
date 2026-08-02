@@ -173,6 +173,7 @@ export function NodeActionMenu({
   onCreateMusicChild,
 }: NodeActionMenuProps) {
   if (
+    actionNode?.data.kind === "image" ||
     actionNode?.data.kind === "text" ||
     actionNode?.data.kind === "agent" ||
     actionNode?.data.kind === "managedText" ||
@@ -227,13 +228,6 @@ export function NodeActionMenu({
           icon={BookOpen}
           onClick={onOpenReadingWorkspace}
           title="在阅读器中打开"
-        />
-      ) : null}
-      {actionNode?.data.kind === "image" ? (
-        <FloatingMenuItem
-          icon={Video}
-          onClick={() => onCreateConnectedPlaceholder("videoGeneration")}
-          title="生成视频"
         />
       ) : null}
       <FloatingMenuItem

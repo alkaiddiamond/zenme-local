@@ -12,6 +12,7 @@ describe("AI chat stream request", () => {
       requestAiChatStream({
         context: "上下文",
         fetcher,
+        imageDataUrls: ["data:image/png;base64,aW1hZ2U="],
         messages: [{ role: "user", content: "生成" }],
         model: "deepseek-chat",
         signal: controller.signal,
@@ -26,6 +27,7 @@ describe("AI chat stream request", () => {
     });
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({
       context: "上下文",
+      imageDataUrls: ["data:image/png;base64,aW1hZ2U="],
       messages: [{ role: "user", content: "生成" }],
       model: "deepseek-chat",
     });

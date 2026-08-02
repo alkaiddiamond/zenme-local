@@ -235,7 +235,9 @@ export function ImageNode({ data, id, selected }: NodeProps) {
     isPreviewOpen && imageUrl ? (
       <ImagePreviewOverlay
         aspectRatioLabel={aspectRatioOption.label}
+        imageHeight={nodeData.imageHeight}
         imageUrl={imageUrl}
+        imageWidth={nodeData.imageWidth}
         isGeneratedImage={isGeneratedImage}
         modelLabel={imageModelLabel}
         onClose={() => setIsPreviewOpen(false)}
@@ -638,7 +640,9 @@ function ImageNodeControls({
 
 function ImagePreviewOverlay({
   aspectRatioLabel,
+  imageHeight,
   imageUrl,
+  imageWidth,
   isGeneratedImage,
   modelLabel,
   onClose,
@@ -648,7 +652,9 @@ function ImagePreviewOverlay({
   title,
 }: {
   aspectRatioLabel: string;
+  imageHeight?: number;
   imageUrl: string;
+  imageWidth?: number;
   isGeneratedImage: boolean;
   modelLabel: string;
   onClose: () => void;
@@ -657,6 +663,12 @@ function ImagePreviewOverlay({
   qualityLabel: string;
   title: string;
 }) {
+  const [resolution, setResolution] = useState(
+    imageWidth && imageHeight
+      ? { height: imageHeight, width: imageWidth }
+      : undefined,
+  );
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -683,6 +695,12 @@ function ImagePreviewOverlay({
             alt={title}
             className="max-h-[calc(100vh-32px)] max-w-full object-contain"
             crossOrigin="anonymous"
+            onLoad={(event) => {
+              const image = event.currentTarget;
+              const width = image.naturalWidth || image.width;
+              const height = image.naturalHeight || image.height;
+              if (width > 0 && height > 0) setResolution({ height, width });
+            }}
             src={imageUrl}
           />
         </div>
@@ -723,6 +741,12 @@ function ImagePreviewOverlay({
             <p>
               <span className="text-zinc-500">宽高比：</span>
               {aspectRatioLabel}
+            </p>
+            <p>
+              <span className="text-zinc-500">分辨率：</span>
+              {resolution
+                ? `${resolution.width} × ${resolution.height} px`
+                : "读取中..."}
             </p>
           </section>
           <button

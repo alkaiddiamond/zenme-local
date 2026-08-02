@@ -10,6 +10,9 @@ const MAX_MESSAGES = 24;
 const MAX_MESSAGE_LENGTH = 8_000;
 const MAX_CONTEXT_LENGTH = 24_000;
 const MAX_TOTAL_CONTENT_LENGTH = 32_000;
+const MAX_CHAT_IMAGES = 4;
+const MAX_CHAT_IMAGE_LENGTH = 12_000_000;
+const MAX_CHAT_IMAGES_TOTAL_LENGTH = 32_000_000;
 
 export function getAllowedAiModels() {
   return modelOptions;
@@ -24,6 +27,7 @@ export function resolveAiModel(model?: string, allowedModels = modelOptions) {
 }
 
 export function validateChatBody(body: {
+  imageDataUrls?: string[];
   model?: string;
   messages?: ChatMessage[];
   context?: string;
@@ -34,6 +38,22 @@ export function validateChatBody(body: {
 
   if (!Array.isArray(body.messages) || body.messages.length > MAX_MESSAGES) {
     return `单次对话最多支持 ${MAX_MESSAGES} 条消息`;
+  }
+
+  if (body.imageDataUrls !== undefined) {
+    if (!Array.isArray(body.imageDataUrls) || body.imageDataUrls.length > MAX_CHAT_IMAGES) {
+      return `单次对话最多支持 ${MAX_CHAT_IMAGES} 张图片`;
+    }
+    if (body.imageDataUrls.some((image) =>
+      typeof image !== "string" ||
+      !/^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(image) ||
+      image.length > MAX_CHAT_IMAGE_LENGTH
+    )) {
+      return "图片输入格式不正确或图片过大";
+    }
+    if (body.imageDataUrls.reduce((total, image) => total + image.length, 0) > MAX_CHAT_IMAGES_TOTAL_LENGTH) {
+      return "图片输入总大小过大";
+    }
   }
 
   let totalContentLength = body.context?.length ?? 0;

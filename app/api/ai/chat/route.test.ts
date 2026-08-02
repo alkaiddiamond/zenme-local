@@ -38,6 +38,23 @@ describe("ChatGPT OAuth chat request", () => {
     });
   });
 
+  it("adds connected images to the GPT-5.6 user message", () => {
+    const body = createOpenAiOAuthRequestBody({
+      imageDataUrls: ["data:image/png;base64,aW1hZ2U="],
+      messages: [{ role: "user", content: "识别图片内容" }],
+      provider: { model: "gpt-5.6-sol" },
+      systemContent: "系统提示",
+    });
+
+    expect(body.input[1]).toMatchObject({
+      role: "user",
+      content: [
+        { type: "input_text", text: "识别图片内容" },
+        { type: "input_image", image_url: "data:image/png;base64,aW1hZ2U=" },
+      ],
+    });
+  });
+
   it("adds prefetched web context without declaring a reserved tool", () => {
     const body = createOpenAiOAuthRequestBody({
       messages: [{ role: "user", content: "评价这个网站" }],
@@ -95,6 +112,22 @@ describe("Volcengine Agent Plan response request", () => {
       ],
       stream: true,
       store: false,
+    });
+  });
+
+  it("adds connected images using Responses API image parts", () => {
+    expect(createVolcengineAgentPlanResponsesRequestBody({
+      imageDataUrls: ["data:image/jpeg;base64,aW1hZ2U="],
+      messages: [{ role: "user", content: "分析图片" }],
+      provider: { model: "doubao-seed-2.0-pro" },
+      systemContent: "系统提示",
+    }).input[0]).toEqual({
+      type: "message",
+      role: "user",
+      content: [
+        { type: "input_text", text: "分析图片" },
+        { type: "input_image", image_url: "data:image/jpeg;base64,aW1hZ2U=" },
+      ],
     });
   });
 });
