@@ -4,6 +4,8 @@ import type {
   MutableRefObject,
   UIEvent,
 } from "react";
+import { useRef } from "react";
+import { OverlayScrollbars } from "@/components/zenme/nodes/overlay-scrollbar";
 
 import { EpubPagedScrollView } from "./epub-paged-scroll-view";
 import { PdfReadingView } from "./pdf-reading-view";
@@ -52,15 +54,21 @@ export function ReadingMainPane({
   selection,
   visibleRange,
 }: ReadingMainPaneProps) {
+  const scrollRef = useRef<HTMLElement | null>(null);
+
   return (
+    <div className="relative min-h-0 overflow-hidden">
     <main
-      className={`min-h-0 overflow-auto bg-zinc-100/70 ${
+      className={`zenme-overlay-scroll-container size-full overflow-auto bg-zinc-100/70 ${
         nodeMode ? "px-5 py-6" : "px-10 py-8"
       }`}
       data-reader-scroll
       onMouseUp={onMouseUp}
       onScroll={onScroll}
-      ref={readerScrollRef}
+      ref={(element) => {
+        scrollRef.current = element;
+        readerScrollRef.current = element;
+      }}
     >
       {payload.asset.format === "pdf" ? (
         <PdfReadingView
@@ -95,5 +103,7 @@ export function ReadingMainPane({
         />
       )}
     </main>
+      <OverlayScrollbars contentKey={assetId} scrollRef={scrollRef} />
+    </div>
   );
 }

@@ -178,7 +178,13 @@ describe("direct image editing workflow", () => {
       "flex h-full min-h-[176px] flex-col overflow-hidden rounded-xl",
     );
     expect(imageGenerationNodeSource).toContain(
-      "zenme-text-ai-input nodrag nowheel min-h-0 flex-1 overflow-auto",
+      'className="relative min-h-0 flex-1"',
+    );
+    expect(imageGenerationNodeSource).toContain(
+      "zenme-overlay-scroll-container ${viewportClassName",
+    );
+    expect(imageGenerationNodeSource).toContain(
+      "zenme-text-ai-input nodrag nowheel absolute inset-0 overflow-auto",
     );
   });
 

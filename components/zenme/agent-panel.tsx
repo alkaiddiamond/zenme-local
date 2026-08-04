@@ -18,6 +18,7 @@ import {
 import type { AgentMessage } from "@/components/zenme/agent-types";
 import { requestAgentChat } from "@/components/zenme/agent-chat-request";
 import { readAiChatStreamDeltas } from "@/components/zenme/canvas/ai-stream";
+import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 import {
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
@@ -131,13 +132,17 @@ export function AgentPanel({
     <AgentPanelShell>
       <AgentPanelHeader onClose={onClose} />
       <div className="flex flex-1 flex-col justify-end overflow-hidden px-6 pb-5">
-        <div className="min-h-0 flex-1 overflow-auto pb-8">
+        <OverlayScrollArea
+          className="min-h-0 flex-1"
+          contentKey={messages.map((message) => message.content).join("\u0000")}
+          viewportClassName="h-full overflow-auto pb-8"
+        >
           {messages.length === 0 ? (
             <AgentWelcomeState context={context} />
           ) : (
             <AgentMessageList messages={messages} onCopyMessage={copyMessage} />
           )}
-        </div>
+        </OverlayScrollArea>
 
         <AgentErrorNotice error={error} />
         <AgentComposer

@@ -20,12 +20,19 @@ import {
   Square,
   Star,
   Trash2,
+  Volume2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Input } from "@/components/ui/input";
 import { UserMenu } from "@/components/zenme/user-menu";
+import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
+import {
+  MusicPlaybackOverlay,
+  MusicPlaybackProvider,
+  useMusicPlayback,
+} from "@/components/zenme/music-playback-provider";
 import { cn } from "@/lib/utils";
 import {
   createProjectInApi,
@@ -80,6 +87,15 @@ function persistAppShellState(
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <MusicPlaybackProvider>
+      <AppShellContent>{children}</AppShellContent>
+    </MusicPlaybackProvider>
+  );
+}
+
+function AppShellContent({ children }: { children: React.ReactNode }) {
+  const musicPlayback = useMusicPlayback();
   const router = useRouter();
   const pathname = usePathname();
   const active = pathname === "/"
@@ -598,7 +614,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        <OverlayScrollArea
+          className="min-h-0 flex-1"
+          contentKey={`${query}\u0000${favoriteProjects.map(({ id }) => id).join(",")}\u0000${filteredProjects.map(({ id }) => id).join(",")}`}
+          viewportClassName="h-full overflow-y-auto px-3 pb-3"
+        >
           <div className="mb-4">
             <div className="mb-2 flex items-center px-1 text-xs font-medium text-[var(--color-text-secondary)]">
               <span>收藏</span>
@@ -737,7 +757,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             ) : null}
           </div>
-        </div>
+        </OverlayScrollArea>
 
         <div className="border-t border-[var(--color-border)] p-3">
           <Link
@@ -805,6 +825,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             const tabProject = tab.isProject ? projectsById.get(tab.id) : undefined;
 
             if (tab.isProject) {
+              const isPlayingSource = musicPlayback.session?.isPlaying === true &&
+                musicPlayback.session.config.projectId === tab.id;
               return (
                 <div
                   className={cn(
@@ -828,6 +850,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     title={isActive ? "点击重命名" : "打开项目"}
                     type="button"
                   >
+                    {isPlayingSource ? (
+                      <Volume2
+                        aria-label="正在播放"
+                        className="size-3.5 shrink-0 text-[var(--color-text-primary)]"
+                      />
+                    ) : null}
                     <span className="min-w-0 truncate">{tab.label}</span>
                     {pinnedProjectIds.includes(tab.id) ? (
                       <Pin className="size-3.5 shrink-0 fill-[var(--color-text-tertiary)] text-[var(--color-text-tertiary)]" />
@@ -904,11 +932,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main
         className={cn(
           "fixed bottom-0 right-0 transition-[left] duration-150 ease-out",
-          active === "canvas" ? "overflow-hidden" : "overflow-y-auto",
+          "overflow-hidden",
         )}
         style={{ left: sidebarWidth, top: TITLEBAR_HEIGHT }}
       >
-        {children}
+        <div className="relative size-full">
+          {active === "canvas" ? (
+            children
+          ) : (
+            <OverlayScrollArea
+              className="size-full"
+              viewportClassName="size-full overflow-y-auto"
+            >
+              {children}
+            </OverlayScrollArea>
+          )}
+          <MusicPlaybackOverlay />
+        </div>
       </main>
 
       {renameProjectId ? (

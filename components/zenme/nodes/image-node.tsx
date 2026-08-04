@@ -21,6 +21,7 @@ import {
   getImageEditAspectRatioOption,
   getImageEditQualityOption,
 } from "@/components/zenme/image-edit-options";
+import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 import type { CanvasNodeData } from "@/components/zenme/node-types";
 import {
   NodeActionHandle,
@@ -381,7 +382,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
               />
               <ImagePromptEditor
                 candidates={nodeData.imageReferenceCandidates ?? []}
-                className="zenme-text-ai-input min-h-24 flex-1 whitespace-pre-wrap break-words bg-transparent px-1 py-1 text-sm leading-6 text-zinc-900 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
+                className="relative min-h-24 flex-1"
                 mentions={promptMentions}
                 onBlur={(nextPrompt, nextMentions) => {
                   setPrompt(nextPrompt);
@@ -410,6 +411,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
                 prompt={prompt}
                 ref={promptEditorRef}
                 textCandidates={nodeData.imageTextReferenceCandidates ?? []}
+                viewportClassName="zenme-text-ai-input absolute inset-0 overflow-auto whitespace-pre-wrap break-words bg-transparent px-1 py-1 text-sm leading-6 text-zinc-900 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
               />
               {nodeData.imageError ? (
                 <p className="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-xs leading-5 text-red-600">
@@ -724,9 +726,12 @@ function ImagePreviewOverlay({
           {prompt ? (
             <section className="mb-4">
               <p className="mb-2 text-xs font-medium text-zinc-500">提示词</p>
-              <div className="max-h-36 overflow-auto rounded-lg bg-zinc-800/80 p-3 text-xs leading-5 text-zinc-300">
+              <OverlayScrollArea
+                contentKey={prompt}
+                viewportClassName="max-h-36 overflow-auto rounded-lg bg-zinc-800/80 p-3 text-xs leading-5 text-zinc-300"
+              >
                 {prompt}
-              </div>
+              </OverlayScrollArea>
             </section>
           ) : null}
           <section className="rounded-lg bg-zinc-800/80 p-3 text-xs leading-6 text-zinc-400">

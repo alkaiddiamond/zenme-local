@@ -41,6 +41,8 @@ import {
   NodeTargetHandle,
 } from "@/components/zenme/node-ui";
 import { NANO_BANANA_2_IMAGE_MODEL } from "@/components/zenme/canvas/node-factories";
+import { OverlayScrollbars } from "@/components/zenme/nodes/overlay-scrollbar";
+import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 import {
   type ImagePromptMention,
   normalizeImagePromptContent,
@@ -296,7 +298,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
             />
             <ImagePromptEditor
               candidates={nodeData.imageReferenceCandidates ?? []}
-              className="zenme-text-ai-input nodrag nowheel min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-transparent px-1 py-0.5 text-sm leading-5 text-zinc-900 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
+              className="relative min-h-0 flex-1"
               mentions={promptMentions}
               onBlur={(nextPrompt, nextMentions) => {
                 setPrompt(nextPrompt);
@@ -321,6 +323,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
               prompt={prompt}
               ref={promptEditorRef}
               textCandidates={nodeData.imageTextReferenceCandidates ?? []}
+              viewportClassName="zenme-text-ai-input nodrag nowheel absolute inset-0 overflow-auto whitespace-pre-wrap break-words bg-transparent px-1 py-0.5 text-sm leading-5 text-zinc-900 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
             />
             {nodeData.imageError ? (
               <p className="mt-1 rounded-md bg-red-50 px-2 py-1 text-xs leading-4 text-red-600">
@@ -633,7 +636,10 @@ export function ImageReferencePicker({
             />
           </div>
           <p className="px-1 pb-1 text-[11px] font-medium text-zinc-400">已连接节点</p>
-          <div className="max-h-52 space-y-1 overflow-auto">
+          <OverlayScrollArea
+            contentKey={`${query}\u0000${filteredCandidates.length}`}
+            viewportClassName="max-h-52 space-y-1 overflow-auto"
+          >
             {filteredCandidates.map((candidate) => {
               const selected = selectedIds.includes(candidate.nodeId);
               return (
@@ -684,7 +690,7 @@ export function ImageReferencePicker({
             {filteredCandidates.length === 0 && filteredTextCandidates.length === 0 ? (
               <p className="px-2 py-4 text-center text-xs text-zinc-400">暂无可选的已连接节点</p>
             ) : null}
-          </div>
+          </OverlayScrollArea>
         </div>
       ) : null}
     </div>
@@ -701,6 +707,7 @@ export const ImagePromptEditor = forwardRef<ImagePromptEditorHandle, {
   placeholder: string;
   prompt: string;
   textCandidates: ImagePromptTextReference[];
+  viewportClassName?: string;
 }>(function ImagePromptEditor(
   {
     candidates,
@@ -712,6 +719,7 @@ export const ImagePromptEditor = forwardRef<ImagePromptEditorHandle, {
     placeholder,
     prompt,
     textCandidates,
+    viewportClassName,
   },
   forwardedRef,
 ) {
@@ -805,8 +813,9 @@ export const ImagePromptEditor = forwardRef<ImagePromptEditorHandle, {
   }
 
   return (
+    <div className={className}>
     <div
-      className={className}
+      className={`zenme-overlay-scroll-container ${viewportClassName ?? ""}`}
       contentEditable
       data-placeholder={placeholder}
       onBlur={() => {
@@ -831,6 +840,8 @@ export const ImagePromptEditor = forwardRef<ImagePromptEditorHandle, {
       role="textbox"
       suppressContentEditableWarning
     />
+      <OverlayScrollbars contentKey={prompt} scrollRef={editorRef} />
+    </div>
   );
 });
 

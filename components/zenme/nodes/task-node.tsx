@@ -48,6 +48,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 
 const MAX_TAG_COUNT = 12;
 const MAX_TAG_LENGTH = 24;
@@ -427,7 +428,10 @@ export function TaskNode({ data, id, selected }: NodeProps) {
                       value={draftTag}
                     />
                   </div>
-                  <div className="mt-2 max-h-44 overflow-y-auto">
+                  <OverlayScrollArea
+                    contentKey={`${draftTag}\u0000${matchingProjectTags.length}`}
+                    viewportClassName="mt-2 max-h-44 overflow-y-auto"
+                  >
                     {matchingProjectTags.map((tag) => {
                       const color = getTagColor(
                         tag,
@@ -502,7 +506,7 @@ export function TaskNode({ data, id, selected }: NodeProps) {
                         暂无可选标签
                       </p>
                     ) : null}
-                  </div>
+                  </OverlayScrollArea>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
@@ -510,9 +514,11 @@ export function TaskNode({ data, id, selected }: NodeProps) {
         </header>
 
         {isChildrenExpanded ? (
-          <div
-            className="nowheel min-h-0 flex-1 overflow-y-auto px-5 py-4"
+          <OverlayScrollArea
+            className="nowheel min-h-0 flex-1"
+            contentKey={`${children.length}:${isChildrenExpanded}`}
             ref={childrenPanelRef}
+            viewportClassName="h-full overflow-y-auto px-5 py-4"
           >
             <section ref={childrenContentRef}>
               <div className="flex items-center justify-between">
@@ -553,7 +559,7 @@ export function TaskNode({ data, id, selected }: NodeProps) {
                 </div>
               )}
             </section>
-          </div>
+          </OverlayScrollArea>
         ) : null}
       </div>
 
@@ -758,7 +764,7 @@ function TaskParentMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        className="nodrag nowheel max-h-72 w-64 overflow-y-auto rounded-lg p-1.5"
+        className="nodrag nowheel max-h-72 w-64 rounded-lg p-1.5"
         onCloseAutoFocus={(event) => event.preventDefault()}
         sideOffset={6}
       >

@@ -33,6 +33,7 @@ import { getModelIdFromReference } from "@/lib/ai/model-reference";
 import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
 import { InlineFormatToolbar } from "@/components/zenme/nodes/inline-format-toolbar";
 import { NodeFrame } from "@/components/zenme/nodes/node-frame";
+import { OverlayScrollbars } from "@/components/zenme/nodes/overlay-scrollbar";
 import { renderHighlightedCode } from "@/components/zenme/nodes/renderers/code-highlight";
 import { renderMarkdown } from "@/components/zenme/nodes/renderers/markdown";
 import {
@@ -65,6 +66,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
   const markdownPreviewRef = useRef<HTMLDivElement | null>(null);
   const codeEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const codeHighlightRef = useRef<HTMLDivElement | null>(null);
+  const agentResponseRef = useRef<HTMLDivElement | null>(null);
   const editorSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSwitchingMode = useRef(false);
   const initialRichTextHtml = useMemo(
@@ -305,7 +307,6 @@ export function TextNode({ data, id, selected }: NodeProps) {
   }
 
   function handlePlainTextInput() {
-    latestTextRef.current = readEditorContent().plainText;
     scheduleEditorContentSync();
   }
 
@@ -476,33 +477,42 @@ export function TextNode({ data, id, selected }: NodeProps) {
           }`}
         >
           {displayMode === "plain" ? (
-            <div
-              className="zenme-text-node-editor nodrag nowheel h-full min-h-[176px] overflow-auto rounded-xl px-6 py-5 text-base leading-7 text-zinc-800 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
-              contentEditable
-              data-placeholder={isEditing ? "" : "点击此处编辑文本"}
-              onBlur={() => {
-                if (isSwitchingMode.current) {
-                  return;
-                }
-                setIsEditing(false);
-                syncEditorContent();
-                clearEditorSelection();
-              }}
-              onFocus={() => setIsEditing(true)}
-              onInput={handlePlainTextInput}
-              onKeyDown={handleRichTextKeyDown}
-              onPaste={handlePaste}
-              ref={editorRef}
-              tabIndex={0}
-              suppressContentEditableWarning
-            />
+            <>
+              <div
+                autoCapitalize="off"
+                autoCorrect="off"
+                className="zenme-overlay-scroll-container zenme-text-node-editor nodrag nowheel h-full min-h-[176px] overflow-auto rounded-xl px-6 py-5 text-base leading-7 text-zinc-800 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
+                contentEditable
+                data-placeholder={isEditing ? "" : "点击此处编辑文本"}
+                onBlur={() => {
+                  if (isSwitchingMode.current) {
+                    return;
+                  }
+                  setIsEditing(false);
+                  syncEditorContent();
+                  clearEditorSelection();
+                }}
+                onFocus={() => setIsEditing(true)}
+                onInput={handlePlainTextInput}
+                onKeyDown={handleRichTextKeyDown}
+                onPaste={handlePaste}
+                ref={editorRef}
+                spellCheck={false}
+                tabIndex={0}
+                suppressContentEditableWarning
+              />
+              <OverlayScrollbars
+                contentKey={initialRichTextHtml}
+                scrollRef={editorRef}
+              />
+            </>
           ) : null}
           {displayMode === "markdown" ? (
             <>
               {!isEditing ? (
                 <div
                   aria-hidden
-                  className="zenme-markdown-preview pointer-events-none absolute inset-0 overflow-auto px-6 pb-10 pt-5 text-base leading-7"
+                  className="zenme-overlay-scroll-container zenme-markdown-preview pointer-events-none absolute inset-0 overflow-auto px-6 pb-10 pt-5 text-base leading-7"
                   ref={markdownPreviewRef}
                 >
                   {plainText.trim() ? (
@@ -516,7 +526,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
               ) : null}
               <textarea
                 aria-label="Markdown 文本"
-                className={`zenme-markdown-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-6 pb-10 pt-5 text-base leading-7 caret-zinc-950 outline-none ${
+                className={`zenme-overlay-scroll-container zenme-markdown-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-6 pb-10 pt-5 text-base leading-7 caret-zinc-950 outline-none ${
                   isEditing
                     ? "text-zinc-800"
                     : "cursor-text text-transparent selection:bg-transparent"
@@ -566,20 +576,24 @@ export function TextNode({ data, id, selected }: NodeProps) {
                 spellCheck={false}
                 value={plainText}
               />
+              <OverlayScrollbars
+                contentKey={plainText}
+                scrollRef={markdownEditorRef}
+              />
             </>
           ) : null}
           {displayMode === "code" ? (
             <div className="relative h-full min-h-[176px] overflow-hidden bg-white">
               <div
                 aria-hidden
-                className="zenme-code-highlight absolute inset-0 overflow-auto px-4 py-3 font-mono text-[13px] leading-6"
+                className="zenme-overlay-scroll-container zenme-code-highlight absolute inset-0 overflow-auto px-4 py-3 font-mono text-[13px] leading-6"
                 ref={codeHighlightRef}
               >
                 {renderHighlightedCode(plainText, codeLanguage)}
               </div>
               <textarea
                 aria-label="代码内容"
-                className={`zenme-code-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-4 py-3 font-mono text-[13px] leading-6 caret-zinc-950 outline-none placeholder:text-zinc-400 ${
+                className={`zenme-overlay-scroll-container zenme-code-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-4 py-3 font-mono text-[13px] leading-6 caret-zinc-950 outline-none placeholder:text-zinc-400 ${
                   isEditing
                     ? "text-transparent"
                     : "cursor-text text-transparent selection:bg-transparent"
@@ -620,6 +634,10 @@ export function TextNode({ data, id, selected }: NodeProps) {
                 ref={codeEditorRef}
                 spellCheck={false}
                 value={plainText}
+              />
+              <OverlayScrollbars
+                contentKey={plainText}
+                scrollRef={codeEditorRef}
               />
             </div>
           ) : null}
@@ -753,32 +771,39 @@ export function TextNode({ data, id, selected }: NodeProps) {
               </button>
             </div>
           </div>
-          <div
-            className="nodrag nowheel min-h-0 flex-1 overflow-auto px-5 py-4"
-          >
+          <div className="relative min-h-0 flex-1">
             <div
-              className="zenme-agent-response-text min-h-full rounded-lg bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-800"
-              onDoubleClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              onMouseDown={selectAgentResponseWord}
+              className="zenme-overlay-scroll-container nodrag nowheel absolute inset-0 overflow-auto px-5 py-4"
+              ref={agentResponseRef}
             >
-              {isGenerating ? (
-                <div className="flex min-h-[160px] items-center justify-center gap-2 text-zinc-500">
-                  <Loader2 className="size-4 animate-spin" />
-                  AI 正在生成回复...
-                </div>
-              ) : nodeData.aiStatus === "failed" ? (
-                <div className="rounded-md bg-red-50 px-3 py-2 text-red-600">
-                  {nodeData.aiError || "文本生成失败，请稍后重试"}
-                </div>
-              ) : (
-                renderMarkdown(
-                  nodeData.aiResponse || nodeData.plainText || "暂无回复",
-                )
-              )}
+              <div
+                className="zenme-agent-response-text min-h-full rounded-lg bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-800"
+                onDoubleClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                }}
+                onMouseDown={selectAgentResponseWord}
+              >
+                {isGenerating ? (
+                  <div className="flex min-h-[160px] items-center justify-center gap-2 text-zinc-500">
+                    <Loader2 className="size-4 animate-spin" />
+                    AI 正在生成回复...
+                  </div>
+                ) : nodeData.aiStatus === "failed" ? (
+                  <div className="rounded-md bg-red-50 px-3 py-2 text-red-600">
+                    {nodeData.aiError || "文本生成失败，请稍后重试"}
+                  </div>
+                ) : (
+                  renderMarkdown(
+                    nodeData.aiResponse || nodeData.plainText || "暂无回复",
+                  )
+                )}
+              </div>
             </div>
+            <OverlayScrollbars
+              contentKey={nodeData.aiResponse || nodeData.plainText}
+              scrollRef={agentResponseRef}
+            />
           </div>
         </div>
         {selected && !suppressFloatingControls ? (

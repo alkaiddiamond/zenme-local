@@ -58,6 +58,18 @@ describe("rich text renderer helpers", () => {
     ).toBe("<p>第一行<br><br>第二行</p>");
   });
 
+  it("keeps intentional leading and trailing lines after the editor loses focus", () => {
+    expect(
+      normalizeRichTextHtml("<div>第一行</div><div><br></div>"),
+    ).toBe("<p>第一行<br></p>");
+    expect(normalizeRichTextHtml("<p>第一行<br></p>")).toBe(
+      "<p>第一行<br></p>",
+    );
+    expect(
+      normalizeRichTextHtml("<div><br></div><div>第二行</div>"),
+    ).toBe("<p><br>第二行</p>");
+  });
+
   it("removes redundant browser formatting spans that create false wrap points", () => {
     expect(
       normalizeRichTextHtml(

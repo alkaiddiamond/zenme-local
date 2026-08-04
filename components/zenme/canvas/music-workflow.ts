@@ -32,6 +32,21 @@ export function getNextMusicSourceId(
   return sourceIds[currentIndex < 0 ? 0 : (currentIndex + 1) % sourceIds.length];
 }
 
+export function getPreviousMusicSourceId(
+  sourceIds: string[],
+  currentSourceId?: string,
+) {
+  if (!sourceIds.length) return undefined;
+  const currentIndex = currentSourceId
+    ? sourceIds.indexOf(currentSourceId)
+    : -1;
+  return sourceIds[
+    currentIndex < 0
+      ? sourceIds.length - 1
+      : (currentIndex - 1 + sourceIds.length) % sourceIds.length
+  ];
+}
+
 export function normalizeMusicPlaybackTimes(
   durationValue?: number,
   currentValue?: number,

@@ -13,6 +13,7 @@ import {
   NodeTargetHandle,
 } from "@/components/zenme/node-ui";
 import { renderHighlightedCode } from "@/components/zenme/nodes/renderers/code-highlight";
+import { OverlayScrollbars } from "@/components/zenme/nodes/overlay-scrollbar";
 import { writeTextToClipboard } from "@/lib/clipboard";
 
 const CODE_LANGUAGE_OPTIONS = [
@@ -39,6 +40,7 @@ export function CodeNode({ data, id, selected }: NodeProps) {
   const [language, setLanguage] = useState(nodeData.codeLanguage ?? "python");
   const [isRenaming, setIsRenaming] = useState(false);
   const highlightRef = useRef<HTMLDivElement | null>(null);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const codeSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -136,14 +138,14 @@ export function CodeNode({ data, id, selected }: NodeProps) {
         <div className="relative min-h-0 flex-1 overflow-hidden bg-white">
           <div
             aria-hidden
-            className="zenme-code-highlight absolute inset-0 overflow-auto px-4 py-3 font-mono text-[13px] leading-6"
+            className="zenme-overlay-scroll-container zenme-code-highlight absolute inset-0 overflow-auto px-4 py-3 font-mono text-[13px] leading-6"
             ref={highlightRef}
           >
             {renderHighlightedCode(code, language)}
           </div>
           <textarea
             aria-label="代码内容"
-            className="zenme-code-editor absolute inset-0 resize-none overflow-auto bg-transparent px-4 py-3 font-mono text-[13px] leading-6 text-transparent caret-zinc-950 outline-none placeholder:text-zinc-400"
+            className="zenme-overlay-scroll-container zenme-code-editor absolute inset-0 resize-none overflow-auto bg-transparent px-4 py-3 font-mono text-[13px] leading-6 text-transparent caret-zinc-950 outline-none placeholder:text-zinc-400"
             onBlur={() => syncCode()}
             onChange={(event) => {
               const nextCode = event.target.value;
@@ -159,9 +161,11 @@ export function CodeNode({ data, id, selected }: NodeProps) {
               highlightRef.current.scrollTop = event.currentTarget.scrollTop;
             }}
             placeholder="在这里输入代码..."
+            ref={editorRef}
             spellCheck={false}
             value={code}
           />
+          <OverlayScrollbars contentKey={code} scrollRef={editorRef} />
         </div>
       </div>
       <NodeResizer

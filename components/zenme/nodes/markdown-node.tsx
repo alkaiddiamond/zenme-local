@@ -15,6 +15,7 @@ import {
 } from "@/components/zenme/node-ui";
 import { renderMarkdown } from "@/components/zenme/nodes/renderers/markdown";
 import { stripLegacyRichTextHtml } from "@/components/zenme/nodes/renderers/rich-text";
+import { OverlayScrollbars } from "@/components/zenme/nodes/overlay-scrollbar";
 
 export function MarkdownNode({ data, id, selected }: NodeProps) {
   const nodeData = data as CanvasNodeData;
@@ -155,7 +156,7 @@ export function MarkdownNode({ data, id, selected }: NodeProps) {
         {!isEditing ? (
           <div
             aria-hidden
-            className="zenme-markdown-preview pointer-events-none absolute inset-0 overflow-auto px-6 pb-10 pt-5 text-base leading-7"
+            className="zenme-overlay-scroll-container zenme-markdown-preview pointer-events-none absolute inset-0 overflow-auto px-6 pb-10 pt-5 text-base leading-7"
             ref={markdownPreviewRef}
           >
             {markdown.trim() ? (
@@ -169,7 +170,7 @@ export function MarkdownNode({ data, id, selected }: NodeProps) {
         ) : null}
         <textarea
           aria-label="Markdown 文本"
-          className={`zenme-markdown-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-6 pb-10 pt-5 text-base leading-7 caret-zinc-950 outline-none ${
+          className={`zenme-overlay-scroll-container zenme-markdown-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-6 pb-10 pt-5 text-base leading-7 caret-zinc-950 outline-none ${
             isEditing ? "text-zinc-800" : "text-transparent"
           }`}
           onBlur={() => {
@@ -202,6 +203,7 @@ export function MarkdownNode({ data, id, selected }: NodeProps) {
           spellCheck={false}
           value={markdown}
         />
+        <OverlayScrollbars contentKey={markdown} scrollRef={editorRef} />
       </div>
       <NodeResizer
         color="#a1a1aa"

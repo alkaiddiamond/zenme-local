@@ -1,7 +1,7 @@
 "use client";
 
 import type { NodeProps } from "@xyflow/react";
-import { Captions, Check, ChevronDown, ChevronUp, Music2, Pause, Play, Repeat1, Repeat2, Volume2, VolumeX } from "lucide-react";
+import { Captions, Check, ChevronDown, ChevronUp, Music2, Pause, Play, Repeat1, Repeat2, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { CanvasNodeData } from "@/components/zenme/node-types";
@@ -14,6 +14,7 @@ import {
 } from "@/components/zenme/canvas/music-workflow";
 import { NodeFrame } from "@/components/zenme/nodes/node-frame";
 import { NodeActionHandle, NodeEdgeSourceHandle, NodeTargetHandle } from "@/components/zenme/node-ui";
+import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 
 export function MusicPlayerNode({ data, selected, id }: NodeProps) {
   const node = data as CanvasNodeData;
@@ -89,18 +90,24 @@ export function MusicPlayerNode({ data, selected, id }: NodeProps) {
         )}
       </div>
       <div className="flex h-8 shrink-0 items-center gap-2">
-        <button aria-label={node.musicIsPlaying ? "暂停" : "播放"} className="nodrag flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white disabled:opacity-40" disabled={!node.originalUrl} onClick={() => node.onToggleMusicPlayback?.(id, !node.musicIsPlaying)} type="button">
-          {node.musicIsPlaying ? <Pause className="size-4" /> : <Play className="ml-0.5 size-4" />}
-        </button>
         <span className="w-10 text-[11px] text-zinc-500">{formatTime(current)}</span>
         <input aria-label="播放进度" className="nodrag min-w-0 flex-1 accent-zinc-900" disabled={!duration} max={duration || 1} min={0} onChange={(event) => node.onSeekMusicPlayer?.(id, Number(event.currentTarget.value))} step={0.1} type="range" value={current} />
         <span className="w-10 text-right text-[11px] text-zinc-500">{formatTime(duration)}</span>
       </div>
       <div className="nodrag flex h-8 shrink-0 items-center gap-2 border-t border-zinc-100 pt-2 text-xs text-zinc-600">
+        <button aria-label="上一首" className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-zinc-100 disabled:opacity-40" disabled={!node.originalUrl} onClick={() => node.onSelectAdjacentMusicSource?.(id, "previous")} type="button">
+          <SkipBack className="size-4" />
+        </button>
+        <button aria-label={node.musicIsPlaying ? "暂停" : "播放"} className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white disabled:opacity-40" disabled={!node.originalUrl} onClick={() => node.onToggleMusicPlayback?.(id, !node.musicIsPlaying)} type="button">
+          {node.musicIsPlaying ? <Pause className="size-4" /> : <Play className="ml-0.5 size-4" />}
+        </button>
+        <button aria-label="下一首" className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-zinc-100 disabled:opacity-40" disabled={!node.originalUrl} onClick={() => node.onSelectAdjacentMusicSource?.(id, "next")} type="button">
+          <SkipForward className="size-4" />
+        </button>
         <button aria-label={node.musicMuted ? "取消静音" : "静音"} aria-pressed={Boolean(node.musicMuted)} className="flex size-7 items-center justify-center rounded-md hover:bg-zinc-100" onClick={() => node.onUpdateMusicPlayback?.(id, { muted: !node.musicMuted })} type="button">
           {node.musicMuted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
         </button>
-        <input aria-label="音量" className="w-24 accent-zinc-900" max={1} min={0} onChange={(event) => node.onUpdateMusicPlayback?.(id, { volume: Number(event.currentTarget.value) })} step={0.05} type="range" value={node.musicVolume ?? 1} />
+        <input aria-label="音量" className="w-16 accent-zinc-900" max={1} min={0} onChange={(event) => node.onUpdateMusicPlayback?.(id, { volume: Number(event.currentTarget.value) })} step={0.05} type="range" value={node.musicVolume ?? 1} />
         <select aria-label="播放速度" className="h-7 rounded-md border border-zinc-200 bg-white px-2 outline-none" onChange={(event) => node.onUpdateMusicPlayback?.(id, { playbackRate: Number(event.currentTarget.value) })} value={node.musicPlaybackRate ?? 1}>
           {[0.5, 0.75, 1, 1.25, 1.5, 2].map((rate) => <option key={rate} value={rate}>{rate}×</option>)}
         </select>
@@ -142,7 +149,11 @@ export function MusicPlayerNode({ data, selected, id }: NodeProps) {
             <span className="text-zinc-400">{sources.length} 首</span>
           </div>
           {sources.length ? (
-            <ul className="max-h-[128px] overflow-y-auto">
+            <OverlayScrollArea
+              contentKey={sources.map((source) => source.id).join("|")}
+              viewportClassName="max-h-[128px] overflow-y-auto"
+            >
+              <ul>
               {sources.map((source) => {
                 const isActive = source.id === activeSource?.id;
                 return (
@@ -161,7 +172,8 @@ export function MusicPlayerNode({ data, selected, id }: NodeProps) {
                   </li>
                 );
               })}
-            </ul>
+              </ul>
+            </OverlayScrollArea>
           ) : (
             <p className="px-2 py-3 text-center text-xs text-zinc-400">连接音乐文件后将在这里显示</p>
           )}

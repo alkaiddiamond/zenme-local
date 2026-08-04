@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 
 export type MarkdownBlock = {
   alignments?: Array<"center" | "left" | "right">;
@@ -128,7 +129,12 @@ export function renderMarkdown(markdown: string) {
 
     if (block.type === "table") {
       return (
-        <div className="my-3 max-w-full overflow-x-auto rounded-md border border-zinc-200" key={block.key}>
+        <OverlayScrollArea
+          className="my-3 max-w-full rounded-md border border-zinc-200"
+          contentKey={`${block.headers?.length ?? 0}:${block.rows?.length ?? 0}`}
+          key={block.key}
+          viewportClassName="overflow-x-auto"
+        >
           <table className="w-full table-fixed border-collapse text-left text-sm text-zinc-800">
             <thead className="bg-zinc-100 text-zinc-950">
               <tr>
@@ -159,7 +165,7 @@ export function renderMarkdown(markdown: string) {
               ))}
             </tbody>
           </table>
-        </div>
+        </OverlayScrollArea>
       );
     }
 

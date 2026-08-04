@@ -480,6 +480,7 @@ describe("rendered canvas nodes", () => {
   });
 
   it("renders every connected music source and derives media from the selected source", () => {
+    const onSelectAdjacentMusicSource = vi.fn();
     const onSelectMusicSource = vi.fn();
     const onToggleMusicLyricsOverlay = vi.fn();
     const renderedNodes = getRenderedCanvasNodes({
@@ -507,6 +508,7 @@ describe("rendered canvas nodes", () => {
         }),
       ],
       onCreateTextChildNode: vi.fn(),
+      onSelectAdjacentMusicSource,
       onSelectMusicSource,
       onToggleMusicLyricsOverlay,
       onSubmitImageNode: vi.fn(),
@@ -525,6 +527,7 @@ describe("rendered canvas nodes", () => {
         { id: "music-a", title: "歌曲 A" },
         { id: "music-b", title: "歌曲 B" },
       ],
+      onSelectAdjacentMusicSource,
       onSelectMusicSource,
       onToggleMusicLyricsOverlay,
       originalUrl: "/b.mp3",

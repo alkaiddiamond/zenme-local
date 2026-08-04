@@ -783,6 +783,18 @@ html.dark ::selection {
   width: 0;
 }
 
+/* Native scrollbars reserve layout space on Windows; the overlay thumb replaces them. */
+.zenme-overlay-scroll-container {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.zenme-overlay-scroll-container::-webkit-scrollbar {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
 .zenme-canvas .zenme-node-title-bar,
 .zenme-canvas .zenme-node-title-bar * {
   cursor: grab !important;

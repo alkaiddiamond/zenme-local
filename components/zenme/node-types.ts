@@ -159,6 +159,10 @@ export type CanvasNodeData = {
   onToggleMusicPlayback?: (playerNodeId: string, playing: boolean) => void;
   onEnsureMusicPlayback?: (playerNodeId: string) => void;
   onSeekMusicPlayer?: (playerNodeId: string, seconds: number) => void;
+  onSelectAdjacentMusicSource?: (
+    playerNodeId: string,
+    direction: "next" | "previous",
+  ) => void;
   onSelectMusicSource?: (playerNodeId: string, sourceNodeId: string) => void;
   onToggleMusicLyricsOverlay?: (playerNodeId: string) => void;
   onCreateMusicChildNode?: (playerNodeId: string, kind: MusicChildNodeKind) => void;

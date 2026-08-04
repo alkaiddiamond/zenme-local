@@ -22,6 +22,7 @@ import {
   ZenmeIconButton,
 } from "@/components/zenme/visual-components";
 import type { CanvasTextSearchResult } from "@/components/zenme/canvas/text-search";
+import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 
 type CanvasSelectionToolbarProps = {
   left: number;
@@ -160,7 +161,10 @@ export function CanvasTextSearchPanel({
           <X className="size-4" />
         </button>
       </div>
-      <div className="min-h-20 overflow-y-auto p-2">
+      <OverlayScrollArea
+        contentKey={`${query}\u0000${results.length}`}
+        viewportClassName="min-h-20 overflow-y-auto p-2"
+      >
         {!query.trim() ? (
           <p className="px-3 py-6 text-center text-sm text-zinc-400">输入关键词搜索当前画布</p>
         ) : results.length === 0 ? (
@@ -192,7 +196,7 @@ export function CanvasTextSearchPanel({
             </ul>
           </>
         )}
-      </div>
+      </OverlayScrollArea>
     </section>
   );
 }

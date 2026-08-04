@@ -52,4 +52,29 @@ describe("music player node", () => {
     expect(songTitleIndex).toBeGreaterThan(-1);
     expect(waveformIndex).toBeGreaterThan(songTitleIndex);
   });
+
+  it("moves playback and adjacent-track controls to the volume row", () => {
+    const progressRowIndex = source.indexOf(
+      '<div className="flex h-8 shrink-0 items-center gap-2">',
+    );
+    const volumeRowIndex = source.indexOf(
+      '<div className="nodrag flex h-8 shrink-0 items-center gap-2 border-t',
+    );
+    const previousIndex = source.indexOf('aria-label="上一首"');
+    const playbackIndex = source.indexOf(
+      'aria-label={node.musicIsPlaying ? "暂停" : "播放"}',
+    );
+    const nextIndex = source.indexOf('aria-label="下一首"');
+    const volumeIndex = source.indexOf(
+      'aria-label={node.musicMuted ? "取消静音" : "静音"}',
+    );
+
+    expect(previousIndex).toBeGreaterThan(volumeRowIndex);
+    expect(playbackIndex).toBeGreaterThan(previousIndex);
+    expect(nextIndex).toBeGreaterThan(playbackIndex);
+    expect(volumeIndex).toBeGreaterThan(nextIndex);
+    expect(playbackIndex).toBeGreaterThan(progressRowIndex);
+    expect(source).toContain('onSelectAdjacentMusicSource?.(id, "previous")');
+    expect(source).toContain('onSelectAdjacentMusicSource?.(id, "next")');
+  });
 });

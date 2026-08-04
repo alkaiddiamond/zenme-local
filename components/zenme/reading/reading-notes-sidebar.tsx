@@ -6,6 +6,7 @@ import type {
 } from "react";
 
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
+import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 
 import { ReadingNoteCard } from "./reading-note-card";
 import type { NoteDropIndicator, PdfAnnotationDraft } from "./types";
@@ -127,7 +128,12 @@ export const ReadingNotesSidebar = memo(function ReadingNotesSidebar({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-4 py-3" ref={notesListRef}>
+      <OverlayScrollArea
+        className="min-h-0 flex-1"
+        contentKey={`${notes.length}:${editingNoteId ?? ""}`}
+        ref={notesListRef}
+        viewportClassName="h-full overflow-auto px-4 py-3"
+      >
         {notes.length === 0 ? (
           <p className="px-2 py-8 text-center text-sm text-zinc-400">
             暂无笔记
@@ -160,7 +166,7 @@ export const ReadingNotesSidebar = memo(function ReadingNotesSidebar({
             />
           ))}
         </div>
-      </div>
+      </OverlayScrollArea>
     </aside>
   );
 });

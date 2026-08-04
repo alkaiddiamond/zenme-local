@@ -12,6 +12,7 @@ import {
   findLyricsNodesNeedingRecovery,
   getNextMusicLoopMode,
   getNextMusicSourceId,
+  getPreviousMusicSourceId,
   normalizeMusicPlaybackTimes,
   normalizeMusicLoopMode,
   resolveMusicSourceNode,
@@ -112,6 +113,15 @@ describe("music workflow", () => {
     expect(getNextMusicSourceId(sourceIds, "missing")).toBe("music-1");
     expect(getNextMusicSourceId(["music-1"], "music-1")).toBe("music-1");
     expect(getNextMusicSourceId([], "music-1")).toBeUndefined();
+  });
+
+  it("moves backward and wraps connected music sources", () => {
+    const sourceIds = ["music-1", "music-2", "music-3"];
+    expect(getPreviousMusicSourceId(sourceIds, "music-2")).toBe("music-1");
+    expect(getPreviousMusicSourceId(sourceIds, "music-1")).toBe("music-3");
+    expect(getPreviousMusicSourceId(sourceIds, "missing")).toBe("music-3");
+    expect(getPreviousMusicSourceId(["music-1"], "music-1")).toBe("music-1");
+    expect(getPreviousMusicSourceId([], "music-1")).toBeUndefined();
   });
 
   it("resolves all connected music assets and honors the selected source", () => {

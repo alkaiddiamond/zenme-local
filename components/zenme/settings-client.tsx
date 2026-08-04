@@ -34,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 import type {
   ModelModality,
   ModelProviderApiFormat,
@@ -896,7 +897,10 @@ type UsageChartItem = { date: string; totalTokens: number; requests: number };
 function DailyUsageHeatmap({ days }: { days: UsageChartItem[] }) {
   const max = Math.max(1, ...days.map((day) => day.totalTokens));
   return (
-    <div className="overflow-x-auto pb-2">
+    <OverlayScrollArea
+      contentKey={days.map((day) => `${day.date}:${day.totalTokens}`).join("|")}
+      viewportClassName="overflow-x-auto pb-2"
+    >
       <div className="mb-3 flex min-w-[900px] items-center justify-between text-xs text-[var(--color-text-tertiary)]">
         <span>{formatUsageDate(days[0]?.date ?? null)}</span>
         <span>{formatUsageDate(days.at(-1)?.date ?? null)}</span>
@@ -918,7 +922,7 @@ function DailyUsageHeatmap({ days }: { days: UsageChartItem[] }) {
         ))}
         <span>多</span>
       </div>
-    </div>
+    </OverlayScrollArea>
   );
 }
 
@@ -1449,7 +1453,10 @@ function ProviderEditorModal({
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+        <OverlayScrollArea
+          className="min-h-0 flex-1"
+          viewportClassName="h-full overflow-auto px-5 py-4"
+        >
           <div className="grid gap-4">
             {isNewProvider && identifyModelProviderPreset(provider) === "custom" ? (
               <section>
@@ -1620,7 +1627,10 @@ function ProviderEditorModal({
                   <div className="mb-2 text-sm font-medium text-[var(--color-text-primary)]">
                     可添加模型
                   </div>
-                  <div className="max-h-52 space-y-2 overflow-auto pr-1">
+                  <OverlayScrollArea
+                    contentKey={fetchedModelIds.join("|")}
+                    viewportClassName="max-h-52 space-y-2 overflow-auto pr-1"
+                  >
                     {fetchedModelIds.map((modelId) => {
                       const isAdded = draft.models.some((model) => model.id === modelId);
 
@@ -1643,7 +1653,7 @@ function ProviderEditorModal({
                         </div>
                       );
                     })}
-                  </div>
+                  </OverlayScrollArea>
                 </div>
               ) : null}
               <div className="space-y-3">
@@ -1716,7 +1726,7 @@ function ProviderEditorModal({
             </section>
 
           </div>
-        </div>
+        </OverlayScrollArea>
 
         <footer className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] px-5 py-4">
           <div className="text-sm">

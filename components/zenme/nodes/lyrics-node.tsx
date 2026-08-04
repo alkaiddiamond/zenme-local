@@ -13,6 +13,7 @@ import {
   NodeTargetHandle,
 } from "@/components/zenme/node-ui";
 import { MusicChildExpandButton } from "@/components/zenme/nodes/music-child-expand-button";
+import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 import { writeTextToClipboard } from "@/lib/clipboard";
 
 export function groupLyrics(lines: MusicLyricLine[]) {
@@ -104,13 +105,17 @@ export function LyricsNode({ data, selected, id }: NodeProps) {
           {node.lyricsWarnings[0]}
         </div>
       ) : null}
-      <div className="nodrag nowheel min-h-0 flex-1 space-y-4 overflow-auto pr-1">
+      <OverlayScrollArea
+        className="nodrag nowheel min-h-0 flex-1"
+        contentKey={`${lines.length}:${activeLineKey ?? ""}`}
+        viewportClassName="h-full space-y-4 overflow-auto pr-1"
+      >
         {groupLyrics(lines).map((group, groupIndex) => <section key={`${group.label}-${groupIndex}`}>{group.label ? <p className={`sticky top-0 bg-white py-1 text-[11px] font-medium ${activeLine?.section === group.label ? "text-zinc-950" : "text-zinc-400"}`}>{group.label}</p> : null}<div className="space-y-0.5">{group.lines.map((line, index) => {
           const active = activeTime >= line.start && activeTime < (line.end ?? Number.POSITIVE_INFINITY);
           return <button className={`flex w-full items-start gap-3 rounded-md px-2 py-1.5 text-left text-sm ${active ? "bg-zinc-100 text-zinc-950" : "text-zinc-600 hover:bg-zinc-50"}`} key={line.id || `${line.start}-${index}`} onClick={() => node.musicParentPlayerNodeId && node.onSeekMusicPlayer?.(node.musicParentPlayerNodeId, line.start)} ref={active ? activeLineRef : undefined} type="button"><span className="w-10 shrink-0 pt-0.5 font-mono text-[10px] text-zinc-400">{formatTime(line.start)}</span><span>{line.text}</span></button>;
         })}</div></section>)}
         {!lines.length ? <p className="py-10 text-center text-xs text-zinc-400">{node.lyricsWarnings?.[0] || (node.lyricsFetchStatus === "failed" ? node.musicError : "正在获取同步歌词")}</p> : null}
-      </div>
+      </OverlayScrollArea>
       <NodeResizer
         color="#a1a1aa"
         handleClassName="zenme-text-resize-handle"

@@ -1,6 +1,7 @@
 import { FileText, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { memo, useEffect, useMemo, useRef } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
+import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 
 type NavigationSection = {
   endIndex: number;
@@ -90,7 +91,12 @@ export const ReadingTocSidebar = memo(function ReadingTocSidebar({
         )}
       </div>
       {!collapsed ? (
-        <div className="h-full overflow-auto px-2 py-2" ref={listRef}>
+        <OverlayScrollArea
+          className="h-full"
+          contentKey={`${navigationSections.length}:${activeNavigationIndex}`}
+          ref={listRef}
+          viewportClassName="h-full overflow-auto px-2 py-2"
+        >
           {navigationSections.map((section, index) => (
             <button
               className={`mb-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs leading-4 ${
@@ -113,7 +119,7 @@ export const ReadingTocSidebar = memo(function ReadingTocSidebar({
               ) : null}
             </button>
           ))}
-        </div>
+        </OverlayScrollArea>
       ) : null}
       {!collapsed ? (
         <div

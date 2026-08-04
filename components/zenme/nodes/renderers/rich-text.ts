@@ -60,11 +60,14 @@ export function normalizeRichTextHtml(html?: string) {
 
   const fragment = removeRedundantEditorSpans(html)
     .trim()
-    .replace(/<br\s*\/?>\s*<\/(p|div)>/gi, "</$1>")
+    .replace(/<br\s*\/?>\s*<\/(p|div)>(?=\s*<(?:p|div)\b)/gi, "</$1>")
+    .replace(
+      /<(p|div)(\s[^>]*)?>\s*<br\s*\/?>\s*<\/\1>/gi,
+      "<$1$2></$1>",
+    )
     .replace(/<(p|div)(?:\s[^>]*)?>/gi, "")
     .replace(/<\/(p|div)>/gi, "<br>")
-    .replace(/^(?:\s*<br\s*\/?>)+/gi, "")
-    .replace(/(?:<br\s*\/?>\s*)+$/gi, "");
+    .replace(/<br\s*\/?>\s*$/i, "");
 
   return fragment ? `<p>${fragment}</p>` : "";
 }

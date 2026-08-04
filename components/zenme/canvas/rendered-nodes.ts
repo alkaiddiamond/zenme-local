@@ -43,6 +43,9 @@ type RenderedCanvasNodeInput = {
   onCreateMusicPlayerNode?: NonNullable<CanvasNodeData["onCreateMusicPlayerNode"]>;
   onLocateMusicPlayerNode?: NonNullable<CanvasNodeData["onLocateMusicPlayerNode"]>;
   onSeekMusicPlayer?: NonNullable<CanvasNodeData["onSeekMusicPlayer"]>;
+  onSelectAdjacentMusicSource?: NonNullable<
+    CanvasNodeData["onSelectAdjacentMusicSource"]
+  >;
   onSelectMusicSource?: NonNullable<CanvasNodeData["onSelectMusicSource"]>;
   onToggleMusicLyricsOverlay?: NonNullable<CanvasNodeData["onToggleMusicLyricsOverlay"]>;
   onToggleMusicPlayback?: NonNullable<CanvasNodeData["onToggleMusicPlayback"]>;
@@ -171,6 +174,7 @@ export function getRenderedCanvasNodes({
   onCreateMusicPlayerNode,
   onLocateMusicPlayerNode,
   onSeekMusicPlayer,
+  onSelectAdjacentMusicSource,
   onSelectMusicSource,
   onToggleMusicLyricsOverlay,
   onToggleMusicPlayback,
@@ -406,6 +410,7 @@ export function getRenderedCanvasNodes({
           onEnsureMusicPlayback,
           onEnsureMusicWaveform,
           onSeekMusicPlayer,
+          onSelectAdjacentMusicSource,
           onSelectMusicSource,
           onToggleMusicLyricsOverlay,
           onToggleMusicPlayback,

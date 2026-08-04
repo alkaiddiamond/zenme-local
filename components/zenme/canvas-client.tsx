@@ -38,10 +38,6 @@ import {
 } from "@/components/zenme/canvas/controls";
 import { searchCanvasNodes } from "@/components/zenme/canvas/text-search";
 import {
-  MusicLyricsOverlay,
-  type MusicLyricsOverlayPosition,
-} from "@/components/zenme/canvas/music-lyrics-overlay";
-import {
   getConnectedPlaceholderPosition,
   getNextConnectedChildNodePosition,
 } from "@/components/zenme/canvas/child-layout";
@@ -250,7 +246,6 @@ import {
   createMusicPlayerUpdate,
   extractMusicLyrics,
   findLyricsNodesNeedingRefresh,
-  getNextMusicSourceId,
   getMusicApiErrorMessage,
   MUSIC_WAVEFORM_VERSION,
   normalizeMusicLoopMode,
@@ -258,7 +253,10 @@ import {
   resolveMusicSourceNodes,
 } from "@/components/zenme/canvas/music-workflow";
 import { generateLocalAudioWaveform } from "@/components/zenme/canvas/local-audio-waveform";
-import { releaseRemovedMusicPlayers } from "@/components/zenme/canvas/music-player-runtime";
+import {
+  useMusicPlayback,
+  type MusicPlaybackConfig,
+} from "@/components/zenme/music-playback-provider";
 import {
   DEFAULT_IMAGE_EDIT_ASPECT_RATIO,
   DEFAULT_IMAGE_EDIT_QUALITY,
@@ -275,24 +273,11 @@ import {
   type CanvasNodeData,
   type MusicChildNodeKind,
   type MusicLoopMode,
-  type MusicLyricLine,
   type ProjectTagAction,
 } from "@/components/zenme/node-types";
 
 type CanvasClientProps = {
   projectId: string;
-};
-
-type MusicLyricsOverlayState = {
-  playerNodeId: string;
-  position: MusicLyricsOverlayPosition;
-};
-
-type MusicLyricsOverlayContent = {
-  error?: string;
-  lines: MusicLyricLine[];
-  sourceNodeId?: string;
-  status: "idle" | "loading" | "succeeded" | "failed";
 };
 
 const THUMBNAIL_PERIODIC_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -306,6 +291,9 @@ const MINI_MAP_CLASS =
   "zenme-shadow-canvas !bottom-[66px] !left-3 !right-auto !top-auto !m-0 !h-[150px] !w-[200px] !overflow-hidden !rounded-xl !border !border-zinc-200 !bg-white/95 !backdrop-blur";
 
 export function CanvasClient({ projectId }: CanvasClientProps) {
+  const musicPlayback = useMusicPlayback();
+  const musicPlaybackRef = useRef(musicPlayback);
+  musicPlaybackRef.current = musicPlayback;
   const [nodes, setNodes, onNodesChange] =
     useNodesState<CanvasNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -314,6 +302,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const [showMiniMap, setShowMiniMap] = useState(true);
   const [isMiniMapSuspended, setIsMiniMapSuspended] = useState(false);
   const [isNodeDragging, setIsNodeDragging] = useState(false);
+  const [isViewportMoving, setIsViewportMoving] = useState(false);
   const [altDragPreviewNodes, setAltDragPreviewNodes] = useState<CanvasNode[]>([]);
   const [altDragMovingNodeIds, setAltDragMovingNodeIds] = useState<Set<string>>(
     () => new Set(),
@@ -332,10 +321,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const [isCanvasSearchOpen, setIsCanvasSearchOpen] = useState(false);
   const [canvasSearchQuery, setCanvasSearchQuery] = useState("");
   const [canvasNotice, setCanvasNotice] = useState<string | null>(null);
-  const [musicLyricsOverlay, setMusicLyricsOverlay] =
-    useState<MusicLyricsOverlayState>();
-  const [musicLyricsOverlayContent, setMusicLyricsOverlayContent] =
-    useState<MusicLyricsOverlayContent>({ lines: [], status: "idle" });
   const [agentContext, setAgentContext] = useState<string>();
   const [agentError, setAgentError] = useState<string | null>(null);
   const [agentInput, setAgentInput] = useState("");
@@ -404,6 +389,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     activeExecutionSourceNodeIdsRef.current.clear();
   }, [projectId]);
   const canvasViewportStateRef = useRef<Viewport>(canvasViewport);
+  const zoomLevelStateRef = useRef(zoomLevel);
   const reactFlowRef = useRef<ReactFlowInstance<CanvasNode, Edge> | null>(null);
   const fileUploadInputRef = useRef<HTMLInputElement | null>(null);
   const pendingUploadPosition = useRef<{ x: number; y: number } | null>(null);
@@ -440,8 +426,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     (beforeNodeSnapshots: Map<string, CanvasNode>, afterNodes: CanvasNode[]) => void
   >(() => {});
   const groupDragPosition = useRef<GroupDragPosition | null>(null);
-  const musicPlayersRef = useRef(new Map<string, HTMLAudioElement>());
-  const musicEndedHandlerRef = useRef<(playerNodeId: string) => void>(() => {});
   const musicWaveformTasksRef = useRef(new Map<string, Promise<void>>());
   const refreshingLyricsKeysRef = useRef(new Set<string>());
 
@@ -471,26 +455,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     return observeCanvasLongTasks({ projectId });
   }, [projectId]);
 
-  useEffect(
-    () => () => {
-      releaseRemovedMusicPlayers(musicPlayersRef.current, new Set());
-    },
-    [],
-  );
-
   useEffect(() => {
     nodesRef.current = nodes;
-    if (musicPlayersRef.current.size > 0) {
-      releaseRemovedMusicPlayers(
-        musicPlayersRef.current,
-        new Set(
-          nodes
-            .filter((node) => node.data.kind === "musicPlayer")
-            .map((node) => node.id),
-        ),
-      );
-    }
   }, [nodes]);
+
+  useEffect(() => {
+    musicPlaybackRef.current.setOverlayDockLeft(showMiniMap ? 224 : 12);
+  }, [showMiniMap]);
 
   useEffect(() => {
     edgesRef.current = edges;
@@ -499,6 +470,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   useEffect(() => {
     canvasViewportStateRef.current = canvasViewport;
   }, [canvasViewport]);
+
+  useEffect(() => {
+    zoomLevelStateRef.current = zoomLevel;
+  }, [zoomLevel]);
 
   useEffect(() => {
     reactFlowRef.current = reactFlow ?? null;
@@ -3910,94 +3885,51 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     focusCanvasNode(update.focusNodeId, { preserveZoom: true });
   }, [appendCanvasItems, focusCanvasNode, projectId]);
 
-  const ensureMusicPlayback = useCallback((playerNodeId: string) => {
+  const getMusicPlaybackConfig = useCallback((playerNodeId: string): MusicPlaybackConfig | undefined => {
     const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
-    const sourceNode = resolveMusicSourceNode({
+    if (!playerNode || playerNode.data.kind !== "musicPlayer") return undefined;
+    const sources = resolveMusicSourceNodes({
       edges: edgesRef.current,
       nodes: nodesRef.current,
       playerNodeId,
-      sourceNodeId: playerNode?.data.musicSourceNodeId,
     });
-    const source = sourceNode?.data.kind === "music"
-      ? sourceNode.data.originalUrl
-      : playerNode?.data.originalUrl;
-    if (!playerNode || !source) return undefined;
-
-    let audio = musicPlayersRef.current.get(playerNodeId);
-    if (!audio || audio.src !== new URL(source, window.location.href).href) {
-      audio?.pause();
-      const nextAudio = new Audio(source);
-      nextAudio.preload = "metadata";
-      nextAudio.loop = normalizeMusicLoopMode(
+    const lyricsNode = edgesRef.current.flatMap((edge) => {
+      if (edge.source !== playerNodeId) return [];
+      const target = nodesRef.current.find((node) => node.id === edge.target);
+      return target?.data.kind === "lyrics" ? [target] : [];
+    })[0];
+    return {
+      currentSourceId: playerNode.data.musicSourceNodeId,
+      loopMode: normalizeMusicLoopMode(
         playerNode.data.musicLoopMode,
         playerNode.data.musicLoop,
-      ) === "one";
-      nextAudio.muted = Boolean(playerNode.data.musicMuted);
-      nextAudio.playbackRate = playerNode.data.musicPlaybackRate ?? 1;
-      nextAudio.volume = playerNode.data.musicVolume ?? 1;
-      musicPlayersRef.current.set(playerNodeId, nextAudio);
-      setNodes((current) => current.map((node) => node.id === playerNodeId
-        ? {
-            ...node,
-            data: {
-              ...node.data,
-              musicCurrentTime: 0,
-              musicIsPlaying: false,
-            },
-          }
-        : node));
-      nextAudio.addEventListener("loadedmetadata", () => {
-        const duration = Number.isFinite(nextAudio.duration)
-          ? Math.max(0, nextAudio.duration)
-          : 0;
-        setNodes((current) => current.map((node) => node.id === playerNodeId
-          ? {
-              ...node,
-              data: {
-                ...node.data,
-                musicCurrentTime: Math.min(
-                  duration,
-                  Math.max(0, nextAudio.currentTime),
-                ),
-                musicDuration: duration,
-              },
-            }
-          : node));
-      });
-      nextAudio.addEventListener("timeupdate", () => {
-        setNodes((current) => current.map((node) => node.id === playerNodeId
-          ? { ...node, data: { ...node.data, musicCurrentTime: nextAudio.currentTime } }
-          : node));
-      });
-      nextAudio.addEventListener("ended", () => {
-        musicEndedHandlerRef.current(playerNodeId);
-      });
-      audio = nextAudio;
-    }
-    return audio;
-  }, [setNodes]);
+      ),
+      muted: playerNode.data.musicMuted,
+      playbackRate: playerNode.data.musicPlaybackRate,
+      playerNodeId,
+      projectId,
+      sources: sources.map((source) => ({
+        fileId: source.data.fileId,
+        id: source.id,
+        lyrics: lyricsNode?.data.musicLyricsSourceNodeId === source.id
+          ? lyricsNode.data.musicLyrics
+          : undefined,
+        title: source.data.title || source.data.fileName || "未命名音乐",
+        url: source.data.originalUrl,
+      })),
+      volume: playerNode.data.musicVolume,
+    };
+  }, [projectId]);
+
+  const ensureMusicPlayback = useCallback((playerNodeId: string) => {
+    const config = getMusicPlaybackConfig(playerNodeId);
+    if (config) musicPlaybackRef.current.ensurePlayback(config);
+  }, [getMusicPlaybackConfig]);
 
   const toggleMusicPlayback = useCallback((playerNodeId: string, playing: boolean) => {
-    const audio = ensureMusicPlayback(playerNodeId);
-    if (!audio) return;
-
-    for (const [id, otherAudio] of musicPlayersRef.current) {
-      if (id !== playerNodeId) otherAudio.pause();
-    }
-    setNodes((current) => current.map((node) => node.data.kind === "musicPlayer"
-      ? { ...node, data: { ...node.data, musicIsPlaying: node.id === playerNodeId && playing } }
-      : node));
-
-    if (playing) {
-      void audio.play().catch((error) => {
-        setNodes((current) => current.map((node) => node.id === playerNodeId
-          ? { ...node, data: { ...node.data, musicError: error instanceof Error ? error.message : "无法播放音乐", musicIsPlaying: false } }
-          : node));
-      });
-    } else {
-      audio.pause();
-    }
-  }, [ensureMusicPlayback, setNodes]);
+    const config = getMusicPlaybackConfig(playerNodeId);
+    if (config) musicPlaybackRef.current.togglePlayback(config, playing);
+  }, [getMusicPlaybackConfig]);
 
   const updateMusicPlayback = useCallback((playerNodeId: string, updates: {
     loop?: boolean;
@@ -4007,16 +3939,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     sourceListExpanded?: boolean;
     volume?: number;
   }) => {
-    const audio = musicPlayersRef.current.get(playerNodeId);
     const nextLoopMode = updates.loopMode ?? (
       updates.loop === undefined ? undefined : updates.loop ? "one" : "off"
     );
-    if (audio) {
-      if (nextLoopMode !== undefined) audio.loop = nextLoopMode === "one";
-      if (updates.muted !== undefined) audio.muted = updates.muted;
-      if (updates.playbackRate !== undefined) audio.playbackRate = updates.playbackRate;
-      if (updates.volume !== undefined) audio.volume = updates.volume;
-    }
+    const config = getMusicPlaybackConfig(playerNodeId);
+    if (config) musicPlaybackRef.current.updatePlayback(config, updates);
     setNodes((current) => current.map((node) => node.id === playerNodeId
       ? {
           ...node,
@@ -4033,17 +3960,12 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           },
         }
       : node));
-  }, [setNodes]);
+  }, [getMusicPlaybackConfig, setNodes]);
 
   const selectMusicSource = useCallback((playerNodeId: string, sourceNodeId: string) => {
-    const isConnectedMusicSource = edgesRef.current.some((edge) => {
-      if (edge.source !== sourceNodeId || edge.target !== playerNodeId) return false;
-      return nodesRef.current.find((node) => node.id === sourceNodeId)?.data.kind === "music";
-    });
-    if (!isConnectedMusicSource) return;
-
-    musicPlayersRef.current.get(playerNodeId)?.pause();
-    musicPlayersRef.current.delete(playerNodeId);
+    const config = getMusicPlaybackConfig(playerNodeId);
+    if (!config?.sources.some((source) => source.id === sourceNodeId)) return;
+    musicPlaybackRef.current.selectSource(config, sourceNodeId);
     const nextNodes = nodesRef.current.map((node) => node.id === playerNodeId
       ? {
           ...node,
@@ -4062,77 +3984,20 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       : node);
     nodesRef.current = nextNodes;
     setNodes(nextNodes);
-  }, [setNodes]);
+  }, [getMusicPlaybackConfig, setNodes]);
 
-  const handleMusicPlaybackEnded = useCallback((playerNodeId: string) => {
-    const playerNode = nodesRef.current.find(
-      (node) => node.id === playerNodeId && node.data.kind === "musicPlayer",
-    );
-    if (!playerNode) return;
-
-    const loopMode = normalizeMusicLoopMode(
-      playerNode.data.musicLoopMode,
-      playerNode.data.musicLoop,
-    );
-    const audio = musicPlayersRef.current.get(playerNodeId);
-
-    if (loopMode === "one" && audio) {
-      audio.currentTime = 0;
-      void audio.play().catch((error) => {
-        setNodes((current) => current.map((node) => node.id === playerNodeId
-          ? {
-              ...node,
-              data: {
-                ...node.data,
-                musicError: error instanceof Error ? error.message : "无法播放音乐",
-                musicIsPlaying: false,
-              },
-            }
-          : node));
-      });
-      return;
-    }
-
-    if (loopMode === "all") {
-      const sourceIds = resolveMusicSourceNodes({
-        edges: edgesRef.current,
-        nodes: nodesRef.current,
-        playerNodeId,
-      }).map((source) => source.id);
-      const nextSourceId = getNextMusicSourceId(
-        sourceIds,
-        playerNode.data.musicSourceNodeId,
-      );
-      if (nextSourceId) {
-        selectMusicSource(playerNodeId, nextSourceId);
-        toggleMusicPlayback(playerNodeId, true);
-        return;
-      }
-    }
-
-    setNodes((current) => current.map((node) => node.id === playerNodeId
-      ? {
-          ...node,
-          data: {
-            ...node.data,
-            musicCurrentTime: audio?.currentTime ?? node.data.musicCurrentTime,
-            musicIsPlaying: false,
-          },
-        }
-      : node));
-  }, [selectMusicSource, setNodes, toggleMusicPlayback]);
-
-  useEffect(() => {
-    musicEndedHandlerRef.current = handleMusicPlaybackEnded;
-  }, [handleMusicPlaybackEnded]);
+  const selectAdjacentMusicSource = useCallback((
+    playerNodeId: string,
+    direction: "next" | "previous",
+  ) => {
+    const config = getMusicPlaybackConfig(playerNodeId);
+    if (config) musicPlaybackRef.current.selectAdjacent(config, direction);
+  }, [getMusicPlaybackConfig]);
 
   const seekMusicPlayer = useCallback((playerNodeId: string, seconds: number) => {
-    const audio = musicPlayersRef.current.get(playerNodeId);
-    if (audio) audio.currentTime = seconds;
-    setNodes((current) => current.map((node) => node.id === playerNodeId
-      ? { ...node, data: { ...node.data, musicCurrentTime: seconds } }
-      : node));
-  }, [setNodes]);
+    const config = getMusicPlaybackConfig(playerNodeId);
+    if (config) musicPlaybackRef.current.seek(config, seconds);
+  }, [getMusicPlaybackConfig]);
 
   const ensureMusicWaveform = useCallback((playerNodeId: string) => {
     const playerNode = nodesRef.current.find((node) => node.id === playerNodeId);
@@ -4290,110 +4155,40 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     }
   }, [edges, fetchLyrics, nodes]);
 
-  const musicLyricsOverlayPlayer = musicLyricsOverlay
-    ? nodes.find((node) => node.id === musicLyricsOverlay.playerNodeId)
+  const activeMusicSession = musicPlayback.session?.config.projectId === projectId
+    ? musicPlayback.session
     : undefined;
-  const musicLyricsOverlaySource = musicLyricsOverlayPlayer?.data.kind === "musicPlayer"
-    ? resolveMusicSourceNode({
-        edges,
-        nodes,
-        playerNodeId: musicLyricsOverlayPlayer.id,
-        sourceNodeId: musicLyricsOverlayPlayer.data.musicSourceNodeId,
-      })
+  const musicLyricsOverlayPlayerId = activeMusicSession?.overlay
+    ? activeMusicSession.config.playerNodeId
     : undefined;
-  const linkedMusicLyricsNode = musicLyricsOverlayPlayer
-    ? edges.flatMap((edge) => {
-        if (edge.source !== musicLyricsOverlayPlayer.id) return [];
-        const target = nodes.find((node) => node.id === edge.target);
-        return target?.data.kind === "lyrics" ? [target] : [];
-      })[0]
-    : undefined;
-  const musicLyricsOverlayPlayerId = musicLyricsOverlay?.playerNodeId;
-  const musicLyricsOverlayPlayerExists =
-    musicLyricsOverlayPlayer?.data.kind === "musicPlayer";
-  const musicLyricsOverlaySourceId = musicLyricsOverlaySource?.id;
-  const musicLyricsOverlaySourceFileId = musicLyricsOverlaySource?.data.fileId;
-  const linkedMusicLyricsSourceId = linkedMusicLyricsNode?.data.musicLyricsSourceNodeId;
-  const linkedMusicLyricsLines = linkedMusicLyricsNode?.data.musicLyrics;
-  const linkedMusicLyricsStatus = linkedMusicLyricsNode?.data.lyricsFetchStatus;
-  const linkedMusicLyricsError = linkedMusicLyricsNode?.data.musicError;
 
   useEffect(() => {
-    if (!musicLyricsOverlayPlayerId) return;
-    if (!musicLyricsOverlayPlayerExists) {
-      setMusicLyricsOverlay(undefined);
-      return;
-    }
-    if (!musicLyricsOverlaySourceId || !musicLyricsOverlaySourceFileId) {
-      setMusicLyricsOverlayContent({
-        error: "当前播放器没有可获取歌词的音乐文件",
-        lines: [],
-        status: "failed",
-      });
-      return;
-    }
-
-    const sourceNodeId = musicLyricsOverlaySourceId;
-    if (linkedMusicLyricsNode) {
-      if (linkedMusicLyricsSourceId !== sourceNodeId) {
-        setMusicLyricsOverlayContent({ lines: [], sourceNodeId, status: "loading" });
-        return;
-      }
-      setMusicLyricsOverlayContent({
-        error: linkedMusicLyricsError,
-        lines: linkedMusicLyricsLines ?? [],
-        sourceNodeId,
-        status:
-          linkedMusicLyricsStatus === "fetching"
-            ? "loading"
-            : linkedMusicLyricsStatus ?? "idle",
-      });
-      return;
-    }
-
-    const controller = new AbortController();
-    setMusicLyricsOverlayContent({ lines: [], sourceNodeId, status: "loading" });
-    void (async () => {
-      try {
-        const response = await fetch("/api/music/lyrics", {
-          body: JSON.stringify({
-            fileId: musicLyricsOverlaySourceFileId,
-            projectId,
-          }),
-          headers: { "content-type": "application/json" },
-          method: "POST",
-          signal: controller.signal,
-        });
-        const result = await response.json().catch(() => null) as Record<string, unknown> | null;
-        if (!response.ok) throw new Error(getMusicApiErrorMessage(result));
-        setMusicLyricsOverlayContent({
-          lines: extractMusicLyrics(result ?? undefined),
-          sourceNodeId,
-          status: "succeeded",
-        });
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        setMusicLyricsOverlayContent({
-          error: error instanceof Error ? error.message : "歌词获取失败",
-          lines: [],
-          sourceNodeId,
-          status: "failed",
-        });
-      }
-    })();
-    return () => controller.abort();
-  }, [
-    linkedMusicLyricsError,
-    linkedMusicLyricsLines,
-    linkedMusicLyricsNode,
-    linkedMusicLyricsSourceId,
-    linkedMusicLyricsStatus,
-    musicLyricsOverlayPlayerExists,
-    musicLyricsOverlayPlayerId,
-    musicLyricsOverlaySourceFileId,
-    musicLyricsOverlaySourceId,
-    projectId,
-  ]);
+    if (!activeMusicSession) return;
+    setNodes((current) => current.map((node) => {
+      if (
+        node.id !== activeMusicSession.config.playerNodeId ||
+        node.data.kind !== "musicPlayer"
+      ) return node;
+      if (
+        node.data.musicCurrentTime === activeMusicSession.currentTime &&
+        node.data.musicDuration === activeMusicSession.duration &&
+        node.data.musicError === activeMusicSession.error &&
+        node.data.musicIsPlaying === activeMusicSession.isPlaying &&
+        node.data.musicSourceNodeId === activeMusicSession.currentSourceId
+      ) return node;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          musicCurrentTime: activeMusicSession.currentTime,
+          musicDuration: activeMusicSession.duration,
+          musicError: activeMusicSession.error,
+          musicIsPlaying: activeMusicSession.isPlaying,
+          musicSourceNodeId: activeMusicSession.currentSourceId,
+        },
+      };
+    }));
+  }, [activeMusicSession, setNodes]);
 
   const createMusicChild = useCallback((
     playerNodeId: string,
@@ -4423,21 +4218,16 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }, [focusCanvasNode]);
 
   const toggleMusicLyricsOverlay = useCallback((playerNodeId: string) => {
-    setMusicLyricsOverlay((current) => {
-      if (current?.playerNodeId === playerNodeId) return undefined;
-      const canvasWidth = canvasViewportRef.current?.clientWidth ?? 960;
-      const canvasHeight = canvasViewportRef.current?.clientHeight ?? 640;
-      const overlayWidth = Math.min(680, Math.max(0, canvasWidth - 32));
-      return {
-        playerNodeId,
-        position: {
-          x: Math.max(16, (canvasWidth - overlayWidth) / 2),
-          y: Math.max(16, canvasHeight * 0.12),
-        },
-      };
+    const config = getMusicPlaybackConfig(playerNodeId);
+    if (!config) return;
+    const canvasWidth = canvasViewportRef.current?.clientWidth ?? 960;
+    const canvasHeight = canvasViewportRef.current?.clientHeight ?? 640;
+    const overlayWidth = Math.min(680, Math.max(0, canvasWidth - 32));
+    musicPlaybackRef.current.toggleOverlay(config, {
+      x: Math.max(16, (canvasWidth - overlayWidth) / 2),
+      y: Math.max(16, canvasHeight * 0.12),
     });
-    setMusicLyricsOverlayContent({ lines: [], status: "idle" });
-  }, []);
+  }, [getMusicPlaybackConfig]);
 
   const locateTaskNode = useCallback((nodeId: string) => {
     focusCanvasNode(nodeId);
@@ -4448,7 +4238,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       getRenderedCanvasNodes({
         createNoteNode,
         edges,
-        musicLyricsOverlayPlayerNodeId: musicLyricsOverlay?.playerNodeId,
+        musicLyricsOverlayPlayerNodeId: musicLyricsOverlayPlayerId,
         nodes,
         onCreateMusicChildNode: createMusicChild,
         onCreateMusicPlayerNode: createMusicPlayer,
@@ -4456,6 +4246,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         onEnsureMusicWaveform: ensureMusicWaveform,
         onLocateMusicPlayerNode: locateMusicPlayer,
         onSeekMusicPlayer: seekMusicPlayer,
+        onSelectAdjacentMusicSource: selectAdjacentMusicSource,
         onSelectMusicSource: selectMusicSource,
         onToggleMusicLyricsOverlay: toggleMusicLyricsOverlay,
         onToggleMusicPlayback: toggleMusicPlayback,
@@ -4494,8 +4285,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       edges,
       nodes,
       locateMusicPlayer,
-      musicLyricsOverlay?.playerNodeId,
+      musicLyricsOverlayPlayerId,
       seekMusicPlayer,
+      selectAdjacentMusicSource,
       selectMusicSource,
       toggleMusicLyricsOverlay,
       toggleMusicPlayback,
@@ -4662,9 +4454,32 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           onDrop={handleDrop}
           onEdgesChange={onEdgesChange}
           onInit={setReactFlow}
+          onMoveStart={() => {
+            isCanvasInteractionActive.current = true;
+            setIsMiniMapSuspended(true);
+            setIsViewportMoving(true);
+          }}
           onMove={(_event, viewport) => {
+            canvasViewportStateRef.current = viewport;
+            if (zoomLevelStateRef.current !== viewport.zoom) {
+              zoomLevelStateRef.current = viewport.zoom;
+              setZoomLevel(viewport.zoom);
+            }
+          }}
+          onMoveEnd={(_event, viewport) => {
+            canvasViewportStateRef.current = viewport;
+            zoomLevelStateRef.current = viewport.zoom;
+            setCanvasViewport((currentViewport) =>
+              currentViewport.x === viewport.x &&
+              currentViewport.y === viewport.y &&
+              currentViewport.zoom === viewport.zoom
+                ? currentViewport
+                : viewport,
+            );
             setZoomLevel(viewport.zoom);
-            setCanvasViewport(viewport);
+            isCanvasInteractionActive.current = false;
+            setIsMiniMapSuspended(false);
+            setIsViewportMoving(false);
           }}
           minZoom={CANVAS_ZOOM_MIN}
           maxZoom={CANVAS_ZOOM_MAX}
@@ -4722,22 +4537,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           ) : null}
         </ReactFlow>
 
-        {musicLyricsOverlay ? (
-          <MusicLyricsOverlay
-            currentTime={musicLyricsOverlayPlayer?.data.musicCurrentTime ?? 0}
-            error={musicLyricsOverlayContent.error}
-            lines={musicLyricsOverlayContent.lines}
-            onClose={() => setMusicLyricsOverlay(undefined)}
-            onMove={(position) => setMusicLyricsOverlay((current) => current
-              ? { ...current, position }
-              : current)}
-            position={musicLyricsOverlay.position}
-            songTitle={musicLyricsOverlaySource?.data.title || "当前歌曲歌词"}
-            status={musicLyricsOverlayContent.status}
-          />
-        ) : null}
-
-        {selectionToolbarPosition && !isNodeDragging ? (
+        {selectionToolbarPosition && !isNodeDragging && !isViewportMoving ? (
           <CanvasSelectionToolbar
             left={selectionToolbarPosition.left}
             onGroupSelectedNodes={groupSelectedNodes}

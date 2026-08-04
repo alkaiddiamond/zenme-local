@@ -16,6 +16,8 @@ import {
   NodeTargetHandle,
 } from "@/components/zenme/node-ui";
 import { TextNodeComposer } from "@/components/zenme/nodes/text-node-composer";
+import { OverlayScrollbars } from "@/components/zenme/nodes/overlay-scrollbar";
+import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,9 +31,10 @@ const MAX_TAG_LENGTH = 24;
 
 export function ManagedTextNode({ data, id, selected }: NodeProps) {
   const nodeData = data as CanvasNodeData;
+  const contentEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const latestContentRef = useRef(nodeData.plainText ?? "");
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tagInputRef = useRef<HTMLInputElement | null>(null);
-  const [content, setContent] = useState(nodeData.plainText ?? "");
   const [draftName, setDraftName] = useState(nodeData.name ?? "");
   const [draftTag, setDraftTag] = useState("");
   const [isEditingContent, setIsEditingContent] = useState(false);
@@ -53,7 +56,14 @@ export function ManagedTextNode({ data, id, selected }: NodeProps) {
 
   useEffect(() => {
     if (!isEditingContent) {
-      setContent(nodeData.plainText ?? "");
+      const nextContent = nodeData.plainText ?? "";
+      latestContentRef.current = nextContent;
+      if (
+        contentEditorRef.current &&
+        contentEditorRef.current.value !== nextContent
+      ) {
+        contentEditorRef.current.value = nextContent;
+      }
     }
   }, [isEditingContent, nodeData.plainText]);
 
@@ -79,6 +89,7 @@ export function ManagedTextNode({ data, id, selected }: NodeProps) {
   );
 
   function scheduleContentSync(nextContent: string) {
+    latestContentRef.current = nextContent;
     if (syncTimer.current) {
       clearTimeout(syncTimer.current);
     }
@@ -96,8 +107,11 @@ export function ManagedTextNode({ data, id, selected }: NodeProps) {
       clearTimeout(syncTimer.current);
       syncTimer.current = null;
     }
+    const nextContent =
+      contentEditorRef.current?.value ?? latestContentRef.current;
+    latestContentRef.current = nextContent;
     nodeData.onUpdateTextNode?.(id, {
-      plainText: content,
+      plainText: nextContent,
       richTextHtml: "",
     });
   }
@@ -314,7 +328,10 @@ export function ManagedTextNode({ data, id, selected }: NodeProps) {
                   <p className="px-2 pb-1 pt-3 text-[11px] font-medium text-zinc-400">
                     选择标签或创建新标签
                   </p>
-                  <div className="max-h-48 overflow-y-auto">
+                  <OverlayScrollArea
+                    contentKey={`${draftTag}\u0000${matchingProjectTags.length}`}
+                    viewportClassName="max-h-48 overflow-y-auto"
+                  >
                     {matchingProjectTags.map((tag) => {
                       const selectedTag = tags.includes(tag);
                       const tagColor = getTagColor(
@@ -388,29 +405,38 @@ export function ManagedTextNode({ data, id, selected }: NodeProps) {
                         暂无可选标签
                       </p>
                     ) : null}
-                  </div>
+                  </OverlayScrollArea>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : null}
           </div>
         </header>
 
-        <textarea
-          aria-label="强管理节点内容"
-          className="zenme-managed-text-editor nodrag nowheel min-h-0 flex-1 resize-none overflow-auto bg-transparent px-5 py-4 text-base leading-7 text-zinc-800 outline-none placeholder:text-zinc-400"
-          onBlur={() => {
-            setIsEditingContent(false);
-            flushContent();
-          }}
-          onChange={(event) => {
-            const nextContent = event.target.value;
-            setContent(nextContent);
-            scheduleContentSync(nextContent);
-          }}
-          onFocus={() => setIsEditingContent(true)}
-          placeholder="记录内容、想法或资料..."
-          value={content}
-        />
+        <div className="relative min-h-0 flex-1">
+          <textarea
+            aria-label="强管理节点内容"
+            autoCapitalize="off"
+            autoCorrect="off"
+            className="zenme-overlay-scroll-container zenme-managed-text-editor nodrag nowheel absolute inset-0 size-full resize-none overflow-auto bg-transparent px-5 py-4 text-base leading-7 text-zinc-800 outline-none placeholder:text-zinc-400"
+            defaultValue={nodeData.plainText ?? ""}
+            onBlur={() => {
+              setIsEditingContent(false);
+              flushContent();
+            }}
+            onChange={(event) => {
+              const nextContent = event.target.value;
+              scheduleContentSync(nextContent);
+            }}
+            onFocus={() => setIsEditingContent(true)}
+            placeholder="记录内容、想法或资料..."
+            ref={contentEditorRef}
+            spellCheck={false}
+          />
+          <OverlayScrollbars
+            contentKey={nodeData.plainText}
+            scrollRef={contentEditorRef}
+          />
+        </div>
       </div>
 
       {selected && !nodeData.isMultiSelection ? (
