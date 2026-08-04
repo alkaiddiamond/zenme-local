@@ -731,7 +731,7 @@ export function getRenderedCanvasNodes({
 
       const renderedNoteNode = {
         ...nodeWithConnectionState,
-        dragHandle: ".zenme-node-title-bar",
+        dragHandle: ".zenme-node-title-bar, .zenme-node-drag-border",
         data: {
           ...nodeWithConnectionState.data,
           onSubmitTextGenerationNode,

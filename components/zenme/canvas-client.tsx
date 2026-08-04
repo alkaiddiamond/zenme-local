@@ -33,8 +33,10 @@ import {
   CanvasNotice,
   CanvasSelectionToolbar,
   CanvasSideToolbar,
+  CanvasTextSearchPanel,
   EmptyCanvasHint,
 } from "@/components/zenme/canvas/controls";
+import { searchCanvasNodes } from "@/components/zenme/canvas/text-search";
 import {
   MusicLyricsOverlay,
   type MusicLyricsOverlayPosition,
@@ -327,6 +329,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const [autoSaveIntervalMs, setAutoSaveIntervalMs] = useState(5_000);
   const [lastSavedAt, setLastSavedAt] = useState<string>();
   const [isAgentOpen, setIsAgentOpen] = useState(false);
+  const [isCanvasSearchOpen, setIsCanvasSearchOpen] = useState(false);
+  const [canvasSearchQuery, setCanvasSearchQuery] = useState("");
   const [canvasNotice, setCanvasNotice] = useState<string | null>(null);
   const [musicLyricsOverlay, setMusicLyricsOverlay] =
     useState<MusicLyricsOverlayState>();
@@ -347,6 +351,21 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     [configuredModelOptions],
   );
   const defaultTextModel = configuredModelOptions[0]?.id ?? "";
+  const canvasSearchResults = useMemo(
+    () => searchCanvasNodes(nodes, canvasSearchQuery),
+    [canvasSearchQuery, nodes],
+  );
+  const closeCanvasSearch = useCallback(() => {
+    setIsCanvasSearchOpen(false);
+    setCanvasSearchQuery("");
+  }, []);
+  const toggleCanvasSearch = useCallback(() => {
+    if (isCanvasSearchOpen) {
+      closeCanvasSearch();
+      return;
+    }
+    setIsCanvasSearchOpen(true);
+  }, [closeCanvasSearch, isCanvasSearchOpen]);
   const [nodeActionMenu, setNodeActionMenu] =
     useState<NodeActionMenuState | null>(null);
   const [canvasAddMenu, setCanvasAddMenu] =
@@ -4649,6 +4668,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           }}
           minZoom={CANVAS_ZOOM_MIN}
           maxZoom={CANVAS_ZOOM_MAX}
+          multiSelectionKeyCode="Shift"
           onNodeClick={(_event, node) => bringNodeToFront(node.id)}
           onNodeDrag={(_event, node) => moveGroupedNodesWithFrame(node)}
           onNodeDragStart={(event, node) =>
@@ -4729,7 +4749,19 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           onArrange={quickArrangeCanvas}
           onOpenAgent={() => setIsAgentOpen(true)}
           onSave={() => void saveCanvas({ includeThumbnail: true })}
+          onToggleSearch={toggleCanvasSearch}
+          searchOpen={isCanvasSearchOpen}
         />
+
+        {isCanvasSearchOpen ? (
+          <CanvasTextSearchPanel
+            onClose={closeCanvasSearch}
+            onFocusNode={(nodeId) => focusCanvasNode(nodeId, { preserveZoom: true })}
+            onQueryChange={setCanvasSearchQuery}
+            query={canvasSearchQuery}
+            results={canvasSearchResults}
+          />
+        ) : null}
 
         <CanvasBottomControls
           onFitView={() => reactFlow?.fitView({ duration: 300 })}

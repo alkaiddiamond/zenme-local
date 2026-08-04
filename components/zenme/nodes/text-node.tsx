@@ -709,7 +709,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
           }`}
         >
           <div
-            className="flex items-center justify-between gap-3 border-b border-zinc-100 px-5 py-3 text-xs text-zinc-500"
+            className="zenme-node-drag-surface flex items-center justify-between gap-3 border-b border-zinc-100 px-5 py-3 text-xs text-zinc-500"
           >
             <div className="flex min-w-0 items-center gap-2">
               <Sparkles className="size-3.5 shrink-0" />
@@ -717,7 +717,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
                 {getModelIdFromReference(nodeData.aiModel) || "AI"}
               </span>
             </div>
-            <div className="flex shrink-0 items-center gap-1">
+            <div className="nodrag flex shrink-0 items-center gap-1">
               {createdAtLabel ? (
                 <span className="mr-1 tabular-nums">{createdAtLabel}</span>
               ) : null}

@@ -166,7 +166,7 @@ Original license files remain bundled with their packages. Electron distribution
 | tr46 | 0.0.3 | MIT | [source](https://github.com/Sebmaster/tr46.js) |
 | tslib | 2.8.1 | 0BSD | [source](https://github.com/Microsoft/tslib) |
 | uint8array-extras | 1.5.0 | MIT | [source](https://github.com/sindresorhus/uint8array-extras) |
-| undici | 7.28.0 | MIT | [source](https://github.com/nodejs/undici) |
+| undici | 7.29.0 | MIT | [source](https://github.com/nodejs/undici) |
 | use-callback-ref | 1.3.3 | MIT | [source](https://github.com/theKashey/use-callback-ref/) |
 | use-sidecar | 1.1.3 | MIT | [source](https://github.com/theKashey/use-sidecar) |
 | use-sync-external-store | 1.6.0 | MIT | [source](https://github.com/facebook/react) |

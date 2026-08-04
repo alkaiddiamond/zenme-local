@@ -41,4 +41,13 @@ describe("persistent app shell", () => {
       /<Link[\s\S]*?data-desktop-no-drag[\s\S]*?title="Zenme"/,
     );
   });
+
+  it("centers the delete-project warning dialog in the viewport", () => {
+    expect(appShellSource).toMatch(
+      /\{projectPendingDeletion \? \([\s\S]*?className="fixed inset-0 z-\[90\] flex items-center justify-center bg-black\/20"/,
+    );
+    expect(appShellSource).not.toContain(
+      'className="fixed inset-0 z-[90] flex items-start justify-center bg-black/20 pt-24"',
+    );
+  });
 });

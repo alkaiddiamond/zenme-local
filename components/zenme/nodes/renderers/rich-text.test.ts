@@ -45,6 +45,19 @@ describe("rich text renderer helpers", () => {
     );
   });
 
+  it("does not count browser block placeholders as extra line breaks", () => {
+    expect(
+      normalizeRichTextHtml(
+        "<p>第一行<br></p><p><br></p><p>第二行</p>",
+      ),
+    ).toBe("<p>第一行<br><br>第二行</p>");
+    expect(
+      normalizeRichTextHtml(
+        "<div>第一行</div><div><br></div><div>第二行</div>",
+      ),
+    ).toBe("<p>第一行<br><br>第二行</p>");
+  });
+
   it("removes redundant browser formatting spans that create false wrap points", () => {
     expect(
       normalizeRichTextHtml(

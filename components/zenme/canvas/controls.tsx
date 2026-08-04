@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+
 import {
   AlertCircle,
   Bot,
@@ -10,6 +12,7 @@ import {
   Map as MapIcon,
   MessageSquareText,
   Save,
+  Search as SearchIcon,
   Sparkles,
   X,
 } from "lucide-react";
@@ -18,6 +21,7 @@ import {
   ZenmeControlButton,
   ZenmeIconButton,
 } from "@/components/zenme/visual-components";
+import type { CanvasTextSearchResult } from "@/components/zenme/canvas/text-search";
 
 type CanvasSelectionToolbarProps = {
   left: number;
@@ -52,18 +56,30 @@ type CanvasSideToolbarProps = {
   onArrange: () => void;
   onOpenAgent: () => void;
   onSave: () => void;
+  onToggleSearch: () => void;
+  searchOpen: boolean;
 };
 
 export function CanvasSideToolbar({
   onArrange,
   onOpenAgent,
   onSave,
+  onToggleSearch,
+  searchOpen,
 }: CanvasSideToolbarProps) {
   return (
     <div
       className="zenme-shadow-canvas absolute left-3 top-1/2 z-20 flex w-[53px] -translate-y-1/2 flex-col items-center gap-2 rounded-full border border-zinc-200 bg-white/95 py-3 backdrop-blur"
       data-thumbnail-hidden="true"
     >
+      <ZenmeIconButton
+        aria-pressed={searchOpen}
+        data-canvas-search-trigger="true"
+        onClick={onToggleSearch}
+        title="搜索画布"
+      >
+        <SearchIcon className="size-5" />
+      </ZenmeIconButton>
       <ZenmeIconButton onClick={onArrange} title="快速整理画布">
         <Sparkles className="size-5" />
       </ZenmeIconButton>
@@ -74,6 +90,110 @@ export function CanvasSideToolbar({
         <Save className="size-5" />
       </ZenmeIconButton>
     </div>
+  );
+}
+
+type CanvasTextSearchPanelProps = {
+  onClose: () => void;
+  onFocusNode: (nodeId: string) => void;
+  onQueryChange: (query: string) => void;
+  query: string;
+  results: CanvasTextSearchResult[];
+};
+
+export function CanvasTextSearchPanel({
+  onClose,
+  onFocusNode,
+  onQueryChange,
+  query,
+  results,
+}: CanvasTextSearchPanelProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    function closeOnOutsidePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node) || panelRef.current?.contains(target)) return;
+      if (
+        target instanceof Element
+        && target.closest("[data-canvas-search-trigger]")
+      ) return;
+      onClose();
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointerDown);
+  }, [onClose]);
+
+  return (
+    <section
+      aria-label="画布全文搜索"
+      className="zenme-shadow-dropdown absolute left-[76px] top-1/2 z-30 flex max-h-[min(520px,calc(100%-2rem))] w-[360px] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white/95 backdrop-blur"
+      data-thumbnail-hidden="true"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
+      ref={panelRef}
+    >
+      <div className="flex items-center gap-2 border-b border-zinc-100 p-3">
+        <SearchIcon className="size-4 shrink-0 text-zinc-400" />
+        <input
+          aria-label="搜索画布内容"
+          className="min-w-0 flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-400"
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder="搜索画布中的文本…"
+          ref={inputRef}
+          type="search"
+          value={query}
+        />
+        <button
+          aria-label="关闭搜索"
+          className="flex size-7 shrink-0 items-center justify-center rounded-full text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
+          onClick={onClose}
+          type="button"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+      <div className="min-h-20 overflow-y-auto p-2">
+        {!query.trim() ? (
+          <p className="px-3 py-6 text-center text-sm text-zinc-400">输入关键词搜索当前画布</p>
+        ) : results.length === 0 ? (
+          <p className="px-3 py-6 text-center text-sm text-zinc-400">未找到匹配内容</p>
+        ) : (
+          <>
+            <p className="px-2 pb-1 pt-0.5 text-xs text-zinc-400">找到 {results.length} 个节点</p>
+            <ul className="space-y-1">
+              {results.map((result) => (
+                <li key={result.id}>
+                  <button
+                    className="w-full rounded-xl px-3 py-2.5 text-left transition hover:bg-zinc-100"
+                    onClick={() => {
+                      onFocusNode(result.id);
+                      onClose();
+                    }}
+                    type="button"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900">{result.title}</span>
+                      <span className="shrink-0 text-xs text-zinc-400">{result.kindLabel}</span>
+                    </span>
+                    {result.snippet ? (
+                      <span className="mt-1 block line-clamp-2 text-xs leading-5 text-zinc-500">{result.snippet}</span>
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 
