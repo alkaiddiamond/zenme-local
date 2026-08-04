@@ -29,4 +29,13 @@ describe("text node layout", () => {
     expect(pasteHandler).toContain("plainTextToRichTextFragment(text)");
     expect(pasteHandler).not.toContain('document.execCommand("insertText"');
   });
+
+  it("treats the AI response header as a drag surface except for its actions", () => {
+    expect(textNodeSource).toContain(
+      'className="zenme-node-drag-surface flex items-center justify-between',
+    );
+    expect(textNodeSource).toContain(
+      'className="nodrag flex shrink-0 items-center gap-1"',
+    );
+  });
 });

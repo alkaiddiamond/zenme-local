@@ -509,7 +509,20 @@ html.dark ::selection {
 .zenme-canvas .react-flow__node-agent,
 .zenme-canvas .react-flow__node-code,
 .zenme-canvas .react-flow__node-markdown,
-.zenme-canvas .react-flow__node-textGeneration,
+.zenme-canvas .react-flow__node-textGeneration {
+  cursor: grab !important;
+}
+
+.zenme-canvas .react-flow__node-text.dragging,
+.zenme-canvas .react-flow__node-managedText.dragging,
+.zenme-canvas .react-flow__node-task.dragging,
+.zenme-canvas .react-flow__node-agent.dragging,
+.zenme-canvas .react-flow__node-code.dragging,
+.zenme-canvas .react-flow__node-markdown.dragging,
+.zenme-canvas .react-flow__node-textGeneration.dragging {
+  cursor: grabbing !important;
+}
+
 .zenme-canvas .react-flow__node-text *,
 .zenme-canvas .react-flow__node-managedText *,
 .zenme-canvas .react-flow__node-task *,
@@ -717,7 +730,14 @@ html.dark ::selection {
   white-space: pre-wrap;
 }
 
-.zenme-canvas .react-flow__node-note,
+.zenme-canvas .react-flow__node-note {
+  cursor: grab !important;
+}
+
+.zenme-canvas .react-flow__node-note.dragging {
+  cursor: grabbing !important;
+}
+
 .zenme-canvas .react-flow__node-note * {
   cursor: default !important;
 }
@@ -776,6 +796,62 @@ html.dark ::selection {
 .zenme-canvas .zenme-node-title-bar input,
 .zenme-canvas .zenme-node-title-bar input * {
   cursor: text !important;
+}
+
+.zenme-canvas .zenme-node-drag-border {
+  cursor: grab !important;
+  touch-action: none;
+}
+
+.zenme-canvas .zenme-node-drag-border:active {
+  cursor: grabbing !important;
+}
+
+.zenme-canvas .zenme-node-drag-border-side {
+  width: var(--zenme-node-side-drag-width, 0.5rem) !important;
+}
+
+.zenme-canvas .react-flow__node-text,
+.zenme-canvas .react-flow__node-markdown {
+  --zenme-node-side-drag-width: 1.5rem;
+}
+
+.zenme-canvas .react-flow__node-agent {
+  --zenme-node-side-drag-width: 1.25rem;
+}
+
+.zenme-canvas .react-flow__node-code,
+.zenme-canvas .react-flow__node-book,
+.zenme-canvas .react-flow__node-music,
+.zenme-canvas .react-flow__node-lyrics,
+.zenme-canvas .react-flow__node-note,
+.zenme-canvas .react-flow__node-reader {
+  --zenme-node-side-drag-width: 1rem;
+}
+
+.zenme-canvas .react-flow__node-file,
+.zenme-canvas .react-flow__node-musicPlayer,
+.zenme-canvas .react-flow__node-managedText,
+.zenme-canvas .react-flow__node-task,
+.zenme-canvas .react-flow__node-textGeneration,
+.zenme-canvas .react-flow__node-imageGeneration,
+.zenme-canvas .react-flow__node-videoGeneration {
+  --zenme-node-side-drag-width: 0.75rem;
+}
+
+.zenme-canvas .zenme-node-drag-surface,
+.zenme-canvas .zenme-node-drag-surface * {
+  cursor: grab !important;
+}
+
+.zenme-canvas .zenme-node-drag-surface:active,
+.zenme-canvas .zenme-node-drag-surface:active * {
+  cursor: grabbing !important;
+}
+
+.zenme-canvas .zenme-node-drag-surface .nodrag,
+.zenme-canvas .zenme-node-drag-surface .nodrag * {
+  cursor: default !important;
 }
 
 .zenme-canvas .zenme-node-title-icon-hitbox {

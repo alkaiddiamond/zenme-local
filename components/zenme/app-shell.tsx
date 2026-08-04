@@ -974,7 +974,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {projectPendingDeletion ? (
         <div
-          className="fixed inset-0 z-[90] flex items-start justify-center bg-black/20 pt-24"
+          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/20"
           data-desktop-no-drag
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {

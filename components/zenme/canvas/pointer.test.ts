@@ -21,4 +21,10 @@ describe("canvas pointer behavior", () => {
       "shouldPreventNativeCanvasAuxClick(event.nativeEvent)",
     );
   });
+
+  it("uses Shift for selecting multiple nodes one by one", () => {
+    expect(canvasClientSource).toContain('multiSelectionKeyCode="Shift"');
+    expect(canvasClientSource).toContain("selectionOnDrag");
+    expect(canvasClientSource).toContain("selectionKeyCode={null}");
+  });
 });
