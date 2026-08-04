@@ -6,11 +6,11 @@ describe("canvas side toolbar", () => {
   const source = readFileSync(
     new URL("./controls.tsx", import.meta.url),
     "utf8",
-  );
+  ).replaceAll("\r\n", "\n");
   const canvasClientSource = readFileSync(
     new URL("../canvas-client.tsx", import.meta.url),
     "utf8",
-  );
+  ).replaceAll("\r\n", "\n");
 
   it("keeps only working actions and exposes quick arrange", () => {
     expect(source).toContain('title="搜索画布"');

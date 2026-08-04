@@ -2,15 +2,18 @@ import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
 
-const nodesSource = readFileSync(new URL("../nodes.tsx", import.meta.url), "utf8");
+const nodesSource = readFileSync(
+  new URL("../nodes.tsx", import.meta.url),
+  "utf8",
+).replaceAll("\r\n", "\n");
 const renderedNodesSource = readFileSync(
   new URL("../canvas/rendered-nodes.ts", import.meta.url),
   "utf8",
-);
+).replaceAll("\r\n", "\n");
 const globalStyles = readFileSync(
   new URL("../../../app/globals.css", import.meta.url),
   "utf8",
-);
+).replaceAll("\r\n", "\n");
 
 describe("node border drag areas", () => {
   it("adds narrow drag targets along every edge without covering node content", () => {
