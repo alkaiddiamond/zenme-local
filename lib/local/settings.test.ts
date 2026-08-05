@@ -53,8 +53,8 @@ describe("local settings", () => {
   });
 
   it("persists a theme and falls back safely for legacy or invalid values", async () => {
-    await expect(updateLocalSettings({ theme: "dark" }, dataDir)).resolves.toMatchObject({
-      theme: "dark",
+    await expect(updateLocalSettings({ theme: "warm" }, dataDir)).resolves.toMatchObject({
+      theme: "warm",
     });
 
     await fs.writeFile(

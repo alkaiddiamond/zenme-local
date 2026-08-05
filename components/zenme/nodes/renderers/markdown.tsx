@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import katex from "katex";
 import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 
 export type MarkdownBlock = {
@@ -7,7 +8,7 @@ export type MarkdownBlock = {
   headers?: string[];
   key: string;
   rows?: string[][];
-  type: "blank" | "code" | "h1" | "h2" | "h3" | "list" | "p" | "quote" | "table";
+  type: "blank" | "code" | "h1" | "h2" | "h3" | "list" | "math" | "p" | "quote" | "table";
 };
 
 export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
@@ -39,6 +40,16 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
     }
 
     const trimmed = line.trim();
+    const mathBlock = readMathBlock(lines, index);
+    if (mathBlock) {
+      blocks.push({
+        content: mathBlock.content,
+        key: `math-${index}`,
+        type: "math",
+      });
+      index = mathBlock.endIndex;
+      continue;
+    }
     const nextLine = lines[index + 1]?.trim() ?? "";
     if (isTableRow(trimmed) && isTableSeparator(nextLine)) {
       const headers = parseTableRow(trimmed);
@@ -125,6 +136,10 @@ export function renderMarkdown(markdown: string) {
           <code>{block.content || " "}</code>
         </pre>
       );
+    }
+
+    if (block.type === "math") {
+      return renderKatex(block.content, true, block.key);
     }
 
     if (block.type === "table") {
@@ -245,10 +260,44 @@ function parseTableAlignments(line: string): Array<"center" | "left" | "right"> 
   });
 }
 
+function readMathBlock(lines: string[], startIndex: number) {
+  const trimmed = lines[startIndex].trim();
+  const delimiters = trimmed.startsWith("\\[")
+    ? { close: "\\]", open: "\\[" }
+    : trimmed.startsWith("$$")
+      ? { close: "$$", open: "$$" }
+      : undefined;
+  if (!delimiters) return undefined;
+
+  const firstLine = trimmed.slice(delimiters.open.length);
+  const firstCloseIndex = firstLine.indexOf(delimiters.close);
+  if (firstCloseIndex >= 0) {
+    return {
+      content: firstLine.slice(0, firstCloseIndex).trim(),
+      endIndex: startIndex,
+    };
+  }
+
+  const content = firstLine ? [firstLine] : [];
+  for (let index = startIndex + 1; index < lines.length; index += 1) {
+    const closeIndex = lines[index].indexOf(delimiters.close);
+    if (closeIndex >= 0) {
+      content.push(lines[index].slice(0, closeIndex));
+      return {
+        content: content.join("\n").trim(),
+        endIndex: index,
+      };
+    }
+    content.push(lines[index]);
+  }
+
+  return undefined;
+}
+
 function renderMarkdownInline(text: string) {
   const nodes: ReactNode[] = [];
   const pattern =
-    /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|<u>.*?<\/u>|\[[^\]]+\]\([^)]+\))/g;
+    /(\\\((?:\\.|[^\\])*?\\\)|(?<!\\)\$(?!\s)(?:\\.|[^$\n])+?(?<!\s)(?<!\\)\$|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|<u>.*?<\/u>|\[[^\]]+\]\([^)]+\))/g;
   let cursor = 0;
 
   for (const match of text.matchAll(pattern)) {
@@ -260,7 +309,13 @@ function renderMarkdownInline(text: string) {
     const value = match[0];
     const key = `${index}-${value}`;
 
-    if (value.startsWith("**")) {
+    if (value.startsWith("\\(") || value.startsWith("$")) {
+      nodes.push(renderKatex(
+        value.startsWith("\\(") ? value.slice(2, -2) : value.slice(1, -1),
+        false,
+        key,
+      ));
+    } else if (value.startsWith("**")) {
       nodes.push(<strong key={key}>{value.slice(2, -2)}</strong>);
     } else if (value.startsWith("*")) {
       nodes.push(<em key={key}>{value.slice(1, -1)}</em>);
@@ -292,4 +347,32 @@ function renderMarkdownInline(text: string) {
   }
 
   return nodes.length ? nodes : " ";
+}
+
+function renderKatex(content: string, displayMode: boolean, key: string) {
+  const html = katex.renderToString(content, {
+    displayMode,
+    strict: "ignore",
+    throwOnError: false,
+    trust: false,
+  });
+  if (displayMode) {
+    return (
+      <OverlayScrollArea
+        className="my-3 max-w-full"
+        contentKey={content}
+        key={key}
+        viewportClassName="overflow-x-auto overflow-y-hidden py-1 text-center"
+      >
+        <div dangerouslySetInnerHTML={{ __html: html }} />
+      </OverlayScrollArea>
+    );
+  }
+  return (
+    <span
+      className="inline-block max-w-full align-middle"
+      dangerouslySetInnerHTML={{ __html: html }}
+      key={key}
+    />
+  );
 }

@@ -186,6 +186,22 @@ describe("canvas node data update helpers", () => {
     });
   });
 
+  it("stores exact scroll offsets independently for each text mode", () => {
+    const text = node({ data: { kind: "text" }, id: "text" });
+    const textScrollState = {
+      markdown: { left: 18.5, top: 426.25 },
+      plain: { left: 0, top: 120 },
+    };
+
+    const update = createTextNodeDataUpdate({
+      nodeId: "text",
+      nodes: [text],
+      updates: { textScrollState },
+    });
+
+    expect(update?.nextNodes[0].data.textScrollState).toEqual(textScrollState);
+  });
+
   it("returns null for unchanged text updates and updates legacy code nodes", () => {
     const code = node({
       data: { codeContent: "print(1)", kind: "code" },

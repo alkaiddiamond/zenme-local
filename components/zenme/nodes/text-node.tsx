@@ -54,6 +54,23 @@ import { writeTextToClipboard } from "@/lib/clipboard";
 
 type TextDisplayMode = "code" | "markdown" | "plain";
 
+function syncScrollPositionByRatio(
+  source: HTMLElement,
+  target: HTMLElement,
+) {
+  const sourceMaxScrollLeft = source.scrollWidth - source.clientWidth;
+  const sourceMaxScrollTop = source.scrollHeight - source.clientHeight;
+  const targetMaxScrollLeft = target.scrollWidth - target.clientWidth;
+  const targetMaxScrollTop = target.scrollHeight - target.clientHeight;
+
+  target.scrollLeft = sourceMaxScrollLeft > 0
+    ? (source.scrollLeft / sourceMaxScrollLeft) * targetMaxScrollLeft
+    : 0;
+  target.scrollTop = sourceMaxScrollTop > 0
+    ? (source.scrollTop / sourceMaxScrollTop) * targetMaxScrollTop
+    : 0;
+}
+
 export function TextNode({ data, id, selected }: NodeProps) {
   const nodeData = data as CanvasNodeData;
   const isAgent = nodeData.kind === "agent";
@@ -68,6 +85,10 @@ export function TextNode({ data, id, selected }: NodeProps) {
   const codeHighlightRef = useRef<HTMLDivElement | null>(null);
   const agentResponseRef = useRef<HTMLDivElement | null>(null);
   const editorSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const plainTextDirtyRef = useRef(false);
+  const scrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const textScrollStateRef = useRef(nodeData.textScrollState ?? {});
+  const updateTextNodeRef = useRef(nodeData.onUpdateTextNode);
   const isSwitchingMode = useRef(false);
   const initialRichTextHtml = useMemo(
     () =>
@@ -90,7 +111,23 @@ export function TextNode({ data, id, selected }: NodeProps) {
   const [codeLanguage, setCodeLanguage] = useState(
     nodeData.codeLanguage ?? "python",
   );
+  const markdownPreviewContent = useMemo(
+    () =>
+      plainText.trim() ? (
+        renderMarkdown(plainText)
+      ) : (
+        <p className="text-base leading-7 text-zinc-400">
+          使用上方编辑按钮输入 Markdown
+        </p>
+      ),
+    [plainText],
+  );
+  const highlightedCode = useMemo(
+    () => renderHighlightedCode(plainText, codeLanguage),
+    [codeLanguage, plainText],
+  );
   const Icon = isAgent ? Bot : StickyNote;
+  updateTextNodeRef.current = nodeData.onUpdateTextNode;
 
   function copyText(value?: string) {
     const text = value?.trim();
@@ -150,9 +187,22 @@ export function TextNode({ data, id, selected }: NodeProps) {
       return;
     }
 
-    latestTextRef.current = initialPlainText;
-    if (!isEditing || displayMode === "plain") {
+    if (!isEditing) {
+      plainTextDirtyRef.current = false;
+      latestTextRef.current = initialPlainText;
       setPlainText(initialPlainText);
+      if (
+        markdownEditorRef.current &&
+        markdownEditorRef.current.value !== initialPlainText
+      ) {
+        markdownEditorRef.current.value = initialPlainText;
+      }
+      if (
+        codeEditorRef.current &&
+        codeEditorRef.current.value !== initialPlainText
+      ) {
+        codeEditorRef.current.value = initialPlainText;
+      }
     }
   }, [displayMode, initialPlainText, isEditing]);
 
@@ -161,13 +211,80 @@ export function TextNode({ data, id, selected }: NodeProps) {
   }, [nodeData.codeLanguage]);
 
   useEffect(() => {
+    textScrollStateRef.current = nodeData.textScrollState ?? {};
+  }, [nodeData.textScrollState]);
+
+  const savedScrollLeft = nodeData.textScrollState?.[displayMode]?.left;
+  const savedScrollTop = nodeData.textScrollState?.[displayMode]?.top;
+  useEffect(() => {
+    if (isAgent || savedScrollLeft === undefined || savedScrollTop === undefined) return;
+    const frame = window.requestAnimationFrame(() => {
+      const targets = displayMode === "plain"
+        ? [editorRef.current]
+        : displayMode === "markdown"
+          ? [markdownPreviewRef.current]
+          : [codeEditorRef.current, codeHighlightRef.current];
+      for (const target of targets) {
+        if (!target) continue;
+        target.scrollLeft = savedScrollLeft;
+        target.scrollTop = savedScrollTop;
+      }
+      if (
+        displayMode === "markdown" &&
+        markdownPreviewRef.current &&
+        markdownEditorRef.current
+      ) {
+        syncScrollPositionByRatio(
+          markdownPreviewRef.current,
+          markdownEditorRef.current,
+        );
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    displayMode,
+    isAgent,
+    savedScrollLeft,
+    savedScrollTop,
+  ]);
+
+  useEffect(() => {
     return () => {
       if (editorSyncTimer.current) {
         clearTimeout(editorSyncTimer.current);
         editorSyncTimer.current = null;
       }
+      if (scrollSaveTimer.current) {
+        clearTimeout(scrollSaveTimer.current);
+        scrollSaveTimer.current = null;
+      }
     };
   }, []);
+
+  function rememberTextScroll(
+    mode: TextDisplayMode,
+    target: { scrollLeft: number; scrollTop: number },
+  ) {
+    if (isAgent) return;
+    const currentPosition = textScrollStateRef.current[mode];
+    if (
+      currentPosition?.left === target.scrollLeft &&
+      currentPosition.top === target.scrollTop
+    ) return;
+    const nextState = {
+      ...textScrollStateRef.current,
+      [mode]: {
+        left: Math.max(0, target.scrollLeft),
+        top: Math.max(0, target.scrollTop),
+      },
+    };
+    textScrollStateRef.current = nextState;
+    if (scrollSaveTimer.current) clearTimeout(scrollSaveTimer.current);
+    scrollSaveTimer.current = setTimeout(() => {
+      scrollSaveTimer.current = null;
+      updateTextNodeRef.current?.(id, { textScrollState: nextState });
+    }, 200);
+  }
 
   function readEditorContent() {
     const editor = editorRef.current;
@@ -181,6 +298,10 @@ export function TextNode({ data, id, selected }: NodeProps) {
   function rememberText(nextText: string) {
     latestTextRef.current = nextText;
     setPlainText(nextText);
+  }
+
+  function rememberTextInput(nextText: string) {
+    latestTextRef.current = nextText;
   }
 
   function readCurrentTextContent() {
@@ -201,12 +322,16 @@ export function TextNode({ data, id, selected }: NodeProps) {
       clearTimeout(editorSyncTimer.current);
       editorSyncTimer.current = null;
     }
+    if (!plainTextDirtyRef.current) {
+      return;
+    }
 
     if (isAgent) {
       return;
     }
 
     const nextContent = readEditorContent();
+    plainTextDirtyRef.current = false;
     latestTextRef.current = nextContent.plainText;
     if (
       nextContent.plainText === (nodeData.plainText ?? "") &&
@@ -218,7 +343,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
     nodeData.onUpdateTextNode?.(id, nextContent);
   }
 
-  function syncPlainTextContent(nextText = plainText) {
+  function syncPlainTextContent(nextText = latestTextRef.current) {
     if (editorSyncTimer.current) {
       clearTimeout(editorSyncTimer.current);
       editorSyncTimer.current = null;
@@ -262,6 +387,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
 
     isSwitchingMode.current = true;
     const currentText = readCurrentTextContent();
+    plainTextDirtyRef.current = false;
     nodeData.onUpdateTextNode?.(id, {
       codeContent: nextMode === "code" ? currentText : undefined,
       codeLanguage: nextMode === "code" ? codeLanguage : nodeData.codeLanguage,
@@ -296,18 +422,8 @@ export function TextNode({ data, id, selected }: NodeProps) {
     });
   }
 
-  function scheduleEditorContentSync() {
-    if (editorSyncTimer.current) {
-      clearTimeout(editorSyncTimer.current);
-    }
-
-    editorSyncTimer.current = setTimeout(() => {
-      syncEditorContent();
-    }, 500);
-  }
-
   function handlePlainTextInput() {
-    scheduleEditorContentSync();
+    plainTextDirtyRef.current = true;
   }
 
   function applyTextCommand(command: "bold" | "italic" | "underline") {
@@ -317,6 +433,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
 
     editorRef.current.focus();
     document.execCommand(command);
+    plainTextDirtyRef.current = true;
     syncEditorContent();
   }
 
@@ -332,6 +449,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
       false,
       `<code>${escapeHtml(selectedText)}</code>`,
     );
+    plainTextDirtyRef.current = true;
     syncEditorContent();
   }
 
@@ -339,11 +457,12 @@ export function TextNode({ data, id, selected }: NodeProps) {
     const selectedText =
       displayMode === "plain"
         ? window.getSelection()?.toString().trim()
+        : displayMode === "markdown" && !isEditing
+          ? getSelectionInside(markdownPreviewRef.current)
         : getTextareaSelectionText(
             displayMode === "code"
               ? codeEditorRef.current
               : markdownEditorRef.current,
-            plainText,
           );
 
     if (!selectedText) {
@@ -362,11 +481,13 @@ export function TextNode({ data, id, selected }: NodeProps) {
     editor.focus();
     const start = editor.selectionStart;
     const end = editor.selectionEnd;
-    const selectedText = plainText.slice(start, end) || fallback;
+    const currentText = editor.value;
+    const selectedText = currentText.slice(start, end) || fallback;
     const inserted = `${prefix}${selectedText}${suffix}`;
     const nextMarkdown =
-      plainText.slice(0, start) + inserted + plainText.slice(end);
+      currentText.slice(0, start) + inserted + currentText.slice(end);
 
+    editor.value = nextMarkdown;
     rememberText(nextMarkdown);
     syncPlainTextContent(nextMarkdown);
     window.requestAnimationFrame(() => {
@@ -408,7 +529,8 @@ export function TextNode({ data, id, selected }: NodeProps) {
       editor.selectionStart,
       editor.selectionEnd,
     );
-    rememberText(update.value);
+    editor.value = update.value;
+    rememberTextInput(update.value);
     schedulePlainTextSync(update.value);
     window.requestAnimationFrame(() => {
       editor.focus();
@@ -422,6 +544,32 @@ export function TextNode({ data, id, selected }: NodeProps) {
       window.getSelection()?.removeAllRanges();
       window.requestAnimationFrame(() => editor?.focus());
     }
+  }
+
+  function toggleMarkdownEditing(nextEditing: boolean) {
+    const source = nextEditing
+      ? markdownPreviewRef.current
+      : markdownEditorRef.current;
+    const target = nextEditing
+      ? markdownEditorRef.current
+      : markdownPreviewRef.current;
+
+    if (source && target) {
+      syncScrollPositionByRatio(source, target);
+    }
+    if (!nextEditing && markdownEditorRef.current) {
+      markdownEditorRef.current.blur();
+      return;
+    }
+    setIsEditing(nextEditing);
+    window.getSelection()?.removeAllRanges();
+    window.requestAnimationFrame(() => {
+      if (nextEditing) {
+        markdownEditorRef.current?.focus();
+      } else if (markdownPreviewRef.current) {
+        rememberTextScroll("markdown", markdownPreviewRef.current);
+      }
+    });
   }
 
   if (!isAgent) {
@@ -445,6 +593,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
         {!suppressFloatingControls && (selected || isEditing) ? (
           <InlineFormatToolbar
             codeLanguage={codeLanguage}
+            markdownEditing={isEditing}
             mode={displayMode}
             onBold={() =>
               displayMode === "markdown"
@@ -464,6 +613,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
                 ? insertMarkdownMarkup("*", "*", "斜体文本")
                 : applyTextCommand("italic")
             }
+            onToggleMarkdownEditing={toggleMarkdownEditing}
             onUnderline={() =>
               displayMode === "markdown"
                 ? insertMarkdownMarkup("<u>", "</u>", "下划线文本")
@@ -496,6 +646,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
                 onInput={handlePlainTextInput}
                 onKeyDown={handleRichTextKeyDown}
                 onPaste={handlePaste}
+                onScroll={(event) => rememberTextScroll("plain", event.currentTarget)}
                 ref={editorRef}
                 spellCheck={false}
                 tabIndex={0}
@@ -509,24 +660,86 @@ export function TextNode({ data, id, selected }: NodeProps) {
           ) : null}
           {displayMode === "markdown" ? (
             <>
-              {!isEditing ? (
-                <div
-                  aria-hidden
-                  className="zenme-overlay-scroll-container zenme-markdown-preview pointer-events-none absolute inset-0 overflow-auto px-6 pb-10 pt-5 text-base leading-7"
-                  ref={markdownPreviewRef}
-                >
-                  {plainText.trim() ? (
-                    renderMarkdown(plainText)
-                  ) : (
-                    <p className="text-base leading-7 text-zinc-400">
-                      点击此处编辑 Markdown
-                    </p>
-                  )}
-                </div>
-              ) : null}
+              <div
+                className={`zenme-overlay-scroll-container zenme-markdown-preview zenme-markdown-preview-interactive nodrag nowheel absolute inset-0 select-text overflow-auto px-6 pb-10 pt-5 text-base leading-7 ${
+                  isEditing ? "pointer-events-none invisible" : ""
+                }`}
+                onScroll={(event) => {
+                  if (isEditing) return;
+                  rememberTextScroll("markdown", event.currentTarget);
+                  if (markdownEditorRef.current) {
+                    syncScrollPositionByRatio(
+                      event.currentTarget,
+                      markdownEditorRef.current,
+                    );
+                  }
+                }}
+                ref={markdownPreviewRef}
+              >
+                {markdownPreviewContent}
+              </div>
               <textarea
                 aria-label="Markdown 文本"
                 className={`zenme-overlay-scroll-container zenme-markdown-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-6 pb-10 pt-5 text-base leading-7 caret-zinc-950 outline-none ${
+                  isEditing
+                    ? "text-zinc-800"
+                    : "pointer-events-none invisible"
+                }`}
+                onBlur={() => {
+                  if (isSwitchingMode.current) {
+                    return;
+                  }
+                  const nextText = markdownEditorRef.current?.value ?? latestTextRef.current;
+                  setIsEditing(false);
+                  rememberText(nextText);
+                  syncPlainTextContent(nextText);
+                  markdownEditorRef.current?.setSelectionRange(
+                    markdownEditorRef.current.selectionEnd,
+                    markdownEditorRef.current.selectionEnd,
+                  );
+                }}
+                onChange={(event) => {
+                  const nextText = event.target.value;
+                  rememberTextInput(nextText);
+                  schedulePlainTextSync(nextText);
+                }}
+                onFocus={() => setIsEditing(true)}
+                onKeyDown={handleTextareaKeyDown}
+                onScroll={(event) => {
+                  if (!isEditing) return;
+                  if (!markdownPreviewRef.current) {
+                    return;
+                  }
+
+                  const editor = event.currentTarget;
+                  const preview = markdownPreviewRef.current;
+                  syncScrollPositionByRatio(editor, preview);
+                  rememberTextScroll("markdown", preview);
+                }}
+                ref={markdownEditorRef}
+                spellCheck={false}
+                defaultValue={plainText}
+              />
+              <OverlayScrollbars
+                contentKey={`${isEditing ? "edit" : "preview"}:${plainText}`}
+                scrollRef={isEditing ? markdownEditorRef : markdownPreviewRef}
+              />
+            </>
+          ) : null}
+          {displayMode === "code" ? (
+            <div className="relative h-full min-h-[176px] overflow-hidden bg-white">
+              <div
+                aria-hidden
+                className={`zenme-overlay-scroll-container zenme-code-highlight absolute inset-0 overflow-auto px-4 py-3 font-mono text-[13px] leading-6 ${
+                  isEditing ? "invisible" : ""
+                }`}
+                ref={codeHighlightRef}
+              >
+                {highlightedCode}
+              </div>
+              <textarea
+                aria-label="代码内容"
+                className={`zenme-overlay-scroll-container zenme-code-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-4 py-3 font-mono text-[13px] leading-6 caret-zinc-950 outline-none placeholder:text-zinc-400 ${
                   isEditing
                     ? "text-zinc-800"
                     : "cursor-text text-transparent selection:bg-transparent"
@@ -535,79 +748,14 @@ export function TextNode({ data, id, selected }: NodeProps) {
                   if (isSwitchingMode.current) {
                     return;
                   }
+                  const nextText = codeEditorRef.current?.value ?? latestTextRef.current;
                   setIsEditing(false);
-                  syncPlainTextContent(markdownEditorRef.current?.value ?? plainText);
-                  markdownEditorRef.current?.setSelectionRange(
-                    markdownEditorRef.current.selectionEnd,
-                    markdownEditorRef.current.selectionEnd,
-                  );
+                  rememberText(nextText);
+                  syncPlainTextContent(nextText);
                 }}
                 onChange={(event) => {
                   const nextText = event.target.value;
-                  rememberText(nextText);
-                  schedulePlainTextSync(nextText);
-                }}
-                onFocus={() => setIsEditing(true)}
-                onKeyDown={handleTextareaKeyDown}
-                onMouseDown={(event) => {
-                  if (isEditing) {
-                    return;
-                  }
-
-                  event.preventDefault();
-                  focusPlainTextArea(markdownEditorRef.current);
-                }}
-                onScroll={(event) => {
-                  if (!markdownPreviewRef.current) {
-                    return;
-                  }
-
-                  const editor = event.currentTarget;
-                  const preview = markdownPreviewRef.current;
-                  const editorMaxScrollTop = editor.scrollHeight - editor.clientHeight;
-                  const previewMaxScrollTop = preview.scrollHeight - preview.clientHeight;
-
-                  preview.scrollLeft = editor.scrollLeft;
-                  preview.scrollTop = editorMaxScrollTop > 0
-                    ? (editor.scrollTop / editorMaxScrollTop) * previewMaxScrollTop
-                    : 0;
-                }}
-                ref={markdownEditorRef}
-                spellCheck={false}
-                value={plainText}
-              />
-              <OverlayScrollbars
-                contentKey={plainText}
-                scrollRef={markdownEditorRef}
-              />
-            </>
-          ) : null}
-          {displayMode === "code" ? (
-            <div className="relative h-full min-h-[176px] overflow-hidden bg-white">
-              <div
-                aria-hidden
-                className="zenme-overlay-scroll-container zenme-code-highlight absolute inset-0 overflow-auto px-4 py-3 font-mono text-[13px] leading-6"
-                ref={codeHighlightRef}
-              >
-                {renderHighlightedCode(plainText, codeLanguage)}
-              </div>
-              <textarea
-                aria-label="代码内容"
-                className={`zenme-overlay-scroll-container zenme-code-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-4 py-3 font-mono text-[13px] leading-6 caret-zinc-950 outline-none placeholder:text-zinc-400 ${
-                  isEditing
-                    ? "text-transparent"
-                    : "cursor-text text-transparent selection:bg-transparent"
-                }`}
-                onBlur={() => {
-                  if (isSwitchingMode.current) {
-                    return;
-                  }
-                  setIsEditing(false);
-                  syncPlainTextContent();
-                }}
-                onChange={(event) => {
-                  const nextText = event.target.value;
-                  rememberText(nextText);
+                  rememberTextInput(nextText);
                   schedulePlainTextSync(nextText);
                 }}
                 onFocus={() => setIsEditing(true)}
@@ -621,6 +769,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
                   focusPlainTextArea(codeEditorRef.current);
                 }}
                 onScroll={(event) => {
+                  rememberTextScroll("code", event.currentTarget);
                   if (!codeHighlightRef.current) {
                     return;
                   }
@@ -633,7 +782,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
                 placeholder="在这里输入代码..."
                 ref={codeEditorRef}
                 spellCheck={false}
-                value={plainText}
+                defaultValue={plainText}
               />
               <OverlayScrollbars
                 contentKey={plainText}
@@ -865,11 +1014,25 @@ function getTextDisplayMode(nodeData: CanvasNodeData): TextDisplayMode {
 
 function getTextareaSelectionText(
   editor: HTMLTextAreaElement | null,
-  value: string,
 ) {
   if (!editor) {
     return "";
   }
 
-  return value.slice(editor.selectionStart, editor.selectionEnd).trim();
+  return editor.value.slice(editor.selectionStart, editor.selectionEnd).trim();
+}
+
+function getSelectionInside(container: HTMLElement | null) {
+  const selection = window.getSelection();
+  if (
+    !container ||
+    !selection ||
+    selection.rangeCount === 0 ||
+    selection.isCollapsed ||
+    !container.contains(selection.getRangeAt(0).commonAncestorContainer)
+  ) {
+    return "";
+  }
+
+  return selection.toString().trim();
 }

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import "@xyflow/react/dist/style.css";
+import "katex/dist/katex.min.css";
 import { AppShell } from "@/components/zenme/app-shell";
 import { ThemeController } from "@/components/zenme/theme-controller";
 import "./globals.css";
@@ -16,7 +17,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const themeScript = `(()=>{let t='light';try{const s=localStorage.getItem('zenme.theme.v1');if(s==='dark'||s==='system'||s==='light')t=s}catch{}const d=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches),e=document.documentElement;e.classList.toggle('dark',d);e.dataset.theme=t;e.style.colorScheme=d?'dark':'light'})()`;
+  const themeScript = `(()=>{let t='light';try{const s=localStorage.getItem('zenme.theme.v1');if(s==='dark'||s==='warm'||s==='system'||s==='light')t=s}catch{}const d=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches),e=document.documentElement;e.classList.toggle('dark',d);e.dataset.theme=t;e.style.colorScheme=d?'dark':'light'})()`;
 
   return (
     <html

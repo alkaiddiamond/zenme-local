@@ -604,6 +604,12 @@ const THEME_OPTIONS: Array<{
     value: "dark",
   },
   {
+    description: "柔和暖米色，降低长时间阅读的眩光",
+    icon: <Eye className="size-5" />,
+    label: "护眼",
+    value: "warm",
+  },
+  {
     description: "自动匹配系统外观设置",
     icon: <Monitor className="size-5" />,
     label: "跟随系统",
@@ -628,7 +634,7 @@ function AppearanceSettings({
           主题会应用到工作台、画布、节点、阅读器和所有弹层。
         </p>
       </div>
-      <div className="grid grid-cols-3 gap-4" role="radiogroup" aria-label="界面主题">
+      <div className="grid grid-cols-2 gap-4" role="radiogroup" aria-label="界面主题">
         {THEME_OPTIONS.map((option) => {
           const selected = theme === option.value;
           return (

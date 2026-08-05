@@ -34,6 +34,7 @@ export const CANVAS_HISTORY_TRANSIENT_DATA_KEYS = new Set([
   "musicWaveform",
   "musicWaveformSourceNodeId",
   "musicWaveformVersion",
+  "textScrollState",
 ]);
 
 export function createWelcomeNodes(): CanvasNode[] {

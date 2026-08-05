@@ -30,7 +30,9 @@ export function ThemeController() {
   useEffect(() => {
     const cachedTheme = document.documentElement.dataset.theme;
     let theme: ZenmeTheme =
-      cachedTheme === "dark" || cachedTheme === "system" ? cachedTheme : "light";
+      cachedTheme === "dark" || cachedTheme === "warm" || cachedTheme === "system"
+        ? cachedTheme
+        : "light";
     let userChanged = false;
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const apply = () => applyThemePreference(theme);
@@ -51,6 +53,7 @@ export function ThemeController() {
           userChanged ||
           (persistedTheme !== "light" &&
             persistedTheme !== "dark" &&
+            persistedTheme !== "warm" &&
             persistedTheme !== "system")
         ) {
           return;

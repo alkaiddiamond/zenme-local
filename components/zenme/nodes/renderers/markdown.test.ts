@@ -52,6 +52,30 @@ describe("parseMarkdownBlocks", () => {
     });
   });
 
+  it("parses bracketed and dollar-delimited block formulas", () => {
+    expect(parseMarkdownBlocks(
+      "之前\n\\[\nA=\\begin{bmatrix}\n1&2\\\\\n3&4\n\\end{bmatrix}\n\\]\n$$x^2$$",
+    )).toEqual([
+      { content: "之前", key: "p-0", type: "p" },
+      {
+        content: "A=\\begin{bmatrix}\n1&2\\\\\n3&4\n\\end{bmatrix}",
+        key: "math-1",
+        type: "math",
+      },
+      { content: "x^2", key: "math-7", type: "math" },
+    ]);
+  });
+
+  it("renders block matrices and inline formulas with KaTeX", () => {
+    const html = renderToStaticMarkup(renderMarkdown(
+      "\\[A=\\begin{bmatrix}1&2\\\\3&4\\end{bmatrix}\\]\n行内公式 \\(x^2+y^2\\) 和 $E=mc^2$",
+    ));
+
+    expect(html).toContain("katex-display");
+    expect(html).toContain("mtable");
+    expect(html.match(/class=\"katex\"/g)).toHaveLength(3);
+  });
+
   it("keeps rendered tables within the node and wraps long cell content", () => {
     const html = renderToStaticMarkup(
       renderMarkdown("| 名词 | 文稿对应实例 |\n|---|---|\n| 示例 | 一段很长的单元格内容 |"),

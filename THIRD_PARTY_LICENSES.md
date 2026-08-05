@@ -115,6 +115,7 @@ Original license files remain bundled with their packages. Electron distribution
 | classcat | 5.0.5 | MIT | [source](https://github.com/jorgebucaran/classcat) |
 | client-only | 0.0.1 | MIT | — |
 | clsx | 2.1.1 | MIT | [source](https://github.com/lukeed/clsx) |
+| commander | 8.3.0 | MIT | [source](https://github.com/tj/commander.js) |
 | content-type | 2.0.0 | MIT | [source](https://github.com/jshttp/content-type) |
 | csstype | 3.2.3 | MIT | [source](https://github.com/frenic/csstype) |
 | d3-color | 3.1.0 | ISC | [source](https://github.com/d3/d3-color) |
@@ -136,6 +137,7 @@ Original license files remain bundled with their packages. Electron distribution
 | idb-keyval | 6.2.5 | Apache-2.0 | [source](https://github.com/jakearchibald/idb-keyval) |
 | ieee754 | 1.2.1 | BSD-3-Clause | [source](https://github.com/feross/ieee754) |
 | is-url | 1.2.4 | MIT | [source](https://github.com/segmentio/is-url) |
+| katex | 0.16.47 | MIT | [source](https://github.com/KaTeX/KaTeX) |
 | lucide-react | 0.511.0 | ISC | [source](https://github.com/lucide-icons/lucide) |
 | media-typer | 2.0.0 | MIT | [source](https://github.com/jshttp/media-typer) |
 | ms | 2.1.3 | MIT | [source](https://github.com/vercel/ms) |

@@ -7,12 +7,12 @@ const globalStyles = readFileSync(
 );
 
 describe("primary button styles", () => {
-  it("defines visible primary gradients in light and dark themes", () => {
+  it("defines visible primary gradients in light, dark, and warm themes", () => {
     expect(
       globalStyles.match(/--gradient-btn-primary:/g),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
     expect(
       globalStyles.match(/--gradient-btn-primary-hover:/g),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
   });
 });

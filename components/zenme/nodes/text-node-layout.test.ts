@@ -40,8 +40,31 @@ describe("text node layout", () => {
       textNodeSource.indexOf("function applyTextCommand"),
     );
 
-    expect(inputHandler).toContain("scheduleEditorContentSync()");
+    expect(inputHandler).toContain("plainTextDirtyRef.current = true");
+    expect(inputHandler).not.toContain("setTimeout");
     expect(inputHandler).not.toContain("readEditorContent()");
+    expect(textNodeSource).toContain("if (!plainTextDirtyRef.current)");
+    expect(textNodeSource).toContain("plainTextDirtyRef.current = false");
+  });
+
+  it("keeps Markdown and code typing outside the node render cycle", () => {
+    const markdownEditor = textNodeSource.slice(
+      textNodeSource.indexOf('aria-label="Markdown 文本"'),
+      textNodeSource.indexOf('contentKey={`${isEditing ? "edit"'),
+    );
+    const codeEditor = textNodeSource.slice(
+      textNodeSource.indexOf('aria-label="代码内容"'),
+      textNodeSource.indexOf("<OverlayScrollbars", textNodeSource.indexOf('aria-label="代码内容"')),
+    );
+
+    expect(markdownEditor).toContain("defaultValue={plainText}");
+    expect(markdownEditor).toContain("rememberTextInput(nextText)");
+    expect(markdownEditor).not.toContain("value={plainText}");
+    expect(codeEditor).toContain("defaultValue={plainText}");
+    expect(codeEditor).toContain("rememberTextInput(nextText)");
+    expect(codeEditor).not.toContain("value={plainText}");
+    expect(textNodeSource).toContain("const markdownPreviewContent = useMemo(");
+    expect(textNodeSource).toContain("const highlightedCode = useMemo(");
   });
 
   it("disables browser writing assistance in the long-form editor", () => {
@@ -83,5 +106,35 @@ describe("text node layout", () => {
       ".zenme-overlay-scroll-container::-webkit-scrollbar",
     );
     expect(globalStylesSource).toContain("display: none");
+  });
+
+  it("restores and debounces exact scroll offsets for each text mode", () => {
+    expect(textNodeSource).toContain("nodeData.textScrollState?.[displayMode]?.left");
+    expect(textNodeSource).toContain("nodeData.textScrollState?.[displayMode]?.top");
+    expect(textNodeSource).toContain('rememberTextScroll("plain"');
+    expect(textNodeSource).toContain('rememberTextScroll("markdown"');
+    expect(textNodeSource).toContain('rememberTextScroll("code"');
+    expect(textNodeSource).toContain("left: Math.max(0, target.scrollLeft)");
+    expect(textNodeSource).toContain("top: Math.max(0, target.scrollTop)");
+    expect(textNodeSource).toContain("}, 200)");
+  });
+
+  it("keeps rendered Markdown selectable until explicit source editing", () => {
+    const markdownView = textNodeSource.slice(
+      textNodeSource.indexOf('{displayMode === "markdown" ? ('),
+      textNodeSource.indexOf('{displayMode === "code" ? ('),
+    );
+
+    expect(markdownView).toContain("zenme-markdown-preview zenme-markdown-preview-interactive");
+    expect(markdownView).toContain("select-text overflow-auto");
+    expect(markdownView).toContain('isEditing ? "pointer-events-none invisible" : ""');
+    expect(markdownView).not.toContain("focusPlainTextArea(markdownEditorRef.current)");
+    expect(textNodeSource).toContain("onToggleMarkdownEditing={toggleMarkdownEditing}");
+    expect(textNodeSource).toContain("syncScrollPositionByRatio(editor, preview)");
+    expect(textNodeSource).toContain('rememberTextScroll("markdown", preview)');
+    expect(globalStylesSource).toContain(
+      ".zenme-markdown-preview.zenme-markdown-preview-interactive",
+    );
+    expect(globalStylesSource).toContain("pointer-events: auto !important");
   });
 });

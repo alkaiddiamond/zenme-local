@@ -89,6 +89,7 @@ export function createTextNodeDataUpdate(input: {
       | "plainText"
       | "richTextHtml"
       | "textMode"
+      | "textScrollState"
       | "title"
       | "name"
       | "tags"
@@ -103,6 +104,7 @@ export function createTextNodeDataUpdate(input: {
       "plainText",
       "richTextHtml",
       "textMode",
+      "textScrollState",
       "title",
       "name",
       "tags",

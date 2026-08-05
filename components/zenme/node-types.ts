@@ -4,6 +4,9 @@ import type { ImageCameraControl } from "@/components/zenme/image-edit-options";
 
 export type MusicChildNodeKind = "lyrics";
 export type MusicLoopMode = "off" | "one" | "all";
+export type TextDisplayMode = "code" | "markdown" | "plain";
+export type TextScrollPosition = { left: number; top: number };
+export type TextScrollState = Partial<Record<TextDisplayMode, TextScrollPosition>>;
 
 export type MusicLyricLine = {
   end?: number;
@@ -189,6 +192,7 @@ export type CanvasNodeData = {
   codeLanguage?: string;
   textMode?: "code" | "markdown" | "plain";
   textExpanded?: boolean;
+  textScrollState?: TextScrollState;
   aiPrompt?: string;
   aiResponse?: string;
   aiModel?: string;
@@ -342,6 +346,7 @@ export type CanvasNodeData = {
         | "plainText"
         | "richTextHtml"
         | "textMode"
+        | "textScrollState"
         | "title"
         | "name"
         | "tags"

@@ -21,7 +21,7 @@ export type ZenmeLocalSettings = {
   modelProviders: ModelProviderConfig[];
 };
 
-export type ZenmeTheme = "light" | "dark" | "system";
+export type ZenmeTheme = "light" | "dark" | "warm" | "system";
 
 export type NetworkProxyMode = "environment" | "custom" | "direct";
 
@@ -143,6 +143,7 @@ function normalizeLocalSettings(
         : defaults.autoSaveIntervalMs,
     theme:
       settings.theme === "dark" ||
+      settings.theme === "warm" ||
       settings.theme === "system" ||
       settings.theme === "light"
         ? settings.theme

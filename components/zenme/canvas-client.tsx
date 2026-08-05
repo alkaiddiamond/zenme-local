@@ -1855,6 +1855,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         richTextHtml?: string;
         tags?: string[];
         textMode?: "code" | "markdown" | "plain";
+        textScrollState?: CanvasNodeData["textScrollState"];
         title?: string;
       },
     ) => {
@@ -1865,6 +1866,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         updates,
       });
       if (!update) return;
+
+      if (Object.keys(updates).every((key) => key === "textScrollState")) {
+        setNodes(update.nextNodes);
+        return;
+      }
 
       skipNextHistoryEntryCount.current += 1;
       setNodes(update.nextNodes);

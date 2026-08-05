@@ -2,17 +2,19 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { useViewport } from "@xyflow/react";
-import { Bold, Code2, Italic, Plus, Underline } from "lucide-react";
+import { Bold, Code2, Eye, Italic, Pencil, Plus, Underline } from "lucide-react";
 
 type InlineFormatToolbarProps = {
   codeLanguage?: string;
   mode?: "code" | "markdown" | "plain";
+  markdownEditing?: boolean;
   onBold: () => void;
   onChangeCodeLanguage?: (language: string) => void;
   onChangeMode?: (mode: "code" | "markdown" | "plain") => void;
   onCode: () => void;
   onCreateNode: () => void;
   onItalic: () => void;
+  onToggleMarkdownEditing?: (editing: boolean) => void;
   onUnderline: () => void;
 };
 
@@ -37,12 +39,14 @@ const CODE_LANGUAGE_OPTIONS = [
 export function InlineFormatToolbar({
   codeLanguage,
   mode,
+  markdownEditing,
   onBold,
   onChangeCodeLanguage,
   onChangeMode,
   onCode,
   onCreateNode,
   onItalic,
+  onToggleMarkdownEditing,
   onUnderline,
 }: InlineFormatToolbarProps) {
   const { zoom } = useViewport();
@@ -77,6 +81,18 @@ export function InlineFormatToolbar({
       {shouldShowModeControls ? (
         <>
           <span className="mx-1 h-6 w-px bg-zinc-200" />
+          {mode === "markdown" && onToggleMarkdownEditing ? (
+            <InlineFormatButton
+              label={markdownEditing ? "预览 Markdown" : "编辑 Markdown 源码"}
+              onPress={() => onToggleMarkdownEditing(!markdownEditing)}
+            >
+              {markdownEditing ? (
+                <Eye className="size-4" />
+              ) : (
+                <Pencil className="size-4" />
+              )}
+            </InlineFormatButton>
+          ) : null}
           <TextModeButton
             active={mode === "plain"}
             label="纯文本"
