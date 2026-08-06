@@ -14,7 +14,12 @@ import {
   parseEpubSections,
   readEpubTitle,
 } from "@/lib/reading/parsers/epub-parser";
-import { parseTxtSections } from "@/lib/reading/parsers/txt-parser";
+import {
+  decodeTxtBytes,
+  parseTxtSections,
+  shouldRebuildTxtSections,
+} from "@/lib/reading/parsers/txt-parser";
+import { parseMarkdownSections } from "@/lib/reading/parsers/markdown-parser";
 import {
   normalizeReadingContentScale,
   normalizeReadingScrollRatio,
@@ -38,6 +43,7 @@ import {
 export function detectLocalReadingFormat(fileName: string): ReadingFormat | null {
   const ext = path.extname(fileName).toLowerCase();
   if (ext === ".epub") return "epub";
+  if (ext === ".md" || ext === ".markdown") return "markdown";
   if (ext === ".pdf") return "pdf";
   if (ext === ".txt") return "txt";
   return null;
@@ -164,13 +170,25 @@ export async function getLocalReadingSections(
 ) {
   const location = await findReadingAssetLocation(assetId, dataDir);
   if (!location) throw new Error("阅读资料不存在");
-  return readJsonFile<ReadingSection[]>(
+  const sections = await readJsonFile<ReadingSection[]>(
     resolveInside(location.assetDir, "sections.json"),
     {
       defaultValue: [],
       normalize: normalizeSections,
     },
   );
+  const asset = await readAssetJson(location.assetDir);
+  if (asset.format !== "txt" || !shouldRebuildTxtSections(sections)) {
+    return sections;
+  }
+
+  const bytes = await fs.readFile(resolveInside(location.assetDir, asset.filePath));
+  const rebuiltSections = parseTxtSections(decodeTxtBytes(bytes));
+  await writeJsonFile(
+    resolveInside(location.assetDir, "sections.json"),
+    rebuiltSections,
+  );
+  return rebuiltSections;
 }
 
 export async function listLocalReadingNotes(
@@ -208,6 +226,7 @@ export async function createLocalReadingNote(
     type: normalizeReadingType(input.type),
     offset: input.offset ?? null,
     length: input.length ?? null,
+    ranges: input.ranges ?? null,
     rect: input.rect ?? null,
     sortOrder: notes.length ? Math.max(...notes.map((item) => item.sortOrder)) + 1 : 0,
     createdAt: now,
@@ -434,7 +453,10 @@ function createSectionsForAsset(asset: ReadingAsset, bytes: Buffer) {
     return [{ index: 0, title: asset.title, html: "", text: "" }];
   }
   if (asset.format === "txt") {
-    return parseTxtSections(bytes.toString("utf8"));
+    return parseTxtSections(decodeTxtBytes(bytes));
+  }
+  if (asset.format === "markdown") {
+    return parseMarkdownSections(decodeTxtBytes(bytes));
   }
   return parseEpubSections(asset.id, bytes);
 }
@@ -449,6 +471,7 @@ function readLocalTitle(bytes: Buffer, fileName: string, format: ReadingFormat) 
 function getReadingFormatMimeType(format: ReadingFormat) {
   if (format === "epub") return "application/epub+zip";
   if (format === "pdf") return "application/pdf";
+  if (format === "markdown") return "text/markdown; charset=utf-8";
   return "text/plain; charset=utf-8";
 }
 
@@ -528,8 +551,34 @@ function normalizeNotes(value: unknown): ReadingNote[] | null {
   }).map((note) => ({
     ...note,
     color: normalizeReadingColor(note.color),
+    ranges: normalizeReadingTextRanges(note.ranges),
     type: normalizeReadingType(note.type),
   }));
+}
+
+function normalizeReadingTextRanges(value: unknown) {
+  if (!Array.isArray(value)) return null;
+  const ranges = value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const range = item as Record<string, unknown>;
+    if (
+      typeof range.sectionIndex !== "number" ||
+      typeof range.offset !== "number" ||
+      typeof range.length !== "number" ||
+      !Number.isFinite(range.sectionIndex) ||
+      !Number.isFinite(range.offset) ||
+      !Number.isFinite(range.length) ||
+      range.length <= 0
+    ) {
+      return [];
+    }
+    return [{
+      length: Math.floor(range.length),
+      offset: Math.max(0, Math.floor(range.offset)),
+      sectionIndex: Math.max(0, Math.floor(range.sectionIndex)),
+    }];
+  });
+  return ranges.length ? ranges : null;
 }
 
 function normalizeProgress(value: unknown): ReadingProgress | null {
@@ -555,5 +604,10 @@ function normalizeProgress(value: unknown): ReadingProgress | null {
 }
 
 function isReadingFormat(value: unknown): value is ReadingFormat {
-  return value === "epub" || value === "pdf" || value === "txt";
+  return (
+    value === "epub" ||
+    value === "markdown" ||
+    value === "pdf" ||
+    value === "txt"
+  );
 }

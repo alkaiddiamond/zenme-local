@@ -11,6 +11,7 @@
 - 服务只绑定 `127.0.0.1`，请求必须通过统一 loopback 与同源校验。
 - BrowserWindow 使用 `contextIsolation: true`、`nodeIntegration: false`、`sandbox: true`。
 - preload 不提供任意 IPC channel、shell 命令或文件系统访问。
+- preload 只额外提供 Electron `File` 到其原始路径的单用途转换；渲染器不能借此枚举或任意读取文件系统。外部音频路径只能在桌面模式登记，服务端规范化并确认其为普通文件后，以项目内不可猜测 ID 提供 Range 读取。
 - 导入文件名和路径段拒绝绝对路径、父目录、UNC 与路径分隔符。
 - API Key、OAuth Token 不进入前端 bundle、日志、错误响应和备份。
 - HTML、EPUB 和模型返回内容在展示前经过既有安全处理。

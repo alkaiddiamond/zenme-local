@@ -32,6 +32,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   delete process.env.ZENME_DATA_DIR;
+  delete process.env.ZENME_DESKTOP;
   await fs.rm(dataDir, { force: true, recursive: true });
 });
 
@@ -110,5 +111,56 @@ describe("local project files API", () => {
       { params: Promise.resolve({ projectId }) },
     );
     expect(await secondListResponse.json()).toEqual([]);
+  });
+
+  it("streams desktop file references without copying or deleting the source", async () => {
+    process.env.ZENME_DESKTOP = "1";
+    const externalDir = await fs.mkdtemp(path.join(os.tmpdir(), "zenme-api-external-"));
+    const externalPath = path.join(externalDir, "song.ogg");
+    await fs.writeFile(externalPath, "audio-content");
+
+    try {
+      const referenceResponse = await uploadFile(
+        new Request(`http://localhost/api/projects/${projectId}/files`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            externalPath,
+            fileName: "song.ogg",
+            mimeType: "audio/ogg",
+          }),
+        }),
+        { params: Promise.resolve({ projectId }) },
+      );
+      expect(referenceResponse.status).toBe(200);
+      const reference = (await referenceResponse.json()) as {
+        externalPath: string;
+        fileId: string;
+        originalPath: string;
+        originalUrl: string;
+      };
+      expect(reference).toMatchObject({
+        externalPath: await fs.realpath(externalPath),
+        originalPath: "",
+      });
+
+      const rangeResponse = await getFile(
+        new Request(`http://localhost${reference.originalUrl}`, {
+          headers: { range: "bytes=6-12" },
+        }),
+        { params: Promise.resolve({ projectId, fileId: reference.fileId }) },
+      );
+      expect(rangeResponse.status).toBe(206);
+      expect(rangeResponse.headers.get("content-type")).toBe("audio/ogg");
+      await expect(rangeResponse.text()).resolves.toBe("content");
+
+      await deleteFile(
+        new Request(`http://localhost${reference.originalUrl}`, { method: "DELETE" }),
+        { params: Promise.resolve({ projectId, fileId: reference.fileId }) },
+      );
+      await expect(fs.readFile(externalPath, "utf8")).resolves.toBe("audio-content");
+    } finally {
+      await fs.rm(externalDir, { force: true, recursive: true });
+    }
   });
 });

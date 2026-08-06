@@ -10,7 +10,6 @@ import {
   READING_PAGE_FOOTER_CLASSNAME,
   READING_PAGE_FRAME_PADDING,
   READING_PAGE_HEADER_WITH_TITLE_CLASSNAME,
-  READING_PAGE_PLACEHOLDER_CLASSNAME,
 } from "./constants";
 import {
   getEpubPageSlotHeight,
@@ -51,14 +50,18 @@ export const EpubPagedScrollView = memo(function EpubPagedScrollView({
     [sections],
   );
   const pageSurfaceWidth = EPUB_PAGE_WIDTH * contentScale;
-  const pageFrameWidth =
-    pageSurfaceWidth + READING_PAGE_FRAME_PADDING * 2;
+  const pageFrameWidth = pageSurfaceWidth + READING_PAGE_FRAME_PADDING * 2;
   const pageHeight = EPUB_PAGE_HEIGHT * contentScale;
   const pageSlotHeight = getEpubPageSlotHeight(contentScale);
   const horizontalPadding = 40 * contentScale;
   const verticalPadding = 20 * contentScale;
   const bodyFontSize = 16 * contentScale;
   const bodyLineHeight = 32 * contentScale;
+  const firstVisibleIndex = Math.max(0, visibleRange[0]);
+  const visibleSections = useMemo(
+    () => sections.slice(firstVisibleIndex, visibleRange[1] + 1),
+    [firstVisibleIndex, sections, visibleRange],
+  );
 
   return (
     <div className="mx-auto" style={{ width: pageFrameWidth }}>
@@ -69,10 +72,8 @@ export const EpubPagedScrollView = memo(function EpubPagedScrollView({
           width: pageFrameWidth,
         }}
       >
-        {sections.map((section, index) => {
-          const isVisible =
-            index >= visibleRange[0] && index <= visibleRange[1];
-
+        {visibleSections.map((section, offset) => {
+          const pageIndex = firstVisibleIndex + offset;
           return (
             <EpubPageSlot
               bodyFontSize={bodyFontSize}
@@ -81,7 +82,6 @@ export const EpubPagedScrollView = memo(function EpubPagedScrollView({
               focusedNoteId={focusedNoteId}
               horizontalPadding={horizontalPadding}
               isChineseEpub={isChineseEpub}
-              isVisible={isVisible}
               key={section.index}
               notes={notes}
               pageFrameWidth={pageFrameWidth}
@@ -90,12 +90,12 @@ export const EpubPagedScrollView = memo(function EpubPagedScrollView({
               pageSlotHeight={pageSlotHeight}
               section={section}
               selectionRects={
-                selectionPreview?.sectionIndex === section.index
-                  ? selectionPreview.rects
-                  : null
+                selectionPreview?.ranges.find(
+                  (range) => range.sectionIndex === section.index,
+                )?.rects ?? null
               }
               verticalPadding={verticalPadding}
-              visibleIndex={index}
+              visibleIndex={pageIndex}
             />
           );
         })}
@@ -111,7 +111,6 @@ type EpubPageSlotProps = {
   focusedNoteId: string | null;
   horizontalPadding: number;
   isChineseEpub: boolean;
-  isVisible: boolean;
   notes: ReadingNote[];
   pageFrameWidth: number;
   pageHeight: number;
@@ -130,7 +129,6 @@ const EpubPageSlot = memo(function EpubPageSlot({
   focusedNoteId,
   horizontalPadding,
   isChineseEpub,
-  isVisible,
   notes,
   pageFrameWidth,
   pageHeight,
@@ -145,6 +143,7 @@ const EpubPageSlot = memo(function EpubPageSlot({
     () => renderHighlightedSectionHtml(section, notes, focusedNoteId),
     [focusedNoteId, notes, section],
   );
+  const pageTitle = section.title.replace(/\s·\s\d+$/, "");
 
   return (
     <div
@@ -154,65 +153,49 @@ const EpubPageSlot = memo(function EpubPageSlot({
         width: pageFrameWidth,
       }}
     >
-      {isVisible ? (
-        <section
-          className="relative flex flex-col overflow-hidden rounded-md border border-zinc-200 bg-white text-zinc-950 shadow-sm"
-          data-reading-section-index={section.index}
-          ref={(node) => {
-            pageRefs.current[section.index] = node;
-          }}
-          style={{
-            height: pageHeight,
-            padding: READING_PAGE_FRAME_PADDING,
-            width: pageFrameWidth,
-          }}
-        >
-          <div className={READING_PAGE_HEADER_WITH_TITLE_CLASSNAME}>
-            <span className="min-w-0 truncate">{section.title}</span>
-            <span className="absolute left-1/2 -translate-x-1/2 whitespace-nowrap">
-              第 {section.index + 1} 页
-            </span>
-          </div>
-          <div
-            className={`reading-prose reading-prose-epub min-h-0 flex-1 overflow-hidden text-zinc-800 ${
-              isChineseEpub ? "reading-prose-cjk" : ""
-            }`}
-            dangerouslySetInnerHTML={{
-              __html: pageHtml,
-            }}
-            style={{
-              fontSize: bodyFontSize,
-              lineHeight: `${bodyLineHeight}px`,
-              padding: `${verticalPadding}px ${horizontalPadding}px 0`,
-            }}
-          />
-          <div
-            className={READING_PAGE_FOOTER_CLASSNAME}
-            style={{
-              fontSize: 11 * contentScale,
-              marginTop: 16 * contentScale,
-              paddingTop: 12 * contentScale,
-            }}
-          >
-            <span className="truncate">{section.title}</span>
-          </div>
-          <EpubSelectionOverlay
-            rects={selectionRects}
-            sectionIndex={section.index}
-          />
-        </section>
-      ) : (
+      <section
+        className="relative flex flex-col overflow-hidden rounded-md border border-zinc-200 bg-white text-zinc-950 shadow-sm"
+        data-reading-section-index={section.index}
+        ref={(node) => {
+          pageRefs.current[section.index] = node;
+        }}
+        style={{
+          height: pageHeight,
+          padding: READING_PAGE_FRAME_PADDING,
+          width: pageFrameWidth,
+        }}
+      >
+        <div className={READING_PAGE_HEADER_WITH_TITLE_CLASSNAME}>
+          <span className="min-w-0 truncate">{pageTitle}</span>
+        </div>
         <div
-          className={READING_PAGE_PLACEHOLDER_CLASSNAME}
-          ref={() => {
-            pageRefs.current[section.index] = null;
+          className={`reading-prose reading-prose-epub min-h-0 flex-1 overflow-hidden text-zinc-800 ${
+            isChineseEpub ? "reading-prose-cjk" : ""
+          }`}
+          dangerouslySetInnerHTML={{
+            __html: pageHtml,
           }}
           style={{
-            height: pageHeight,
-            width: pageFrameWidth,
+            fontSize: bodyFontSize,
+            lineHeight: `${bodyLineHeight}px`,
+            padding: `${verticalPadding}px ${horizontalPadding}px 0`,
           }}
         />
-      )}
+        <div
+          className={`${READING_PAGE_FOOTER_CLASSNAME} justify-center`}
+          style={{
+            fontSize: 11 * contentScale,
+            marginTop: 16 * contentScale,
+            paddingTop: 12 * contentScale,
+          }}
+        >
+          <span className="whitespace-nowrap">第 {section.index + 1} 页</span>
+        </div>
+        <EpubSelectionOverlay
+          rects={selectionRects}
+          sectionIndex={section.index}
+        />
+      </section>
     </div>
   );
 });

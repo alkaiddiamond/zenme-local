@@ -233,9 +233,11 @@ function MagneticHandleContent({
 
 export function NodeEdgeSourceHandle({
   className = "",
+  revealOnHover = false,
   visible = false,
 }: {
   className?: string;
+  revealOnHover?: boolean;
   visible?: boolean;
 }) {
   return (
@@ -243,7 +245,9 @@ export function NodeEdgeSourceHandle({
       className={`zenme-node-connection-handle !z-20 !h-3 !w-3 !shadow-sm ${className} ${
         visible
           ? "zenme-connected-source-handle !border-zinc-300 !bg-white !opacity-0"
-          : "!border-transparent !bg-transparent !opacity-0"
+          : revealOnHover
+            ? "zenme-available-source-handle !border-zinc-300 !bg-white !opacity-0"
+            : "!border-transparent !bg-transparent !opacity-0"
       }`}
       id={NODE_RIGHT_HANDLE_ID}
       position={Position.Right}

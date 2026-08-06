@@ -62,11 +62,20 @@ export type CodeToken = {
   text: string;
 };
 
-export function renderHighlightedCode(code: string, language: string) {
+export function renderHighlightedCode(
+  code: string,
+  language: string,
+  wrapLines = false,
+) {
   const lines = code ? code.split("\n") : [""];
 
   return lines.map((line, lineIndex) => (
-    <div className="min-h-6 whitespace-pre" key={`${lineIndex}-${line}`}>
+    <div
+      className={`min-h-6 ${
+        wrapLines ? "whitespace-pre-wrap break-words" : "whitespace-pre"
+      }`}
+      key={`${lineIndex}-${line}`}
+    >
       {tokenizeCodeLine(line, language).map((token, tokenIndex) => (
         <span
           className={codeTokenClassName(token.kind)}

@@ -19,6 +19,7 @@ export function useReadingSelection(input: {
     }
     const nextSelection = readSelection(annotationLayerRef.current);
     if (nextSelection) {
+      clearNativeReadingSelection(window.getSelection());
       setSelection(nextSelection);
       setSelectedText(nextSelection.text);
       onSectionSelect(nextSelection.sectionIndex);
@@ -28,7 +29,7 @@ export function useReadingSelection(input: {
   const clearSelection = useCallback(() => {
     setSelection(null);
     setSelectedText("");
-    window.getSelection()?.removeAllRanges();
+    clearNativeReadingSelection(window.getSelection());
   }, []);
 
   return {
@@ -39,4 +40,10 @@ export function useReadingSelection(input: {
     setSelectedText,
     setSelection,
   };
+}
+
+export function clearNativeReadingSelection(
+  selection: Pick<Selection, "removeAllRanges"> | null | undefined,
+) {
+  selection?.removeAllRanges();
 }

@@ -48,6 +48,7 @@ type RenderedCanvasNodeInput = {
   >;
   onSelectMusicSource?: NonNullable<CanvasNodeData["onSelectMusicSource"]>;
   onToggleMusicLyricsOverlay?: NonNullable<CanvasNodeData["onToggleMusicLyricsOverlay"]>;
+  onToggleMusicFolderExpanded?: NonNullable<CanvasNodeData["onToggleMusicFolderExpanded"]>;
   onToggleMusicPlayback?: NonNullable<CanvasNodeData["onToggleMusicPlayback"]>;
   onUpdateMusicNode?: NonNullable<CanvasNodeData["onUpdateMusicNode"]>;
   onUpdateMusicPlayback?: NonNullable<CanvasNodeData["onUpdateMusicPlayback"]>;
@@ -177,6 +178,7 @@ export function getRenderedCanvasNodes({
   onSelectAdjacentMusicSource,
   onSelectMusicSource,
   onToggleMusicLyricsOverlay,
+  onToggleMusicFolderExpanded,
   onToggleMusicPlayback,
   onUpdateMusicNode,
   onUpdateMusicPlayback,
@@ -227,13 +229,40 @@ export function getRenderedCanvasNodes({
   for (const edge of edges) {
     const source = nodeById.get(edge.source);
     const target = nodeById.get(edge.target);
-    if (source?.data.kind === "music" && target?.data.kind === "musicPlayer") {
+    if (
+      (source?.data.kind === "music" || source?.data.kind === "musicFolder") &&
+      target?.data.kind === "musicPlayer"
+    ) {
       musicPlayerIdByMusicId.set(source.id, target.id);
       const musicSources = musicSourcesByPlayerId.get(target.id) ?? [];
-      if (!musicSources.some((item) => item.id === source.id)) {
-        musicSources.push(source);
-        musicSourcesByPlayerId.set(target.id, musicSources);
+      const expandedSources = source.data.kind === "music"
+        ? [source]
+        : [
+            ...(source.data.musicFolderSources ?? []).map((item): CanvasNode => ({
+              id: item.id,
+              type: "music",
+              position: source.position,
+              data: {
+                kind: "music",
+                title: item.title,
+                fileId: item.fileId,
+                fileName: item.fileName,
+                fileSize: item.fileSize,
+                mimeType: item.mimeType,
+                originalUrl: item.originalUrl,
+                musicFolderId: source.id,
+              },
+            })),
+            ...nodes.filter(
+              (node) => node.data.kind === "music" && node.data.musicFolderId === source.id,
+            ),
+          ];
+      for (const item of expandedSources) {
+        if (!musicSources.some((candidate) => candidate.id === item.id)) {
+          musicSources.push(item);
+        }
       }
+      musicSourcesByPlayerId.set(target.id, musicSources);
     }
     if (source?.data.kind === "musicPlayer" && target?.data.kind === "lyrics") {
       playerByChildId.set(target.id, source);
@@ -377,6 +406,34 @@ export function getRenderedCanvasNodes({
           musicPlayerNodeId: musicPlayerIdByMusicId.get(nodeWithConnectionState.id),
           onCreateMusicPlayerNode,
           onLocateMusicPlayerNode,
+          onUpdateMusicNode,
+        },
+      };
+    }
+
+    if (nodeWithConnectionState.data.kind === "musicFolder") {
+      return {
+        ...nodeWithConnectionState,
+        data: {
+          ...nodeWithConnectionState.data,
+          musicFolderMembers: nodes.flatMap((candidate) =>
+            candidate.data.kind === "music" &&
+            candidate.data.musicFolderId === nodeWithConnectionState.id
+              ? [{
+                  id: candidate.id,
+                  fileId: candidate.data.fileId,
+                  fileName: candidate.data.fileName,
+                  fileSize: candidate.data.fileSize,
+                  mimeType: candidate.data.mimeType,
+                  originalUrl: candidate.data.originalUrl,
+                  title: candidate.data.title || candidate.data.fileName || "未命名音乐",
+                }]
+              : [],
+          ),
+          musicPlayerNodeId: musicPlayerIdByMusicId.get(nodeWithConnectionState.id),
+          onCreateMusicPlayerNode,
+          onLocateMusicPlayerNode,
+          onToggleMusicFolderExpanded,
           onUpdateMusicNode,
         },
       };

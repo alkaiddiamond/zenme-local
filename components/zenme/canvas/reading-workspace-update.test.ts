@@ -1,4 +1,5 @@
 import type { Edge } from "@xyflow/react";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import type { ReadingAsset } from "@/lib/reading/types";
@@ -39,6 +40,25 @@ const asset: ReadingAsset = {
 };
 
 describe("open reading workspace update", () => {
+  it("focuses a created reader without changing the current canvas zoom", () => {
+    const canvasClientSource = readFileSync(
+      new URL("../canvas-client.tsx", import.meta.url),
+      "utf8",
+    );
+    const openReaderSource = canvasClientSource.slice(
+      canvasClientSource.indexOf("async function openReadingWorkspace"),
+      canvasClientSource.indexOf("function createConnectedPlaceholder"),
+    );
+
+    expect(openReaderSource).toContain(
+      "createPreservedZoomNodeFocusOptions",
+    );
+    expect(openReaderSource).toContain("flow.getViewport().zoom");
+    expect(openReaderSource).not.toContain(
+      "fitView({ duration: 220, padding: 0.16 })",
+    );
+  });
+
   it("returns null when the node has no reading asset", () => {
     expect(
       createOpenReadingWorkspaceUpdate({

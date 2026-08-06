@@ -33,9 +33,9 @@ export const ReadingTextSectionsView = memo(function ReadingTextSectionsView({
           section={section}
           sectionRefs={sectionRefs}
           selectionRects={
-            selectionPreview?.sectionIndex === section.index
-              ? selectionPreview.rects
-              : null
+            selectionPreview?.ranges.find(
+              (range) => range.sectionIndex === section.index,
+            )?.rects ?? null
           }
         />
       ))}

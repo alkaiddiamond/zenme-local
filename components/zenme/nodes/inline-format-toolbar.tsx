@@ -2,10 +2,20 @@
 
 import type { CSSProperties, ReactNode } from "react";
 import { useViewport } from "@xyflow/react";
-import { Bold, Code2, Eye, Italic, Pencil, Plus, Underline } from "lucide-react";
+import {
+  Bold,
+  Code2,
+  Eye,
+  Italic,
+  ListOrdered,
+  Pencil,
+  Plus,
+  Underline,
+} from "lucide-react";
 
 type InlineFormatToolbarProps = {
   codeLanguage?: string;
+  lineNumbersVisible?: boolean;
   mode?: "code" | "markdown" | "plain";
   markdownEditing?: boolean;
   onBold: () => void;
@@ -14,6 +24,7 @@ type InlineFormatToolbarProps = {
   onCode: () => void;
   onCreateNode: () => void;
   onItalic: () => void;
+  onToggleLineNumbers?: () => void;
   onToggleMarkdownEditing?: (editing: boolean) => void;
   onUnderline: () => void;
 };
@@ -38,6 +49,7 @@ const CODE_LANGUAGE_OPTIONS = [
 
 export function InlineFormatToolbar({
   codeLanguage,
+  lineNumbersVisible,
   mode,
   markdownEditing,
   onBold,
@@ -46,6 +58,7 @@ export function InlineFormatToolbar({
   onCode,
   onCreateNode,
   onItalic,
+  onToggleLineNumbers,
   onToggleMarkdownEditing,
   onUnderline,
 }: InlineFormatToolbarProps) {
@@ -78,6 +91,15 @@ export function InlineFormatToolbar({
       <InlineFormatButton label="创建画布节点" onPress={onCreateNode}>
         <Plus className="size-4" />
       </InlineFormatButton>
+      {onToggleLineNumbers ? (
+        <InlineFormatButton
+          active={lineNumbersVisible}
+          label={lineNumbersVisible ? "隐藏行号" : "显示行号"}
+          onPress={onToggleLineNumbers}
+        >
+          <ListOrdered className="size-4" />
+        </InlineFormatButton>
+      ) : null}
       {shouldShowModeControls ? (
         <>
           <span className="mx-1 h-6 w-px bg-zinc-200" />
@@ -130,17 +152,22 @@ export function InlineFormatToolbar({
 }
 
 function InlineFormatButton({
+  active = false,
   children,
   label,
   onPress,
 }: {
+  active?: boolean;
   children: ReactNode;
   label: string;
   onPress: () => void;
 }) {
   return (
     <button
-      className="flex size-7 items-center justify-center rounded-full hover:bg-zinc-100 hover:text-zinc-950"
+      aria-pressed={active}
+      className={`flex size-7 items-center justify-center rounded-full transition hover:bg-zinc-100 hover:text-zinc-950 ${
+        active ? "bg-zinc-950 text-white hover:bg-zinc-800 hover:text-white" : ""
+      }`}
       onMouseDown={(event) => {
         event.preventDefault();
         onPress();

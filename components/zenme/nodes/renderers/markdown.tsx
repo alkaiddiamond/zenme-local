@@ -118,7 +118,19 @@ export function parseMarkdownBlocks(markdown: string): MarkdownBlock[] {
     });
   }
 
-  return blocks;
+  return mergeConsecutiveParagraphLines(blocks);
+}
+
+function mergeConsecutiveParagraphLines(blocks: MarkdownBlock[]) {
+  return blocks.reduce<MarkdownBlock[]>((result, block) => {
+    const previous = result.at(-1);
+    if (block.type === "p" && previous?.type === "p") {
+      previous.content = `${previous.content}\n${block.content}`;
+      return result;
+    }
+    result.push({ ...block });
+    return result;
+  }, []);
 }
 
 export function renderMarkdown(markdown: string) {
@@ -131,6 +143,7 @@ export function renderMarkdown(markdown: string) {
       return (
         <pre
           className="my-2 overflow-hidden rounded-md bg-zinc-100 px-3 py-2 font-mono text-sm leading-6 text-zinc-800"
+          data-markdown-block
           key={block.key}
         >
           <code>{block.content || " "}</code>
@@ -147,6 +160,7 @@ export function renderMarkdown(markdown: string) {
         <OverlayScrollArea
           className="my-3 max-w-full rounded-md border border-zinc-200"
           contentKey={`${block.headers?.length ?? 0}:${block.rows?.length ?? 0}`}
+          data-markdown-block
           key={block.key}
           viewportClassName="overflow-x-auto"
         >
@@ -186,7 +200,7 @@ export function renderMarkdown(markdown: string) {
 
     if (block.type === "h1") {
       return (
-        <h1 className="mb-2 text-2xl font-semibold text-zinc-950" key={block.key}>
+        <h1 className="mb-2 text-2xl font-semibold text-zinc-950" data-markdown-block key={block.key}>
           {renderMarkdownInline(block.content)}
         </h1>
       );
@@ -194,7 +208,7 @@ export function renderMarkdown(markdown: string) {
 
     if (block.type === "h2") {
       return (
-        <h2 className="mb-2 text-xl font-semibold text-zinc-950" key={block.key}>
+        <h2 className="mb-2 text-xl font-semibold text-zinc-950" data-markdown-block key={block.key}>
           {renderMarkdownInline(block.content)}
         </h2>
       );
@@ -202,7 +216,7 @@ export function renderMarkdown(markdown: string) {
 
     if (block.type === "h3") {
       return (
-        <h3 className="mb-1.5 text-lg font-semibold text-zinc-950" key={block.key}>
+        <h3 className="mb-1.5 text-lg font-semibold text-zinc-950" data-markdown-block key={block.key}>
           {renderMarkdownInline(block.content)}
         </h3>
       );
@@ -212,6 +226,7 @@ export function renderMarkdown(markdown: string) {
       return (
         <blockquote
           className="my-1 border-l-2 border-zinc-300 pl-3 text-zinc-500"
+          data-markdown-block
           key={block.key}
         >
           {renderMarkdownInline(block.content)}
@@ -223,6 +238,7 @@ export function renderMarkdown(markdown: string) {
       return (
         <ul
           className="my-1 list-disc pl-5 text-base leading-7 text-zinc-800"
+          data-markdown-block
           key={block.key}
         >
           <li>{renderMarkdownInline(block.content)}</li>
@@ -231,7 +247,7 @@ export function renderMarkdown(markdown: string) {
     }
 
     return (
-      <p className="mb-2 text-base leading-7 text-zinc-800" key={block.key}>
+      <p className="mb-2 text-base leading-7 text-zinc-800" data-markdown-block key={block.key}>
         {renderMarkdownInline(block.content)}
       </p>
     );
@@ -361,6 +377,7 @@ function renderKatex(content: string, displayMode: boolean, key: string) {
       <OverlayScrollArea
         className="my-3 max-w-full"
         contentKey={content}
+        data-markdown-block
         key={key}
         viewportClassName="overflow-x-auto overflow-y-hidden py-1 text-center"
       >

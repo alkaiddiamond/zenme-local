@@ -18,6 +18,12 @@ export type TextSelection = {
   offset: number;
   length: number;
   rects: Array<{ x: number; y: number; w: number; h: number }>;
+  ranges: Array<{
+    sectionIndex: number;
+    offset: number;
+    length: number;
+    rects: Array<{ x: number; y: number; w: number; h: number }>;
+  }>;
   x: number;
   y: number;
 };

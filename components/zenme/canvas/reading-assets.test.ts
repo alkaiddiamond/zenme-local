@@ -46,6 +46,23 @@ function canvasNode(input: {
   } as CanvasNode;
 }
 
+function textCanvasNode(input: {
+  plainText: string;
+  textMode?: "code" | "markdown" | "plain";
+}): CanvasNode {
+  return {
+    id: "text-node-1",
+    position: { x: 0, y: 0 },
+    type: "text",
+    data: {
+      kind: "text",
+      plainText: input.plainText,
+      textMode: input.textMode ?? "plain",
+      title: "阅读笔记",
+    },
+  } as CanvasNode;
+}
+
 describe("reading asset client registration", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -228,5 +245,40 @@ describe("reading asset client registration", () => {
     expect(file).toBeInstanceOf(File);
     expect((file as File).name).toBe("地师.epub");
     expect((file as File).type).toBe("application/epub+zip");
+  });
+
+  it("registers Markdown text nodes as rendered reading assets", async () => {
+    const asset = readingAsset({ id: "asset-markdown", title: "阅读笔记" });
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse(asset));
+
+    await expect(
+      prepareReadingAssetForCanvasNode({
+        node: textCanvasNode({
+          plainText: "# 标题\n\n正文 **重点**",
+          textMode: "markdown",
+        }),
+        projectId: "project-1",
+      }),
+    ).resolves.toEqual(asset);
+
+    const formData = fetchMock.mock.calls[0][1]?.body as FormData;
+    const file = formData.get("file") as File;
+    expect(file.name).toBe("阅读笔记.md");
+    expect(file.type).toBe("text/markdown;charset=utf-8");
+    await expect(file.text()).resolves.toBe("# 标题\n\n正文 **重点**");
+  });
+
+  it("does not create a reading asset for an empty text node", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+
+    await expect(
+      prepareReadingAssetForCanvasNode({
+        node: textCanvasNode({ plainText: "   ", textMode: "markdown" }),
+        projectId: "project-1",
+      }),
+    ).resolves.toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

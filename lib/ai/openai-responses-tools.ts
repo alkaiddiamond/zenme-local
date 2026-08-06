@@ -3,7 +3,10 @@ type SearchableMessage = {
   content: string;
 };
 
-export function createOpenAiWebSearchCommands(messages: SearchableMessage[]) {
+export function createOpenAiWebSearchCommands(
+  messages: SearchableMessage[],
+  context = "",
+) {
   const latestUserMessage = [...messages]
     .reverse()
     .find((message) => message.role === "user")
@@ -29,9 +32,15 @@ export function createOpenAiWebSearchCommands(messages: SearchableMessage[]) {
     }
   }
 
-  if (!needsCurrentWebInformation(latestUserMessage)) return null;
+  const normalizedContext = context.replace(/\s+/g, " ").trim();
+  if (!needsCurrentWebInformation(`${latestUserMessage}\n${normalizedContext}`)) {
+    return null;
+  }
+  const query = normalizedContext
+    ? `${latestUserMessage}\n相关画布上下文：${normalizedContext}`
+    : latestUserMessage;
   return {
-    search_query: [{ q: latestUserMessage.slice(0, 1_000) }],
+    search_query: [{ q: query.slice(0, 1_000) }],
     response_length: "long" as const,
   };
 }

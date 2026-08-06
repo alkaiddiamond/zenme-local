@@ -95,6 +95,7 @@ export async function POST(request: Request) {
       imageDataUrls: body.imageDataUrls,
       messages: body.messages,
       provider: providerConfig,
+      searchContext: context,
       systemContent,
     });
 
@@ -265,6 +266,7 @@ async function fetchProviderChatCompletion(input: {
   imageDataUrls?: string[];
   messages: ChatMessage[];
   provider: Exclude<ChatProviderConfig, { error: string }>;
+  searchContext: string;
   systemContent: string;
 }): Promise<Response | { error: string }> {
   try {
@@ -357,13 +359,14 @@ async function fetchOpenAiOAuthChat(
     imageDataUrls?: string[];
     messages: ChatMessage[];
     provider: Exclude<ChatProviderConfig, { error: string }>;
+    searchContext: string;
     systemContent: string;
   },
   tokens: NonNullable<Awaited<ReturnType<typeof ensureFreshOpenAiTokens>>>,
 ): Promise<Response | { error: string }> {
   const responsesLite = input.provider.model.startsWith("gpt-5.6-");
   const commands = responsesLite
-    ? createOpenAiWebSearchCommands(input.messages)
+    ? createOpenAiWebSearchCommands(input.messages, input.searchContext)
     : null;
   const baseRequestBody = createOpenAiOAuthRequestBody(input) as Record<string, unknown>;
   const webContext = commands

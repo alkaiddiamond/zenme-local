@@ -1,5 +1,5 @@
 import { GripVertical } from "lucide-react";
-import { memo } from "react";
+import { memo, useLayoutEffect, useRef } from "react";
 import type {
   DragEvent as ReactDragEvent,
   MutableRefObject,
@@ -8,6 +8,10 @@ import type {
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 
 import { HIGHLIGHT_STYLES } from "./constants";
+import {
+  getReadingNoteEditorMaxHeight,
+  resizeTextareaToContent,
+} from "./auto-size-textarea";
 import { ReadingNoteActions } from "./reading-note-actions";
 import {
   ReadingNoteDropSlot,
@@ -29,6 +33,7 @@ type ReadingNoteCardProps = {
   note: ReadingNote;
   noteDropIndicator: NoteDropIndicator;
   onCreateNoteNode: (note: ReadingNote, asset: ReadingAsset) => void;
+  onEditHeightChange: (noteId: string, heightDelta: number) => void;
   reorderNotes: (
     sourceId: string | null,
     targetId: string,
@@ -56,6 +61,7 @@ export const ReadingNoteCard = memo(function ReadingNoteCard({
   note,
   noteDropIndicator,
   onCreateNoteNode,
+  onEditHeightChange,
   reorderNotes,
   saveEditedNote,
   setDraggingNoteId,
@@ -65,6 +71,8 @@ export const ReadingNoteCard = memo(function ReadingNoteCard({
   setNoteDropIndicator,
   startEditNote,
 }: ReadingNoteCardProps) {
+  const selectedTextEditorRef = useRef<HTMLTextAreaElement>(null);
+  const commentEditorRef = useRef<HTMLTextAreaElement>(null);
   const showBeforeIndicator =
     noteDropIndicator?.targetId === note.id &&
     noteDropIndicator.placement === "before";
@@ -72,6 +80,31 @@ export const ReadingNoteCard = memo(function ReadingNoteCard({
     noteDropIndicator?.targetId === note.id &&
     noteDropIndicator.placement === "after";
   const isDraggingThisNote = draggingNoteId === note.id;
+
+  useLayoutEffect(() => {
+    if (editingNoteId !== note.id) return;
+    const maxHeight = getReadingNoteEditorMaxHeight(window.innerHeight);
+    if (selectedTextEditorRef.current) {
+      resizeTextareaToContent(selectedTextEditorRef.current, 96, maxHeight);
+    }
+    if (commentEditorRef.current) {
+      resizeTextareaToContent(commentEditorRef.current, 64, maxHeight);
+    }
+  }, [editingComment, editingNoteId, editingSelectedText, note.id]);
+
+  function autoSizeEditor(
+    textarea: HTMLTextAreaElement,
+    minHeight: number,
+  ) {
+    const heightDelta = resizeTextareaToContent(
+      textarea,
+      minHeight,
+      getReadingNoteEditorMaxHeight(window.innerHeight),
+    );
+    if (heightDelta > 0) {
+      onEditHeightChange(note.id, heightDelta);
+    }
+  }
 
   function readDraggedNoteId(event: ReactDragEvent<HTMLElement>) {
     return (
@@ -197,12 +230,16 @@ export const ReadingNoteCard = memo(function ReadingNoteCard({
             <GripVertical className="size-3.5" />
           </button>
         </div>
-        <p className="text-sm leading-5 text-zinc-800">
+        <p className="text-xs leading-[1.6] text-zinc-800">
           {editingNoteId === note.id ? (
             <textarea
-              className="h-24 w-full resize-none rounded-md border border-zinc-200 px-2 py-2 text-sm leading-5 text-zinc-900 caret-zinc-950 outline-none placeholder:text-zinc-400 focus:border-zinc-400 focus:placeholder:text-transparent select-text"
-              onChange={(event) => setEditingSelectedText(event.target.value)}
+              className="min-h-24 w-full resize-none overflow-hidden rounded-md border border-zinc-200 px-2 py-2 text-xs leading-[1.6] text-zinc-900 caret-zinc-950 outline-none placeholder:text-zinc-400 focus:border-zinc-400 focus:placeholder:text-transparent select-text"
+              onChange={(event) => {
+                autoSizeEditor(event.currentTarget, 96);
+                setEditingSelectedText(event.target.value);
+              }}
               onClick={(event) => event.stopPropagation()}
+              ref={selectedTextEditorRef}
               value={editingSelectedText}
             />
           ) : (
@@ -211,14 +248,18 @@ export const ReadingNoteCard = memo(function ReadingNoteCard({
         </p>
         {editingNoteId === note.id ? (
           <textarea
-            className="mt-2 h-16 w-full resize-none rounded-md border border-zinc-200 px-2 py-2 text-xs leading-5 text-zinc-900 caret-zinc-950 outline-none placeholder:text-zinc-400 focus:border-zinc-400 focus:placeholder:text-transparent select-text"
-            onChange={(event) => setEditingComment(event.target.value)}
+            className="mt-2 min-h-16 w-full resize-none overflow-hidden rounded-md border border-zinc-200 px-2 py-2 text-[11px] leading-4 text-zinc-900 caret-zinc-950 outline-none placeholder:text-zinc-400 focus:border-zinc-400 focus:placeholder:text-transparent select-text"
+            onChange={(event) => {
+              autoSizeEditor(event.currentTarget, 64);
+              setEditingComment(event.target.value);
+            }}
             onClick={(event) => event.stopPropagation()}
             placeholder="备注"
+            ref={commentEditorRef}
             value={editingComment}
           />
         ) : note.comment ? (
-          <p className="mt-2 rounded-md bg-zinc-50 px-2 py-1.5 text-xs leading-5 text-zinc-500">
+          <p className="mt-2 rounded-md bg-zinc-50 px-2 py-1.5 text-[11px] leading-4 text-zinc-500">
             {note.comment}
           </p>
         ) : null}

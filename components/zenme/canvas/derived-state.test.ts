@@ -138,6 +138,28 @@ describe("canvas derived state helpers", () => {
       ),
     ).toBe(false);
     expect(canPrepareReadingAsset(undefined)).toBe(false);
+
+    expect(
+      canPrepareReadingAsset(
+        node({
+          data: {
+            kind: "text",
+            plainText: "# 可阅读内容",
+            readingAssetId: "older-snapshot",
+            textMode: "markdown",
+          },
+          id: "markdown-text",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      canPrepareReadingAsset(
+        node({
+          data: { kind: "text", plainText: "   ", textMode: "markdown" },
+          id: "empty-text",
+        }),
+      ),
+    ).toBe(false);
   });
 
   it("positions the selection toolbar above the selected node bounds", () => {

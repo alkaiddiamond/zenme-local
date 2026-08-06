@@ -225,6 +225,10 @@ describe("reading browser api notes and OCR", () => {
         length: 4,
         offset: 12,
         projectId: "project-1",
+        ranges: [
+          { sectionIndex: 2, offset: 12, length: 4 },
+          { sectionIndex: 3, offset: 0, length: 6 },
+        ],
         sectionIndex: 2,
         selectedText: "重要内容",
         type: "highlight",
@@ -244,6 +248,10 @@ describe("reading browser api notes and OCR", () => {
       length: 4,
       offset: 12,
       projectId: "project-1",
+      ranges: [
+        { sectionIndex: 2, offset: 12, length: 4 },
+        { sectionIndex: 3, offset: 0, length: 6 },
+      ],
       sectionIndex: 2,
       selectedText: "重要内容",
       type: "highlight",

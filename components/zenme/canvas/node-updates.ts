@@ -89,6 +89,7 @@ export function createTextNodeDataUpdate(input: {
       | "plainText"
       | "richTextHtml"
       | "textMode"
+      | "textLineNumbers"
       | "textScrollState"
       | "title"
       | "name"
@@ -104,6 +105,7 @@ export function createTextNodeDataUpdate(input: {
       "plainText",
       "richTextHtml",
       "textMode",
+      "textLineNumbers",
       "textScrollState",
       "title",
       "name",
@@ -442,6 +444,68 @@ export function createTextGenerationNodeDataUpdate(input: {
       "managedText",
       "textGeneration",
     ]),
+  });
+}
+
+export function createMusicFolderExpansionUpdate(input: {
+  expanded: boolean;
+  nodeId: string;
+  nodes: CanvasNode[];
+}): NodeUpdateResult | null {
+  const sourceNode = input.nodes.find(
+    (node) => node.id === input.nodeId && node.data.kind === "musicFolder",
+  );
+  if (
+    !sourceNode ||
+    Boolean(sourceNode.data.musicFolderExpanded) === input.expanded
+  ) {
+    return null;
+  }
+
+  return {
+    beforeNodeSnapshots: new Map([
+      [input.nodeId, createCanvasHistoryNodeSnapshot(sourceNode)],
+    ]),
+    nextNodes: input.nodes.map((node) =>
+      node.id === input.nodeId
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              musicFolderExpanded: input.expanded,
+            },
+          }
+        : node,
+    ),
+  };
+}
+
+export function mergeTextGenerationSubmissionIntoNodes(input: {
+  model?: string;
+  nodeId: string;
+  nodes: CanvasNode[];
+  prompt?: string;
+}) {
+  return input.nodes.map((node) => {
+    if (node.id !== input.nodeId) return node;
+
+    const textGenerationModel = input.model ?? node.data.textGenerationModel;
+    const textGenerationPrompt = input.prompt ?? node.data.textGenerationPrompt;
+    if (
+      textGenerationModel === node.data.textGenerationModel &&
+      textGenerationPrompt === node.data.textGenerationPrompt
+    ) {
+      return node;
+    }
+
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        textGenerationModel,
+        textGenerationPrompt,
+      },
+    };
   });
 }
 

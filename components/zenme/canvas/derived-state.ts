@@ -49,12 +49,15 @@ export function getActionNode(input: {
 }
 
 export function canPrepareReadingAsset(node: CanvasNode | undefined) {
+  const isReadableTextNode =
+    node?.data.kind === "text" || node?.data.kind === "markdown";
   return Boolean(
     node &&
-      node.data.kind === "book" &&
-      !node.data.readingAssetId &&
-      node.data.originalUrl &&
-      node.data.fileName,
+      ((isReadableTextNode && node.data.plainText?.trim()) ||
+        (node.data.kind === "book" &&
+          !node.data.readingAssetId &&
+          node.data.originalUrl &&
+          node.data.fileName)),
   );
 }
 

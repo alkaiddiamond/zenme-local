@@ -8,7 +8,12 @@ export function getNormalizedContentScale(nextScale: number) {
 }
 
 export function supportsReadingContentScale(format: ReadingFormat | undefined) {
-  return format === "pdf" || format === "epub";
+  return (
+    format === "pdf" ||
+    format === "epub" ||
+    format === "markdown" ||
+    format === "txt"
+  );
 }
 
 export function getReadingGridColumns(input: {

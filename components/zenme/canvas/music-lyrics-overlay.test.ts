@@ -12,6 +12,10 @@ const overlaySource = readFileSync(
   new URL("./music-lyrics-overlay.tsx", import.meta.url),
   "utf8",
 );
+const globalStyles = readFileSync(
+  new URL("../../../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 describe("music lyrics overlay", () => {
   it("selects the synchronized lyric line even when explicit end times are absent", () => {
@@ -48,7 +52,7 @@ describe("music lyrics overlay", () => {
     expect(overlaySource).toContain("onPointerUp={stopDragging}");
     expect(overlaySource).toContain('aria-label="关闭歌词覆层"');
     expect(overlaySource).toContain('data-thumbnail-hidden="true"');
-    expect(overlaySource).toContain("bg-zinc-950/70");
+    expect(overlaySource).toContain("zenme-music-lyrics-overlay");
   });
 
   it("provides previous, playback, and next controls", () => {
@@ -80,9 +84,11 @@ describe("music lyrics overlay", () => {
     expect(overlaySource).toContain("group-hover/music-mini:opacity-100");
     expect(overlaySource).toContain("group-focus-within/music-mini:opacity-100");
     expect(overlaySource).not.toContain("min-h-24 min-w-0 flex-col");
-    expect(overlaySource).toContain("mix-blend-difference");
     expect(overlaySource).toContain("<MusicLyricsPlaybackControls\n            floating");
-    expect(overlaySource).toContain("bg-white/70");
+    expect(overlaySource.match(/<MusicLyricsMiniContent/g)).toHaveLength(2);
+    expect(overlaySource).toContain("--lyrics-progress-fill-foreground");
+    expect(overlaySource).toContain("clipPath");
+    expect(overlaySource).toContain("zenme-music-lyrics-floating-action");
     expect(overlaySource).toContain("opacity-70");
     expect(overlaySource).not.toContain("rounded-lg bg-white/90 p-1");
   });
@@ -90,19 +96,19 @@ describe("music lyrics overlay", () => {
   it("uses a one-pixel inverse theme gradient as playback progress", () => {
     expect(overlaySource).toContain('aria-label="播放进度"');
     expect(overlaySource).toContain("h-px w-full overflow-hidden");
-    expect(overlaySource).toContain("bg-zinc-950 dark:bg-white");
-    expect(overlaySource).toContain("bg-white");
-    expect(overlaySource).toContain("from-white to-zinc-950");
-    expect(overlaySource).toContain("dark:from-zinc-950 dark:to-white");
+    expect(overlaySource).toContain("zenme-music-lyrics-progress-track");
+    expect(overlaySource).toContain("zenme-music-lyrics-progress-fill");
+    expect(overlaySource).toContain("zenme-music-lyrics-progress-fade");
     expect(overlaySource).toContain('style={{ width: `${playbackProgress}%` }}');
   });
 
-  it("applies the playback split only to the minimized background and inverts its content", () => {
+  it("uses theme palette colors for expanded and minimized overlays", () => {
     expect(overlaySource.match(/<MusicLyricsProgressBackground/g)).toHaveLength(1);
-    expect(overlaySource).toContain(
-      'className="pointer-events-none absolute inset-0 bg-zinc-950 opacity-80 dark:bg-white"',
-    );
-    expect(overlaySource).toContain("w-10 bg-gradient-to-r from-white to-zinc-950");
-    expect(overlaySource.match(/mix-blend-difference/g)).toHaveLength(2);
+    expect(overlaySource).not.toContain("mix-blend-difference");
+    expect(globalStyles).toContain(".zenme-music-lyrics-overlay,");
+    expect(globalStyles).toContain("--lyrics-progress-track: var(--color-text-primary)");
+    expect(globalStyles).toContain("--lyrics-progress-fill: var(--color-surface-container-lowest)");
+    expect(globalStyles).toContain("var(--lyrics-progress-fill),");
+    expect(globalStyles).toContain("var(--lyrics-progress-track)");
   });
 });

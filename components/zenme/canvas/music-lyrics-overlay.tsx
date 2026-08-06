@@ -10,14 +10,18 @@ import {
   SkipForward,
   X,
 } from "lucide-react";
-import { useRef, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useRef,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
 import type { MusicLyricLine } from "@/components/zenme/node-types";
 
 export type MusicLyricsOverlayPosition = { x: number; y: number };
 
 const MINIMIZED_FLOATING_ACTION_CLASS =
-  "flex size-8 shrink-0 items-center justify-center rounded-md bg-white/70 text-zinc-500 opacity-70 backdrop-blur transition hover:bg-white/90 hover:text-zinc-950 hover:opacity-100 focus-visible:bg-white/90 focus-visible:text-zinc-950 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-30";
+  "zenme-music-lyrics-floating-action flex size-8 shrink-0 items-center justify-center rounded-md opacity-70 backdrop-blur transition hover:opacity-100 focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-30";
 
 type MusicLyricsOverlayProps = {
   currentTime: number;
@@ -76,21 +80,28 @@ export function MusicLyricsOverlay({
     return (
       <aside
         aria-label="最小化歌词覆层"
-        className="group/music-mini zenme-shadow-dropdown absolute z-30 isolate overflow-hidden rounded-xl border border-zinc-500/30 text-white outline-none backdrop-blur-md"
+        className="zenme-music-lyrics-mini group/music-mini zenme-shadow-dropdown absolute z-30 isolate overflow-hidden rounded-xl border outline-none backdrop-blur-md"
         data-thumbnail-hidden="true"
         style={{ bottom: 66, left: minimizedLeft, maxWidth: 310, right: 12 }}
         tabIndex={0}
       >
         <MusicLyricsProgressBackground progress={playbackProgress} />
-        <div className="relative z-10 flex h-16 min-w-0 flex-col justify-center px-3 py-2 mix-blend-difference">
-          <p className="truncate text-xs font-medium text-white">
-            {songTitle || "歌词"}
-          </p>
-          <p className="mt-1 truncate text-sm text-white">
-            {activeLyric || getLyricsFallbackText(status, error)}
-          </p>
-        </div>
-        <div className="pointer-events-none absolute right-2 top-1/2 z-20 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity mix-blend-difference group-hover/music-mini:pointer-events-auto group-hover/music-mini:opacity-100 group-focus-within/music-mini:pointer-events-auto group-focus-within/music-mini:opacity-100">
+        <MusicLyricsMiniContent
+          activeLyric={activeLyric}
+          error={error}
+          songTitle={songTitle}
+          status={status}
+        />
+        <MusicLyricsMiniContent
+          activeLyric={activeLyric}
+          ariaHidden
+          className="absolute inset-0 z-10 text-[var(--lyrics-progress-fill-foreground)]"
+          error={error}
+          songTitle={songTitle}
+          status={status}
+          style={{ clipPath: `inset(0 ${100 - playbackProgress}% 0 0)` }}
+        />
+        <div className="pointer-events-none absolute right-2 top-1/2 z-20 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity group-hover/music-mini:pointer-events-auto group-hover/music-mini:opacity-100 group-focus-within/music-mini:pointer-events-auto group-focus-within/music-mini:opacity-100">
           <MusicLyricsPlaybackControls
             floating
             hasPlayableSource={hasPlayableSource}
@@ -164,12 +175,12 @@ export function MusicLyricsOverlay({
   return (
     <aside
       aria-label="歌词覆层"
-      className="zenme-shadow-dropdown absolute z-30 w-[min(680px,calc(100%-32px))] overflow-hidden rounded-xl border border-white/10 bg-zinc-950/70 text-white backdrop-blur-md"
+      className="zenme-music-lyrics-overlay zenme-shadow-dropdown absolute z-30 w-[min(680px,calc(100%-32px))] overflow-hidden rounded-xl border backdrop-blur-md"
       data-thumbnail-hidden="true"
       style={{ left: position.x, top: position.y }}
     >
       <div
-        className="flex h-9 cursor-move touch-none items-center gap-2 px-3 text-xs text-zinc-300"
+        className="flex h-9 cursor-move touch-none items-center gap-2 px-3 text-xs text-[var(--color-text-secondary)]"
         onLostPointerCapture={() => {
           dragState.current = null;
         }}
@@ -178,11 +189,11 @@ export function MusicLyricsOverlay({
         onPointerMove={moveOverlay}
         onPointerUp={stopDragging}
       >
-        <GripHorizontal className="size-4 shrink-0 text-zinc-500" />
+        <GripHorizontal className="size-4 shrink-0 text-[var(--color-text-tertiary)]" />
         <span className="min-w-0 flex-1 truncate">{songTitle || "歌词"}</span>
         <button
           aria-label="最小化歌词覆层"
-          className="flex size-7 items-center justify-center rounded-md text-zinc-400 transition hover:bg-white/10 hover:text-white"
+          className="zenme-music-lyrics-icon-button flex size-7 items-center justify-center rounded-md transition"
           onClick={onMinimize}
           title="最小化"
           type="button"
@@ -191,7 +202,7 @@ export function MusicLyricsOverlay({
         </button>
         <button
           aria-label="关闭歌词覆层"
-          className="flex size-7 items-center justify-center rounded-md text-zinc-400 transition hover:bg-white/10 hover:text-white"
+          className="zenme-music-lyrics-icon-button flex size-7 items-center justify-center rounded-md transition"
           onClick={onClose}
           type="button"
         >
@@ -204,15 +215,15 @@ export function MusicLyricsOverlay({
           return (
             <p
               className={active
-                ? "w-full py-1 text-2xl font-semibold leading-relaxed text-white"
-                : "w-full truncate py-0.5 text-sm text-zinc-500"}
+                ? "w-full py-1 text-2xl font-semibold leading-relaxed text-[var(--color-text-primary)]"
+                : "w-full truncate py-0.5 text-sm text-[var(--color-text-tertiary)]"}
               key={line.id ?? `${line.start}-${line.text}`}
             >
               {line.text}
             </p>
           );
         }) : (
-          <p className="text-sm text-zinc-400">
+          <p className="text-sm text-[var(--color-text-secondary)]">
             {status === "loading"
               ? "正在获取当前歌曲歌词…"
               : status === "failed"
@@ -226,14 +237,14 @@ export function MusicLyricsOverlay({
         aria-valuemax={100}
         aria-valuemin={0}
         aria-valuenow={playbackProgress}
-        className="h-px w-full overflow-hidden bg-zinc-950 dark:bg-white"
+        className="zenme-music-lyrics-progress-track h-px w-full overflow-hidden"
         role="progressbar"
       >
         <div
-          className="relative h-full bg-white transition-[width] duration-100 ease-linear dark:bg-zinc-950"
+          className="zenme-music-lyrics-progress-fill relative h-full transition-[width] duration-100 ease-linear"
           style={{ width: `${playbackProgress}%` }}
         >
-          <span className="absolute left-full top-0 h-full w-6 bg-gradient-to-r from-white to-zinc-950 dark:from-zinc-950 dark:to-white" />
+          <span className="zenme-music-lyrics-progress-fade absolute left-full top-0 h-full w-6" />
         </div>
       </div>
       <div className="flex h-12 items-center justify-center gap-3 px-4">
@@ -255,17 +266,48 @@ export function getMusicPlaybackProgress(currentTime: number, duration: number) 
   return Math.min(100, Math.max(0, (currentTime / duration) * 100));
 }
 
+function MusicLyricsMiniContent({
+  activeLyric,
+  ariaHidden = false,
+  className = "relative z-10 text-[var(--lyrics-progress-track-foreground)]",
+  error,
+  songTitle,
+  status,
+  style,
+}: {
+  activeLyric?: string;
+  ariaHidden?: boolean;
+  className?: string;
+  error?: string;
+  songTitle: string;
+  status: MusicLyricsOverlayProps["status"];
+  style?: CSSProperties;
+}) {
+  return (
+    <div
+      aria-hidden={ariaHidden || undefined}
+      className={`${className} flex h-16 min-w-0 flex-col justify-center px-3 py-2`}
+      style={style}
+    >
+      <p className="truncate text-xs font-medium">{songTitle || "歌词"}</p>
+      <p className="mt-1 truncate text-sm">
+        {activeLyric || getLyricsFallbackText(status, error)}
+      </p>
+    </div>
+  );
+}
+
 function MusicLyricsProgressBackground({ progress }: { progress: number }) {
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute inset-0 bg-zinc-950 opacity-80 dark:bg-white"
+      className="zenme-music-lyrics-progress-track pointer-events-none absolute inset-0 opacity-80"
     >
       <div
-        className="relative h-full bg-white transition-[width] duration-100 ease-linear dark:bg-zinc-950"
+        className="zenme-music-lyrics-progress-fill relative h-full transition-[width] duration-100 ease-linear"
         style={{ width: `${progress}%` }}
       >
-        <span className="absolute left-full top-0 h-full w-10 bg-gradient-to-r from-white to-zinc-950 dark:from-zinc-950 dark:to-white" />
+        <span className="zenme-music-lyrics-progress-fade absolute left-full top-0 h-full w-10" />
       </div>
     </div>
   );
@@ -288,10 +330,10 @@ function MusicLyricsPlaybackControls({
 > & { floating?: boolean }) {
   const secondaryButtonClassName = floating
     ? MINIMIZED_FLOATING_ACTION_CLASS
-    : "flex size-8 shrink-0 items-center justify-center rounded-full text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-30";
+    : "zenme-music-lyrics-icon-button flex size-8 shrink-0 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-30";
   const playbackButtonClassName = floating
     ? MINIMIZED_FLOATING_ACTION_CLASS
-    : "flex size-9 shrink-0 items-center justify-center rounded-full bg-white text-zinc-950 transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-30";
+    : "zenme-music-lyrics-playback-button flex size-9 shrink-0 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-30";
 
   return (
     <>

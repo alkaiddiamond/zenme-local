@@ -1,5 +1,5 @@
 import { Highlighter, Plus } from "lucide-react";
-import { memo, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type {
   PointerEvent as ReactPointerEvent,
   RefObject,
@@ -9,6 +9,7 @@ import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 
 import { ReadingNoteCard } from "./reading-note-card";
+import { getUpwardExpansionScrollDelta } from "./note-card-layout";
 import type { NoteDropIndicator, PdfAnnotationDraft } from "./types";
 
 type ReadingNotesSidebarProps = {
@@ -68,11 +69,38 @@ export const ReadingNotesSidebar = memo(function ReadingNotesSidebar({
   const [editingComment, setEditingComment] = useState("");
   const [noteDropIndicator, setNoteDropIndicator] =
     useState<NoteDropIndicator>(null);
+  const editExpansionFrame = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (editExpansionFrame.current !== null) {
+      cancelAnimationFrame(editExpansionFrame.current);
+    }
+  }, []);
 
   function startEditNote(note: ReadingNote) {
+    const notesList = notesListRef.current;
+    const noteCard = findReadingNoteCard(notesList, note.id);
+    const beforeCardRect = noteCard?.getBoundingClientRect();
+    const containerTop = notesList?.getBoundingClientRect().top;
     setEditingNoteId(note.id);
     setEditingSelectedText(note.selectedText);
     setEditingComment(note.comment);
+    if (!notesList || !beforeCardRect || containerTop === undefined) return;
+    if (editExpansionFrame.current !== null) {
+      cancelAnimationFrame(editExpansionFrame.current);
+    }
+    editExpansionFrame.current = requestAnimationFrame(() => {
+      editExpansionFrame.current = null;
+      const expandedCard = findReadingNoteCard(notesList, note.id);
+      if (!expandedCard) return;
+      const afterCardRect = expandedCard.getBoundingClientRect();
+      notesList.scrollTop += getUpwardExpansionScrollDelta({
+        afterBottom: afterCardRect.bottom,
+        beforeBottom: beforeCardRect.bottom,
+        beforeTop: beforeCardRect.top,
+        containerTop,
+      });
+    });
   }
 
   function saveCurrentEdit(noteId: string) {
@@ -81,6 +109,18 @@ export const ReadingNotesSidebar = memo(function ReadingNotesSidebar({
       selectedText: editingSelectedText,
     });
     setEditingNoteId(null);
+  }
+
+  function compensateEditHeightChange(noteId: string, heightDelta: number) {
+    const notesList = notesListRef.current;
+    const noteCard = findReadingNoteCard(notesList, noteId);
+    if (!notesList || !noteCard) return;
+    const cardRect = noteCard.getBoundingClientRect();
+    const containerTop = notesList.getBoundingClientRect().top;
+    notesList.scrollTop += Math.min(
+      heightDelta,
+      Math.max(0, cardRect.top - containerTop),
+    );
   }
 
   return (
@@ -155,6 +195,7 @@ export const ReadingNotesSidebar = memo(function ReadingNotesSidebar({
               note={note}
               noteDropIndicator={noteDropIndicator}
               onCreateNoteNode={onCreateNoteNode}
+              onEditHeightChange={compensateEditHeightChange}
               reorderNotes={reorderNotes}
               saveEditedNote={saveCurrentEdit}
               setDraggingNoteId={setDraggingNoteId}
@@ -170,3 +211,10 @@ export const ReadingNotesSidebar = memo(function ReadingNotesSidebar({
     </aside>
   );
 });
+
+function findReadingNoteCard(container: HTMLElement | null, noteId: string) {
+  if (!container) return null;
+  return Array.from(
+    container.querySelectorAll<HTMLElement>("[data-reading-note-card]"),
+  ).find((element) => element.dataset.readingNoteCard === noteId) ?? null;
+}

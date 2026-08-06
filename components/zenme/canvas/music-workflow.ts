@@ -95,10 +95,95 @@ export function resolveMusicSourceNodes(input: {
   return input.edges.flatMap((edge) => {
     if (edge.target !== input.playerNodeId || seen.has(edge.source)) return [];
     const source = nodeById.get(edge.source);
-    if (source?.data.kind !== "music") return [];
+    if (source?.data.kind === "music") {
+      seen.add(source.id);
+      return [source];
+    }
+    if (source?.data.kind !== "musicFolder") return [];
     seen.add(source.id);
-    return [source];
+    const canvasMembers = input.nodes.filter(
+      (node) => node.data.kind === "music" && node.data.musicFolderId === source.id,
+    );
+    const registeredSources: CanvasNode[] = (source.data.musicFolderSources ?? []).map(
+      (item) => ({
+        id: item.id,
+        type: "music",
+        position: source.position,
+        data: {
+          kind: "music",
+          title: item.title,
+          fileId: item.fileId,
+          fileName: item.fileName,
+          fileSize: item.fileSize,
+          mimeType: item.mimeType,
+          originalUrl: item.originalUrl,
+          musicFolderId: source.id,
+        },
+      }),
+    );
+    return [...registeredSources, ...canvasMembers].filter((node) => {
+      if (seen.has(node.id)) return false;
+      seen.add(node.id);
+      return true;
+    });
   });
+}
+
+export function createMusicFolderDropUpdate(input: {
+  edges: Edge[];
+  folderNodeId: string;
+  musicNodeId: string;
+  nodes: CanvasNode[];
+}) {
+  const musicNode = input.nodes.find(
+    (node) => node.id === input.musicNodeId && node.data.kind === "music",
+  );
+  const folderNode = input.nodes.find(
+    (node) => node.id === input.folderNodeId && node.data.kind === "musicFolder",
+  );
+  if (!musicNode || !folderNode) return null;
+
+  const existingSources = folderNode.data.musicFolderSources ?? [];
+  const alreadyStored = existingSources.some(
+    (source) =>
+      source.id === musicNode.id ||
+      Boolean(source.fileId && source.fileId === musicNode.data.fileId),
+  );
+  const source = {
+    id: musicNode.id,
+    fileId: musicNode.data.fileId,
+    fileName: musicNode.data.fileName,
+    fileSize: musicNode.data.fileSize,
+    mimeType: musicNode.data.mimeType,
+    originalUrl: musicNode.data.originalUrl,
+    title: musicNode.data.title || musicNode.data.fileName || "未命名音乐",
+  };
+  const updatedFolder: CanvasNode = {
+    ...folderNode,
+    data: {
+      ...folderNode.data,
+      musicFolderSources: alreadyStored
+        ? existingSources
+        : [...existingSources, source],
+    },
+  };
+  const deletedEdges = input.edges.filter(
+    (edge) => edge.source === musicNode.id || edge.target === musicNode.id,
+  );
+
+  return {
+    deletedEdges,
+    deletedNode: musicNode,
+    nextEdges: input.edges.filter(
+      (edge) => edge.source !== musicNode.id && edge.target !== musicNode.id,
+    ),
+    nextNodes: input.nodes.flatMap((node) => {
+      if (node.id === musicNode.id) return [];
+      return [node.id === folderNode.id ? updatedFolder : node];
+    }),
+    updatedFolder,
+    previousFolder: folderNode,
+  };
 }
 export function downsampleWaveform(values: number[], targetPoints = 160) {
   const safeValues = values.map((value) => Number.isFinite(value) ? Math.abs(value) : 0);
@@ -141,11 +226,17 @@ export function getMusicApiErrorMessage(
 
 export function createMusicPlayerUpdate(input: {
   edges: Edge[];
-  musicNode: CanvasNode;
+  /** @deprecated Use sourceNode. */
+  musicNode?: CanvasNode;
+  sourceNode?: CanvasNode;
   nodes: CanvasNode[];
   projectId: string;
 }) {
-  const id = musicPlayerNodeId(input.musicNode.id);
+  const sourceNode = input.sourceNode ?? input.musicNode;
+  if (!sourceNode) {
+    throw new Error("创建播放器需要音乐或音乐文件夹来源");
+  }
+  const id = musicPlayerNodeId(sourceNode.id);
   const existing = input.nodes.find(
     (node) => node.id === id || (
       node.data.kind === "musicPlayer" && node.data.musicPlayerNodeId === id
@@ -156,14 +247,15 @@ export function createMusicPlayerUpdate(input: {
   const node: CanvasNode = {
     id,
     type: "musicPlayer",
-    position: { x: input.musicNode.position.x + 460, y: input.musicNode.position.y },
+    position: { x: sourceNode.position.x + 460, y: sourceNode.position.y },
     data: {
       kind: "musicPlayer",
       title: "音乐播放器",
       projectId: input.projectId,
       musicPlayerNodeId: id,
       musicSourceListExpanded: true,
-      musicSourceNodeId: input.musicNode.id,
+      musicSourceNodeId:
+        sourceNode.data.kind === "music" ? sourceNode.id : undefined,
       musicLoop: false,
       musicLoopMode: "off",
       musicMuted: false,
@@ -172,8 +264,8 @@ export function createMusicPlayerUpdate(input: {
     },
   };
   const edge: Edge = {
-    id: `music-source-edge:${input.musicNode.id}:${id}`,
-    source: input.musicNode.id,
+    id: `music-source-edge:${sourceNode.id}:${id}`,
+    source: sourceNode.id,
     target: id,
   };
   return { createdEdges: [edge], createdNodes: [node], focusNodeId: id };

@@ -71,7 +71,10 @@ import {
 } from "@/lib/zenme";
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 import { parseProviderModelReference } from "@/lib/ai/model-reference";
-import { createDroppedFileCanvasNodes } from "@/components/zenme/canvas/drop-files";
+import {
+  createDroppedFileCanvasNodes,
+  getDroppedFiles,
+} from "@/components/zenme/canvas/drop-files";
 import {
   createCanvasNodeClipboardPayload,
   createPastedCanvasNodes,
@@ -178,6 +181,7 @@ import {
   createDerivedImageChildCanvasNode,
   createImageGenerationCanvasNode,
   createManagedTextCanvasNode,
+  createMusicFolderCanvasNode,
   createTaskCanvasNode,
   createPendingImageResultChildCanvasNode,
   createPendingVideoResultChildCanvasNode,
@@ -197,12 +201,14 @@ import {
   createImageGenerationNodeDataUpdate,
   createImagePromptExpansionUpdate,
   createMusicChildExpansionUpdate,
+  createMusicFolderExpansionUpdate,
   createTextGenerationNodeDataUpdate,
   createTextNodeExpansionUpdate,
   createTextNodeDataUpdate,
   createTaskChildrenVisibilityUpdate,
   createTaskNodeDataUpdate,
   createProjectTagUpdate,
+  mergeTextGenerationSubmissionIntoNodes,
 } from "@/components/zenme/canvas/node-updates";
 import { createCanvasAddMenuFromPaneDoubleClick } from "@/components/zenme/canvas/pane-menu";
 import {
@@ -243,6 +249,7 @@ import { createReaderCollapseUpdate } from "@/components/zenme/canvas/reader-col
 import { getRenderedCanvasNodes } from "@/components/zenme/canvas/rendered-nodes";
 import {
   createLyricsNodeUpdate,
+  createMusicFolderDropUpdate,
   createMusicPlayerUpdate,
   extractMusicLyrics,
   findLyricsNodesNeedingRefresh,
@@ -408,6 +415,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const didConnectToNode = useRef(false);
   const canvasHistory = useRef<CanvasHistoryEntry[]>([]);
   const canvasHistorySignature = useRef("");
+  const shouldSyncHistorySignatureFromRender = useRef(false);
   const savedCanvasSignature = useRef("");
   const pendingCanvasSignature = useRef("");
   const isCanvasInteractionActive = useRef(false);
@@ -491,6 +499,14 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       ),
     [edges, nodes],
   );
+  useEffect(() => {
+    if (!shouldSyncHistorySignatureFromRender.current) {
+      return;
+    }
+
+    shouldSyncHistorySignatureFromRender.current = false;
+    canvasHistorySignature.current = canvasItemsSignature;
+  }, [canvasItemsSignature]);
   const canvasPersistableSignature = useMemo(
     () =>
       JSON.stringify({
@@ -743,16 +759,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }
 
       canvasHistory.current = [...canvasHistory.current.slice(-49), entry];
-      canvasHistorySignature.current = measureCanvasPerf(
-        "history signature",
-        () => getCanvasHistorySignature(afterNodes, edges),
-        {
-          edges: edges.length,
-          nodes: afterNodes.length,
-        },
-      );
+      shouldSyncHistorySignatureFromRender.current = true;
     },
-    [edges],
+    [],
   );
 
   const pushCreateHistory = useCallback(
@@ -771,14 +780,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }
 
       canvasHistory.current = [...canvasHistory.current.slice(-49), entry];
-      canvasHistorySignature.current = measureCanvasPerf(
-        "history signature",
-        () => getCanvasHistorySignature(input.afterNodes, input.afterEdges),
-        {
-          edges: input.afterEdges.length,
-          nodes: input.afterNodes.length,
-        },
-      );
+      shouldSyncHistorySignatureFromRender.current = true;
     },
     [],
   );
@@ -799,14 +801,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }
 
       canvasHistory.current = [...canvasHistory.current.slice(-49), entry];
-      canvasHistorySignature.current = measureCanvasPerf(
-        "history signature",
-        () => getCanvasHistorySignature(input.afterNodes, input.afterEdges),
-        {
-          edges: input.afterEdges.length,
-          nodes: input.afterNodes.length,
-        },
-      );
+      shouldSyncHistorySignatureFromRender.current = true;
     },
     [],
   );
@@ -827,14 +822,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }
 
       canvasHistory.current = [...canvasHistory.current.slice(-49), entry];
-      canvasHistorySignature.current = measureCanvasPerf(
-        "history signature",
-        () => getCanvasHistorySignature(input.afterNodes, input.afterEdges),
-        {
-          edges: input.afterEdges.length,
-          nodes: input.afterNodes.length,
-        },
-      );
+      shouldSyncHistorySignatureFromRender.current = true;
     },
     [],
   );
@@ -868,8 +856,12 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       nodesRef.current = nextNodes;
       edgesRef.current = nextEdges;
       skipNextHistoryEntryCount.current += 1;
-      setNodes(nextNodes);
-      setEdges(nextEdges);
+      if (createdNodes.length > 0) {
+        setNodes(nextNodes);
+      }
+      if (createdEdges.length > 0) {
+        setEdges(nextEdges);
+      }
       pushCreateHistory({
         afterEdges: nextEdges,
         afterNodes: nextNodes,
@@ -1855,6 +1847,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         richTextHtml?: string;
         tags?: string[];
         textMode?: "code" | "markdown" | "plain";
+        textLineNumbers?: boolean;
         textScrollState?: CanvasNodeData["textScrollState"];
         title?: string;
       },
@@ -2008,6 +2001,21 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       });
       if (!update) return;
 
+      skipNextHistoryEntryCount.current += 1;
+      setNodes(update.nextNodes);
+      pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
+    },
+    [pushNodeUpdateHistory, setNodes],
+  );
+
+  const toggleMusicFolderExpanded = useCallback(
+    (nodeId: string, expanded: boolean) => {
+      const update = createMusicFolderExpansionUpdate({
+        expanded,
+        nodeId,
+        nodes: nodesRef.current,
+      });
+      if (!update) return;
       skipNextHistoryEntryCount.current += 1;
       setNodes(update.nextNodes);
       pushNodeUpdateHistory(update.beforeNodeSnapshots, update.nextNodes);
@@ -2278,9 +2286,16 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           sourceNode,
         });
 
+      const latestNodes = mergeTextGenerationSubmissionIntoNodes({
+        model,
+        nodeId,
+        nodes: reactFlow?.getNodes() ?? nodesRef.current,
+        prompt: preflight.prompt,
+      });
+      const latestEdges = reactFlow?.getEdges() ?? edgesRef.current;
       appendCanvasItems({
-        currentEdges,
-        currentNodes,
+        currentEdges: latestEdges,
+        currentNodes: latestNodes,
         edges: [nextEdge],
         nodes: [nextNode],
       });
@@ -3145,6 +3160,16 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     setCanvasAddMenu(null);
   }
 
+  function createMusicFolderNodeAt(position: { x: number; y: number }) {
+    setCanvasAddMenu(null);
+    const nextNode = createMusicFolderCanvasNode({
+      id: crypto.randomUUID(),
+      mode: "virtual",
+      position,
+    });
+    appendCanvasItems({ currentEdges: edges, currentNodes: nodes, nodes: [nextNode] });
+  }
+
   function openUploadPickerAt(position: { x: number; y: number }) {
     pendingUploadPosition.current = position;
     pendingUploadSourceNodeId.current = null;
@@ -3568,6 +3593,57 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         return;
       }
 
+      if (draggedNode.data.kind === "music") {
+        const draggedWidth = draggedNode.measured?.width ?? (Number(draggedNode.style?.width) || 288);
+        const draggedHeight = draggedNode.measured?.height ?? (Number(draggedNode.style?.height) || 96);
+        const center = {
+          x: draggedNode.position.x + draggedWidth / 2,
+          y: draggedNode.position.y + draggedHeight / 2,
+        };
+        const folder = [...currentNodes].reverse().find((node) => {
+          if (node.data.kind !== "musicFolder") return false;
+          const width = node.measured?.width ?? (Number(node.style?.width) || 288);
+          const height = node.measured?.height ?? (Number(node.style?.height) || 96);
+          return center.x >= node.position.x && center.x <= node.position.x + width &&
+            center.y >= node.position.y && center.y <= node.position.y + height;
+        });
+        if (folder) {
+          const update = createMusicFolderDropUpdate({
+            edges: edgesRef.current,
+            folderNodeId: folder.id,
+            musicNodeId: draggedNode.id,
+            nodes: currentNodes,
+          });
+          if (!update) return;
+          nodesRef.current = update.nextNodes;
+          edgesRef.current = update.nextEdges;
+          skipNextHistoryEntryCount.current += 1;
+          setNodes(update.nextNodes);
+          setEdges(update.nextEdges);
+          pushMutateHistory({
+            afterEdges: update.nextEdges,
+            afterNodes: update.nextNodes,
+            deletedEdges: update.deletedEdges,
+            deletedNodes: [
+              dragStartNodeSnapshots.current?.get(draggedNode.id) ?? update.deletedNode,
+            ],
+            nodeUpdates: [{
+              after: update.updatedFolder,
+              before: update.previousFolder,
+              id: update.updatedFolder.id,
+            }],
+          });
+          dragStartNodeSnapshots.current = null;
+          setCanvasNotice(`已加入“${folder.data.title}”`);
+          stopCanvasInteractionSample(dragInteractionSample.current, {
+            edges: update.nextEdges.length,
+            nodes: update.nextNodes.length,
+          });
+          dragInteractionSample.current = null;
+          return;
+        }
+      }
+
       detachNodeFromGroupIfOutside(draggedNode);
       stopCanvasInteractionSample(dragInteractionSample.current, {
         edges: edges.length,
@@ -3584,8 +3660,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       edges.length,
       nodes,
       pushCreateHistory,
+      pushMutateHistory,
       pushNodeUpdateHistory,
       reactFlow,
+      setEdges,
       setNodes,
     ],
   );
@@ -3690,7 +3768,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       return;
     }
 
-    const files = Array.from(event.dataTransfer.files);
+    const files = getDroppedFiles(event.dataTransfer);
     if (files.length === 0) {
       return;
     }
@@ -3773,7 +3851,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     });
 
     if (!update) {
-      setCanvasNotice("该图书节点没有可读取的原始文件引用，请重新拖入文件。");
+      setCanvasNotice("该节点没有可读取的内容或原始文件引用。");
       setNodeActionMenu(null);
       return;
     }
@@ -3788,8 +3866,16 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       createdNodes: update.createdNodes,
       nodeUpdates: update.nodeUpdates,
     });
+    const readerNodeId = update.createdNodes[0]?.id;
     window.requestAnimationFrame(() => {
-      void reactFlow?.fitView({ duration: 220, padding: 0.16 });
+      const flow = reactFlowRef.current;
+      if (!flow || !readerNodeId) return;
+      void flow.fitView(
+        createPreservedZoomNodeFocusOptions(
+          readerNodeId,
+          flow.getViewport().zoom,
+        ),
+      );
     });
     setNodeActionMenu(null);
   }
@@ -3869,11 +3955,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }, [setNodes]);
 
   const createMusicPlayer = useCallback((musicNodeId: string, position?: { x: number; y: number }) => {
-    const musicNode = nodesRef.current.find((node) => node.id === musicNodeId);
-    if (!musicNode || musicNode.data.kind !== "music") return;
+    const sourceNode = nodesRef.current.find((node) => node.id === musicNodeId);
+    if (!sourceNode || (sourceNode.data.kind !== "music" && sourceNode.data.kind !== "musicFolder")) return;
     const update = createMusicPlayerUpdate({
       edges: edgesRef.current,
-      musicNode,
+      sourceNode,
       nodes: nodesRef.current,
       projectId,
     });
@@ -4255,6 +4341,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         onSelectAdjacentMusicSource: selectAdjacentMusicSource,
         onSelectMusicSource: selectMusicSource,
         onToggleMusicLyricsOverlay: toggleMusicLyricsOverlay,
+        onToggleMusicFolderExpanded: toggleMusicFolderExpanded,
         onToggleMusicPlayback: toggleMusicPlayback,
         onUpdateMusicNode: updateMusicNode,
         onUpdateMusicPlayback: updateMusicPlayback,
@@ -4296,6 +4383,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       selectAdjacentMusicSource,
       selectMusicSource,
       toggleMusicLyricsOverlay,
+      toggleMusicFolderExpanded,
       toggleMusicPlayback,
       updateMusicNode,
       updateMusicPlayback,
@@ -4375,7 +4463,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }
 
   return (
-    <div className={`zenme-canvas-shell h-full overflow-hidden bg-white text-zinc-950 ${isNodeDragging ? "zenme-canvas-node-dragging" : ""}`}>
+    <div className={`zenme-canvas-shell h-full overflow-hidden bg-white text-zinc-950 ${isNodeDragging ? "zenme-canvas-node-dragging" : ""} ${isViewportMoving ? "zenme-canvas-viewport-moving" : ""}`}>
       <main
         className="relative h-full w-full"
         onAuxClickCapture={(event) => {
@@ -4616,6 +4704,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             onCreateManagedTextNode={createManagedTextNodeAt}
             onCreateTaskNode={createTaskNodeAt}
             onCreateTextNode={createTextNodeAt}
+            onCreateMusicFolderNode={createMusicFolderNodeAt}
             onUploadFiles={openUploadPickerAt}
           />
         ) : null}
@@ -4629,7 +4718,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             onUploadConnectedFiles={openConnectedUploadPicker}
             onOpenReadingWorkspace={openReadingWorkspace}
             onCreateMusicPlayer={() => {
-              if (!actionNode || actionNode.data.kind !== "music") return;
+              if (!actionNode || (actionNode.data.kind !== "music" && actionNode.data.kind !== "musicFolder")) return;
               createMusicPlayer(actionNode.id, nodeActionMenu.flowPosition);
               setNodeActionMenu(null);
             }}

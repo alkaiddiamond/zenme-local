@@ -125,6 +125,13 @@ export function useReadingNotes(input: {
           type: selection ? "highlight" : "note",
           offset: selection?.offset ?? null,
           length: selection?.length ?? null,
+          ranges: selection
+            ? selection.ranges.map(({ length, offset, sectionIndex }) => ({
+                length,
+                offset,
+                sectionIndex,
+              }))
+            : null,
         });
         onNoteCreated();
         setPayload({

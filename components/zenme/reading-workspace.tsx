@@ -22,6 +22,7 @@ import {
   buildReadingNavigationSections,
   getReadingActiveTitle,
   getReadingSectionTitle,
+  isPagedReadingFormat,
 } from "./reading/navigation";
 import { ReadingAnnotationOverlays } from "./reading/reading-annotation-overlays";
 import { ReadingMainPane } from "./reading/reading-main-pane";
@@ -46,6 +47,7 @@ import {
 } from "./reading/layout";
 import type { PdfOutlineSection, ReadingPayload } from "./reading/types";
 import {
+  getReadingSectionIndexNearViewportTop,
   scrollElementIntoContainer,
   scrollToEpubSection,
   scrollToReadingTarget,
@@ -84,7 +86,7 @@ export function ReadingWorkspace({
     useState<ReadingAnnotationColor>("yellow");
   const [comment, setComment] = useState("");
   const [focusedNoteId, setFocusedNoteId] = useState<string | null>(null);
-  const [epubVisibleRange, setEpubVisibleRange] = useState<[number, number]>([
+  const [pagedVisibleRange, setPagedVisibleRange] = useState<[number, number]>([
     0, 12,
   ]);
   const {
@@ -175,11 +177,13 @@ export function ReadingWorkspace({
       requestAnimationFrame(() => {
         restoreReadingScroll(progress.scrollRatio, progress.sectionIndex);
         window.setTimeout(
-          () => restoreReadingScroll(progress.scrollRatio, progress.sectionIndex),
+          () =>
+            restoreReadingScroll(progress.scrollRatio, progress.sectionIndex),
           160,
         );
         window.setTimeout(
-          () => restoreReadingScroll(progress.scrollRatio, progress.sectionIndex),
+          () =>
+            restoreReadingScroll(progress.scrollRatio, progress.sectionIndex),
           520,
         );
       });
@@ -237,7 +241,7 @@ export function ReadingWorkspace({
     });
   }, [payload, pdfOutlineSections, pdfPageCount]);
 
-  const updateEpubVisibleRange = useCallback(
+  const updatePagedVisibleRange = useCallback(
     (container: HTMLElement | null, pageCount: number) => {
       if (!container || pageCount <= 0) {
         return;
@@ -249,7 +253,7 @@ export function ReadingWorkspace({
         pageCount,
         scrollTop: container.scrollTop,
       });
-      setEpubVisibleRange((current) =>
+      setPagedVisibleRange((current) =>
         current[0] === nextRange[0] && current[1] === nextRange[1]
           ? current
           : nextRange,
@@ -273,13 +277,13 @@ export function ReadingWorkspace({
   }, [payload]);
 
   useEffect(() => {
-    if (payload?.asset.format !== "epub") {
+    if (!payload || !isPagedReadingFormat(payload.asset.format)) {
       return;
     }
     requestAnimationFrame(() => {
-      updateEpubVisibleRange(readerScrollRef.current, payload.sections.length);
+      updatePagedVisibleRange(readerScrollRef.current, payload.sections.length);
     });
-  }, [payload, updateEpubVisibleRange]);
+  }, [payload, updatePagedVisibleRange]);
 
   useEffect(() => {
     return () => {
@@ -300,96 +304,116 @@ export function ReadingWorkspace({
     };
   }, [assetId, payload?.asset.format, projectId]);
 
-  const getSectionTitle = useCallback((index: number) => {
-    if (!payload) {
-      return activeTitle;
-    }
+  const getSectionTitle = useCallback(
+    (index: number) => {
+      if (!payload) {
+        return activeTitle;
+      }
 
-    return getReadingSectionTitle({
-      activeTitle,
-      assetFormat: payload.asset.format,
-      index,
-      sections: payload.sections,
-    });
-  }, [activeTitle, payload]);
-
-  const jumpToSection = useCallback((index: number) => {
-    activeSectionRef.current = index;
-    setActiveSection(index);
-    saveProgress(index, contentScale, 0);
-    if (payload?.asset.format === "epub") {
-      scrollToEpubSection(readerScrollRef.current, index, contentScale, "smooth");
-      updateEpubVisibleRange(readerScrollRef.current, payload.sections.length);
-      return;
-    }
-    const scrollToPdfPage = (behavior: ScrollBehavior) => {
-      scrollElementIntoContainer({
-        behavior,
-        container: readerScrollRef.current,
-        target: sectionRefs.current[index],
+      return getReadingSectionTitle({
+        activeTitle,
+        assetFormat: payload.asset.format,
+        index,
+        sections: payload.sections,
       });
-    };
-    scrollToPdfPage("smooth");
-    window.setTimeout(() => scrollToPdfPage("auto"), 120);
-    window.setTimeout(() => scrollToPdfPage("auto"), 360);
-  }, [
-    activeSectionRef,
-    contentScale,
-    payload,
-    saveProgress,
-    setActiveSection,
-    updateEpubVisibleRange,
-  ]);
+    },
+    [activeTitle, payload],
+  );
 
-  const jumpToNote = useCallback((note: ReadingNote) => {
-    activeSectionRef.current = note.sectionIndex;
-    setActiveSection(note.sectionIndex);
-    saveProgress(note.sectionIndex);
-    setFocusedNoteId(note.id);
+  const jumpToSection = useCallback(
+    (index: number) => {
+      activeSectionRef.current = index;
+      setActiveSection(index);
+      saveProgress(index, contentScale, 0);
+      if (payload && isPagedReadingFormat(payload.asset.format)) {
+        scrollToEpubSection(
+          readerScrollRef.current,
+          index,
+          contentScale,
+          "smooth",
+        );
+        updatePagedVisibleRange(
+          readerScrollRef.current,
+          payload.sections.length,
+        );
+        return;
+      }
+      const scrollToPdfPage = (behavior: ScrollBehavior) => {
+        scrollElementIntoContainer({
+          behavior,
+          container: readerScrollRef.current,
+          target: sectionRefs.current[index],
+        });
+      };
+      scrollToPdfPage("smooth");
+      window.setTimeout(() => scrollToPdfPage("auto"), 120);
+      window.setTimeout(() => scrollToPdfPage("auto"), 360);
+    },
+    [
+      activeSectionRef,
+      contentScale,
+      payload,
+      saveProgress,
+      setActiveSection,
+      updatePagedVisibleRange,
+    ],
+  );
 
-    const targetSelector =
-      payload?.asset.format === "pdf"
-        ? `[data-pdf-annotation-note="${note.id}"]`
-        : `[data-reading-highlight-note="${note.id}"]`;
+  const jumpToNote = useCallback(
+    (note: ReadingNote) => {
+      activeSectionRef.current = note.sectionIndex;
+      setActiveSection(note.sectionIndex);
+      saveProgress(note.sectionIndex);
+      setFocusedNoteId(note.id);
 
-    const scrollToTarget = () => {
-      const behavior = payload?.asset.format === "pdf" ? "auto" : "smooth";
-      return scrollToReadingTarget({
-        behavior,
-        fallbackSection: sectionRefs.current[note.sectionIndex],
-        selector: targetSelector,
-        container: readerScrollRef.current,
-        workspace: workspaceRef.current,
-      });
-    };
+      const targetSelector =
+        payload?.asset.format === "pdf"
+          ? `[data-pdf-annotation-note="${note.id}"]`
+          : `[data-reading-highlight-note="${note.id}"]`;
 
-    const found = scrollToTarget();
-    if (!found && payload?.asset.format === "epub") {
-      scrollToEpubSection(
-        readerScrollRef.current,
-        note.sectionIndex,
-        contentScale,
-        "auto",
-      );
-      updateEpubVisibleRange(readerScrollRef.current, payload.sections.length);
-      window.setTimeout(scrollToTarget, 80);
-      window.setTimeout(scrollToTarget, 240);
-    }
-    if (!found && payload?.asset.format === "pdf") {
-      window.setTimeout(scrollToTarget, 240);
-      window.setTimeout(scrollToTarget, 720);
-    }
-    window.setTimeout(() => {
-      setFocusedNoteId((current) => (current === note.id ? null : current));
-    }, 1800);
-  }, [
-    activeSectionRef,
-    contentScale,
-    payload,
-    saveProgress,
-    setActiveSection,
-    updateEpubVisibleRange,
-  ]);
+      const scrollToTarget = () => {
+        const behavior = payload?.asset.format === "pdf" ? "auto" : "smooth";
+        return scrollToReadingTarget({
+          behavior,
+          fallbackSection: sectionRefs.current[note.sectionIndex],
+          selector: targetSelector,
+          container: readerScrollRef.current,
+          workspace: workspaceRef.current,
+        });
+      };
+
+      const found = scrollToTarget();
+      if (!found && payload && isPagedReadingFormat(payload.asset.format)) {
+        scrollToEpubSection(
+          readerScrollRef.current,
+          note.sectionIndex,
+          contentScale,
+          "auto",
+        );
+        updatePagedVisibleRange(
+          readerScrollRef.current,
+          payload.sections.length,
+        );
+        window.setTimeout(scrollToTarget, 80);
+        window.setTimeout(scrollToTarget, 240);
+      }
+      if (!found && payload?.asset.format === "pdf") {
+        window.setTimeout(scrollToTarget, 240);
+        window.setTimeout(scrollToTarget, 720);
+      }
+      window.setTimeout(() => {
+        setFocusedNoteId((current) => (current === note.id ? null : current));
+      }, 1800);
+    },
+    [
+      activeSectionRef,
+      contentScale,
+      payload,
+      saveProgress,
+      setActiveSection,
+      updatePagedVisibleRange,
+    ],
+  );
 
   function processReaderScroll() {
     readerScrollFrame.current = null;
@@ -400,8 +424,8 @@ export function ReadingWorkspace({
       return;
     }
 
-    if (payload.asset.format === "epub") {
-      updateEpubVisibleRange(container, payload.sections.length);
+    if (isPagedReadingFormat(payload.asset.format)) {
+      updatePagedVisibleRange(container, payload.sections.length);
       const closestIndex = getClosestEpubSectionIndex({
         clientHeight: container.clientHeight,
         contentScale,
@@ -422,21 +446,10 @@ export function ReadingWorkspace({
       return;
     }
 
-    const containerTop = container.getBoundingClientRect().top;
-    let closestIndex = activeSection;
-    let closestDistance = Number.POSITIVE_INFINITY;
-
-    for (const section of navigationSections) {
-      const node = sectionRefs.current[section.index];
-      if (!node) continue;
-      const distance = Math.abs(
-        node.getBoundingClientRect().top - containerTop - 24,
-      );
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestIndex = section.index;
-      }
-    }
+    const closestIndex = getReadingSectionIndexNearViewportTop(
+      container,
+      activeSection,
+    );
 
     if (closestIndex !== activeSection) {
       activeSectionRef.current = closestIndex;
@@ -523,10 +536,10 @@ export function ReadingWorkspace({
     pdfOcrError && !canSavePdfAnnotation
       ? pdfOcrError
       : pdfAnnotationDraft?.ocrFailed && !canSavePdfAnnotation
-      ? "未识别到文字，请重新框选"
-      : isPdfOcrBusy && !canSavePdfAnnotation
-        ? "OCR 识别中，首次加载可能较慢..."
-        : (pdfAnnotationDraft?.selectedText ?? selectedText);
+        ? "未识别到文字，请重新框选"
+        : isPdfOcrBusy && !canSavePdfAnnotation
+          ? "OCR 识别中，首次加载可能较慢..."
+          : (pdfAnnotationDraft?.selectedText ?? selectedText);
   const quickNoteCopy = getQuickNotePanelCopy({
     assetFormat: payload?.asset.format,
     hasPdfAnnotationDraft: Boolean(pdfAnnotationDraft),
@@ -569,10 +582,7 @@ export function ReadingWorkspace({
   );
 
   const handleSaveEditedNote = useCallback(
-    (
-      noteId: string,
-      updates: { comment: string; selectedText: string },
-    ) => {
+    (noteId: string, updates: { comment: string; selectedText: string }) => {
       void saveEditedNote(noteId, updates);
     },
     [saveEditedNote],
@@ -610,13 +620,9 @@ export function ReadingWorkspace({
         title={payload?.asset.title ?? "阅读器"}
       />
 
-      {error ? (
-        <ReadingWorkspaceErrorState message={error} />
-      ) : null}
+      {error ? <ReadingWorkspaceErrorState message={error} /> : null}
 
-      {!payload && !error ? (
-        <ReadingWorkspaceLoadingState />
-      ) : null}
+      {!payload && !error ? <ReadingWorkspaceLoadingState /> : null}
 
       {payload ? (
         <div
@@ -655,7 +661,7 @@ export function ReadingWorkspace({
             readerScrollRef={readerScrollRef}
             sectionRefs={sectionRefs}
             selection={selection}
-            visibleRange={epubVisibleRange}
+            visibleRange={pagedVisibleRange}
           />
 
           <ReadingAnnotationOverlays
@@ -683,7 +689,8 @@ export function ReadingWorkspace({
             createPdfAnnotationNote={handleCreatePdfAnnotationQuickNote}
             deleteNote={handleDeleteNote}
             isSavingNote={
-              isSavingNote || (Boolean(pdfAnnotationDraft) && !canSavePdfAnnotation)
+              isSavingNote ||
+              (Boolean(pdfAnnotationDraft) && !canSavePdfAnnotation)
             }
             jumpToNote={jumpToNote}
             notes={payload.notes}

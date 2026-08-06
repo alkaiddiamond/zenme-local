@@ -834,6 +834,29 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
+export function createMusicFolderCanvasNode(input: {
+  id: string;
+  mode: "system" | "virtual";
+  path?: string;
+  position: { x: number; y: number };
+  sources?: NonNullable<CanvasNode["data"]["musicFolderSources"]>;
+  title?: string;
+}): CanvasNode {
+  return {
+    id: input.id,
+    type: "musicFolder",
+    position: input.position,
+    data: {
+      kind: "musicFolder",
+      title: input.title ?? "文件夹",
+      musicFolderMode: input.mode,
+      musicFolderPath: input.path,
+      musicFolderSources: input.sources ?? [],
+      musicFolderExpanded: false,
+    },
+  };
+}
+
 export function createDerivedImageChildCanvasNode(input: {
   fileId: string;
   fileName: string;

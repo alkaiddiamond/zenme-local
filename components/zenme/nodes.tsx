@@ -13,6 +13,7 @@ import { ReaderNode } from "@/components/zenme/nodes/reader-node";
 import { TextNode } from "@/components/zenme/nodes/text-node";
 import { TextGenerationNode } from "@/components/zenme/nodes/text-generation-node";
 import { MusicNode } from "@/components/zenme/nodes/music-node";
+import { MusicFolderNode } from "@/components/zenme/nodes/music-folder-node";
 import { MusicPlayerNode } from "@/components/zenme/nodes/music-player-node";
 import { LyricsNode } from "@/components/zenme/nodes/lyrics-node";
 import { ManagedTextNode } from "@/components/zenme/nodes/managed-text-node";
@@ -58,6 +59,7 @@ export const nodeTypes = {
   video: withNodeDragBorder(VideoNode),
   file: withNodeDragBorder(FileNode),
   music: withNodeDragBorder(MusicNode),
+  musicFolder: withNodeDragBorder(MusicFolderNode),
   musicPlayer: withNodeDragBorder(MusicPlayerNode),
   lyrics: withNodeDragBorder(LyricsNode),
   book: withNodeDragBorder(BookNode),

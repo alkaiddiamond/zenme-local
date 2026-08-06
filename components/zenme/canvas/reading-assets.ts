@@ -10,6 +10,26 @@ export async function prepareReadingAssetForCanvasNode(input: {
   node: CanvasNode;
   projectId: string;
 }) {
+  if (input.node.data.kind === "text" || input.node.data.kind === "markdown") {
+    const content = input.node.data.plainText?.trimEnd();
+    if (!content) return null;
+    const markdown =
+      input.node.data.kind === "markdown" || input.node.data.textMode === "markdown";
+    const fileName = createTextReadingFileName(
+      input.node.data.title || input.node.data.name || "未命名文本",
+      markdown ? ".md" : ".txt",
+    );
+    const file = new File([content], fileName, {
+      type: markdown ? "text/markdown;charset=utf-8" : "text/plain;charset=utf-8",
+    });
+    return registerReadingAsset({
+      projectId: input.projectId,
+      nodeId: input.node.id,
+      file,
+      fileName,
+    });
+  }
+
   const originalUrl = input.node.data.originalUrl;
   const fileName = input.node.data.fileName;
 
@@ -35,6 +55,15 @@ export async function prepareReadingAssetForCanvasNode(input: {
     fileName,
     cover,
   });
+}
+
+function createTextReadingFileName(title: string, extension: ".md" | ".txt") {
+  const safeTitle = title
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 100);
+  return `${safeTitle || "未命名文本"}${extension}`;
 }
 
 export async function registerReadingAsset(input: {

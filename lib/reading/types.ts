@@ -1,4 +1,4 @@
-export type ReadingFormat = "epub" | "pdf" | "txt";
+export type ReadingFormat = "epub" | "markdown" | "pdf" | "txt";
 export type ReadingAnnotationColor = "yellow" | "red" | "blue" | "green" | "purple";
 export type ReadingAnnotationType = "highlight" | "underline" | "note" | "region";
 
@@ -25,6 +25,12 @@ export type ReadingSection = {
   text: string;
 };
 
+export type ReadingTextRange = {
+  sectionIndex: number;
+  offset: number;
+  length: number;
+};
+
 export type ReadingNote = {
   id: string;
   assetId: string;
@@ -38,6 +44,7 @@ export type ReadingNote = {
   type: ReadingAnnotationType;
   offset?: number | null;
   length?: number | null;
+  ranges?: ReadingTextRange[] | null;
   rect?: { x: number; y: number; w: number; h: number } | null;
   sortOrder: number;
   createdAt: string;
@@ -56,6 +63,7 @@ export type ReadingNoteCreate = {
   type?: ReadingAnnotationType;
   offset?: number | null;
   length?: number | null;
+  ranges?: ReadingTextRange[] | null;
   rect?: { x: number; y: number; w: number; h: number } | null;
 };
 

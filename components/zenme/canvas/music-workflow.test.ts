@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import type { CanvasNode } from "./types";
 import {
   createLyricsNodeUpdate,
+  createMusicFolderDropUpdate,
   createMusicPlayerUpdate,
   getMusicApiErrorMessage,
   downsampleWaveform,
@@ -93,6 +94,83 @@ describe("music workflow", () => {
       nodes: [musicNode, player],
       playerNodeId: player.id,
     })).toBe(musicNode);
+  });
+
+  it("expands a connected music folder into registered and canvas music sources", () => {
+    const folder: CanvasNode = {
+      id: "folder-1",
+      type: "musicFolder",
+      position: { x: 100, y: 100 },
+      data: {
+        kind: "musicFolder",
+        title: "歌单",
+        musicFolderMode: "system",
+        musicFolderSources: [{
+          id: "file-2",
+          fileId: "file-2",
+          fileName: "系统歌曲.ogg",
+          originalUrl: "/api/files/file-2",
+          title: "系统歌曲.ogg",
+        }],
+      },
+    };
+    const member: CanvasNode = {
+      ...musicNode,
+      id: "music-member",
+      data: { ...musicNode.data, musicFolderId: folder.id },
+    };
+    const player: CanvasNode = {
+      id: "player-1",
+      type: "musicPlayer",
+      position: { x: 500, y: 100 },
+      data: { kind: "musicPlayer", title: "播放器" },
+    };
+
+    expect(resolveMusicSourceNodes({
+      edges: [{ id: "folder-edge", source: folder.id, target: player.id }],
+      nodes: [folder, member, player],
+      playerNodeId: player.id,
+    }).map((node) => node.id)).toEqual(["file-2", "music-member"]);
+  });
+
+  it("moves a music node into a folder, removes its canvas node, and disconnects its edges", () => {
+    const folder: CanvasNode = {
+      id: "folder-1",
+      type: "musicFolder",
+      position: { x: 300, y: 100 },
+      data: { kind: "musicFolder", title: "收藏" },
+    };
+    const other: CanvasNode = {
+      id: "other",
+      type: "text",
+      position: { x: 0, y: 0 },
+      data: { kind: "text", title: "其他" },
+    };
+    const edges = [
+      { id: "incoming", source: other.id, target: musicNode.id },
+      { id: "outgoing", source: musicNode.id, target: other.id },
+      { id: "untouched", source: folder.id, target: other.id },
+    ];
+
+    const update = createMusicFolderDropUpdate({
+      edges,
+      folderNodeId: folder.id,
+      musicNodeId: musicNode.id,
+      nodes: [musicNode, folder, other],
+    });
+
+    expect(update?.nextNodes.map((node) => node.id)).toEqual([folder.id, other.id]);
+    expect(update?.nextEdges.map((edge) => edge.id)).toEqual(["untouched"]);
+    expect(update?.deletedEdges.map((edge) => edge.id)).toEqual(["incoming", "outgoing"]);
+    expect(update?.updatedFolder.data.musicFolderSources).toEqual([{
+      id: musicNode.id,
+      fileId: "file-1",
+      fileName: undefined,
+      fileSize: undefined,
+      mimeType: undefined,
+      originalUrl: undefined,
+      title: "测试歌曲",
+    }]);
   });
 
   it("normalizes legacy loop state and cycles all three loop modes", () => {

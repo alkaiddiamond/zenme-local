@@ -209,6 +209,30 @@ export async function createVideoTask(input: {
   }>(response);
 }
 
+export async function referenceProjectFileInApi(input: {
+  externalPath: string;
+  fileName: string;
+  mimeType?: string;
+  projectId: string;
+}) {
+  return readJson<{
+    externalPath: string | null;
+    fileId: string;
+    originalPath: string;
+    originalUrl: string;
+    previewPath: string | null;
+    previewUrl?: string;
+  }>(await fetch(`/api/projects/${input.projectId}/files`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      externalPath: input.externalPath,
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+    }),
+  }));
+}
+
 export async function createExecutionInApi(input: {
   attemptId?: string;
   executionId?: string;

@@ -9,6 +9,7 @@ import {
 } from "./api";
 import { getNormalizedContentScale } from "./layout";
 import {
+  canPersistReadingProgress,
   getScrollRatioFromElement,
   normalizeLoadedReadingProgress,
 } from "./progress-state";
@@ -39,6 +40,7 @@ export function useReadingProgress(input: {
   const lastSavedScrollRatio = useRef(initialProgress?.scrollRatio ?? 0);
   const pendingProgress = useRef<PendingProgress | null>(null);
   const progressSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const readyAssetId = useRef<string | null>(null);
 
   const setActiveSection = useCallback((index: number) => {
     activeSectionRef.current = index;
@@ -62,6 +64,7 @@ export function useReadingProgress(input: {
       contentScaleRef.current = normalized.contentScale;
       lastSavedSection.current = normalized.sectionIndex;
       lastSavedScrollRatio.current = normalized.scrollRatio;
+      readyAssetId.current = assetId;
       setActiveSectionState(normalized.sectionIndex);
       setContentScaleState(normalized.contentScale);
       cacheReadingProgress({
@@ -82,6 +85,10 @@ export function useReadingProgress(input: {
 
   const flushProgress = useCallback(
     (options?: { keepalive?: boolean }) => {
+      if (!canPersistReadingProgress(readyAssetId.current, assetId)) {
+        return;
+      }
+
       const pending = pendingProgress.current;
       const sectionIndex = activeSectionRef.current;
       const scrollRatio = getCurrentScrollRatio();
@@ -113,6 +120,7 @@ export function useReadingProgress(input: {
       scrollRatio = getCurrentScrollRatio(),
       options?: { immediate?: boolean; keepalive?: boolean },
     ) => {
+      readyAssetId.current = assetId;
       activeSectionRef.current = index;
       contentScaleRef.current = scale;
       lastSavedSection.current = index;

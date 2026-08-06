@@ -7,12 +7,14 @@ import {
   createCodeNodeDataUpdate,
   createImagePromptExpansionUpdate,
   createMusicChildExpansionUpdate,
+  createMusicFolderExpansionUpdate,
   createProjectTagUpdate,
   createTaskChildrenVisibilityUpdate,
   createTextNodeExpansionUpdate,
   createTextGenerationNodeDataUpdate,
   createTextNodeDataUpdate,
   createTaskNodeDataUpdate,
+  mergeTextGenerationSubmissionIntoNodes,
 } from "./node-updates";
 import type { CanvasNode } from "./types";
 
@@ -34,6 +36,33 @@ function node(input: {
 }
 
 describe("canvas node data update helpers", () => {
+  it("persists music folder expansion without changing its contents", () => {
+    const folder = node({
+      data: {
+        kind: "musicFolder",
+        musicFolderExpanded: false,
+        musicFolderSources: [{ id: "song-1", title: "第一首" }],
+      },
+      id: "folder",
+      type: "musicFolder",
+    });
+
+    const expanded = createMusicFolderExpansionUpdate({
+      expanded: true,
+      nodeId: folder.id,
+      nodes: [folder],
+    });
+    expect(expanded?.nextNodes[0].data).toMatchObject({
+      musicFolderExpanded: true,
+      musicFolderSources: [{ id: "song-1", title: "第一首" }],
+    });
+    expect(createMusicFolderExpansionUpdate({
+      expanded: true,
+      nodeId: folder.id,
+      nodes: expanded?.nextNodes ?? [],
+    })).toBeNull();
+  });
+
   it("expands a music result node to an A4 panel and collapses to 560 × 176", () => {
     const lyrics = node({
       data: { kind: "lyrics" },
@@ -200,6 +229,18 @@ describe("canvas node data update helpers", () => {
     });
 
     expect(update?.nextNodes[0].data.textScrollState).toEqual(textScrollState);
+  });
+
+  it("persists the text line-number preference", () => {
+    const text = node({ data: { kind: "text" }, id: "text" });
+    const update = createTextNodeDataUpdate({
+      nodeId: "text",
+      nodes: [text],
+      updates: { textLineNumbers: true },
+    });
+
+    expect(update?.nextNodes[0].data.textLineNumbers).toBe(true);
+    expect(update?.beforeNodeSnapshots.get("text")?.data.textLineNumbers).toBeUndefined();
   });
 
   it("returns null for unchanged text updates and updates legacy code nodes", () => {
@@ -566,6 +607,30 @@ describe("canvas node data update helpers", () => {
       comment: "笔记",
       textGenerationModel: "glm-5.2",
       textGenerationPrompt: "基于笔记继续",
+    });
+  });
+
+  it("keeps the submitted prompt when a response node is appended from a stale snapshot", () => {
+    const text = node({
+      data: {
+        kind: "text",
+        textGenerationModel: "old-model",
+        textGenerationPrompt: "",
+      },
+      id: "text",
+      type: "text",
+    });
+
+    const [submitted] = mergeTextGenerationSubmissionIntoNodes({
+      model: "next-model",
+      nodeId: "text",
+      nodes: [text],
+      prompt: "保留这次提问",
+    });
+
+    expect(submitted.data).toMatchObject({
+      textGenerationModel: "next-model",
+      textGenerationPrompt: "保留这次提问",
     });
   });
 });

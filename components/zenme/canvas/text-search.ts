@@ -19,6 +19,7 @@ const NODE_KIND_LABELS: Record<CanvasNode["data"]["kind"], string> = {
   managedText: "文本",
   markdown: "Markdown",
   music: "音乐",
+  musicFolder: "文件夹",
   musicPlayer: "音乐播放器",
   note: "笔记",
   reader: "阅读器",

@@ -84,11 +84,34 @@ function normalizeReadingNoteCreateBody(
     length: normalizeNullableNonNegativeInteger(body.length),
     offset: normalizeNullableNonNegativeInteger(body.offset),
     projectId,
+    ranges: normalizeReadingTextRanges(body.ranges),
     rect: normalizeReadingNoteRect(body.rect),
     sectionIndex,
     selectedText,
     type: normalizeReadingNoteType(body.type),
   };
+}
+
+function normalizeReadingTextRanges(value: unknown) {
+  if (value === null) return null;
+  if (!Array.isArray(value)) return undefined;
+  const ranges = value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const range = item as Record<string, unknown>;
+    const sectionIndex = normalizeNullableNonNegativeInteger(range.sectionIndex);
+    const offset = normalizeNullableNonNegativeInteger(range.offset);
+    const length = normalizeNullableNonNegativeInteger(range.length);
+    if (
+      typeof sectionIndex !== "number" ||
+      typeof offset !== "number" ||
+      typeof length !== "number" ||
+      length <= 0
+    ) {
+      return [];
+    }
+    return [{ length, offset, sectionIndex }];
+  });
+  return ranges.length ? ranges : undefined;
 }
 
 function normalizeReadingNoteColor(value: unknown) {

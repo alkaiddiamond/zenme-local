@@ -25,3 +25,10 @@ export function normalizeLoadedReadingProgress(
     sectionIndex,
   };
 }
+
+export function canPersistReadingProgress(
+  readyAssetId: string | null,
+  assetId: string,
+) {
+  return readyAssetId === assetId;
+}

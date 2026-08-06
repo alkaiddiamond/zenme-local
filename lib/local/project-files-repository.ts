@@ -12,6 +12,7 @@ import {
 export type LocalProjectFileRecord = {
   id: string;
   projectId: string;
+  externalPath: string | null;
   originalPath: string;
   previewPath: string | null;
   fileName: string;
@@ -63,6 +64,7 @@ export async function importLocalProjectFile(input: {
     const record: LocalProjectFileRecord = {
       id: fileId,
       projectId: input.projectId,
+      externalPath: null,
       originalPath: originalRelativePath.replaceAll("\\", "/"),
       previewPath,
       fileName: input.fileName,
@@ -83,6 +85,46 @@ export async function importLocalProjectFile(input: {
     }
     throw error;
   }
+}
+
+export async function referenceLocalProjectFile(input: {
+  externalPath: string;
+  fileName: string;
+  mimeType?: string | null;
+  projectId: string;
+}, dataDir = getZenmeDataDir()) {
+  assertSafePathSegment(input.projectId, "projectId");
+  if (!path.isAbsolute(input.externalPath)) {
+    throw new Error("外部文件路径必须是绝对路径");
+  }
+
+  const externalPath = await fs.realpath(path.resolve(input.externalPath));
+  const stat = await fs.stat(externalPath);
+  if (!stat.isFile()) {
+    throw new Error("外部资源不是普通文件");
+  }
+
+  const index = await readProjectFilesIndex(input.projectId, dataDir);
+  const existing = index.files.find(
+    (file) => file.externalPath && path.resolve(file.externalPath) === externalPath,
+  );
+  if (existing) return existing;
+
+  const fileId = crypto.randomUUID();
+  const record: LocalProjectFileRecord = {
+    id: fileId,
+    projectId: input.projectId,
+    externalPath,
+    originalPath: "",
+    previewPath: null,
+    fileName: input.fileName,
+    mimeType: input.mimeType || null,
+    sizeBytes: stat.size,
+    createdAt: new Date().toISOString(),
+  };
+  index.files = [record, ...index.files.filter((file) => file.id !== fileId)];
+  await writeProjectFilesIndex(input.projectId, index, dataDir);
+  return record;
 }
 
 export async function getLocalProjectFile(input: {
@@ -119,6 +161,22 @@ export async function getLocalProjectFileSource(input: {
 
   const relativePath =
     input.variant === "preview" ? record.previewPath : record.originalPath;
+  if (input.variant === "original" && record.externalPath) {
+    try {
+      const absolutePath = path.resolve(record.externalPath);
+      const stat = await fs.stat(absolutePath);
+      if (!stat.isFile()) return null;
+      return {
+        absolutePath,
+        fileName: record.fileName,
+        mimeType: record.mimeType || "application/octet-stream",
+        record,
+        sizeBytes: stat.size,
+      };
+    } catch {
+      return null;
+    }
+  }
   if (!relativePath) {
     return null;
   }
@@ -132,6 +190,7 @@ export async function getLocalProjectFileSource(input: {
         ? "image/webp"
         : record.mimeType || "application/octet-stream",
     record,
+    sizeBytes: record.sizeBytes,
   };
 }
 
@@ -148,7 +207,9 @@ export async function deleteLocalProjectFile(input: {
     return;
   }
 
-  await fs.rm(resolveInside(projectDir, record.originalPath), { force: true });
+  if (record.originalPath) {
+    await fs.rm(resolveInside(projectDir, record.originalPath), { force: true });
+  }
   if (record.previewPath) {
     await fs.rm(resolveInside(projectDir, record.previewPath), { force: true });
   }
@@ -240,6 +301,7 @@ function normalizeProjectFileRecord(value: unknown): LocalProjectFileRecord | nu
   return {
     id: file.id,
     projectId: file.projectId,
+    externalPath: typeof file.externalPath === "string" ? file.externalPath : null,
     originalPath: file.originalPath,
     previewPath: typeof file.previewPath === "string" ? file.previewPath : null,
     fileName: file.fileName,

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   importLocalProjectFile,
   listLocalProjectFiles,
+  referenceLocalProjectFile,
 } from "@/lib/local/project-files-repository";
 import { getLocalProject } from "@/lib/local/project-repository";
 
@@ -29,6 +30,31 @@ export async function POST(
     const { projectId } = await params;
     if (!(await getLocalProject(projectId))) {
       return NextResponse.json({ error: "项目不存在" }, { status: 404 });
+    }
+    if ((request.headers.get("content-type") ?? "").startsWith("application/json")) {
+      if (process.env.ZENME_DESKTOP !== "1") {
+        return NextResponse.json({ error: "文件路径引用仅支持桌面应用" }, { status: 403 });
+      }
+      const body = (await request.json()) as {
+        externalPath?: unknown;
+        fileName?: unknown;
+        mimeType?: unknown;
+      };
+      if (
+        typeof body.externalPath !== "string" ||
+        typeof body.fileName !== "string" ||
+        !body.externalPath ||
+        !body.fileName
+      ) {
+        return NextResponse.json({ error: "外部文件引用无效" }, { status: 400 });
+      }
+      const record = await referenceLocalProjectFile({
+        projectId,
+        externalPath: body.externalPath,
+        fileName: body.fileName,
+        mimeType: typeof body.mimeType === "string" ? body.mimeType : undefined,
+      });
+      return NextResponse.json(toProjectFileResponse(projectId, record));
     }
     const formData = await request.formData();
     const file = formData.get("file");
@@ -73,16 +99,24 @@ export async function POST(
       previewMimeType: previewFile?.type,
     });
 
-    return NextResponse.json({
-      fileId: record.id,
-      originalPath: record.originalPath,
-      previewPath: record.previewPath,
-      originalUrl: `/api/projects/${projectId}/files/${record.id}`,
-      previewUrl: record.previewPath
-        ? `/api/projects/${projectId}/files/${record.id}/preview`
-        : undefined,
-    });
+    return NextResponse.json(toProjectFileResponse(projectId, record));
   } catch {
     return NextResponse.json({ error: "项目文件导入失败" }, { status: 500 });
   }
+}
+
+function toProjectFileResponse(
+  projectId: string,
+  record: Awaited<ReturnType<typeof importLocalProjectFile>>,
+) {
+  return {
+    fileId: record.id,
+    externalPath: record.externalPath,
+    originalPath: record.originalPath,
+    previewPath: record.previewPath,
+    originalUrl: `/api/projects/${projectId}/files/${record.id}`,
+    previewUrl: record.previewPath
+      ? `/api/projects/${projectId}/files/${record.id}/preview`
+      : undefined,
+  };
 }

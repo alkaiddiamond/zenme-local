@@ -52,6 +52,14 @@ describe("parseMarkdownBlocks", () => {
     });
   });
 
+  it("keeps consecutive source lines in one reading paragraph", () => {
+    expect(parseMarkdownBlocks("第一段第一行\n第一段第二行\n\n第二段")).toEqual([
+      { content: "第一段第一行\n第一段第二行", key: "p-0", type: "p" },
+      { content: "", key: "p-2", type: "blank" },
+      { content: "第二段", key: "p-3", type: "p" },
+    ]);
+  });
+
   it("parses bracketed and dollar-delimited block formulas", () => {
     expect(parseMarkdownBlocks(
       "之前\n\\[\nA=\\begin{bmatrix}\n1&2\\\\\n3&4\n\\end{bmatrix}\n\\]\n$$x^2$$",
@@ -84,5 +92,13 @@ describe("parseMarkdownBlocks", () => {
     expect(html).toContain("w-full table-fixed");
     expect(html).not.toContain("min-w-max");
     expect(html.match(/\[overflow-wrap:anywhere\]/g)).toHaveLength(4);
+  });
+
+  it("marks semantic reading blocks without numbering blank separators", () => {
+    const html = renderToStaticMarkup(renderMarkdown(
+      "# 标题\n\n正文\n- 条目\n> 引用\n```\ncode\n```\n$$x^2$$",
+    ));
+
+    expect(html.match(/data-markdown-block/g)).toHaveLength(6);
   });
 });

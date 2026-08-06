@@ -64,6 +64,31 @@ export function scrollElementIntoContainer(input: {
   return true;
 }
 
+export function getReadingSectionIndexNearViewportTop(
+  container: HTMLElement,
+  fallbackIndex: number,
+) {
+  const rect = container.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const maxOffset = Math.max(1, container.clientHeight - 1);
+  const offsets = [32, 64, 120, container.clientHeight / 2];
+
+  for (const offset of offsets) {
+    const target = container.ownerDocument.elementFromPoint(
+      x,
+      rect.top + Math.min(offset, maxOffset),
+    );
+    const section = target?.closest<HTMLElement>(
+      "[data-reading-section-index]",
+    );
+    if (!section || !container.contains(section)) continue;
+    const index = Number(section.dataset.readingSectionIndex);
+    if (Number.isInteger(index) && index >= 0) return index;
+  }
+
+  return fallbackIndex;
+}
+
 export function scrollToReadingTarget(input: {
   behavior: ScrollBehavior;
   container?: HTMLElement | null;
@@ -188,61 +213,76 @@ export function readSelection(
     return null;
   }
 
-  const text = browserSelection.toString().trim();
-  if (!text) {
-    return null;
-  }
-
   const range = browserSelection.getRangeAt(0);
-  const sectionElement = closestElement(range.commonAncestorContainer)?.closest(
+  const startSection = closestElement(range.startContainer)?.closest(
     "[data-reading-section-index]",
   ) as HTMLElement | null;
-  const proseElement = sectionElement?.querySelector(
-    ".reading-prose",
+  const endSection = closestElement(range.endContainer)?.closest(
+    "[data-reading-section-index]",
   ) as HTMLElement | null;
-  if (
-    !sectionElement ||
-    !proseElement ||
-    !proseElement.contains(range.commonAncestorContainer)
-  ) {
-    return null;
-  }
-
-  const preRange = document.createRange();
-  preRange.selectNodeContents(proseElement);
-  preRange.setEnd(range.startContainer, range.startOffset);
-  const offset = preRange.toString().length;
-  const length = range.toString().length;
-  const sectionRect = sectionElement.getBoundingClientRect();
-  const annotationLayerRect = annotationLayer.getBoundingClientRect();
-  const selectionRects = Array.from(range.getClientRects()).filter(
-    (rect) =>
-      rect.width > 1 &&
-      rect.height > 1 &&
-      rect.right > sectionRect.left &&
-      rect.left < sectionRect.right &&
-      rect.bottom > sectionRect.top &&
-      rect.top < sectionRect.bottom,
+  const sectionElements = Array.from(
+    annotationLayer.querySelectorAll<HTMLElement>(
+      "[data-reading-section-index]",
+    ),
   );
-
-  if (selectionRects.length === 0) {
+  const startIndex = startSection ? sectionElements.indexOf(startSection) : -1;
+  const endIndex = endSection ? sectionElements.indexOf(endSection) : -1;
+  if (startIndex < 0 || endIndex < startIndex) {
     return null;
   }
 
-  const previewRects = selectionRects.map((rect) => ({
-    x: Math.min(
-      1,
-      Math.max(0, (rect.left - sectionRect.left) / sectionRect.width),
-    ),
-    y: Math.min(
-      1,
-      Math.max(0, (rect.top - sectionRect.top) / sectionRect.height),
-    ),
-    w: Math.min(1, Math.max(0, rect.width / sectionRect.width)),
-    h: Math.min(1, Math.max(0, rect.height / sectionRect.height)),
-  }));
-  const firstRect = selectionRects[0];
-  const selectionBounds = selectionRects.reduce(
+  const annotationLayerRect = annotationLayer.getBoundingClientRect();
+  const selectedRanges = sectionElements
+    .slice(startIndex, endIndex + 1)
+    .flatMap((sectionElement) => {
+      const proseElement = sectionElement.querySelector(
+        ".reading-prose",
+      ) as HTMLElement | null;
+      if (!proseElement) return [];
+
+      const segmentRange = document.createRange();
+      segmentRange.selectNodeContents(proseElement);
+      if (sectionElement === startSection) {
+        if (!proseElement.contains(range.startContainer)) return [];
+        segmentRange.setStart(range.startContainer, range.startOffset);
+      }
+      if (sectionElement === endSection) {
+        if (!proseElement.contains(range.endContainer)) return [];
+        segmentRange.setEnd(range.endContainer, range.endOffset);
+      }
+
+      const segmentText = segmentRange.toString();
+      if (!segmentText.trim()) return [];
+      const preRange = document.createRange();
+      preRange.selectNodeContents(proseElement);
+      preRange.setEnd(segmentRange.startContainer, segmentRange.startOffset);
+      const sectionRect = sectionElement.getBoundingClientRect();
+      const selectionRects = Array.from(segmentRange.getClientRects()).filter(
+        (rect) => rect.width > 1 && rect.height > 1,
+      );
+      if (selectionRects.length === 0) return [];
+
+      return [{
+        length: segmentText.length,
+        offset: preRange.toString().length,
+        rects: selectionRects.map((rect) => ({
+          x: Math.min(1, Math.max(0, (rect.left - sectionRect.left) / sectionRect.width)),
+          y: Math.min(1, Math.max(0, (rect.top - sectionRect.top) / sectionRect.height)),
+          w: Math.min(1, Math.max(0, rect.width / sectionRect.width)),
+          h: Math.min(1, Math.max(0, rect.height / sectionRect.height)),
+        })),
+        screenRects: selectionRects,
+        sectionIndex: Number(sectionElement.dataset.readingSectionIndex ?? 0),
+        text: segmentText.trim(),
+      }];
+    });
+
+  if (selectedRanges.length === 0) {
+    return null;
+  }
+  const allScreenRects = selectedRanges.flatMap((item) => item.screenRects);
+  const firstRect = allScreenRects[0];
+  const selectionBounds = allScreenRects.reduce(
     (bounds, rect) => ({
       left: Math.min(bounds.left, rect.left),
       top: Math.min(bounds.top, rect.top),
@@ -256,13 +296,20 @@ export function readSelection(
       bottom: firstRect.bottom,
     },
   );
+  const firstRange = selectedRanges[0];
 
   return {
-    text,
-    sectionIndex: Number(sectionElement.dataset.readingSectionIndex ?? 0),
-    offset,
-    length,
-    rects: previewRects,
+    text: selectedRanges.map((item) => item.text).join("\n"),
+    sectionIndex: firstRange.sectionIndex,
+    offset: firstRange.offset,
+    length: firstRange.length,
+    rects: firstRange.rects,
+    ranges: selectedRanges.map(({ length, offset, rects, sectionIndex }) => ({
+      length,
+      offset,
+      rects,
+      sectionIndex,
+    })),
     ...getAnnotationPalettePosition({
       containerRect: annotationLayerRect,
       selectionBounds,
@@ -326,15 +373,24 @@ export function renderHighlightedSectionHtml(
     section.html || `<p>${escapeHtml(section.text)}</p>`,
   );
   const targets = notes
-    .filter(
-      (note) =>
-        note.sectionIndex === section.index &&
-        note.type !== "region" &&
-        typeof note.offset === "number" &&
-        typeof note.length === "number" &&
-        note.length > 0,
-    )
-    .sort((a, b) => (b.offset ?? 0) - (a.offset ?? 0));
+    .flatMap((note) => {
+      if (note.type === "region") return [];
+      const persistedRanges = note.ranges?.length
+        ? note.ranges
+        : typeof note.offset === "number" &&
+            typeof note.length === "number" &&
+            note.length > 0
+          ? [{
+              length: note.length,
+              offset: note.offset,
+              sectionIndex: note.sectionIndex,
+            }]
+          : [];
+      return persistedRanges
+        .filter((range) => range.sectionIndex === section.index)
+        .map((range) => ({ note, range }));
+    })
+    .sort((a, b) => b.range.offset - a.range.offset);
 
   if (targets.length === 0 || typeof DOMParser === "undefined") {
     return sanitizeReadingHtml(html);
@@ -349,13 +405,13 @@ export function renderHighlightedSectionHtml(
     return sanitizeReadingHtml(html);
   }
 
-  for (const note of targets) {
+  for (const { note, range } of targets) {
     wrapTextRange(doc, root, {
       color: note.color,
       focused: focusedNoteId === note.id,
       id: note.id,
-      length: note.length ?? 0,
-      offset: note.offset ?? 0,
+      length: range.length,
+      offset: range.offset,
     });
   }
 

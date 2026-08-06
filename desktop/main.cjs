@@ -397,6 +397,44 @@ function registerIpcHandlers() {
     return { canceled: false, dataDir, restarted: true };
   });
 
+  ipcMain.handle("zenme:inspect-music-folder", async (_event, rawPath) => {
+    if (typeof rawPath !== "string" || !path.isAbsolute(rawPath)) return null;
+    const directoryPath = path.resolve(rawPath);
+    let directoryStat;
+    try {
+      directoryStat = fs.statSync(directoryPath);
+    } catch {
+      return null;
+    }
+    if (!directoryStat.isDirectory()) return null;
+    const audioExtensions = new Set([
+      ".aac", ".flac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".webm", ".wma",
+    ]);
+    const mimeTypes = {
+      ".aac": "audio/aac", ".flac": "audio/flac", ".m4a": "audio/mp4",
+      ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".opus": "audio/opus",
+      ".wav": "audio/wav", ".webm": "audio/webm", ".wma": "audio/x-ms-wma",
+    };
+    const entries = fs.readdirSync(directoryPath, { withFileTypes: true });
+    const files = entries.flatMap((entry) => {
+      const extension = path.extname(entry.name).toLowerCase();
+      if (!entry.isFile() || !audioExtensions.has(extension)) return [];
+      const filePath = path.join(directoryPath, entry.name);
+      const stat = fs.statSync(filePath);
+      return [{
+        name: entry.name,
+        path: filePath,
+        size: stat.size,
+        type: mimeTypes[extension] || "audio/*",
+      }];
+    });
+    return {
+      files,
+      name: path.basename(directoryPath),
+      path: directoryPath,
+    };
+  });
+
   ipcMain.handle("zenme:get-server-url", () => serverUrl);
 }
 

@@ -21,6 +21,14 @@ export type MusicSourceSummary = {
   title: string;
 };
 
+export type MusicFolderSource = MusicSourceSummary & {
+  fileId?: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
+  originalUrl?: string;
+};
+
 export type CanvasTagColor =
   | "gray"
   | "brown"
@@ -81,6 +89,7 @@ export type CanvasNodeData = {
     | "image"
     | "file"
     | "music"
+    | "musicFolder"
     | "musicPlayer"
     | "lyrics"
     | "code"
@@ -133,6 +142,12 @@ export type CanvasNodeData = {
   originalUrl?: string;
   mimeType?: string;
   musicError?: string;
+  musicFolderId?: string;
+  musicFolderMode?: "system" | "virtual";
+  musicFolderPath?: string;
+  musicFolderSources?: MusicFolderSource[];
+  musicFolderMembers?: MusicFolderSource[];
+  musicFolderExpanded?: boolean;
   lyricsFetchStatus?: "fetching" | "succeeded" | "failed";
   lyricsFetchDurationMs?: number;
   lyricsWarnings?: string[];
@@ -157,6 +172,7 @@ export type CanvasNodeData = {
   musicPlayerNodeId?: string;
   musicParentPlayerNodeId?: string;
   onEnsureMusicWaveform?: (playerNodeId: string) => Promise<void>;
+  onToggleMusicFolderExpanded?: (folderNodeId: string, expanded: boolean) => void;
   onCreateMusicPlayerNode?: (musicNodeId: string) => void;
   onLocateMusicPlayerNode?: (musicNodeId: string, playerNodeId: string) => void;
   onToggleMusicPlayback?: (playerNodeId: string, playing: boolean) => void;
@@ -191,6 +207,7 @@ export type CanvasNodeData = {
   codeContent?: string;
   codeLanguage?: string;
   textMode?: "code" | "markdown" | "plain";
+  textLineNumbers?: boolean;
   textExpanded?: boolean;
   textScrollState?: TextScrollState;
   aiPrompt?: string;
@@ -346,6 +363,7 @@ export type CanvasNodeData = {
         | "plainText"
         | "richTextHtml"
         | "textMode"
+        | "textLineNumbers"
         | "textScrollState"
         | "title"
         | "name"

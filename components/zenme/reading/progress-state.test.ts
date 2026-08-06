@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  canPersistReadingProgress,
   getScrollRatioFromElement,
   normalizeLoadedReadingProgress,
 } from "./progress-state";
 
 describe("reading progress state helpers", () => {
+  it("does not persist default progress before the requested asset has loaded", () => {
+    expect(canPersistReadingProgress(null, "asset-1")).toBe(false);
+    expect(canPersistReadingProgress("asset-2", "asset-1")).toBe(false);
+    expect(canPersistReadingProgress("asset-1", "asset-1")).toBe(true);
+  });
+
   it("computes a clamped scroll ratio from a scroll container", () => {
     expect(
       getScrollRatioFromElement({

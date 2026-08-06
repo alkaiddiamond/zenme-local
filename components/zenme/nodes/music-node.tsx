@@ -13,12 +13,12 @@ export function MusicNode({ data, selected, id }: NodeProps) {
   const node = data as CanvasNodeData;
   const [isRenaming, setIsRenaming] = useState(false);
   return (
-    <NodeFrame className={`h-28 w-[360px] p-4 ${isRenaming ? "zenme-node-renaming" : ""}`} selected={Boolean(selected)}>
+    <NodeFrame className={`w-72 p-4 ${isRenaming ? "zenme-node-renaming" : ""}`} selected={Boolean(selected)}>
       <EditableNodeTitle fallbackTitle="音乐" icon={<Music className="size-4" />} onCommit={(title) => node.onUpdateMusicNode?.(id, { title })} onEditingChange={setIsRenaming} title={node.title} />
       <NodeTargetHandle visible={Boolean(node.hasIncomingEdge)} />
       <NodeEdgeSourceHandle visible={Boolean(node.hasOutgoingEdge)} />
       <div className="flex items-start gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-zinc-100"><Music className="size-5" /></div>
+        <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-zinc-100"><Music className="size-5" /></div>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{node.fileName || "本地音乐"}</p>
           <div className="mt-2 flex items-center gap-3 text-[11px] text-zinc-400">

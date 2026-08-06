@@ -8,6 +8,10 @@ export type ReadingNavigationSection = {
   title: string;
 };
 
+export function isPagedReadingFormat(format: ReadingFormat) {
+  return format === "epub" || format === "markdown" || format === "txt";
+}
+
 export function getReadingActiveTitle(input: {
   assetFormat: ReadingFormat;
   assetTitle: string;
@@ -15,7 +19,7 @@ export function getReadingActiveTitle(input: {
   pdfPageCount: number;
   sections: ReadingSection[];
 }) {
-  if (input.assetFormat === "pdf" || input.assetFormat === "epub") {
+  if (input.assetFormat === "pdf" || isPagedReadingFormat(input.assetFormat)) {
     const total =
       input.assetFormat === "pdf" ? input.pdfPageCount : input.sections.length;
     return total > 0
@@ -66,8 +70,8 @@ export function buildReadingNavigationSections(input: {
     }));
   }
 
-  if (input.assetFormat === "epub") {
-    return buildEpubNavigationSections(input.sections);
+  if (isPagedReadingFormat(input.assetFormat)) {
+    return buildPagedNavigationSections(input.sections);
   }
 
   return input.sections.map((section) => ({
@@ -77,7 +81,7 @@ export function buildReadingNavigationSections(input: {
   }));
 }
 
-function buildEpubNavigationSections(
+function buildPagedNavigationSections(
   sections: ReadingSection[],
 ): ReadingNavigationSection[] {
   const entries: ReadingNavigationSection[] = [];

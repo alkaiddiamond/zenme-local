@@ -22,7 +22,7 @@ export async function GET(
       return NextResponse.json({ error: "文件不存在" }, { status: 404 });
     }
 
-    const fileSize = file.record.sizeBytes;
+    const fileSize = file.sizeBytes;
     const range = parseByteRange(request.headers.get("range"), fileSize);
     if (range === "invalid") {
       return new Response(null, {

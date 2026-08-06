@@ -163,6 +163,7 @@ export async function createReadingNote(input: {
   length: number | null;
   offset: number | null;
   projectId: string;
+  ranges?: Array<{ sectionIndex: number; offset: number; length: number }> | null;
   sectionIndex: number;
   selectedText: string;
   type: "highlight" | "note";
@@ -179,6 +180,7 @@ export async function createReadingNote(input: {
       color: input.color,
       type: input.type,
       offset: input.offset,
+      ranges: input.ranges,
       length: input.length,
     }),
   });

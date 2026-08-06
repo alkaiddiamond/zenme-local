@@ -2,8 +2,10 @@
 
 import {
   type ClipboardEvent,
+  type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type RefObject,
   useEffect,
   useMemo,
   useRef,
@@ -47,6 +49,11 @@ import { TextNodeComposer } from "@/components/zenme/nodes/text-node-composer";
 import { ImageTaskTiming } from "@/components/zenme/nodes/image-task-timing";
 import { getWordSelectionOffsets } from "@/components/zenme/nodes/text-selection";
 import {
+  getTextLines,
+  getVisibleTextOffsets,
+  normalizeVisualLineRects,
+} from "@/components/zenme/nodes/text-line-numbers";
+import {
   insertTabSpaces,
   TEXT_EDITOR_TAB_SPACES,
 } from "@/components/zenme/nodes/text-editor-keyboard";
@@ -76,13 +83,17 @@ export function TextNode({ data, id, selected }: NodeProps) {
   const isAgent = nodeData.kind === "agent";
   const isTextNode = nodeData.kind === "text";
   const isTextExpanded = Boolean(nodeData.textExpanded);
+  const lineNumbersVisible = Boolean(nodeData.textLineNumbers);
   const suppressFloatingControls = Boolean(nodeData.isMultiSelection);
   const displayMode = getTextDisplayMode(nodeData);
   const editorRef = useRef<HTMLDivElement | null>(null);
   const markdownEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const markdownPreviewRef = useRef<HTMLDivElement | null>(null);
+  const markdownVisualLineNumbersRef = useRef<HTMLDivElement | null>(null);
+  const markdownVisualLineMeasureFrame = useRef<number | null>(null);
   const codeEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const codeHighlightRef = useRef<HTMLDivElement | null>(null);
+  const lineNumbersRef = useRef<HTMLDivElement | null>(null);
   const agentResponseRef = useRef<HTMLDivElement | null>(null);
   const editorSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const plainTextDirtyRef = useRef(false);
@@ -123,8 +134,8 @@ export function TextNode({ data, id, selected }: NodeProps) {
     [plainText],
   );
   const highlightedCode = useMemo(
-    () => renderHighlightedCode(plainText, codeLanguage),
-    [codeLanguage, plainText],
+    () => renderHighlightedCode(plainText, codeLanguage, lineNumbersVisible),
+    [codeLanguage, lineNumbersVisible, plainText],
   );
   const Icon = isAgent ? Bot : StickyNote;
   updateTextNodeRef.current = nodeData.onUpdateTextNode;
@@ -211,6 +222,67 @@ export function TextNode({ data, id, selected }: NodeProps) {
   }, [nodeData.codeLanguage]);
 
   useEffect(() => {
+    if (!lineNumbersVisible || !lineNumbersRef.current) return;
+    replaceLineNumberRows(lineNumbersRef.current, plainText, displayMode);
+  }, [displayMode, isEditing, lineNumbersVisible, plainText]);
+
+  useEffect(() => {
+    if (!lineNumbersVisible || displayMode !== "plain" || !editorRef.current) {
+      return;
+    }
+
+    const editor = editorRef.current;
+    const observer = new MutationObserver((mutations) => {
+      if (!mutations.some((mutation) => mutation.type === "childList")) return;
+      if (lineNumbersRef.current) {
+        replaceLineNumberRows(
+          lineNumbersRef.current,
+          editor.innerText,
+          "plain",
+        );
+      }
+    });
+    observer.observe(editor, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [displayMode, lineNumbersVisible]);
+
+  useEffect(() => {
+    const preview = markdownPreviewRef.current;
+    const rows = markdownVisualLineNumbersRef.current;
+    if (
+      !lineNumbersVisible ||
+      displayMode !== "markdown" ||
+      isEditing ||
+      !preview ||
+      !rows
+    ) {
+      return;
+    }
+
+    const update = () => {
+      markdownVisualLineMeasureFrame.current = null;
+      replaceMarkdownBlockNumbers(
+        rows,
+        measureRenderedMarkdownReadingNumbers(preview),
+      );
+    };
+    const scheduleUpdate = () => {
+      if (markdownVisualLineMeasureFrame.current !== null) return;
+      markdownVisualLineMeasureFrame.current = window.requestAnimationFrame(update);
+    };
+    const resizeObserver = new ResizeObserver(scheduleUpdate);
+    resizeObserver.observe(preview);
+    scheduleUpdate();
+    return () => {
+      resizeObserver.disconnect();
+      if (markdownVisualLineMeasureFrame.current !== null) {
+        window.cancelAnimationFrame(markdownVisualLineMeasureFrame.current);
+        markdownVisualLineMeasureFrame.current = null;
+      }
+    };
+  }, [displayMode, isEditing, lineNumbersVisible, plainText]);
+
+  useEffect(() => {
     textScrollStateRef.current = nodeData.textScrollState ?? {};
   }, [nodeData.textScrollState]);
 
@@ -228,6 +300,12 @@ export function TextNode({ data, id, selected }: NodeProps) {
         if (!target) continue;
         target.scrollLeft = savedScrollLeft;
         target.scrollTop = savedScrollTop;
+      }
+      if (lineNumbersRef.current) {
+        lineNumbersRef.current.style.transform = `translate3d(0, ${-savedScrollTop}px, 0)`;
+      }
+      if (markdownVisualLineNumbersRef.current) {
+        markdownVisualLineNumbersRef.current.style.transform = `translate3d(0, ${-savedScrollTop}px, 0)`;
       }
       if (
         displayMode === "markdown" &&
@@ -302,6 +380,14 @@ export function TextNode({ data, id, selected }: NodeProps) {
 
   function rememberTextInput(nextText: string) {
     latestTextRef.current = nextText;
+    if (lineNumbersVisible && lineNumbersRef.current) {
+      replaceLineNumberRows(lineNumbersRef.current, nextText, displayMode);
+    }
+  }
+
+  function syncLineNumberScroll(scrollTop: number) {
+    if (!lineNumbersVisible || !lineNumbersRef.current) return;
+    lineNumbersRef.current.style.transform = `translate3d(0, ${-scrollTop}px, 0)`;
   }
 
   function readCurrentTextContent() {
@@ -422,8 +508,16 @@ export function TextNode({ data, id, selected }: NodeProps) {
     });
   }
 
-  function handlePlainTextInput() {
+  function handlePlainTextInput(event?: FormEvent<HTMLDivElement>) {
     plainTextDirtyRef.current = true;
+    const editor = event?.currentTarget ?? editorRef.current;
+    if (lineNumbersVisible && lineNumbersRef.current && editor) {
+      replaceLineNumberRows(
+        lineNumbersRef.current,
+        editor.innerText,
+        "plain",
+      );
+    }
   }
 
   function applyTextCommand(command: "bold" | "italic" | "underline") {
@@ -593,6 +687,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
         {!suppressFloatingControls && (selected || isEditing) ? (
           <InlineFormatToolbar
             codeLanguage={codeLanguage}
+            lineNumbersVisible={lineNumbersVisible}
             markdownEditing={isEditing}
             mode={displayMode}
             onBold={() =>
@@ -613,6 +708,11 @@ export function TextNode({ data, id, selected }: NodeProps) {
                 ? insertMarkdownMarkup("*", "*", "斜体文本")
                 : applyTextCommand("italic")
             }
+            onToggleLineNumbers={() =>
+              nodeData.onUpdateTextNode?.(id, {
+                textLineNumbers: !lineNumbersVisible,
+              })
+            }
             onToggleMarkdownEditing={toggleMarkdownEditing}
             onUnderline={() =>
               displayMode === "markdown"
@@ -628,10 +728,21 @@ export function TextNode({ data, id, selected }: NodeProps) {
         >
           {displayMode === "plain" ? (
             <>
+              {lineNumbersVisible ? (
+                <TextLineNumberOverlay
+                  content={plainText}
+                  mode="plain"
+                  rowsRef={lineNumbersRef}
+                />
+              ) : null}
               <div
                 autoCapitalize="off"
                 autoCorrect="off"
-                className="zenme-overlay-scroll-container zenme-text-node-editor nodrag nowheel h-full min-h-[176px] overflow-auto rounded-xl px-6 py-5 text-base leading-7 text-zinc-800 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
+                className={`zenme-overlay-scroll-container zenme-text-node-editor nodrag nowheel h-full min-h-[176px] overflow-auto rounded-xl py-5 text-base leading-7 text-zinc-800 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)] ${
+                  lineNumbersVisible
+                    ? "whitespace-pre-wrap break-words pl-14 pr-6"
+                    : "px-6"
+                }`}
                 contentEditable
                 data-placeholder={isEditing ? "" : "点击此处编辑文本"}
                 onBlur={() => {
@@ -646,7 +757,10 @@ export function TextNode({ data, id, selected }: NodeProps) {
                 onInput={handlePlainTextInput}
                 onKeyDown={handleRichTextKeyDown}
                 onPaste={handlePaste}
-                onScroll={(event) => rememberTextScroll("plain", event.currentTarget)}
+                onScroll={(event) => {
+                  rememberTextScroll("plain", event.currentTarget);
+                  syncLineNumberScroll(event.currentTarget.scrollTop);
+                }}
                 ref={editorRef}
                 spellCheck={false}
                 tabIndex={0}
@@ -661,12 +775,18 @@ export function TextNode({ data, id, selected }: NodeProps) {
           {displayMode === "markdown" ? (
             <>
               <div
-                className={`zenme-overlay-scroll-container zenme-markdown-preview zenme-markdown-preview-interactive nodrag nowheel absolute inset-0 select-text overflow-auto px-6 pb-10 pt-5 text-base leading-7 ${
+                className={`zenme-overlay-scroll-container zenme-markdown-preview zenme-markdown-preview-interactive nodrag nowheel absolute inset-0 select-text overflow-auto pb-10 pt-5 text-base leading-7 ${
+                  lineNumbersVisible ? "pl-14 pr-6" : "px-6"
+                } ${
                   isEditing ? "pointer-events-none invisible" : ""
                 }`}
                 onScroll={(event) => {
                   if (isEditing) return;
                   rememberTextScroll("markdown", event.currentTarget);
+                  if (markdownVisualLineNumbersRef.current) {
+                    markdownVisualLineNumbersRef.current.style.transform =
+                      `translate3d(0, ${-event.currentTarget.scrollTop}px, 0)`;
+                  }
                   if (markdownEditorRef.current) {
                     syncScrollPositionByRatio(
                       event.currentTarget,
@@ -678,9 +798,23 @@ export function TextNode({ data, id, selected }: NodeProps) {
               >
                 {markdownPreviewContent}
               </div>
+              {lineNumbersVisible && !isEditing ? (
+                <MarkdownBlockNumberOverlay
+                  rowsRef={markdownVisualLineNumbersRef}
+                />
+              ) : null}
+              {lineNumbersVisible && isEditing ? (
+                <TextLineNumberOverlay
+                  content={plainText}
+                  mode="markdown"
+                  rowsRef={lineNumbersRef}
+                />
+              ) : null}
               <textarea
                 aria-label="Markdown 文本"
-                className={`zenme-overlay-scroll-container zenme-markdown-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-6 pb-10 pt-5 text-base leading-7 caret-zinc-950 outline-none ${
+                className={`zenme-overlay-scroll-container zenme-markdown-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent pb-10 pt-5 text-base leading-7 caret-zinc-950 outline-none ${
+                  lineNumbersVisible ? "pl-14 pr-6" : "px-6"
+                } ${
                   isEditing
                     ? "text-zinc-800"
                     : "pointer-events-none invisible"
@@ -713,12 +847,14 @@ export function TextNode({ data, id, selected }: NodeProps) {
 
                   const editor = event.currentTarget;
                   const preview = markdownPreviewRef.current;
+                  syncLineNumberScroll(editor.scrollTop);
                   syncScrollPositionByRatio(editor, preview);
                   rememberTextScroll("markdown", preview);
                 }}
                 ref={markdownEditorRef}
                 spellCheck={false}
                 defaultValue={plainText}
+                wrap="soft"
               />
               <OverlayScrollbars
                 contentKey={`${isEditing ? "edit" : "preview"}:${plainText}`}
@@ -728,9 +864,18 @@ export function TextNode({ data, id, selected }: NodeProps) {
           ) : null}
           {displayMode === "code" ? (
             <div className="relative h-full min-h-[176px] overflow-hidden bg-white">
+              {lineNumbersVisible ? (
+                <TextLineNumberOverlay
+                  content={plainText}
+                  mode="code"
+                  rowsRef={lineNumbersRef}
+                />
+              ) : null}
               <div
                 aria-hidden
-                className={`zenme-overlay-scroll-container zenme-code-highlight absolute inset-0 overflow-auto px-4 py-3 font-mono text-[13px] leading-6 ${
+                className={`zenme-overlay-scroll-container zenme-code-highlight absolute inset-0 overflow-auto py-3 font-mono text-[13px] leading-6 ${
+                  lineNumbersVisible ? "pl-14 pr-4" : "px-4"
+                } ${
                   isEditing ? "invisible" : ""
                 }`}
                 ref={codeHighlightRef}
@@ -739,7 +884,9 @@ export function TextNode({ data, id, selected }: NodeProps) {
               </div>
               <textarea
                 aria-label="代码内容"
-                className={`zenme-overlay-scroll-container zenme-code-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-4 py-3 font-mono text-[13px] leading-6 caret-zinc-950 outline-none placeholder:text-zinc-400 ${
+                className={`zenme-overlay-scroll-container zenme-code-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent py-3 font-mono text-[13px] leading-6 caret-zinc-950 outline-none placeholder:text-zinc-400 ${
+                  lineNumbersVisible ? "pl-14 pr-4" : "px-4"
+                } ${
                   isEditing
                     ? "text-zinc-800"
                     : "cursor-text text-transparent selection:bg-transparent"
@@ -770,6 +917,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
                 }}
                 onScroll={(event) => {
                   rememberTextScroll("code", event.currentTarget);
+                  syncLineNumberScroll(event.currentTarget.scrollTop);
                   if (!codeHighlightRef.current) {
                     return;
                   }
@@ -783,6 +931,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
                 ref={codeEditorRef}
                 spellCheck={false}
                 defaultValue={plainText}
+                wrap="soft"
               />
               <OverlayScrollbars
                 contentKey={plainText}
@@ -994,6 +1143,190 @@ export function TextNode({ data, id, selected }: NodeProps) {
       <NodeActionHandle selected={Boolean(selected)} />
     </NodeFrame>
   );
+}
+
+function MarkdownBlockNumberOverlay({
+  rowsRef,
+}: {
+  rowsRef: RefObject<HTMLDivElement | null>;
+}) {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
+    >
+      <div className="absolute inset-y-0 left-0 w-12 border-r border-zinc-100 bg-white/95" />
+      <div className="absolute inset-0" ref={rowsRef} />
+    </div>
+  );
+}
+
+type MarkdownReadingNumber = { height: number; number: number; top: number };
+
+function measureRenderedMarkdownReadingNumbers(
+  preview: HTMLDivElement,
+): MarkdownReadingNumber[] {
+  const previewRect = preview.getBoundingClientRect();
+  const lineRects = measureRenderedTextLineRects(preview, previewRect);
+  return Array.from(
+    preview.querySelectorAll<HTMLElement>("[data-markdown-block]"),
+  )
+    .map((block) => {
+      const rect = block.getBoundingClientRect();
+      const blockTop = rect.top - previewRect.top + preview.scrollTop;
+      const blockBottom = rect.bottom - previewRect.top + preview.scrollTop;
+      const lineIndex = lineRects.findIndex(
+        (line) => line.top >= blockTop - 4 && line.top < blockBottom + 4,
+      );
+      const line = lineRects[lineIndex];
+      return line
+        ? {
+            height: line.bottom - line.top,
+            number: lineIndex + 1,
+            top: line.top,
+          }
+        : null;
+    })
+    .filter((entry): entry is MarkdownReadingNumber => entry !== null);
+}
+
+function measureRenderedTextLineRects(
+  preview: HTMLDivElement,
+  previewRect: DOMRect,
+) {
+  const walker = preview.ownerDocument.createTreeWalker(
+    preview,
+    NodeFilter.SHOW_TEXT,
+  );
+  const rects: Array<{ bottom: number; top: number }> = [];
+  const measuredMathElements = new Set<Element>();
+  let current = walker.nextNode();
+  while (current) {
+    const parent = current.parentElement;
+    const textOffsets = getVisibleTextOffsets(current.textContent ?? "");
+    if (textOffsets && !parent?.closest('[aria-hidden="true"], script, style')) {
+      const mathElement = parent?.closest(".katex");
+      const range = preview.ownerDocument.createRange();
+      if (mathElement && !measuredMathElements.has(mathElement)) {
+        measuredMathElements.add(mathElement);
+        range.selectNode(mathElement);
+      } else if (mathElement) {
+        current = walker.nextNode();
+        continue;
+      } else {
+        range.setStart(current, textOffsets.start);
+        range.setEnd(current, textOffsets.end);
+      }
+      for (const rect of range.getClientRects()) {
+        if (rect.width > 0 && rect.height > 0) {
+          rects.push({
+            bottom: rect.bottom - previewRect.top + preview.scrollTop,
+            top: rect.top - previewRect.top + preview.scrollTop,
+          });
+        }
+      }
+      range.detach();
+    }
+    current = walker.nextNode();
+  }
+  return normalizeVisualLineRects(rects);
+}
+
+function replaceMarkdownBlockNumbers(
+  container: HTMLDivElement,
+  entries: MarkdownReadingNumber[],
+) {
+  const fragment = document.createDocumentFragment();
+  entries.forEach((entry) => {
+    const number = document.createElement("span");
+    number.className =
+      "absolute left-0 flex w-12 items-center justify-end pr-2 font-mono text-[11px] leading-none text-zinc-400";
+    number.style.height = `${entry.height}px`;
+    number.style.top = `${entry.top}px`;
+    number.textContent = String(entry.number);
+    fragment.append(number);
+  });
+  container.replaceChildren(fragment);
+}
+
+function TextLineNumberOverlay({
+  content,
+  mode,
+  rowsRef,
+}: {
+  content: string;
+  mode: TextDisplayMode;
+  rowsRef: RefObject<HTMLDivElement | null>;
+}) {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
+    >
+      <div className="absolute inset-y-0 left-0 w-12 border-r border-zinc-100 bg-white/95" />
+      <div className={getLineNumberRowsClassName(mode)} ref={rowsRef}>
+        {getTextLines(content).map((line, index) => (
+          <LineNumberRow index={index} key={index} line={line} mode={mode} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LineNumberRow({
+  index,
+  line,
+  mode,
+}: {
+  index: number;
+  line: string;
+  mode: TextDisplayMode;
+}) {
+  return (
+    <div className={getLineNumberRowClassName(mode)}>
+      <span className="absolute left-0 top-0 w-12 pr-2 text-right font-mono text-[11px] text-zinc-400">
+        {index + 1}
+      </span>
+      <span className="invisible">{line || "\u00a0"}</span>
+    </div>
+  );
+}
+
+function getLineNumberRowsClassName(mode: TextDisplayMode) {
+  return mode === "code"
+    ? "py-3 font-mono text-[13px] leading-6"
+    : "py-5 text-base leading-7";
+}
+
+function getLineNumberRowClassName(mode: TextDisplayMode) {
+  return `relative whitespace-pre-wrap break-words ${
+    mode === "code" ? "min-h-6 pl-14 pr-4" : "min-h-7 pl-14 pr-6"
+  }`;
+}
+
+function replaceLineNumberRows(
+  container: HTMLDivElement,
+  content: string,
+  mode: TextDisplayMode,
+) {
+  const fragment = document.createDocumentFragment();
+  getTextLines(content).forEach((line, index) => {
+    const row = document.createElement("div");
+    row.className = getLineNumberRowClassName(mode);
+
+    const number = document.createElement("span");
+    number.className =
+      "absolute left-0 top-0 w-12 pr-2 text-right font-mono text-[11px] text-zinc-400";
+    number.textContent = String(index + 1);
+
+    const mirror = document.createElement("span");
+    mirror.className = "invisible";
+    mirror.textContent = line || "\u00a0";
+
+    row.append(number, mirror);
+    fragment.append(row);
+  });
+  container.replaceChildren(fragment);
 }
 
 function getTextDisplayMode(nodeData: CanvasNodeData): TextDisplayMode {

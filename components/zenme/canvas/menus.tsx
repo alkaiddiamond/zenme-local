@@ -3,6 +3,7 @@
 import {
   BookOpen,
   FileText,
+  Folder,
   ImagePlus,
   ListTodo,
   MessageSquareText,
@@ -35,6 +36,7 @@ type CanvasAddMenuProps = {
   onCreateVideoGenerationNode: (position: { x: number; y: number }) => void;
   onCreateTaskNode: (position: { x: number; y: number }) => void;
   onCreateTextNode: (position: { x: number; y: number }) => void;
+  onCreateMusicFolderNode: (position: { x: number; y: number }) => void;
   onUploadFiles: (position: { x: number; y: number }) => void;
 };
 
@@ -45,6 +47,7 @@ type NodeCreationMenuItemsProps = {
   onCreateVideoGenerationNode: () => void;
   onCreateTaskNode: () => void;
   onCreateTextNode: () => void;
+  onCreateMusicFolderNode?: () => void;
   onUploadFiles: () => void;
 };
 
@@ -55,6 +58,7 @@ function NodeCreationMenuItems({
   onCreateVideoGenerationNode,
   onCreateTaskNode,
   onCreateTextNode,
+  onCreateMusicFolderNode,
   onUploadFiles,
 }: NodeCreationMenuItemsProps) {
   return (
@@ -94,6 +98,12 @@ function NodeCreationMenuItems({
         <>
           <FloatingMenuSectionLabel>资源</FloatingMenuSectionLabel>
           <FloatingMenuItem
+            description="收纳画布中的音乐文件"
+            icon={Folder}
+            onClick={onCreateMusicFolderNode}
+            title="文件夹"
+          />
+          <FloatingMenuItem
             description="从系统选择图片、书籍或文件"
             icon={Upload}
             onClick={onUploadFiles}
@@ -113,6 +123,7 @@ export function CanvasAddMenu({
   onCreateVideoGenerationNode,
   onCreateTaskNode,
   onCreateTextNode,
+  onCreateMusicFolderNode,
   onUploadFiles,
 }: CanvasAddMenuProps) {
   return (
@@ -134,6 +145,7 @@ export function CanvasAddMenu({
         }
         onCreateTaskNode={() => onCreateTaskNode(menu.flowPosition)}
         onCreateTextNode={() => onCreateTextNode(menu.flowPosition)}
+        onCreateMusicFolderNode={() => onCreateMusicFolderNode(menu.flowPosition)}
         onUploadFiles={() => onUploadFiles(menu.flowPosition)}
       />
     </FloatingMenu>
@@ -182,6 +194,16 @@ export function NodeActionMenu({
     return (
       <FloatingMenu left={menu.x + 12} top={menu.y - 8}>
         <FloatingMenuHeader onClose={onClose} title="添加节点" />
+        {actionNode.data.kind === "text" && actionNode.data.plainText?.trim() ? (
+          <>
+            <FloatingMenuItem
+              icon={BookOpen}
+              onClick={onOpenReadingWorkspace}
+              title="在阅读器中打开"
+            />
+            <FloatingMenuSectionLabel>创建关联内容</FloatingMenuSectionLabel>
+          </>
+        ) : null}
         <NodeCreationMenuItems
           includeUpload={false}
           onCreateImageGenerationNode={() =>
@@ -204,7 +226,7 @@ export function NodeActionMenu({
   return (
     <FloatingMenu left={menu.x + 12} top={menu.y - 8}>
       <FloatingMenuHeader onClose={onClose} title="引用该节点生成" />
-      {actionNode?.data.kind === "music" ? (
+      {actionNode?.data.kind === "music" || actionNode?.data.kind === "musicFolder" ? (
         <FloatingMenuItem
           disabled={Boolean(actionNode.data.musicPlayerNodeId)}
           icon={Music2}

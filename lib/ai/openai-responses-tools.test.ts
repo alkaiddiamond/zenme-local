@@ -25,6 +25,18 @@ describe("Responses Lite web context", () => {
     });
   });
 
+  it("keeps current-information intent from connected canvas context", () => {
+    expect(createOpenAiWebSearchCommands([{
+      role: "user",
+      content: "为什么没有 MiniMax H3？",
+    }], "上游提问：帮我了解一下最新的开源视频模型")).toEqual({
+      search_query: [{
+        q: "为什么没有 MiniMax H3？\n相关画布上下文：上游提问：帮我了解一下最新的开源视频模型",
+      }],
+      response_length: "long",
+    });
+  });
+
   it("does not search ordinary writing requests", () => {
     expect(createOpenAiWebSearchCommands([{
       role: "user",
