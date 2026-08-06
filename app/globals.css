@@ -1184,6 +1184,13 @@ html.dark .zenme-canvas .zenme-image-source-handle {
   text-indent: 2em;
 }
 
+.zenme-canvas
+  .zenme-reader-workspace
+  .reading-prose-cjk
+  p.reading-paragraph-continuation {
+  text-indent: 0;
+}
+
 .zenme-canvas .zenme-reader-workspace .reading-prose-epub p {
   margin-block: 0 1.5em;
 }

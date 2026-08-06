@@ -23,6 +23,7 @@ export type ReadingSection = {
   title: string;
   html: string;
   text: string;
+  paginationVersion?: number;
 };
 
 export type ReadingTextRange = {
@@ -71,6 +72,7 @@ export type ReadingProgress = {
   assetId: string;
   ownerId?: string;
   contentScale: number;
+  notesScrollTop?: number;
   sectionIndex: number;
   scrollRatio: number;
   updatedAt: string;

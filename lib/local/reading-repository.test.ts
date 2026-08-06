@@ -166,14 +166,40 @@ describe("local reading repository", () => {
       title: "正文",
     };
     await fs.writeFile(sectionsPath, JSON.stringify([legacySection]), "utf8");
+    await createLocalReadingNote(
+      {
+        assetId: asset.id,
+        ownerId: "local",
+        projectId,
+        selectedText: "第 30 段正文",
+        sectionIndex: 0,
+        offset: source.indexOf("第 30 段正文"),
+        length: "第 30 段正文".length,
+      },
+      dataDir,
+    );
 
     const migrated = await getLocalReadingSections(asset.id, dataDir);
+    const sectionsAfterFirstRead = await fs.readFile(sectionsPath, "utf8");
+    const readAgain = await getLocalReadingSections(asset.id, dataDir);
+    const sectionsAfterSecondRead = await fs.readFile(sectionsPath, "utf8");
+    const [migratedNote] = await listLocalReadingNotes(asset.id, dataDir);
 
     expect(migrated.length).toBeGreaterThan(1);
+    expect(readAgain).toEqual(migrated);
+    expect(sectionsAfterSecondRead).toBe(sectionsAfterFirstRead);
     expect(shouldRebuildTxtSections(migrated)).toBe(false);
     expect(migrated.map((section) => section.text).join("\n")).toContain(
       "第 30 段正文",
     );
+    expect(migratedNote.sectionIndex).toBeGreaterThan(0);
+    expect(migratedNote.ranges).toEqual([
+      {
+        sectionIndex: migratedNote.sectionIndex,
+        offset: migratedNote.offset,
+        length: migratedNote.length,
+      },
+    ]);
   });
 
   it("imports text assets and persists notes and progress", async () => {
@@ -233,12 +259,16 @@ describe("local reading repository", () => {
       {
         assetId: asset.id,
         contentScale: 1.25,
+        notesScrollTop: 486.5,
         projectId,
         scrollRatio: 0.5,
         sectionIndex: 1,
       },
       dataDir,
     );
+    await expect(getLocalReadingProgress(asset.id, dataDir)).resolves.toMatchObject({
+      notesScrollTop: 486.5,
+    });
     await expect(
       getLocalReadingProgress(asset.id, dataDir),
     ).resolves.toMatchObject({

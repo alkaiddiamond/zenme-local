@@ -35,7 +35,11 @@ import {
   ReadingWorkspaceLoadingState,
   ReadingWorkspaceShell,
 } from "./reading/reading-workspace-state";
-import { readCachedReadingProgress } from "./reading/api";
+import {
+  readCachedReadingNotesScrollTop,
+  readCachedReadingProgress,
+  saveReadingNotesScrollTop,
+} from "./reading/api";
 import {
   getClosestEpubSectionIndex,
   getEpubVisibleRange,
@@ -78,6 +82,10 @@ export function ReadingWorkspace({
     () => readCachedReadingProgress(assetId),
     [assetId],
   );
+  const cachedInitialNotesScrollTop = useMemo(
+    () => readCachedReadingNotesScrollTop(assetId) ?? 0,
+    [assetId],
+  );
   const [pdfPageCount, setPdfPageCount] = useState(0);
   const [pdfOutlineSections, setPdfOutlineSections] = useState<
     PdfOutlineSection[]
@@ -103,6 +111,11 @@ export function ReadingWorkspace({
   const annotationLayerRef = useRef<HTMLDivElement | null>(null);
   const readerScrollRef = useRef<HTMLElement | null>(null);
   const notesListRef = useRef<HTMLDivElement | null>(null);
+  const notesScrollSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const notesScrollTopRef = useRef(cachedInitialNotesScrollTop);
+  const didRestoreNotesScroll = useRef(false);
   const sectionRefs = useRef<Record<number, HTMLElement | null>>({});
   const {
     activeSection,
@@ -275,6 +288,44 @@ export function ReadingWorkspace({
       }
     });
   }, [payload]);
+
+  useEffect(() => {
+    didRestoreNotesScroll.current = false;
+    notesScrollTopRef.current = readCachedReadingNotesScrollTop(assetId) ?? 0;
+  }, [assetId]);
+
+  useEffect(() => {
+    if (
+      !payload ||
+      payload.asset.id !== assetId ||
+      didRestoreNotesScroll.current
+    ) {
+      return;
+    }
+    const cachedScrollTop = readCachedReadingNotesScrollTop(assetId);
+    notesScrollTopRef.current =
+      cachedScrollTop ?? payload.progress?.notesScrollTop ?? 0;
+    didRestoreNotesScroll.current = true;
+    const frame = requestAnimationFrame(() => {
+      const notesList = notesListRef.current;
+      if (notesList) {
+        notesList.scrollTop = notesScrollTopRef.current;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [assetId, payload]);
+
+  useEffect(() => {
+    return () => {
+      if (notesScrollSaveTimer.current !== null) {
+        clearTimeout(notesScrollSaveTimer.current);
+        notesScrollSaveTimer.current = null;
+      }
+      void saveReadingNotesScrollTop(assetId, notesScrollTopRef.current, {
+        keepalive: true,
+      });
+    };
+  }, [assetId]);
 
   useEffect(() => {
     if (!payload || !isPagedReadingFormat(payload.asset.format)) {
@@ -495,6 +546,19 @@ export function ReadingWorkspace({
     readerScrollFrame.current = requestAnimationFrame(processReaderScroll);
   }
 
+  const handleNotesScroll = useCallback(() => {
+    const notesList = notesListRef.current;
+    if (!notesList) return;
+    notesScrollTopRef.current = notesList.scrollTop;
+    if (notesScrollSaveTimer.current !== null) {
+      clearTimeout(notesScrollSaveTimer.current);
+    }
+    notesScrollSaveTimer.current = setTimeout(() => {
+      notesScrollSaveTimer.current = null;
+      void saveReadingNotesScrollTop(assetId, notesScrollTopRef.current);
+    }, 120);
+  }, [assetId]);
+
   const {
     createNote,
     createPdfAnnotationNote,
@@ -697,6 +761,7 @@ export function ReadingWorkspace({
             notesListRef={notesListRef}
             onCreateNoteNode={onCreateNoteNode}
             onResizeStart={startNotesResize}
+            onScroll={handleNotesScroll}
             pdfAnnotationDraft={pdfAnnotationDraft}
             quickNoteActionLabel={quickNoteCopy.actionLabel}
             quickNoteHint={quickNoteCopy.hint}

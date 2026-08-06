@@ -6,6 +6,8 @@ const BODY_FONT_SIZE = 16;
 const BODY_LINE_HEIGHT = 32;
 const PARAGRAPH_GAP = 24;
 
+export const FIXED_READING_PAGINATION_VERSION = 2;
+
 export function paginateFixedReadingHtml(input: {
   html: string;
   pageStartIndex: number;
@@ -27,6 +29,7 @@ export function paginateFixedReadingHtml(input: {
         sectionPage === 1 ? input.title : `${input.title} · ${sectionPage}`,
       html,
       text,
+      paginationVersion: FIXED_READING_PAGINATION_VERSION,
     });
     bucket = [];
     bucketHeight = 0;
@@ -34,27 +37,46 @@ export function paginateFixedReadingHtml(input: {
   };
 
   for (const block of blocks) {
-    const text = cleanReadingText(block);
-    if (!text && !/<img|<svg|<table/i.test(block)) continue;
+    let pendingBlock: string | null = block;
 
-    const blockHeight = estimateReadingBlockHeight(block);
-    if (blockHeight > PAGE_BODY_HEIGHT_TARGET && text) {
-      if (bucket.length > 0) flush();
-      for (const chunk of chunkText(text, getChunkSizeForText(text))) {
-        bucket.push(`<p>${escapeReadingHtml(chunk)}</p>`);
-        flush();
+    while (pendingBlock) {
+      const text = cleanReadingText(pendingBlock);
+      if (!text && !/<img|<svg|<table/i.test(pendingBlock)) break;
+
+      const blockHeight = estimateReadingBlockHeight(pendingBlock);
+      const availableHeight = PAGE_BODY_HEIGHT_TARGET - bucketHeight;
+      if (blockHeight <= availableHeight) {
+        bucket.push(pendingBlock);
+        bucketHeight += blockHeight;
+        break;
       }
-      continue;
-    }
 
-    if (
-      bucket.length > 0 &&
-      bucketHeight + blockHeight > PAGE_BODY_HEIGHT_TARGET
-    ) {
-      flush();
+      const split = splitPlainParagraphToFit(pendingBlock, availableHeight);
+      if (split) {
+        bucket.push(split.currentPageHtml);
+        bucketHeight += estimateReadingBlockHeight(split.currentPageHtml);
+        flush();
+        pendingBlock = split.nextPageHtml;
+        continue;
+      }
+
+      if (bucket.length > 0) {
+        flush();
+        continue;
+      }
+
+      if (blockHeight > PAGE_BODY_HEIGHT_TARGET && text) {
+        for (const chunk of chunkText(text, getChunkSizeForText(text))) {
+          bucket.push(`<p>${escapeReadingHtml(chunk)}</p>`);
+          flush();
+        }
+        break;
+      }
+
+      bucket.push(pendingBlock);
+      bucketHeight += blockHeight;
+      break;
     }
-    bucket.push(block);
-    bucketHeight += blockHeight;
   }
   flush();
 
@@ -66,17 +88,24 @@ export function paginateFixedReadingHtml(input: {
           title: input.title,
           html: input.html,
           text: cleanReadingText(input.html),
+          paginationVersion: FIXED_READING_PAGINATION_VERSION,
         },
       ];
 }
 
 export function fitsFixedReadingPage(html: string) {
-  return (
-    splitReadingBlocks(html).reduce(
-      (height, block) => height + estimateReadingBlockHeight(block),
-      0,
-    ) <= PAGE_BODY_HEIGHT_TARGET
+  return getFixedReadingPageEstimatedHeight(html) <= PAGE_BODY_HEIGHT_TARGET;
+}
+
+export function getFixedReadingPageEstimatedHeight(html: string) {
+  return splitReadingBlocks(html).reduce(
+    (height, block) => height + estimateReadingBlockHeight(block),
+    0,
   );
+}
+
+export function getFixedReadingPageFillRatio(html: string) {
+  return getFixedReadingPageEstimatedHeight(html) / PAGE_BODY_HEIGHT_TARGET;
 }
 
 function estimateReadingBlockHeight(block: string) {
@@ -131,6 +160,56 @@ function getChunkSizeForText(text: string) {
   return Math.max(
     120,
     Math.floor((maxVisualUnits / averageUnitsPerChar) * 0.9),
+  );
+}
+
+function splitPlainParagraphToFit(block: string, availableHeight: number) {
+  const match = /^<p(\s[^>]*)?>([\s\S]*)<\/p>$/i.exec(block.trim());
+  if (!match || /<[^>]+>/.test(match[2])) return null;
+
+  const text = cleanReadingText(match[2]);
+  const availableLineCount = Math.floor(
+    (availableHeight - PARAGRAPH_GAP) / BODY_LINE_HEIGHT,
+  );
+  if (availableLineCount < 2) return null;
+
+  const unitsPerLine = PAGE_CONTENT_WIDTH / BODY_FONT_SIZE;
+  const cut = findVisualTextCut(text, availableLineCount * unitsPerLine);
+  if (cut <= 0 || cut >= text.length) return null;
+
+  const attributes = match[1] ?? "";
+  return {
+    currentPageHtml: `<p${attributes}>${escapeReadingHtml(text.slice(0, cut).trim())}</p>`,
+    nextPageHtml: `<p${withContinuationClass(attributes)}>${escapeReadingHtml(text.slice(cut).trim())}</p>`,
+  };
+}
+
+function findVisualTextCut(text: string, maxVisualUnits: number) {
+  let visualUnits = 0;
+  let hardCut = 0;
+  let preferredCut = 0;
+
+  for (let index = 0; index < text.length; index += 1) {
+    const nextUnits = visualUnits + getTextVisualUnits(text[index]);
+    if (nextUnits > maxVisualUnits) break;
+    visualUnits = nextUnits;
+    hardCut = index + 1;
+    if (/[。！？；.!?;\s]/.test(text[index])) {
+      preferredCut = index + 1;
+    }
+  }
+
+  return preferredCut >= hardCut * 0.85 ? preferredCut : hardCut;
+}
+
+function withContinuationClass(attributes: string) {
+  const classMatch = /\bclass=(['"])(.*?)\1/i.exec(attributes);
+  if (!classMatch) {
+    return `${attributes} class="reading-paragraph-continuation"`;
+  }
+  return attributes.replace(
+    classMatch[0],
+    `class=${classMatch[1]}${classMatch[2]} reading-paragraph-continuation${classMatch[1]}`,
   );
 }
 

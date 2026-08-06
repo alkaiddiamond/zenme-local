@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  cacheReadingNotesScrollTop,
   cacheReadingProgress,
   createPdfReadingAnnotation,
   createReadingNote,
   loadReadingPayload,
   readCachedReadingProgress,
+  saveReadingNotesScrollTop,
+  readCachedReadingNotesScrollTop,
   recognizePdfAnnotationDraft,
   saveReadingProgress,
   saveReadingNoteOrder,
@@ -51,6 +54,7 @@ function uninstallWindowMock() {
 function readingProgress(overrides: Partial<{
   assetId: string;
   contentScale: number;
+  notesScrollTop: number;
   scrollRatio: number;
   sectionIndex: number;
   updatedAt: string;
@@ -58,6 +62,9 @@ function readingProgress(overrides: Partial<{
   return {
     assetId: overrides.assetId ?? "asset-1",
     contentScale: overrides.contentScale ?? 1,
+    ...(overrides.notesScrollTop !== undefined
+      ? { notesScrollTop: overrides.notesScrollTop }
+      : {}),
     scrollRatio: overrides.scrollRatio ?? 0.25,
     sectionIndex: overrides.sectionIndex ?? 2,
     updatedAt: overrides.updatedAt ?? "2026-06-28T01:00:00.000Z",
@@ -366,6 +373,45 @@ describe("reading browser api notes and OCR", () => {
     ).rejects.toThrow("缺少 OCR 图片");
 
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("stores the annotation sidebar scroll position as pixels", () => {
+    installWindowMock();
+
+    expect(cacheReadingNotesScrollTop("asset-1", 482.5)).toBe(482.5);
+    expect(readCachedReadingNotesScrollTop("asset-1")).toBe(482.5);
+    expect(readCachedReadingNotesScrollTop("asset-2")).toBeNull();
+  });
+
+  it("ignores malformed annotation sidebar scroll state", () => {
+    const { store } = installWindowMock();
+    store.set("zenme:reading-notes-scroll:asset-1", "{not json");
+    expect(readCachedReadingNotesScrollTop("asset-1")).toBeNull();
+
+    store.set(
+      "zenme:reading-notes-scroll:asset-1",
+      JSON.stringify({ assetId: "asset-2", scrollTop: 100 }),
+    );
+    expect(readCachedReadingNotesScrollTop("asset-1")).toBeNull();
+  });
+
+  it("persists annotation sidebar scrollTop through the reading progress API", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify(readingProgress({ notesScrollTop: 482.5 })), {
+        status: 200,
+      }),
+    );
+
+    await saveReadingNotesScrollTop("asset-1", 482.5, { keepalive: true });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/reading/assets/asset-1/progress",
+      expect.objectContaining({
+        body: JSON.stringify({ notesScrollTop: 482.5 }),
+        keepalive: true,
+        method: "PUT",
+      }),
+    );
   });
 
   it("uses a localized message when the OCR request cannot connect", async () => {

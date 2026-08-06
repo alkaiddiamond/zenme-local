@@ -19,6 +19,7 @@ import {
   parseTxtSections,
   shouldRebuildTxtSections,
 } from "@/lib/reading/parsers/txt-parser";
+import { remapReadingNotesToSections } from "@/lib/reading/remap-notes";
 import { parseMarkdownSections } from "@/lib/reading/parsers/markdown-parser";
 import {
   normalizeReadingContentScale,
@@ -184,10 +185,20 @@ export async function getLocalReadingSections(
 
   const bytes = await fs.readFile(resolveInside(location.assetDir, asset.filePath));
   const rebuiltSections = parseTxtSections(decodeTxtBytes(bytes));
-  await writeJsonFile(
-    resolveInside(location.assetDir, "sections.json"),
+  const notes = await readNotes(location.assetDir);
+  const remappedNotes = remapReadingNotesToSections(
+    notes,
+    sections,
     rebuiltSections,
   );
+  const sectionsPath = resolveInside(location.assetDir, "sections.json");
+  await writeJsonFile(sectionsPath, rebuiltSections);
+  try {
+    await writeNotes(location.assetDir, remappedNotes);
+  } catch (error) {
+    await writeJsonFile(sectionsPath, sections);
+    throw error;
+  }
   return rebuiltSections;
 }
 
@@ -332,6 +343,7 @@ export async function getLocalReadingProgress(
 export async function saveLocalReadingProgress(input: {
   assetId: string;
   contentScale: number;
+  notesScrollTop?: number;
   projectId: string;
   scrollRatio: number;
   sectionIndex: number;
@@ -342,10 +354,14 @@ export async function saveLocalReadingProgress(input: {
   if (asset.projectId !== input.projectId) {
     throw new Error("项目与阅读资料不匹配");
   }
+  const current = await getLocalReadingProgress(input.assetId, dataDir);
   const progress: ReadingProgress = {
     assetId: input.assetId,
     ownerId: "local",
     contentScale: normalizeReadingContentScale(input.contentScale),
+    notesScrollTop: normalizeReadingNotesScrollTop(
+      input.notesScrollTop ?? current?.notesScrollTop ?? 0,
+    ),
     sectionIndex: normalizeReadingSectionIndex(input.sectionIndex),
     scrollRatio: normalizeReadingScrollRatio(input.scrollRatio),
     updatedAt: new Date().toISOString(),
@@ -529,7 +545,13 @@ function normalizeSections(value: unknown): ReadingSection[] | null {
       typeof item.html === "string" &&
       typeof item.text === "string"
     );
-  });
+  }).map((section) => ({
+    ...section,
+    paginationVersion:
+      typeof section.paginationVersion === "number"
+        ? section.paginationVersion
+        : undefined,
+  }));
 }
 
 function normalizeNotes(value: unknown): ReadingNote[] | null {
@@ -597,10 +619,17 @@ function normalizeProgress(value: unknown): ReadingProgress | null {
     assetId: progress.assetId,
     ownerId: typeof progress.ownerId === "string" ? progress.ownerId : "local",
     contentScale: normalizeReadingContentScale(progress.contentScale),
+    notesScrollTop: normalizeReadingNotesScrollTop(progress.notesScrollTop),
     sectionIndex: normalizeReadingSectionIndex(progress.sectionIndex),
     scrollRatio: normalizeReadingScrollRatio(progress.scrollRatio),
     updatedAt: progress.updatedAt,
   };
+}
+
+function normalizeReadingNotesScrollTop(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, value)
+    : 0;
 }
 
 function isReadingFormat(value: unknown): value is ReadingFormat {

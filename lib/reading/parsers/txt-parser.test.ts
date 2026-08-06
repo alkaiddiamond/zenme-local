@@ -49,7 +49,7 @@ describe("parseTxtSections", () => {
 
   it("returns a fallback empty section for blank input", () => {
     expect(parseTxtSections(" \n\n ")).toEqual([
-      { index: 0, title: "正文", html: "", text: "" },
+      expect.objectContaining({ index: 0, title: "正文", html: "", text: "" }),
     ]);
   });
 
@@ -82,11 +82,7 @@ describe("parseTxtSections", () => {
         },
       ]),
     ).toBe(true);
-    expect(
-      shouldRebuildTxtSections([
-        { index: 0, title: "正文", html: "<p>正常正文</p>", text: "正常正文" },
-      ]),
-    ).toBe(false);
+    expect(shouldRebuildTxtSections(parseTxtSections("正常正文"))).toBe(false);
   });
 
   it("rebuilds legacy variable-height TXT sections that exceed one page", () => {
@@ -100,5 +96,32 @@ describe("parseTxtSections", () => {
         { index: 0, title: "正文", html: paragraphs, text: "旧版长章节" },
       ]),
     ).toBe(true);
+  });
+
+  it("rebuilds legacy TXT pages that leave a large gap before a continuation", () => {
+    expect(
+      shouldRebuildTxtSections([
+        {
+          index: 0,
+          title: "第八章",
+          html: `<p>${"上一页内容。".repeat(30)}</p>`,
+          text: "上一页内容",
+        },
+        {
+          index: 1,
+          title: "第八章 · 2",
+          html: `<p>${"同一章的长段落。".repeat(30)}</p>`,
+          text: "同一章的长段落",
+        },
+      ]),
+    ).toBe(true);
+  });
+
+  it("does not repeatedly rebuild freshly paginated underfilled pages", () => {
+    const sections = parseTxtSections(
+      ["第八章", "短段落。", "另一个短段落。"].join("\n"),
+    );
+
+    expect(shouldRebuildTxtSections(sections)).toBe(false);
   });
 });

@@ -29,6 +29,7 @@ export async function PUT(
     const { assetId } = await params;
     const body = (await request.json()) as {
       contentScale?: number;
+      notesScrollTop?: number;
       sectionIndex?: number;
       scrollRatio?: number;
     };
@@ -49,10 +50,16 @@ export async function PUT(
       typeof body.scrollRatio === "number" && Number.isFinite(body.scrollRatio)
         ? body.scrollRatio
         : (current?.scrollRatio ?? 0);
+    const notesScrollTop =
+      typeof body.notesScrollTop === "number" &&
+      Number.isFinite(body.notesScrollTop)
+        ? body.notesScrollTop
+        : (current?.notesScrollTop ?? 0);
     return NextResponse.json(
       await saveLocalReadingProgress({
         assetId,
         contentScale,
+        notesScrollTop,
         projectId: asset.projectId,
         scrollRatio,
         sectionIndex,

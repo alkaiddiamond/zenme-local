@@ -1,6 +1,7 @@
 import type { ReadingSection } from "@/lib/reading/types";
 import {
   escapeReadingHtml,
+  FIXED_READING_PAGINATION_VERSION,
   fitsFixedReadingPage,
   paginateFixedReadingHtml,
 } from "./fixed-page-paginator";
@@ -59,7 +60,13 @@ export function parseTxtSections(text: string): ReadingSection[] {
 
   return sections.length
     ? sections
-    : [{ index: 0, title: DEFAULT_TITLE, html: "", text: "" }];
+    : [{
+        index: 0,
+        title: DEFAULT_TITLE,
+        html: "",
+        text: "",
+        paginationVersion: FIXED_READING_PAGINATION_VERSION,
+      }];
 }
 
 export function shouldRebuildTxtSections(sections: ReadingSection[]) {
@@ -77,6 +84,10 @@ export function shouldRebuildTxtSections(sections: ReadingSection[]) {
     replacements >= 3 && replacements / Math.max(1, characters) >= 0.005;
   return (
     hasBrokenEncoding ||
+    sections.some(
+      (section) =>
+        section.paginationVersion !== FIXED_READING_PAGINATION_VERSION,
+    ) ||
     sections.some(
       (section) =>
         (!section.html && Boolean(section.text)) ||

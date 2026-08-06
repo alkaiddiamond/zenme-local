@@ -3,6 +3,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import type {
   PointerEvent as ReactPointerEvent,
   RefObject,
+  UIEventHandler,
 } from "react";
 
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
@@ -25,6 +26,7 @@ type ReadingNotesSidebarProps = {
   notesListRef: RefObject<HTMLDivElement | null>;
   onCreateNoteNode: (note: ReadingNote, asset: ReadingAsset) => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onScroll: UIEventHandler<HTMLDivElement>;
   pdfAnnotationDraft: PdfAnnotationDraft | null;
   quickNoteActionLabel: string;
   quickNoteHint: string;
@@ -54,6 +56,7 @@ export const ReadingNotesSidebar = memo(function ReadingNotesSidebar({
   notesListRef,
   onCreateNoteNode,
   onResizeStart,
+  onScroll,
   pdfAnnotationDraft,
   quickNoteActionLabel,
   quickNoteHint,
@@ -172,6 +175,7 @@ export const ReadingNotesSidebar = memo(function ReadingNotesSidebar({
         className="min-h-0 flex-1"
         contentKey={`${notes.length}:${editingNoteId ?? ""}`}
         ref={notesListRef}
+        onScroll={onScroll}
         viewportClassName="h-full overflow-auto px-4 py-3"
       >
         {notes.length === 0 ? (

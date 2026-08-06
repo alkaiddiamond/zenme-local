@@ -8,6 +8,7 @@ import type { PdfAnnotationDraft } from "./types";
 import type { ReadingPayload } from "./types";
 
 const READING_PROGRESS_CACHE_PREFIX = "zenme:reading-progress:";
+const READING_NOTES_SCROLL_CACHE_PREFIX = "zenme:reading-notes-scroll:";
 
 export async function loadReadingPayload(assetId: string) {
   const response = await fetch(`/api/reading/assets/${assetId}`, {
@@ -22,9 +23,12 @@ export async function loadReadingPayload(assetId: string) {
   }
 
   const payload = (await response.json()) as ReadingPayload;
+  const cachedProgress = readCachedReadingProgress(assetId);
   return {
     ...payload,
-    progress: readCachedReadingProgress(assetId) ?? payload.progress,
+    progress: cachedProgress
+      ? { ...payload.progress, ...cachedProgress }
+      : payload.progress,
   };
 }
 
@@ -55,7 +59,12 @@ export function saveReadingProgress(
     method: "PUT",
     cache: "no-store",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contentScale, scrollRatio, sectionIndex }),
+    body: JSON.stringify({
+      contentScale,
+      notesScrollTop: readCachedReadingNotesScrollTop(assetId) ?? undefined,
+      scrollRatio,
+      sectionIndex,
+    }),
     keepalive: options?.keepalive,
   }).then(async (response) => {
     if (response.ok) {
@@ -119,6 +128,11 @@ export function readCachedReadingProgress(assetId: string): ReadingProgress | nu
     return {
       assetId,
       contentScale: value.contentScale,
+      notesScrollTop:
+        typeof value.notesScrollTop === "number" &&
+        Number.isFinite(value.notesScrollTop)
+          ? Math.max(0, value.notesScrollTop)
+          : undefined,
       sectionIndex: value.sectionIndex,
       scrollRatio: Math.min(1, Math.max(0, value.scrollRatio)),
       updatedAt: value.updatedAt,
@@ -128,11 +142,77 @@ export function readCachedReadingProgress(assetId: string): ReadingProgress | nu
   }
 }
 
-function writeLocalReadingProgress(progress: ReadingProgress) {
+export function cacheReadingNotesScrollTop(assetId: string, scrollTop: number) {
+  const normalizedScrollTop =
+    Number.isFinite(scrollTop) && scrollTop > 0 ? scrollTop : 0;
   if (typeof window !== "undefined") {
     window.localStorage.setItem(
+      `${READING_NOTES_SCROLL_CACHE_PREFIX}${assetId}`,
+      JSON.stringify({ assetId, scrollTop: normalizedScrollTop }),
+    );
+  }
+  return normalizedScrollTop;
+}
+
+export function readCachedReadingNotesScrollTop(assetId: string) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(
+    `${READING_NOTES_SCROLL_CACHE_PREFIX}${assetId}`,
+  );
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const value = JSON.parse(raw) as {
+      assetId?: unknown;
+      scrollTop?: unknown;
+    };
+    return value.assetId === assetId &&
+      typeof value.scrollTop === "number" &&
+      Number.isFinite(value.scrollTop)
+      ? Math.max(0, value.scrollTop)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveReadingNotesScrollTop(
+  assetId: string,
+  scrollTop: number,
+  options?: { keepalive?: boolean },
+) {
+  const normalizedScrollTop = cacheReadingNotesScrollTop(assetId, scrollTop);
+  return fetch(`/api/reading/assets/${assetId}/progress`, {
+    method: "PUT",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notesScrollTop: normalizedScrollTop }),
+    keepalive: options?.keepalive,
+  }).then(async (response) => {
+    if (response.ok) {
+      const saved = (await response.clone().json().catch(() => null)) as
+        | ReadingProgress
+        | null;
+      if (saved) cacheReadingProgress(saved);
+    }
+    return response;
+  });
+}
+
+function writeLocalReadingProgress(progress: ReadingProgress) {
+  if (typeof window !== "undefined") {
+    const cached = readCachedReadingProgress(progress.assetId);
+    window.localStorage.setItem(
       getReadingProgressCacheKey(progress.assetId),
-      JSON.stringify(progress),
+      JSON.stringify({
+        ...progress,
+        notesScrollTop: progress.notesScrollTop ?? cached?.notesScrollTop,
+      }),
     );
   }
   return progress;
