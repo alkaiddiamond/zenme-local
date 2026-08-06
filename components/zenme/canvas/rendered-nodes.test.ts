@@ -21,6 +21,78 @@ function node(input: {
 }
 
 describe("rendered canvas nodes", () => {
+  it("reuses unchanged rendered nodes while another node moves", () => {
+    const stable = node({ id: "stable" });
+    const moving = node({ id: "moving" });
+    const input = {
+      createNoteNode: vi.fn(),
+      edges: [],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    };
+    const first = getRenderedCanvasNodes({
+      ...input,
+      nodes: [stable, moving],
+    });
+    const moved = {
+      ...moving,
+      position: { x: 120, y: 80 },
+    };
+    const second = getRenderedCanvasNodes({
+      ...input,
+      nodes: [stable, moved],
+    });
+
+    expect(second[0]).toBe(first[0]);
+    expect(second[1]).not.toBe(first[1]);
+  });
+
+  it("keeps derived folder nodes stable when only an unrelated position changes", () => {
+    const folder = node({
+      data: { kind: "musicFolder" },
+      id: "folder",
+      type: "musicFolder",
+    });
+    const music = node({
+      data: { kind: "music", musicFolderId: "folder", title: "歌曲" },
+      id: "music",
+      type: "music",
+    });
+    const unrelated = node({ id: "unrelated" });
+    const input = {
+      createNoteNode: vi.fn(),
+      edges: [],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    };
+    const first = getRenderedCanvasNodes({
+      ...input,
+      nodes: [folder, music, unrelated],
+    });
+    const second = getRenderedCanvasNodes({
+      ...input,
+      nodes: [
+        folder,
+        music,
+        { ...unrelated, position: { x: 40, y: 30 } },
+      ],
+    });
+
+    expect(second[0]).toBe(first[0]);
+  });
+
   it("injects the derived-image callback into image nodes", () => {
     const onCreateDerivedImageNode = vi.fn();
     const renderedNodes = getRenderedCanvasNodes({
@@ -161,6 +233,41 @@ describe("rendered canvas nodes", () => {
     expect(renderedNodes[1].data.projectTags).toEqual(["产品", "待办", "灵感"]);
     expect(renderedNodes[0].data.projectTagColors).toEqual({ 产品: "blue" });
     expect(renderedNodes[1].data.projectTagColors).toEqual({ 产品: "blue" });
+  });
+
+  it("keeps managed text rendering stable when unrelated nodes move", () => {
+    const managed = node({
+      data: { kind: "managedText", tags: ["资料"] },
+      id: "managed",
+      type: "managedText",
+    });
+    const unrelated = node({ id: "unrelated" });
+    const input = {
+      createNoteNode: vi.fn(),
+      edges: [],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateProjectTag: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    };
+    const first = getRenderedCanvasNodes({
+      ...input,
+      nodes: [managed, unrelated],
+    });
+    const second = getRenderedCanvasNodes({
+      ...input,
+      nodes: [
+        managed,
+        { ...unrelated, position: { x: 100, y: 100 } },
+      ],
+    });
+
+    expect(second[0]).toBe(first[0]);
   });
 
   it("derives direct task children, progress and shared project tags", () => {

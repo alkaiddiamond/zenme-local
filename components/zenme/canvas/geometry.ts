@@ -346,9 +346,7 @@ export function createCanvasHistoryEntry(
       type: "snapshot",
       ...snapshot,
     } satisfies CanvasHistorySnapshotEntry,
-    signature: JSON.stringify(
-      getCanvasHistorySignatureSnapshot(historyNodes, historyEdges),
-    ),
+    signature: getCanvasHistorySignature(historyNodes, historyEdges),
   };
 }
 
@@ -374,19 +372,54 @@ function getCanvasHistorySignatureSnapshot(
   historyEdges: Edge[],
 ) {
   return {
-    nodes: historyNodes.map((node) => {
-      const historyNode = getCanvasHistoryNode(node);
-      return {
-        ...historyNode,
-        data: Object.fromEntries(
-          Object.entries(historyNode.data).filter(
-            ([key]) => !CANVAS_HISTORY_TRANSIENT_DATA_KEYS.has(key),
-          ),
-        ),
-      };
-    }),
-    edges: historyEdges.map(getCanvasHistoryEdge),
+    nodes: historyNodes.map(getCanvasHistoryNodeSignature),
+    edges: historyEdges.map(getCanvasHistoryEdgeSignature),
   };
+}
+
+const canvasHistoryDataSignatureCache = new WeakMap<object, string>();
+const canvasHistoryEdgeSignatureCache = new WeakMap<object, string>();
+
+function getCanvasHistoryNodeSignature(node: CanvasNode) {
+  const historyNodeFields = getCanvasHistoryNodeFields(node);
+  const nodeFields = { ...historyNodeFields } as Partial<CanvasNode>;
+  delete nodeFields.data;
+  let dataSignature = canvasHistoryDataSignatureCache.get(node.data);
+  if (!dataSignature) {
+    const serializableData = getSerializableRecord(node.data);
+    const persistentData = Object.fromEntries(
+      Object.entries(serializableData).filter(
+        ([key]) => !CANVAS_HISTORY_TRANSIENT_DATA_KEYS.has(key),
+      ),
+    );
+    dataSignature = createCompactCanvasSignature(JSON.stringify(persistentData));
+    canvasHistoryDataSignatureCache.set(node.data, dataSignature);
+  }
+
+  return `${createCompactCanvasSignature(JSON.stringify(nodeFields))}:${dataSignature}`;
+}
+
+function getCanvasHistoryEdgeSignature(edge: Edge) {
+  const cached = canvasHistoryEdgeSignatureCache.get(edge);
+  if (cached) return cached;
+  const signature = createCompactCanvasSignature(
+    JSON.stringify(getCanvasHistoryEdge(edge)),
+  );
+  canvasHistoryEdgeSignatureCache.set(edge, signature);
+  return signature;
+}
+
+function createCompactCanvasSignature(value: string) {
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193);
+    second = Math.imul(second ^ code, 0x85ebca6b);
+  }
+  return `${value.length.toString(36)}-${(first >>> 0).toString(36)}-${(
+    second >>> 0
+  ).toString(36)}`;
 }
 
 function getCanvasHistorySnapshot(
@@ -400,6 +433,15 @@ function getCanvasHistorySnapshot(
 }
 
 function getCanvasHistoryNode(node: CanvasNode) {
+  const snapshotNode = getCanvasHistoryNodeFields(node);
+
+  return {
+    ...snapshotNode,
+    data: getSerializableRecord(snapshotNode.data),
+  } satisfies CanvasNode;
+}
+
+function getCanvasHistoryNodeFields(node: CanvasNode) {
   const snapshotNode = { ...node } as CanvasNode & {
     dragging?: boolean;
     measured?: unknown;
@@ -410,11 +452,7 @@ function getCanvasHistoryNode(node: CanvasNode) {
   delete snapshotNode.measured;
   delete snapshotNode.resizing;
   delete snapshotNode.selected;
-
-  return {
-    ...snapshotNode,
-    data: getSerializableRecord(snapshotNode.data),
-  } satisfies CanvasNode;
+  return snapshotNode;
 }
 
 function getCanvasHistoryEdge(edge: Edge) {

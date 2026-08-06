@@ -43,4 +43,13 @@ describe("canvas side toolbar", () => {
     expect(canvasClientSource).toContain("onClose={closeCanvasSearch}");
     expect(canvasClientSource).toContain("onToggleSearch={toggleCanvasSearch}");
   });
+
+  it("automatically dismisses canvas notices while keeping manual close", () => {
+    expect(source).toContain("const CANVAS_NOTICE_AUTO_DISMISS_MS = 5_000;");
+    expect(source).toContain("window.setTimeout(() => {");
+    expect(source).toContain("onCloseRef.current();");
+    expect(source).toContain("}, CANVAS_NOTICE_AUTO_DISMISS_MS);");
+    expect(source).toContain('aria-label="关闭通知"');
+    expect(source).toContain('role="alert"');
+  });
 });

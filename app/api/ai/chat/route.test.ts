@@ -3,7 +3,30 @@ import { describe, expect, it } from "vitest";
 import {
   createOpenAiOAuthRequestBody,
   createVolcengineAgentPlanResponsesRequestBody,
+  fitChatContextToModel,
 } from "./route";
+
+describe("model-aware chat context", () => {
+  it("does not reject context merely because it exceeds 24,000 characters", () => {
+    const context = "长上下文".repeat(8_000);
+
+    expect(fitChatContextToModel({
+      context,
+      contextWindow: 128_000,
+      messages: [{ role: "user", content: "总结" }],
+    })).toBe(context);
+  });
+
+  it("truncates according to the configured model window", () => {
+    const context = fitChatContextToModel({
+      context: "正文内容".repeat(4_000),
+      contextWindow: 8_000,
+      messages: [{ role: "user", content: "总结" }],
+    });
+
+    expect(context).toContain("[其余画布上下文因模型窗口限制已省略]");
+  });
+});
 
 describe("ChatGPT OAuth chat request", () => {
   it("uses the official Responses Lite shape for GPT-5.6 models", () => {

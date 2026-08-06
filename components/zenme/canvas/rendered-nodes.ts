@@ -16,7 +16,7 @@ import {
   deriveTaskRelationships,
   getTaskParentOptions,
 } from "./task-relationships";
-import { getCanvasNodeContextText } from "./text-generation-context";
+import { hasCanvasNodeContextText } from "./text-generation-context";
 
 type RenderedCanvasNodeInput = {
   createNoteNode: (
@@ -136,6 +136,8 @@ type RenderedCanvasNodeInput = {
 
 type RenderedNodeCacheEntry = {
   createNoteNode?: RenderedCanvasNodeInput["createNoteNode"];
+  dependencyKey?: string;
+  dependencies?: readonly unknown[];
   node: CanvasNode;
   onCreateTextChildNode?: RenderedCanvasNodeInput["onCreateTextChildNode"];
   onSubmitTextGenerationNode?: RenderedCanvasNodeInput["onSubmitTextGenerationNode"];
@@ -156,10 +158,59 @@ type RenderedNodeCacheEntry = {
   onToggleMusicChildExpanded?: RenderedCanvasNodeInput["onToggleMusicChildExpanded"];
   onUpdateProjectTag?: RenderedCanvasNodeInput["onUpdateProjectTag"];
   projectId?: string;
+  sourceEdges?: RenderedCanvasNodeInput["edges"];
+  sourceNodes?: RenderedCanvasNodeInput["nodes"];
   toggleReaderCollapse?: RenderedCanvasNodeInput["toggleReaderCollapse"];
 };
 
 const renderedNodeCache = new WeakMap<CanvasNode, RenderedNodeCacheEntry>();
+
+function hasSameSharedDerivedState(left: CanvasNode, right: CanvasNode) {
+  return left.data.hasIncomingEdge === right.data.hasIncomingEdge &&
+    left.data.hasOutgoingEdge === right.data.hasOutgoingEdge &&
+    left.data.hasRunningGenerationChild === right.data.hasRunningGenerationChild &&
+    left.data.isMultiSelection === right.data.isMultiSelection;
+}
+
+function getSharedDerivedStateKey(node: CanvasNode) {
+  return [
+    node.data.hasIncomingEdge ? 1 : 0,
+    node.data.hasOutgoingEdge ? 1 : 0,
+    node.data.hasRunningGenerationChild ? 1 : 0,
+    node.data.isMultiSelection ? 1 : 0,
+  ].join("");
+}
+
+function getDependencyCachedNode(
+  sourceNode: CanvasNode,
+  dependencyKey: string,
+  dependencies: readonly unknown[],
+) {
+  const cached = renderedNodeCache.get(sourceNode);
+  if (
+    cached?.dependencyKey !== dependencyKey ||
+    cached.dependencies?.length !== dependencies.length ||
+    !dependencies.every((dependency, index) =>
+      Object.is(dependency, cached.dependencies?.[index]))
+  ) {
+    return undefined;
+  }
+  return cached.node;
+}
+
+function setDependencyCachedNode(
+  sourceNode: CanvasNode,
+  renderedNode: CanvasNode,
+  dependencyKey: string,
+  dependencies: readonly unknown[],
+) {
+  renderedNodeCache.set(sourceNode, {
+    dependencies,
+    dependencyKey,
+    node: renderedNode,
+  });
+  return renderedNode;
+}
 
 export function getRenderedCanvasNodes({
   createNoteNode,
@@ -225,7 +276,14 @@ export function getRenderedCanvasNodes({
   const musicPlayerIdByMusicId = new Map<string, string>();
   const taskRelationships = deriveTaskRelationships(nodes, edges);
   const musicSourcesByPlayerId = new Map<string, CanvasNode[]>();
+  const musicNodesByFolderId = new Map<string, CanvasNode[]>();
   const playerByChildId = new Map<string, CanvasNode>();
+  for (const candidate of nodes) {
+    if (candidate.data.kind !== "music" || !candidate.data.musicFolderId) continue;
+    const folderMembers = musicNodesByFolderId.get(candidate.data.musicFolderId) ?? [];
+    folderMembers.push(candidate);
+    musicNodesByFolderId.set(candidate.data.musicFolderId, folderMembers);
+  }
   for (const edge of edges) {
     const source = nodeById.get(edge.source);
     const target = nodeById.get(edge.target);
@@ -253,9 +311,7 @@ export function getRenderedCanvasNodes({
                 musicFolderId: source.id,
               },
             })),
-            ...nodes.filter(
-              (node) => node.data.kind === "music" && node.data.musicFolderId === source.id,
-            ),
+            ...(musicNodesByFolderId.get(source.id) ?? []),
           ];
       for (const item of expandedSources) {
         if (!musicSources.some((candidate) => candidate.id === item.id)) {
@@ -313,7 +369,7 @@ export function getRenderedCanvasNodes({
       imageReferencesByTargetId.set(edge.target, references);
     }
 
-    if (source && getCanvasNodeContextText(source).trim()) {
+    if (source && hasCanvasNodeContextText(source)) {
       const references = imageTextReferencesByTargetId.get(edge.target) ?? [];
       if (!references.some((reference) => reference.nodeId === source.id)) {
         references.push({
@@ -399,44 +455,76 @@ export function getRenderedCanvasNodes({
     };
 
     if (nodeWithConnectionState.data.kind === "music") {
-      return {
+      const musicPlayerNodeId = musicPlayerIdByMusicId.get(nodeWithConnectionState.id);
+      const dependencyKey = `${getSharedDerivedStateKey(nodeWithConnectionState)}:${musicPlayerNodeId ?? ""}`;
+      const dependencies = [
+        onCreateMusicPlayerNode,
+        onLocateMusicPlayerNode,
+        onUpdateMusicNode,
+      ];
+      const cached = getDependencyCachedNode(node, dependencyKey, dependencies);
+      if (cached) return cached;
+      const renderedMusicNode = {
         ...nodeWithConnectionState,
         data: {
           ...nodeWithConnectionState.data,
-          musicPlayerNodeId: musicPlayerIdByMusicId.get(nodeWithConnectionState.id),
+          musicPlayerNodeId,
           onCreateMusicPlayerNode,
           onLocateMusicPlayerNode,
           onUpdateMusicNode,
         },
       };
+      return setDependencyCachedNode(
+        node,
+        renderedMusicNode,
+        dependencyKey,
+        dependencies,
+      );
     }
 
     if (nodeWithConnectionState.data.kind === "musicFolder") {
-      return {
+      const musicFolderMembers = (musicNodesByFolderId.get(nodeWithConnectionState.id) ?? [])
+        .map((candidate) => ({
+              id: candidate.id,
+              fileId: candidate.data.fileId,
+              fileName: candidate.data.fileName,
+              fileSize: candidate.data.fileSize,
+              mimeType: candidate.data.mimeType,
+              originalUrl: candidate.data.originalUrl,
+              title: candidate.data.title || candidate.data.fileName || "未命名音乐",
+            }));
+      const musicPlayerNodeId = musicPlayerIdByMusicId.get(nodeWithConnectionState.id);
+      const dependencyKey = JSON.stringify({
+        members: musicFolderMembers,
+        musicPlayerNodeId,
+        shared: getSharedDerivedStateKey(nodeWithConnectionState),
+      });
+      const dependencies = [
+        onCreateMusicPlayerNode,
+        onLocateMusicPlayerNode,
+        onToggleMusicFolderExpanded,
+        onUpdateMusicNode,
+      ];
+      const cached = getDependencyCachedNode(node, dependencyKey, dependencies);
+      if (cached) return cached;
+      const renderedMusicFolderNode = {
         ...nodeWithConnectionState,
         data: {
           ...nodeWithConnectionState.data,
-          musicFolderMembers: nodes.flatMap((candidate) =>
-            candidate.data.kind === "music" &&
-            candidate.data.musicFolderId === nodeWithConnectionState.id
-              ? [{
-                  id: candidate.id,
-                  fileId: candidate.data.fileId,
-                  fileName: candidate.data.fileName,
-                  fileSize: candidate.data.fileSize,
-                  mimeType: candidate.data.mimeType,
-                  originalUrl: candidate.data.originalUrl,
-                  title: candidate.data.title || candidate.data.fileName || "未命名音乐",
-                }]
-              : [],
-          ),
-          musicPlayerNodeId: musicPlayerIdByMusicId.get(nodeWithConnectionState.id),
+          musicFolderMembers,
+          musicPlayerNodeId,
           onCreateMusicPlayerNode,
           onLocateMusicPlayerNode,
           onToggleMusicFolderExpanded,
           onUpdateMusicNode,
         },
       };
+      return setDependencyCachedNode(
+        node,
+        renderedMusicFolderNode,
+        dependencyKey,
+        dependencies,
+      );
     }
 
     if (nodeWithConnectionState.data.kind === "musicPlayer") {
@@ -444,10 +532,44 @@ export function getRenderedCanvasNodes({
       const source = sources.find(
         (item) => item.id === nodeWithConnectionState.data.musicSourceNodeId,
       ) ?? sources[0];
-      return {
+      const musicSources = sources.map((item) => ({
+        id: item.id,
+        title: item.data.title || item.data.fileName || "未命名音乐",
+      }));
+      const dependencyKey = JSON.stringify({
+        coverUrl: source?.data.coverUrl,
+        fileId: source?.data.fileId,
+        fileName: source?.data.fileName,
+        fileSize: source?.data.fileSize,
+        mimeType: source?.data.mimeType,
+        musicLyricsOverlayOpen:
+          musicLyricsOverlayPlayerNodeId === nodeWithConnectionState.id,
+        musicSourceNodeId: source?.id,
+        musicSources,
+        originalUrl: source?.data.originalUrl,
+        previewUrl: source?.data.previewUrl,
+        projectId,
+        shared: getSharedDerivedStateKey(nodeWithConnectionState),
+      });
+      const dependencies = [
+        onCreateMusicChildNode,
+        onEnsureMusicPlayback,
+        onEnsureMusicWaveform,
+        onSeekMusicPlayer,
+        onSelectAdjacentMusicSource,
+        onSelectMusicSource,
+        onToggleMusicLyricsOverlay,
+        onToggleMusicPlayback,
+        onUpdateMusicNode,
+        onUpdateMusicPlayback,
+      ];
+      const cached = getDependencyCachedNode(node, dependencyKey, dependencies);
+      if (cached) return cached;
+      const renderedMusicPlayerNode = {
         ...nodeWithConnectionState,
         data: {
           ...nodeWithConnectionState.data,
+          projectId,
           title: "音乐播放器",
           coverUrl: source?.data.coverUrl,
           fileId: source?.data.fileId,
@@ -459,10 +581,7 @@ export function getRenderedCanvasNodes({
           musicSourceNodeId: source?.id,
           musicLyricsOverlayOpen:
             musicLyricsOverlayPlayerNodeId === nodeWithConnectionState.id,
-          musicSources: sources.map((item) => ({
-            id: item.id,
-            title: item.data.title || item.data.fileName || "未命名音乐",
-          })),
+          musicSources,
           onCreateMusicChildNode,
           onEnsureMusicPlayback,
           onEnsureMusicWaveform,
@@ -475,11 +594,31 @@ export function getRenderedCanvasNodes({
           onUpdateMusicPlayback,
         },
       };
+      return setDependencyCachedNode(
+        node,
+        renderedMusicPlayerNode,
+        dependencyKey,
+        dependencies,
+      );
     }
 
     if (nodeWithConnectionState.data.kind === "lyrics") {
       const player = playerByChildId.get(nodeWithConnectionState.id);
-      return {
+      const dependencyKey = JSON.stringify({
+        musicCurrentTime: player?.data.musicCurrentTime,
+        musicParentPlayerNodeId:
+          player?.id ?? nodeWithConnectionState.data.musicParentPlayerNodeId,
+        projectId,
+        shared: getSharedDerivedStateKey(nodeWithConnectionState),
+      });
+      const dependencies = [
+        onSeekMusicPlayer,
+        onToggleMusicChildExpanded,
+        onUpdateMusicNode,
+      ];
+      const cached = getDependencyCachedNode(node, dependencyKey, dependencies);
+      if (cached) return cached;
+      const renderedLyricsNode = {
         ...nodeWithConnectionState,
         style: {
           height: 176,
@@ -488,6 +627,7 @@ export function getRenderedCanvasNodes({
         },
         data: {
           ...nodeWithConnectionState.data,
+          projectId,
           title: "歌词",
           musicCurrentTime: player?.data.musicCurrentTime,
           musicParentPlayerNodeId: player?.id ?? nodeWithConnectionState.data.musicParentPlayerNodeId,
@@ -497,6 +637,12 @@ export function getRenderedCanvasNodes({
           onUpdateMusicNode,
         },
       };
+      return setDependencyCachedNode(
+        node,
+        renderedLyricsNode,
+        dependencyKey,
+        dependencies,
+      );
     }
 
     if (
@@ -512,8 +658,33 @@ export function getRenderedCanvasNodes({
         : nodeWithConnectionState.data.taskStatus === "completed"
           ? 1
           : 0;
+      const taskParentId =
+        taskRelationships.parentIdByChildId.get(nodeWithConnectionState.id);
+      const taskParentOptions = getTaskParentOptions({
+        edges,
+        nodeId: nodeWithConnectionState.id,
+        nodes,
+      });
+      const dependencyKey = JSON.stringify({
+        projectTagColors,
+        projectTags,
+        shared: getSharedDerivedStateKey(nodeWithConnectionState),
+        taskChildren,
+        taskParentId,
+        taskParentOptions,
+        taskProgress,
+      });
+      const dependencies = [
+        onLocateTaskNode,
+        onSetTaskParent,
+        onToggleTaskChildren,
+        onUpdateProjectTag,
+        onUpdateTaskNode,
+      ];
+      const cached = getDependencyCachedNode(node, dependencyKey, dependencies);
+      if (cached) return cached;
 
-      return {
+      const renderedTaskNode = {
         ...nodeWithConnectionState,
         data: {
           ...nodeWithConnectionState.data,
@@ -525,25 +696,64 @@ export function getRenderedCanvasNodes({
           projectTagColors,
           projectTags,
           taskChildren,
-          taskParentId:
-            taskRelationships.parentIdByChildId.get(nodeWithConnectionState.id),
-          taskParentOptions: getTaskParentOptions({
-            edges,
-            nodeId: nodeWithConnectionState.id,
-            nodes,
-          }),
+          taskParentId,
+          taskParentOptions,
           taskProgress,
         },
       };
+      return setDependencyCachedNode(
+        node,
+        renderedTaskNode,
+        dependencyKey,
+        dependencies,
+      );
+    }
+
+    if (nodeWithConnectionState.data.kind === "managedText") {
+      const dependencyKey = JSON.stringify({
+        projectTagColors,
+        projectTags,
+        shared: getSharedDerivedStateKey(nodeWithConnectionState),
+      });
+      const dependencies = [
+        onCreateTextChildNode,
+        onSubmitTextGenerationNode,
+        onToggleTextExpanded,
+        onUpdateProjectTag,
+        onUpdateTextGenerationNode,
+        onUpdateTextNode,
+      ];
+      const cached = getDependencyCachedNode(node, dependencyKey, dependencies);
+      if (cached) return cached;
+
+      const renderedManagedTextNode = {
+        ...nodeWithConnectionState,
+        data: {
+          ...nodeWithConnectionState.data,
+          onCreateTextChildNode,
+          onSubmitTextGenerationNode,
+          onToggleTextExpanded,
+          onUpdateProjectTag,
+          onUpdateTextGenerationNode,
+          onUpdateTextNode,
+          projectTagColors,
+          projectTags,
+        },
+      };
+      return setDependencyCachedNode(
+        node,
+        renderedManagedTextNode,
+        dependencyKey,
+        dependencies,
+      );
     }
 
     if (
       nodeWithConnectionState.data.kind === "text" ||
-      nodeWithConnectionState.data.kind === "managedText" ||
       nodeWithConnectionState.data.kind === "markdown" ||
       nodeWithConnectionState.data.kind === "code"
     ) {
-      const cached = renderedNodeCache.get(nodeWithConnectionState);
+      const cached = renderedNodeCache.get(node);
 
       if (
         cached?.onCreateTextChildNode === onCreateTextChildNode &&
@@ -551,9 +761,7 @@ export function getRenderedCanvasNodes({
         cached.onToggleTextExpanded === onToggleTextExpanded &&
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
         cached.onUpdateTextNode === onUpdateTextNode &&
-        cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
-        cached.node.data.hasRunningGenerationChild === nodeWithConnectionState.data.hasRunningGenerationChild
+        hasSameSharedDerivedState(cached.node, nodeWithConnectionState)
       ) {
         return cached.node;
       }
@@ -562,9 +770,6 @@ export function getRenderedCanvasNodes({
         ...nodeWithConnectionState,
         data: {
           ...nodeWithConnectionState.data,
-          ...(nodeWithConnectionState.data.kind === "managedText"
-            ? { onUpdateProjectTag, projectTagColors, projectTags }
-            : {}),
           onCreateTextChildNode,
           onSubmitTextGenerationNode,
           onToggleTextExpanded,
@@ -573,7 +778,7 @@ export function getRenderedCanvasNodes({
         },
       };
 
-      renderedNodeCache.set(nodeWithConnectionState, {
+      renderedNodeCache.set(node, {
         node: renderedTextNode,
         onCreateTextChildNode,
         onSubmitTextGenerationNode,
@@ -586,14 +791,12 @@ export function getRenderedCanvasNodes({
     }
 
     if (nodeWithConnectionState.data.kind === "textGeneration") {
-      const cached = renderedNodeCache.get(nodeWithConnectionState);
+      const cached = renderedNodeCache.get(node);
 
       if (
         cached?.onSubmitTextGenerationNode === onSubmitTextGenerationNode &&
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
-        cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
-        cached.node.data.hasRunningGenerationChild === nodeWithConnectionState.data.hasRunningGenerationChild
+        hasSameSharedDerivedState(cached.node, nodeWithConnectionState)
       ) {
         return cached.node;
       }
@@ -607,7 +810,7 @@ export function getRenderedCanvasNodes({
         },
       };
 
-      renderedNodeCache.set(nodeWithConnectionState, {
+      renderedNodeCache.set(node, {
         node: renderedTextGenerationNode,
         onSubmitTextGenerationNode,
         onUpdateTextGenerationNode,
@@ -617,15 +820,15 @@ export function getRenderedCanvasNodes({
     }
 
     if (nodeWithConnectionState.data.kind === "imageGeneration") {
-      const cached = renderedNodeCache.get(nodeWithConnectionState);
+      const cached = renderedNodeCache.get(node);
 
       if (
         cached?.onSubmitImageNode === onSubmitImageNode &&
         cached.onToggleImagePromptExpanded === onToggleImagePromptExpanded &&
         cached.onUpdateImageNode === onUpdateImageNode &&
-        cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
-        cached.node.data.hasRunningGenerationChild === nodeWithConnectionState.data.hasRunningGenerationChild
+        cached.sourceEdges === edges &&
+        cached.sourceNodes === nodes &&
+        hasSameSharedDerivedState(cached.node, nodeWithConnectionState)
       ) {
         return cached.node;
       }
@@ -640,11 +843,13 @@ export function getRenderedCanvasNodes({
         },
       };
 
-      renderedNodeCache.set(nodeWithConnectionState, {
+      renderedNodeCache.set(node, {
         node: renderedImageGenerationNode,
         onSubmitImageNode,
         onToggleImagePromptExpanded,
         onUpdateImageNode,
+        sourceEdges: edges,
+        sourceNodes: nodes,
       });
 
       return renderedImageGenerationNode;
@@ -670,14 +875,12 @@ export function getRenderedCanvasNodes({
             },
           }
         : nodeWithConnectionState;
-      const cached = renderedNodeCache.get(normalizedVideoNode);
+      const cached = renderedNodeCache.get(node);
       if (
         cached &&
         cached.onSubmitVideoNode === onSubmitVideoNode &&
         cached.onUpdateVideoNode === onUpdateVideoNode &&
-        cached.node.data.hasIncomingEdge === normalizedVideoNode.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === normalizedVideoNode.data.hasOutgoingEdge &&
-        cached.node.data.hasRunningGenerationChild === normalizedVideoNode.data.hasRunningGenerationChild
+        hasSameSharedDerivedState(cached.node, normalizedVideoNode)
       ) return cached.node;
 
       const renderedVideoNode = {
@@ -688,7 +891,7 @@ export function getRenderedCanvasNodes({
           onUpdateVideoNode,
         },
       };
-      renderedNodeCache.set(normalizedVideoNode, {
+      renderedNodeCache.set(node, {
         node: renderedVideoNode,
         onSubmitVideoNode,
         onUpdateVideoNode,
@@ -714,15 +917,15 @@ export function getRenderedCanvasNodes({
         style: normalizedSize,
         width: normalizedSize.width,
       };
-      const cached = renderedNodeCache.get(generatedImageNode);
+      const cached = renderedNodeCache.get(node);
 
       if (
         cached?.onSubmitImageNode === onSubmitImageNode &&
         cached.onCreateDerivedImageNode === onCreateDerivedImageNode &&
         cached.onUpdateImageNode === onUpdateImageNode &&
-        cached.node.data.hasIncomingEdge === generatedImageNode.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === generatedImageNode.data.hasOutgoingEdge &&
-        cached.node.data.hasRunningGenerationChild === generatedImageNode.data.hasRunningGenerationChild
+        cached.sourceEdges === edges &&
+        cached.sourceNodes === nodes &&
+        hasSameSharedDerivedState(cached.node, generatedImageNode)
       ) {
         return cached.node;
       }
@@ -737,25 +940,25 @@ export function getRenderedCanvasNodes({
         },
       };
 
-      renderedNodeCache.set(generatedImageNode, {
+      renderedNodeCache.set(node, {
         node: renderedGeneratedImageNode,
         onCreateDerivedImageNode,
         onSubmitImageNode,
         onUpdateImageNode,
+        sourceEdges: edges,
+        sourceNodes: nodes,
       });
 
       return renderedGeneratedImageNode;
     }
 
     if (nodeWithConnectionState.data.kind === "image") {
-      const cached = renderedNodeCache.get(nodeWithConnectionState);
+      const cached = renderedNodeCache.get(node);
 
       if (
         cached?.onUpdateImageNode === onUpdateImageNode &&
         cached.onCreateDerivedImageNode === onCreateDerivedImageNode &&
-        cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
-        cached.node.data.hasRunningGenerationChild === nodeWithConnectionState.data.hasRunningGenerationChild
+        hasSameSharedDerivedState(cached.node, nodeWithConnectionState)
       ) {
         return cached.node;
       }
@@ -769,7 +972,7 @@ export function getRenderedCanvasNodes({
         },
       };
 
-      renderedNodeCache.set(nodeWithConnectionState, {
+      renderedNodeCache.set(node, {
         node: renderedImageNode,
         onCreateDerivedImageNode,
         onUpdateImageNode,
@@ -779,14 +982,12 @@ export function getRenderedCanvasNodes({
     }
 
     if (nodeWithConnectionState.data.kind === "note") {
-      const cached = renderedNodeCache.get(nodeWithConnectionState);
+      const cached = renderedNodeCache.get(node);
 
       if (
         cached?.onSubmitTextGenerationNode === onSubmitTextGenerationNode &&
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
-        cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
-        cached.node.data.hasRunningGenerationChild === nodeWithConnectionState.data.hasRunningGenerationChild
+        hasSameSharedDerivedState(cached.node, nodeWithConnectionState)
       ) {
         return cached.node;
       }
@@ -801,7 +1002,7 @@ export function getRenderedCanvasNodes({
         },
       };
 
-      renderedNodeCache.set(nodeWithConnectionState, {
+      renderedNodeCache.set(node, {
         node: renderedNoteNode,
         onSubmitTextGenerationNode,
         onUpdateTextGenerationNode,
@@ -811,15 +1012,13 @@ export function getRenderedCanvasNodes({
     }
 
     if (nodeWithConnectionState.data.kind === "agent") {
-      const cached = renderedNodeCache.get(nodeWithConnectionState);
+      const cached = renderedNodeCache.get(node);
 
       if (
         cached?.onSubmitTextGenerationNode === onSubmitTextGenerationNode &&
         cached.onToggleAiResponseExpanded === onToggleAiResponseExpanded &&
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
-        cached.node.data.hasIncomingEdge === nodeWithConnectionState.data.hasIncomingEdge &&
-        cached.node.data.hasOutgoingEdge === nodeWithConnectionState.data.hasOutgoingEdge &&
-        cached.node.data.hasRunningGenerationChild === nodeWithConnectionState.data.hasRunningGenerationChild
+        hasSameSharedDerivedState(cached.node, nodeWithConnectionState)
       ) {
         return cached.node;
       }
@@ -834,7 +1033,7 @@ export function getRenderedCanvasNodes({
         },
       };
 
-      renderedNodeCache.set(nodeWithConnectionState, {
+      renderedNodeCache.set(node, {
         node: renderedAgentNode,
         onToggleAiResponseExpanded,
         onSubmitTextGenerationNode,
@@ -872,14 +1071,13 @@ export function getRenderedCanvasNodes({
       readerNode.width === renderedSize.width &&
       readerNode.measured?.height === renderedSize.height &&
       readerNode.measured?.width === renderedSize.width;
-    const cached = renderedNodeCache.get(readerNode);
+    const cached = renderedNodeCache.get(node);
 
     if (
       cached?.createNoteNode === createNoteNode &&
       cached.projectId === projectId &&
       cached.toggleReaderCollapse === toggleReaderCollapse &&
-      cached.node.data.hasIncomingEdge === readerNode.data.hasIncomingEdge &&
-      cached.node.data.hasOutgoingEdge === readerNode.data.hasOutgoingEdge
+      hasSameSharedDerivedState(cached.node, readerNode)
     ) {
       return cached.node;
     }
@@ -906,7 +1104,7 @@ export function getRenderedCanvasNodes({
       },
     };
 
-    renderedNodeCache.set(readerNode, {
+    renderedNodeCache.set(node, {
       createNoteNode,
       node: renderedReaderNode,
       projectId,

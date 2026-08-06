@@ -20,4 +20,9 @@ describe("reading annotation sidebar position", () => {
     );
     expect(workspaceSource).toContain("onScroll={handleNotesScroll}");
   });
+
+  it("keeps note sidebar actions stable while the active reading page changes", () => {
+    expect(workspaceSource).toContain("activeSectionRef,");
+    expect(workspaceSource).not.toContain("useReadingNotes({\n    activeSection,");
+  });
 });

@@ -13,12 +13,15 @@ import {
 } from "./constants";
 import {
   getEpubPageSlotHeight,
+  getReadingTextSample,
+  indexReadingNotesBySection,
   isChineseReadingText,
   renderHighlightedSectionHtml,
 } from "./utils";
 import type { TextSelection } from "./types";
 
 type SelectionRect = TextSelection["rects"][number];
+const EMPTY_READING_NOTES: ReadingNote[] = [];
 
 type EpubPagedScrollViewProps = {
   contentScale: number;
@@ -41,12 +44,7 @@ export const EpubPagedScrollView = memo(function EpubPagedScrollView({
 }: EpubPagedScrollViewProps) {
   const isChineseEpub = useMemo(
     () =>
-      isChineseReadingText(
-        sections
-          .map((section) => section.text)
-          .join("\n")
-          .slice(0, 8000),
-      ),
+      isChineseReadingText(getReadingTextSample(sections)),
     [sections],
   );
   const pageSurfaceWidth = EPUB_PAGE_WIDTH * contentScale;
@@ -61,6 +59,10 @@ export const EpubPagedScrollView = memo(function EpubPagedScrollView({
   const visibleSections = useMemo(
     () => sections.slice(firstVisibleIndex, visibleRange[1] + 1),
     [firstVisibleIndex, sections, visibleRange],
+  );
+  const notesBySection = useMemo(
+    () => indexReadingNotesBySection(notes),
+    [notes],
   );
 
   return (
@@ -83,7 +85,7 @@ export const EpubPagedScrollView = memo(function EpubPagedScrollView({
               horizontalPadding={horizontalPadding}
               isChineseEpub={isChineseEpub}
               key={section.index}
-              notes={notes}
+              notes={notesBySection.get(section.index) ?? EMPTY_READING_NOTES}
               pageFrameWidth={pageFrameWidth}
               pageHeight={pageHeight}
               pageRefs={pageRefs}

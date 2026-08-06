@@ -61,6 +61,7 @@ describe("local reading API", () => {
       new Request(`http://localhost/api/reading/assets/${asset.id}`),
       { params: Promise.resolve({ assetId: asset.id }) },
     );
+    expect(Number(payloadResponse.headers.get("x-zenme-content-length"))).toBeGreaterThan(0);
     expect(await payloadResponse.json()).toMatchObject({
       asset: { id: asset.id },
       sections: [expect.objectContaining({ text: expect.stringContaining("hello") })],

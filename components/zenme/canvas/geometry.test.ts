@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   collectReaderChildNodeIds,
   createCanvasHistoryEntry,
+  getCanvasHistorySignature,
   getAbsoluteNodePosition,
   getNodeBounds,
   getNodeSizeFallback,
@@ -74,6 +75,30 @@ describe("node size fallbacks", () => {
 });
 
 describe("canvas geometry helpers", () => {
+  it("reuses unchanged node-data signatures for position-only moves", () => {
+    let plainTextReads = 0;
+    const sharedData = {
+      kind: "text" as const,
+      title: "长文本",
+      get plainText() {
+        plainTextReads += 1;
+        return "很长的正文";
+      },
+    };
+    const before = node({ id: "text" });
+    before.data = sharedData;
+    const after = {
+      ...before,
+      position: { x: 120, y: 80 },
+    };
+
+    const beforeSignature = getCanvasHistorySignature([before], []);
+    const afterSignature = getCanvasHistorySignature([after], []);
+
+    expect(afterSignature).not.toBe(beforeSignature);
+    expect(plainTextReads).toBe(1);
+  });
+
   it("parses numeric sizes and ignores invalid values", () => {
     expect(numericSize(120)).toBe(120);
     expect(numericSize("48px")).toBe(48);

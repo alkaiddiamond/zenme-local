@@ -18,7 +18,7 @@ export function mergeSyncedOpenAiModels(
       ...syncedModel,
       alias: existingModel.alias,
       contextWindow:
-        existingModel.contextWindow ?? syncedModel.contextWindow,
+        syncedModel.contextWindow ?? existingModel.contextWindow,
       enabled: existingModel.enabled,
       modalities: Array.from(
         new Set([

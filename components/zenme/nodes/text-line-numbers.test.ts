@@ -46,4 +46,15 @@ describe("text node line numbers", () => {
     expect(textNodeSource).toContain("number: lineIndex + 1");
     expect(textNodeSource).toContain('"[data-markdown-block]"');
   });
+
+  it("updates line number rows incrementally instead of rebuilding the whole gutter", () => {
+    const updater = textNodeSource.slice(
+      textNodeSource.indexOf("function replaceLineNumberRows"),
+      textNodeSource.indexOf("function getTextDisplayMode"),
+    );
+
+    expect(updater).toContain("lineNumberContentCache.get(container)");
+    expect(updater).toContain("container.children.item(index)");
+    expect(updater).not.toContain("container.replaceChildren");
+  });
 });

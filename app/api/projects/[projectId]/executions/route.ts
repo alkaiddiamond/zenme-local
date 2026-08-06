@@ -68,7 +68,7 @@ function normalizeInput(value: unknown): ExecutionInputSnapshot | undefined {
     : undefined;
   return {
     prompt: input.prompt,
-    context: typeof input.context === "string" && input.context.length <= 500_000
+    context: typeof input.context === "string" && input.context.length <= 2_000_000
       ? input.context
       : undefined,
     parameters,

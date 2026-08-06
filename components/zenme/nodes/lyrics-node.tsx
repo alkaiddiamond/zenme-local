@@ -14,6 +14,7 @@ import {
 } from "@/components/zenme/node-ui";
 import { MusicChildExpandButton } from "@/components/zenme/nodes/music-child-expand-button";
 import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
+import { useMusicPlaybackSession } from "@/components/zenme/music-playback-provider";
 import { writeTextToClipboard } from "@/lib/clipboard";
 
 export function groupLyrics(lines: MusicLyricLine[]) {
@@ -34,9 +35,15 @@ export function formatLyricsForClipboard(lines: MusicLyricLine[]) {
 
 export function LyricsNode({ data, selected, id }: NodeProps) {
   const node = data as CanvasNodeData;
+  const playbackSession = useMusicPlaybackSession();
+  const activeSession = playbackSession &&
+    playbackSession.config.projectId === node.projectId &&
+    playbackSession.config.playerNodeId === node.musicParentPlayerNodeId
+    ? playbackSession
+    : undefined;
   const [copied, setCopied] = useState(false);
   const lines = node.musicLyrics ?? [];
-  const activeTime = node.musicCurrentTime ?? 0;
+  const activeTime = activeSession?.currentTime ?? node.musicCurrentTime ?? 0;
   const activeLine = lines.find(
     (line) => activeTime >= line.start && activeTime < (line.end ?? Number.POSITIVE_INFINITY),
   );

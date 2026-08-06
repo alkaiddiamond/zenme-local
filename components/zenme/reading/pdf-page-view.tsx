@@ -249,8 +249,14 @@ export const PdfPageView = memo(function PdfPageView({
   useLazyPdfPageRender({
     pageRef,
     setShouldRender,
-    shouldRender,
   });
+
+  useEffect(() => {
+    if (shouldRender) return;
+    setHasSelectableText(null);
+    setTextSelectionPreviewRects(null);
+    textLayerRef.current?.replaceChildren();
+  }, [shouldRender]);
 
   useEffect(() => {
     setDraftRect(null);

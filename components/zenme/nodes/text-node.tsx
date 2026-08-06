@@ -1304,29 +1304,46 @@ function getLineNumberRowClassName(mode: TextDisplayMode) {
   }`;
 }
 
+const lineNumberContentCache = new WeakMap<
+  HTMLDivElement,
+  { content: string; mode: TextDisplayMode }
+>();
+
 function replaceLineNumberRows(
   container: HTMLDivElement,
   content: string,
   mode: TextDisplayMode,
 ) {
-  const fragment = document.createDocumentFragment();
-  getTextLines(content).forEach((line, index) => {
-    const row = document.createElement("div");
-    row.className = getLineNumberRowClassName(mode);
+  const cached = lineNumberContentCache.get(container);
+  if (cached?.content === content && cached.mode === mode) return;
 
-    const number = document.createElement("span");
-    number.className =
-      "absolute left-0 top-0 w-12 pr-2 text-right font-mono text-[11px] text-zinc-400";
-    number.textContent = String(index + 1);
+  const lines = getTextLines(content);
+  const rowClassName = getLineNumberRowClassName(mode);
+  while (container.children.length > lines.length) {
+    container.lastElementChild?.remove();
+  }
 
-    const mirror = document.createElement("span");
-    mirror.className = "invisible";
-    mirror.textContent = line || "\u00a0";
+  lines.forEach((line, index) => {
+    let row = container.children.item(index) as HTMLDivElement | null;
+    if (!row) {
+      row = document.createElement("div");
+      const number = document.createElement("span");
+      number.className =
+        "absolute left-0 top-0 w-12 pr-2 text-right font-mono text-[11px] text-zinc-400";
+      number.textContent = String(index + 1);
+      const mirror = document.createElement("span");
+      mirror.className = "invisible";
+      row.append(number, mirror);
+      container.append(row);
+    }
 
-    row.append(number, mirror);
-    fragment.append(row);
+    if (row.className !== rowClassName) row.className = rowClassName;
+    const mirror = row.lastElementChild;
+    const nextText = line || "\u00a0";
+    if (mirror && mirror.textContent !== nextText) mirror.textContent = nextText;
   });
-  container.replaceChildren(fragment);
+
+  lineNumberContentCache.set(container, { content, mode });
 }
 
 function getTextDisplayMode(nodeData: CanvasNodeData): TextDisplayMode {

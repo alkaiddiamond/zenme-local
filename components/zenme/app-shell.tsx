@@ -31,7 +31,7 @@ import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 import {
   MusicPlaybackOverlay,
   MusicPlaybackProvider,
-  useMusicPlayback,
+  useMusicPlaybackStatus,
 } from "@/components/zenme/music-playback-provider";
 import { cn } from "@/lib/utils";
 import {
@@ -95,7 +95,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 }
 
 function AppShellContent({ children }: { children: React.ReactNode }) {
-  const musicPlayback = useMusicPlayback();
+  const musicPlaybackStatus = useMusicPlaybackStatus();
   const router = useRouter();
   const pathname = usePathname();
   const active = pathname === "/"
@@ -825,8 +825,8 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             const tabProject = tab.isProject ? projectsById.get(tab.id) : undefined;
 
             if (tab.isProject) {
-              const isPlayingSource = musicPlayback.session?.isPlaying === true &&
-                musicPlayback.session.config.projectId === tab.id;
+              const isPlayingSource = musicPlaybackStatus.isPlaying &&
+                musicPlaybackStatus.projectId === tab.id;
               return (
                 <div
                   className={cn(

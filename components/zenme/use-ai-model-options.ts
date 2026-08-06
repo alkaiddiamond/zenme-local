@@ -8,6 +8,7 @@ import {
 } from "@/lib/ai/model-reference";
 
 export type AiModelOption = {
+  contextWindow?: number;
   id: string;
   label: string;
   tooltip: string;
@@ -24,8 +25,9 @@ export function createModelOption(
   id: string,
   label = id,
   tooltip = label,
+  contextWindow?: number,
 ): AiModelOption {
-  return { id, label, tooltip };
+  return { contextWindow, id, label, tooltip };
 }
 
 export function resolveAiModelOptionId(
@@ -133,6 +135,7 @@ export function useAiModelOptions(modality: AiModelModality = "text") {
             label?: string;
             modelId?: string;
             providerName?: string;
+            contextWindow?: number;
           }>;
           preferredModelId?: string | null;
         };
@@ -151,6 +154,7 @@ export function useAiModelOptions(modality: AiModelModality = "text") {
             id,
             label,
             providerName && modelId ? `${providerName} · ${modelId}` : label,
+            item?.contextWindow,
           );
         });
 

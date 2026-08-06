@@ -68,7 +68,8 @@ const NODE_CAPABILITIES: Partial<
     outputs: [TEXT_OUTPUT],
   },
   note: {
-    executable: false,
+    executable: true,
+    executionKind: "text",
     inputs: [CONTEXT_INPUT],
     outputs: [TEXT_OUTPUT],
   },

@@ -204,10 +204,11 @@ export function ReadingWorkspace({
     [applyLoadedProgress, restoreReadingScroll],
   );
 
-  const { error, payload, setError, setPayload } = useReadingPayload({
-    assetId,
-    onLoaded: handleReadingPayloadLoaded,
-  });
+  const { error, loadProgress, payload, setError, setPayload } =
+    useReadingPayload({
+      assetId,
+      onLoaded: handleReadingPayloadLoaded,
+    });
 
   const {
     canSavePdfAnnotation,
@@ -358,17 +359,17 @@ export function ReadingWorkspace({
   const getSectionTitle = useCallback(
     (index: number) => {
       if (!payload) {
-        return activeTitle;
+        return "";
       }
 
       return getReadingSectionTitle({
-        activeTitle,
+        activeTitle: payload.asset.title,
         assetFormat: payload.asset.format,
         index,
         sections: payload.sections,
       });
     },
-    [activeTitle, payload],
+    [payload],
   );
 
   const jumpToSection = useCallback(
@@ -567,7 +568,7 @@ export function ReadingWorkspace({
     reorderNotes,
     saveEditedNote,
   } = useReadingNotes({
-    activeSection,
+    activeSectionRef,
     assetId,
     canSavePdfAnnotation,
     comment,
@@ -686,7 +687,9 @@ export function ReadingWorkspace({
 
       {error ? <ReadingWorkspaceErrorState message={error} /> : null}
 
-      {!payload && !error ? <ReadingWorkspaceLoadingState /> : null}
+      {!payload && !error ? (
+        <ReadingWorkspaceLoadingState progress={loadProgress} />
+      ) : null}
 
       {payload ? (
         <div

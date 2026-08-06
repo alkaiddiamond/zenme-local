@@ -173,6 +173,44 @@ export function createNodeUpdateHistoryEntry(
     : null;
 }
 
+export function createDragStartNodeSnapshots(
+  nodes: CanvasNode[],
+  draggedNodeId: string,
+) {
+  const draggedNode = nodes.find((node) => node.id === draggedNodeId);
+  if (!draggedNode) return new Map<string, CanvasNode>();
+
+  const affectedNodeIds = new Set<string>([draggedNodeId]);
+  if (draggedNode.selected) {
+    for (const node of nodes) {
+      if (node.selected) affectedNodeIds.add(node.id);
+    }
+  }
+
+  let addedDescendant = true;
+  while (addedDescendant) {
+    addedDescendant = false;
+    for (const node of nodes) {
+      if (
+        !affectedNodeIds.has(node.id) &&
+        ((node.parentId && affectedNodeIds.has(node.parentId)) ||
+          (node.data.groupId && affectedNodeIds.has(node.data.groupId)))
+      ) {
+        affectedNodeIds.add(node.id);
+        addedDescendant = true;
+      }
+    }
+  }
+
+  return new Map(
+    nodes.flatMap((node) =>
+      affectedNodeIds.has(node.id)
+        ? [[node.id, createCanvasHistoryNodeSnapshot(node)] as const]
+        : [],
+    ),
+  );
+}
+
 export function createCanvasItemsHistoryEntry(input: {
   edges?: Edge[];
   nodes?: CanvasNode[];

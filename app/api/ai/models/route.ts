@@ -59,6 +59,9 @@ export async function GET(request: Request) {
         id: model.id,
         label: model.label,
         modelId: model.modelId,
+        contextWindow:
+          model.provider.models.find((item) => item.id === model.modelId)
+            ?.contextWindow ?? model.provider.contextWindows[model.modelId],
         object: "model",
         providerName: model.provider.name,
       })),

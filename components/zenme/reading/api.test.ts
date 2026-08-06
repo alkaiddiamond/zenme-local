@@ -161,8 +161,51 @@ describe("reading browser api progress cache", () => {
         sectionIndex: 8,
       },
     });
-    expect(fetch).toHaveBeenCalledWith("/api/reading/assets/asset-1", {
-      cache: "no-store",
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/reading/assets/asset-1",
+      expect.objectContaining({ cache: "no-store" }),
+    );
+  });
+
+  it("reports byte download progress before parsing a large payload", async () => {
+    installWindowMock();
+    const body = JSON.stringify({
+      asset: { id: "asset-1", format: "txt", title: "Book" },
+      notes: [],
+      progress: null,
+      sections: [],
+    });
+    const byteLength = new TextEncoder().encode(body).byteLength;
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(body, {
+        headers: { "x-zenme-content-length": String(byteLength) },
+        status: 200,
+      }),
+    );
+    const progress: Array<{
+      loadedBytes: number;
+      phase: string;
+      totalBytes: number | null;
+    }> = [];
+
+    await loadReadingPayload("asset-1", {
+      onProgress: (next) => progress.push(next),
+    });
+
+    expect(progress[0]).toEqual({
+      loadedBytes: 0,
+      phase: "downloading",
+      totalBytes: byteLength,
+    });
+    expect(progress).toContainEqual({
+      loadedBytes: byteLength,
+      phase: "downloading",
+      totalBytes: byteLength,
+    });
+    expect(progress.at(-1)).toEqual({
+      loadedBytes: byteLength,
+      phase: "parsing",
+      totalBytes: byteLength,
     });
   });
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildReadingNavigationSections,
+  findReadingNavigationIndex,
   getReadingActiveTitle,
 } from "./navigation";
 
@@ -76,5 +77,18 @@ describe("buildReadingNavigationSections", () => {
         sections,
       }),
     ).toEqual([{ endIndex: 1, index: 0, title: "第一章" }]);
+  });
+});
+
+describe("findReadingNavigationIndex", () => {
+  it("finds a page inside grouped navigation ranges", () => {
+    const sections = [
+      { endIndex: 20, index: 0, title: "第一章" },
+      { endIndex: 48, index: 21, title: "第二章" },
+      { endIndex: 70, index: 49, title: "第三章" },
+    ];
+
+    expect(findReadingNavigationIndex(sections, 37)).toBe(1);
+    expect(findReadingNavigationIndex(sections, 71)).toBe(-1);
   });
 });

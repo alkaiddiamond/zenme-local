@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 
-import { loadReadingPayload } from "./api";
+import {
+  loadReadingPayload,
+  type ReadingLoadProgress,
+} from "./api";
 import type { ReadingPayload } from "./types";
 
 export function useReadingPayload(input: {
@@ -10,13 +13,29 @@ export function useReadingPayload(input: {
   const { assetId, onLoaded } = input;
   const [payload, setPayload] = useState<ReadingPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadProgress, setLoadProgress] = useState<ReadingLoadProgress>({
+    loadedBytes: 0,
+    phase: "downloading",
+    totalBytes: null,
+  });
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     setPayload(null);
     setError(null);
+    setLoadProgress({
+      loadedBytes: 0,
+      phase: "downloading",
+      totalBytes: null,
+    });
 
-    loadReadingPayload(assetId)
+    loadReadingPayload(assetId, {
+      onProgress(progress) {
+        if (!cancelled) setLoadProgress(progress);
+      },
+      signal: controller.signal,
+    })
       .then((data) => {
         if (cancelled) return;
         setPayload(data);
@@ -30,11 +49,13 @@ export function useReadingPayload(input: {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [assetId, onLoaded]);
 
   return {
     error,
+    loadProgress,
     payload,
     setError,
     setPayload,

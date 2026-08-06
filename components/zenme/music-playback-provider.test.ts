@@ -83,8 +83,18 @@ describe("应用级音乐播放会话", () => {
   it("来源项目标签在实际播放时显示状态图标", () => {
     const source = readFileSync("components/zenme/app-shell.tsx", "utf8");
 
-    expect(source).toContain("musicPlayback.session?.isPlaying === true");
-    expect(source).toContain("musicPlayback.session.config.projectId === tab.id");
+    expect(source).toContain("musicPlaybackStatus.isPlaying");
+    expect(source).toContain("musicPlaybackStatus.projectId === tab.id");
     expect(source).toContain('aria-label="正在播放"');
+  });
+
+  it("画布只订阅稳定播放操作，不订阅逐帧播放会话", () => {
+    const source = readFileSync("components/zenme/canvas-client.tsx", "utf8");
+
+    expect(source).toContain("useMusicPlaybackActions");
+    expect(source).toContain("useMusicPlaybackStatus");
+    expect(source).not.toContain("musicPlayback.session");
+    expect(source).not.toContain("musicCurrentTime: activeMusicSession.currentTime");
+    expect(source).toContain("musicSourceNodeId: musicPlaybackStatus.currentSourceId");
   });
 });

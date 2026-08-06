@@ -287,15 +287,30 @@ type CanvasNoticeProps = {
   onClose: () => void;
 };
 
+const CANVAS_NOTICE_AUTO_DISMISS_MS = 5_000;
+
 export function CanvasNotice({ message, onClose }: CanvasNoticeProps) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      onCloseRef.current();
+    }, CANVAS_NOTICE_AUTO_DISMISS_MS);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [message]);
+
   return (
     <div
       className="zenme-shadow-dropdown absolute right-5 top-5 z-40 flex max-w-md items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
       data-thumbnail-hidden="true"
+      role="alert"
     >
       <AlertCircle className="size-4 shrink-0" />
       <span className="min-w-0 flex-1">{message}</span>
       <button
+        aria-label="关闭通知"
         className="flex size-6 items-center justify-center rounded-full text-red-500 hover:bg-red-100 hover:text-red-700"
         onClick={onClose}
         type="button"

@@ -1,7 +1,14 @@
 import { FileText, PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
+
+import { findReadingNavigationIndex } from "./navigation";
+import {
+  getCenteredReadingTocScrollTop,
+  getReadingTocVisibleRange,
+  READING_TOC_ROW_HEIGHT,
+} from "./toc-virtualization";
 
 type NavigationSection = {
   endIndex: number;
@@ -27,15 +34,30 @@ export const ReadingTocSidebar = memo(function ReadingTocSidebar({
   onResizeStart,
   onSectionSelect,
 }: ReadingTocSidebarProps) {
-  const activeItemRef = useRef<HTMLButtonElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const [visibleRange, setVisibleRange] = useState<[number, number]>([0, 40]);
   const activeNavigationIndex = useMemo(
-    () =>
-      navigationSections.findIndex(
-        (section) =>
-          activeSection >= section.index && activeSection <= section.endIndex,
-      ),
+    () => findReadingNavigationIndex(navigationSections, activeSection),
     [activeSection, navigationSections],
+  );
+  const updateVisibleRange = useCallback(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const nextRange = getReadingTocVisibleRange({
+      clientHeight: list.clientHeight,
+      itemCount: navigationSections.length,
+      scrollTop: list.scrollTop,
+    });
+    setVisibleRange((current) =>
+      current[0] === nextRange[0] && current[1] === nextRange[1]
+        ? current
+        : nextRange,
+    );
+  }, [navigationSections.length]);
+  const visibleSections = useMemo(
+    () =>
+      navigationSections.slice(visibleRange[0], visibleRange[1] + 1),
+    [navigationSections, visibleRange],
   );
 
   useEffect(() => {
@@ -43,24 +65,29 @@ export const ReadingTocSidebar = memo(function ReadingTocSidebar({
       return;
     }
 
-    const scrollActiveItemIntoView = () => {
+    const frame = requestAnimationFrame(() => {
       const list = listRef.current;
-      const activeItem = activeItemRef.current;
-      if (!list || !activeItem) {
-        return;
-      }
+      if (!list) return;
+      list.scrollTop = getCenteredReadingTocScrollTop({
+        clientHeight: list.clientHeight,
+        itemCount: navigationSections.length,
+        itemIndex: activeNavigationIndex,
+      });
+      updateVisibleRange();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [
+    activeNavigationIndex,
+    collapsed,
+    navigationSections.length,
+    updateVisibleRange,
+  ]);
 
-      const listRect = list.getBoundingClientRect();
-      const itemRect = activeItem.getBoundingClientRect();
-      const top = itemRect.top - listRect.top + list.scrollTop;
-      const centeredTop = top - (list.clientHeight - itemRect.height) / 2;
-      list.scrollTo({ top: Math.max(0, centeredTop) });
-    };
-
-    requestAnimationFrame(scrollActiveItemIntoView);
-    const restoreTimer = window.setTimeout(scrollActiveItemIntoView, 120);
-    return () => window.clearTimeout(restoreTimer);
-  }, [activeNavigationIndex, collapsed]);
+  useEffect(() => {
+    if (collapsed) return;
+    const frame = requestAnimationFrame(updateVisibleRange);
+    return () => cancelAnimationFrame(frame);
+  }, [collapsed, updateVisibleRange]);
 
   return (
     <aside className="relative min-h-0 border-r border-zinc-200 bg-zinc-50/70">
@@ -93,32 +120,46 @@ export const ReadingTocSidebar = memo(function ReadingTocSidebar({
       {!collapsed ? (
         <OverlayScrollArea
           className="h-full"
-          contentKey={`${navigationSections.length}:${activeNavigationIndex}`}
+          contentKey={String(navigationSections.length)}
+          onScroll={updateVisibleRange}
           ref={listRef}
           viewportClassName="h-full overflow-auto px-2 py-2"
         >
-          {navigationSections.map((section, index) => (
-            <button
-              className={`mb-1 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs leading-4 ${
-                activeSection >= section.index &&
-                activeSection <= section.endIndex
-                  ? "bg-zinc-950 text-white"
-                  : "text-zinc-700 hover:bg-zinc-100"
-              }`}
-              key={section.index}
-              onClick={() => onSectionSelect(section.index)}
-              ref={index === activeNavigationIndex ? activeItemRef : null}
-              type="button"
-            >
-              <FileText className="size-3 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{section.title}</span>
-              {section.pageNumber ? (
-                <span className="shrink-0 tabular-nums opacity-60">
-                  {section.pageNumber}
-                </span>
-              ) : null}
-            </button>
-          ))}
+          <div
+            className="relative"
+            style={{ height: navigationSections.length * READING_TOC_ROW_HEIGHT }}
+          >
+            {visibleSections.map((section, offset) => {
+              const index = visibleRange[0] + offset;
+              return (
+                <button
+                  className={`absolute left-0 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs leading-4 ${
+                    activeSection >= section.index &&
+                    activeSection <= section.endIndex
+                      ? "bg-zinc-950 text-white"
+                      : "text-zinc-700 hover:bg-zinc-100"
+                  }`}
+                  key={section.index}
+                  onClick={() => onSectionSelect(section.index)}
+                  style={{
+                    height: READING_TOC_ROW_HEIGHT - 4,
+                    top: index * READING_TOC_ROW_HEIGHT,
+                  }}
+                  type="button"
+                >
+                  <FileText className="size-3 shrink-0" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {section.title}
+                  </span>
+                  {section.pageNumber ? (
+                    <span className="shrink-0 tabular-nums opacity-60">
+                      {section.pageNumber}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
         </OverlayScrollArea>
       ) : null}
       {!collapsed ? (

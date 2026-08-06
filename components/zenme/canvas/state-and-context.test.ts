@@ -16,6 +16,7 @@ import {
 } from "./connections";
 import {
   createCanvasItemsHistoryEntry,
+  createDragStartNodeSnapshots,
   createDeletedCanvasItemsHistoryEntry,
   createMutateCanvasItemsHistoryEntry,
   createNodeUpdateHistoryEntry,
@@ -26,7 +27,9 @@ import {
 import {
   collectTextGenerationContext,
   collectTextGenerationImageUrls,
+  hasCanvasNodeContextText,
   isTextGenerationContextNode,
+  limitTextGenerationContext,
 } from "./text-generation-context";
 import type { CanvasHistoryEntry, CanvasNode } from "./types";
 
@@ -312,6 +315,153 @@ describe("canvas state and context helpers", () => {
     ).toContain(
       "强管理节点「世界杯选题」\n标签：体育、采访\n整理可能的冷门故事",
     );
+  });
+
+  it("truncates oversized upstream context instead of rejecting the request", () => {
+    const source = canvasNode({
+      data: { kind: "text", plainText: "正文".repeat(200), title: "长文" },
+      id: "source",
+    });
+    const generator = canvasNode({
+      data: { kind: "textGeneration", title: "生成" },
+      id: "generator",
+      type: "textGeneration",
+    });
+
+    const context = collectTextGenerationContext({
+      edges: [edge("source", "generator")],
+      maxTokens: 60,
+      nodeId: "generator",
+      nodes: [source, generator],
+    });
+
+    expect(context.length).toBeLessThan(200);
+    expect(context).toContain("上游上下文 L1");
+    expect(context).toContain("[其余上下文因长度限制已省略]");
+  });
+
+  it("bounds the combined current-node and upstream context", () => {
+    const context = limitTextGenerationContext(
+      ["当前节点内容", "上游内容".repeat(100)],
+      40,
+    );
+
+    expect(context.length).toBeLessThan(160);
+    expect(context).toContain("当前节点内容");
+    expect(context).toContain("[其余上下文因长度限制已省略]");
+  });
+
+  it("checks context availability without formatting long node content", () => {
+    let formattedContentReads = 0;
+    const text = canvasNode({ id: "long-text" });
+    Object.defineProperty(text.data, "plainText", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        formattedContentReads += 1;
+        return "一段很长的正文";
+      },
+    });
+
+    expect(hasCanvasNodeContextText(text)).toBe(true);
+    expect(formattedContentReads).toBe(1);
+    expect(hasCanvasNodeContextText(
+      canvasNode({ data: { kind: "reader" }, id: "reader", type: "reader" }),
+    )).toBe(false);
+  });
+
+  it("snapshots only nodes that can move during a drag", () => {
+    const dragged = canvasNode({ id: "dragged" });
+    dragged.selected = true;
+    const selected = canvasNode({ id: "selected" });
+    selected.selected = true;
+    const group = canvasNode({
+      data: { kind: "group" },
+      id: "group",
+      type: "group",
+    });
+    group.selected = true;
+    const child = canvasNode({ id: "child" });
+    child.parentId = "group";
+    const unrelated = canvasNode({
+      data: { plainText: "不应为移动操作复制的长内容" },
+      id: "unrelated",
+    });
+
+    expect(
+      [...createDragStartNodeSnapshots(
+        [dragged, selected, group, child, unrelated],
+        dragged.id,
+      ).keys()],
+    ).toEqual(["dragged", "selected", "group", "child"]);
+  });
+
+  it("uses a reading note as context without traversing into its reader", () => {
+    const book = canvasNode({
+      data: { kind: "book", fileName: "泡沫.epub", title: "泡沫" },
+      id: "book",
+      type: "book",
+    });
+    const reader = canvasNode({
+      data: { kind: "reader", title: "泡沫阅读器" },
+      id: "reader",
+      type: "reader",
+    });
+    const note = canvasNode({
+      data: {
+        chapterTitle: "第九章",
+        comment: "与海银资本相关",
+        kind: "note",
+        selectedText: "我认为泡沫是 2029 年",
+        sourceBookTitle: "泡沫",
+        title: "阅读笔记",
+      },
+      id: "note",
+      type: "note",
+    });
+    const generator = canvasNode({
+      data: { kind: "textGeneration", title: "生成" },
+      id: "generator",
+      type: "textGeneration",
+    });
+
+    const context = collectTextGenerationContext({
+      edges: [
+        edge("book", "reader"),
+        edge("reader", "note"),
+        edge("note", "generator"),
+      ],
+      nodeId: "generator",
+      nodes: [book, reader, note, generator],
+    });
+
+    expect(context).toContain("阅读笔记「阅读笔记」");
+    expect(context).toContain("章节：第九章");
+    expect(context).toContain("原文：\n我认为泡沫是 2029 年");
+    expect(context).toContain("备注：\n与海银资本相关");
+    expect(context).not.toContain("阅读器节点");
+    expect(context).not.toContain("书籍节点");
+  });
+
+  it("does not traverse into a reader when a note executes directly", () => {
+    const reader = canvasNode({
+      data: { kind: "reader", title: "泡沫阅读器" },
+      id: "reader",
+      type: "reader",
+    });
+    const note = canvasNode({
+      data: { kind: "note", selectedText: "笔记原文", title: "阅读笔记" },
+      id: "note",
+      type: "note",
+    });
+
+    expect(
+      collectTextGenerationContext({
+        edges: [edge("reader", "note")],
+        nodeId: "note",
+        nodes: [reader, note],
+      }),
+    ).toBe("");
   });
 
   it("includes a connected image-generation prompt as text context", () => {

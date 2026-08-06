@@ -47,8 +47,51 @@ describe("canvas pan performance", () => {
     expect(movingReaderRule).toContain("pointer-events: none");
     expect(movingReaderRule).not.toContain("opacity");
     expect(movingReaderRule).not.toContain("content-visibility");
+    expect(canvasClientSource).toContain("selectionToolbarPosition &&");
+    expect(canvasClientSource).toContain("!isNodeDragging &&");
+    expect(canvasClientSource).toContain("!isViewportMoving ?");
+  });
+
+  it("keeps connection dragging lightweight on dense canvases", () => {
+    expect(canvasClientSource).toContain("const CANVAS_CONNECTION_RADIUS = 32");
     expect(canvasClientSource).toContain(
-      "selectionToolbarPosition && !isNodeDragging && !isViewportMoving",
+      "connectionRadius={CANVAS_CONNECTION_RADIUS}",
+    );
+    expect(canvasClientSource).not.toContain("connectionRadius={120}");
+
+    const connectStartHandler = canvasClientSource.slice(
+      canvasClientSource.indexOf("onConnectStart={"),
+      canvasClientSource.indexOf("onDragOver={"),
+    );
+    expect(connectStartHandler).toContain("setIsMiniMapSuspended(true)");
+    expect(connectStartHandler).toContain("setIsNodeConnecting(true)");
+    expect(canvasClientSource).toContain("zenme-canvas-node-connecting");
+    expect(globalStyles).toContain(
+      ".zenme-canvas-node-connecting .zenme-reader-workspace",
+    );
+  });
+
+  it("defers full canvas signatures until drag and resize interactions end", () => {
+    const signatureBlock = canvasClientSource.slice(
+      canvasClientSource.indexOf("const canvasItemsSignature"),
+      canvasClientSource.indexOf("useEffect(() => {", canvasClientSource.indexOf("const canvasItemsSignature")),
+    );
+
+    expect(signatureBlock).toContain("isNodeDragging || isNodeResizing");
+    expect(signatureBlock).toContain("lastCanvasItemsSignature.current");
+    expect(canvasClientSource).toContain("setIsNodeResizing(true)");
+    expect(canvasClientSource).toContain("setIsNodeResizing(false)");
+  });
+
+  it("does not snapshot every canvas node when a drag starts", () => {
+    const dragStartHandler = canvasClientSource.slice(
+      canvasClientSource.indexOf("const handleCanvasNodeDragStart"),
+      canvasClientSource.indexOf("const moveGroupedNodesWithFrame"),
+    );
+
+    expect(dragStartHandler).toContain("createDragStartNodeSnapshots(");
+    expect(dragStartHandler).not.toContain(
+      "currentNodes.map((node) => [",
     );
   });
 });

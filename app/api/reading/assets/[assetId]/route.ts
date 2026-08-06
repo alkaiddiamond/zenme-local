@@ -26,7 +26,13 @@ export async function GET(
       getLocalReadingProgress(assetId),
     ]);
 
-    return NextResponse.json({ asset, sections, notes, progress });
+    const body = JSON.stringify({ asset, sections, notes, progress });
+    return new Response(body, {
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "x-zenme-content-length": String(Buffer.byteLength(body, "utf8")),
+      },
+    });
   } catch (error) {
     return NextResponse.json(
       { error: getReadingApiErrorMessage(error, "阅读资料加载失败") },

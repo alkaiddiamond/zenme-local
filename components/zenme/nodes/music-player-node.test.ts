@@ -62,7 +62,7 @@ describe("music player node", () => {
     );
     const previousIndex = source.indexOf('aria-label="上一首"');
     const playbackIndex = source.indexOf(
-      'aria-label={node.musicIsPlaying ? "暂停" : "播放"}',
+      'aria-label={isPlaying ? "暂停" : "播放"}',
     );
     const nextIndex = source.indexOf('aria-label="下一首"');
     const volumeIndex = source.indexOf(

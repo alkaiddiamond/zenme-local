@@ -1,6 +1,11 @@
 import type { Edge } from "@xyflow/react";
 
 import type { CanvasNode } from "@/components/zenme/canvas/types";
+import {
+  estimateTextTokenCount,
+  getCanvasContextTokenBudget,
+  truncateTextToTokenBudget,
+} from "@/lib/ai/context-budget";
 
 const TEXT_GENERATION_CONTEXT_NODE_KINDS = new Set([
   "agent",
@@ -10,21 +15,27 @@ const TEXT_GENERATION_CONTEXT_NODE_KINDS = new Set([
   "imageGeneration",
   "markdown",
   "note",
-  "reader",
   "text",
   "textGeneration",
   "managedText",
   "lyrics",
 ]);
 
+const CONTEXT_TRUNCATION_MARKER = "\n\n[其余上下文因长度限制已省略]";
+
 export function collectTextGenerationContext(input: {
   edges: Edge[];
+  contextWindow?: number;
   maxDepth?: number;
+  maxTokens?: number;
   nodeId: string;
   nodes: CanvasNode[];
   sourceNodeIds?: string[];
 }) {
   const maxDepth = input.maxDepth ?? 3;
+  const maxTokens = input.maxTokens ?? getCanvasContextTokenBudget({
+    contextWindow: input.contextWindow,
+  });
   const nodeById = new Map(input.nodes.map((node) => [node.id, node]));
   const inboundByTarget = input.edges.reduce((result, edge) => {
     const sources = result.get(edge.target) ?? [];
@@ -33,13 +44,15 @@ export function collectTextGenerationContext(input: {
     return result;
   }, new Map<string, string[]>());
   const visited = new Set<string>([input.nodeId]);
-  const queue = (
-    input.sourceNodeIds ?? inboundByTarget.get(input.nodeId) ?? []
+  const rootNode = nodeById.get(input.nodeId);
+  const queue = (isTextGenerationContextBoundary(rootNode)
+    ? []
+    : input.sourceNodeIds ?? inboundByTarget.get(input.nodeId) ?? []
   ).map((nodeId) => ({
     depth: 1,
     nodeId,
   }));
-  const sections: string[] = [];
+  let context = "";
 
   while (queue.length > 0) {
     const current = queue.shift();
@@ -55,7 +68,19 @@ export function collectTextGenerationContext(input: {
 
     const contextText = getCanvasNodeContextText(node);
     if (contextText) {
-      sections.push(`上游上下文 L${current.depth}\n${contextText}`);
+      const appended = appendBoundedContext(
+        context,
+        `上游上下文 L${current.depth}\n${contextText}`,
+        maxTokens,
+      );
+      context = appended.context;
+      if (appended.truncated) {
+        break;
+      }
+    }
+
+    if (isTextGenerationContextBoundary(node)) {
+      continue;
     }
 
     for (const parentId of inboundByTarget.get(current.nodeId) ?? []) {
@@ -66,7 +91,33 @@ export function collectTextGenerationContext(input: {
     }
   }
 
-  return sections.join("\n\n---\n\n");
+  return context;
+}
+
+export function limitTextGenerationContext(
+  sections: Array<string | null | undefined>,
+  maxTokens = getCanvasContextTokenBudget({}),
+) {
+  let context = "";
+
+  for (const section of sections) {
+    const normalizedSection = section?.trim();
+    if (!normalizedSection) {
+      continue;
+    }
+
+    const appended = appendBoundedContext(
+      context,
+      normalizedSection,
+      maxTokens,
+    );
+    context = appended.context;
+    if (appended.truncated) {
+      break;
+    }
+  }
+
+  return context;
 }
 
 export function collectTextGenerationImageUrls(input: {
@@ -87,8 +138,10 @@ export function collectTextGenerationImageUrls(input: {
     return result;
   }, new Map<string, string[]>());
   const visited = new Set<string>([input.nodeId]);
-  const queue = (
-    input.sourceNodeIds ?? inboundByTarget.get(input.nodeId) ?? []
+  const rootNode = nodeById.get(input.nodeId);
+  const queue = (isTextGenerationContextBoundary(rootNode)
+    ? []
+    : input.sourceNodeIds ?? inboundByTarget.get(input.nodeId) ?? []
   ).map((nodeId) => ({ depth: 1, nodeId }));
   const urls: string[] = [];
 
@@ -107,6 +160,10 @@ export function collectTextGenerationImageUrls(input: {
       if (url && !urls.includes(url)) urls.push(url);
     }
 
+    if (isTextGenerationContextBoundary(node)) {
+      continue;
+    }
+
     for (const parentId of inboundByTarget.get(current.nodeId) ?? []) {
       queue.push({ depth: current.depth + 1, nodeId: parentId });
     }
@@ -117,6 +174,40 @@ export function collectTextGenerationImageUrls(input: {
 
 export function isTextGenerationContextNode(node: CanvasNode) {
   return TEXT_GENERATION_CONTEXT_NODE_KINDS.has(node.data.kind);
+}
+
+export function hasCanvasNodeContextText(node: CanvasNode) {
+  const data = node.data;
+  switch (data.kind) {
+    case "text":
+    case "managedText":
+    case "markdown":
+      return Boolean(data.plainText);
+    case "code":
+      return Boolean(
+        data.codeContent ||
+        data.plainText ||
+        data.richTextHtml,
+      );
+    case "agent":
+      return Boolean(
+        data.aiPrompt ||
+        data.aiResponse ||
+        data.plainText,
+      );
+    case "note":
+    case "book":
+    case "image":
+      return true;
+    case "lyrics":
+      return Boolean(data.musicLyrics?.some((line) => line.text));
+    case "imageGeneration":
+      return Boolean(data.imagePrompt);
+    case "textGeneration":
+      return Boolean(data.textGenerationPrompt);
+    default:
+      return false;
+  }
 }
 
 export function getCanvasNodeContextText(node: CanvasNode) {
@@ -181,6 +272,7 @@ export function getCanvasNodeContextText(node: CanvasNode) {
     return [
       `阅读笔记「${title}」`,
       node.data.sourceBookTitle ? `来源：${node.data.sourceBookTitle}` : "",
+      node.data.chapterTitle ? `章节：${node.data.chapterTitle}` : "",
       node.data.selectedText ? `原文：\n${node.data.selectedText}` : "",
       node.data.comment ? `备注：\n${node.data.comment}` : "",
     ]
@@ -195,10 +287,6 @@ export function getCanvasNodeContextText(node: CanvasNode) {
     ]
       .filter(Boolean)
       .join("\n");
-  }
-
-  if (node.data.kind === "reader") {
-    return `阅读器节点「${title}」`;
   }
 
   if (node.data.kind === "lyrics") {
@@ -226,6 +314,43 @@ export function getCanvasNodeContextText(node: CanvasNode) {
   }
 
   return "";
+}
+
+function isTextGenerationContextBoundary(node: CanvasNode | undefined) {
+  return node?.data.kind === "note" || node?.data.kind === "reader";
+}
+
+function appendBoundedContext(
+  context: string,
+  section: string,
+  maxTokens: number,
+) {
+  const separator = context ? "\n\n---\n\n" : "";
+  const prefix = `${context}${separator}`;
+  const availableTokens = Math.max(
+    0,
+    Math.floor(maxTokens) - estimateTextTokenCount(prefix),
+  );
+
+  if (estimateTextTokenCount(section) <= availableTokens) {
+    return {
+      context: `${prefix}${section}`,
+      truncated: false,
+    };
+  }
+
+  if (availableTokens <= 0) {
+    return { context, truncated: true };
+  }
+
+  return {
+    context: `${prefix}${truncateTextToTokenBudget(
+      section,
+      availableTokens,
+      CONTEXT_TRUNCATION_MARKER,
+    )}`,
+    truncated: true,
+  };
 }
 
 function formatTimestamp(seconds: number) {

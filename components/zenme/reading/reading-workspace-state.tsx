@@ -8,6 +8,8 @@ import type {
 } from "react";
 import { Loader2 } from "lucide-react";
 
+import type { ReadingLoadProgress } from "./api";
+
 type ReadingWorkspaceShellProps = {
   children: ReactNode;
   nodeMode: boolean;
@@ -50,13 +52,63 @@ export function ReadingWorkspaceErrorState({ message }: { message: string }) {
   );
 }
 
-export function ReadingWorkspaceLoadingState() {
+export function ReadingWorkspaceLoadingState({
+  progress,
+}: {
+  progress: ReadingLoadProgress;
+}) {
+  const hasTotal = progress.totalBytes !== null && progress.totalBytes > 0;
+  const percent = hasTotal
+    ? Math.min(
+        100,
+        Math.round((progress.loadedBytes / progress.totalBytes!) * 100),
+      )
+    : null;
+  const parsing = progress.phase === "parsing";
+  const label = parsing
+    ? `下载完成，正在解析${formatReadingBytes(progress.loadedBytes)}内容`
+    : percent !== null
+      ? `正在加载内容 ${percent}% · ${formatReadingBytes(progress.loadedBytes)} / ${formatReadingBytes(progress.totalBytes!)}`
+      : `正在加载内容 · 已接收 ${formatReadingBytes(progress.loadedBytes)}`;
+
   return (
-    <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-zinc-500">
-      <Loader2 className="size-4 animate-spin" />
-      正在打开阅读界面
+    <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-sm text-zinc-500">
+      <div className="flex w-full max-w-sm flex-col items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Loader2 className="size-4 animate-spin" />
+          <span>{label}</span>
+        </div>
+        <div
+          aria-label={label}
+          aria-valuemax={percent === null ? undefined : 100}
+          aria-valuenow={parsing ? undefined : percent ?? undefined}
+          className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-200"
+          role="progressbar"
+        >
+          <div
+            className={`h-full rounded-full bg-zinc-950 transition-[width] duration-150 ${
+              percent === null || parsing ? "animate-pulse" : ""
+            }`}
+            style={{
+              width: parsing
+                ? "100%"
+                : percent === null
+                  ? "35%"
+                  : `${percent}%`,
+            }}
+          />
+        </div>
+      </div>
     </div>
   );
+}
+
+function formatReadingBytes(bytes: number) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1024 * 1024) {
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function ReadingResizeGuides({

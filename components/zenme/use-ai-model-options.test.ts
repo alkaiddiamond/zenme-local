@@ -40,6 +40,12 @@ describe("AI model option preferences", () => {
     });
   });
 
+  it("keeps the configured context window with the model option", () => {
+    expect(
+      createModelOption("model", "Model", "Provider · Model", 200_000),
+    ).toMatchObject({ contextWindow: 200_000 });
+  });
+
   it("initializes new selectors from the shared model cache", () => {
     const source = readFileSync(
       new URL("./use-ai-model-options.ts", import.meta.url),

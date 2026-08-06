@@ -71,6 +71,7 @@ import {
 } from "@/lib/zenme";
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 import { parseProviderModelReference } from "@/lib/ai/model-reference";
+import { getCanvasContextTokenBudget } from "@/lib/ai/context-budget";
 import {
   createDroppedFileCanvasNodes,
   getDroppedFiles,
@@ -147,6 +148,7 @@ import {
 } from "@/components/zenme/canvas/keyboard";
 import {
   createCanvasItemsHistoryEntry,
+  createDragStartNodeSnapshots,
   createDeletedCanvasItemsHistoryEntry,
   createMutateCanvasItemsHistoryEntry,
   createNodeUpdateHistoryEntry,
@@ -158,6 +160,7 @@ import {
   collectTextGenerationContext,
   collectTextGenerationImageUrls,
   getCanvasNodeContextText,
+  limitTextGenerationContext,
 } from "@/components/zenme/canvas/text-generation-context";
 import { buildContextualImageGenerationPrompt } from "@/components/zenme/canvas/image-generation-context";
 import {
@@ -261,7 +264,8 @@ import {
 } from "@/components/zenme/canvas/music-workflow";
 import { generateLocalAudioWaveform } from "@/components/zenme/canvas/local-audio-waveform";
 import {
-  useMusicPlayback,
+  useMusicPlaybackActions,
+  useMusicPlaybackStatus,
   type MusicPlaybackConfig,
 } from "@/components/zenme/music-playback-provider";
 import {
@@ -289,6 +293,7 @@ type CanvasClientProps = {
 
 const THUMBNAIL_PERIODIC_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const THUMBNAIL_CHANGE_REFRESH_DELAY_MS = 1200;
+const CANVAS_CONNECTION_RADIUS = 32;
 const DEFAULT_EDGE_OPTIONS = {
   interactionWidth: 24,
   type: "default",
@@ -298,7 +303,8 @@ const MINI_MAP_CLASS =
   "zenme-shadow-canvas !bottom-[66px] !left-3 !right-auto !top-auto !m-0 !h-[150px] !w-[200px] !overflow-hidden !rounded-xl !border !border-zinc-200 !bg-white/95 !backdrop-blur";
 
 export function CanvasClient({ projectId }: CanvasClientProps) {
-  const musicPlayback = useMusicPlayback();
+  const musicPlayback = useMusicPlaybackActions();
+  const musicPlaybackStatus = useMusicPlaybackStatus();
   const musicPlaybackRef = useRef(musicPlayback);
   musicPlaybackRef.current = musicPlayback;
   const [nodes, setNodes, onNodesChange] =
@@ -309,6 +315,8 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const [showMiniMap, setShowMiniMap] = useState(true);
   const [isMiniMapSuspended, setIsMiniMapSuspended] = useState(false);
   const [isNodeDragging, setIsNodeDragging] = useState(false);
+  const [isNodeResizing, setIsNodeResizing] = useState(false);
+  const [isNodeConnecting, setIsNodeConnecting] = useState(false);
   const [isViewportMoving, setIsViewportMoving] = useState(false);
   const [altDragPreviewNodes, setAltDragPreviewNodes] = useState<CanvasNode[]>([]);
   const [altDragMovingNodeIds, setAltDragMovingNodeIds] = useState<Set<string>>(
@@ -416,6 +424,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const canvasHistory = useRef<CanvasHistoryEntry[]>([]);
   const canvasHistorySignature = useRef("");
   const shouldSyncHistorySignatureFromRender = useRef(false);
+  const lastCanvasItemsSignature = useRef("");
   const savedCanvasSignature = useRef("");
   const pendingCanvasSignature = useRef("");
   const isCanvasInteractionActive = useRef(false);
@@ -487,18 +496,21 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     reactFlowRef.current = reactFlow ?? null;
   }, [reactFlow]);
 
-  const canvasItemsSignature = useMemo(
-    () =>
-      measureCanvasPerf(
+  const canvasItemsSignature = useMemo(() => {
+    if ((isNodeDragging || isNodeResizing) && lastCanvasItemsSignature.current) {
+      return lastCanvasItemsSignature.current;
+    }
+    const signature = measureCanvasPerf(
         "persistable canvas items signature",
         () => getCanvasHistorySignature(nodes, edges),
         {
           edges: edges.length,
           nodes: nodes.length,
         },
-      ),
-    [edges, nodes],
-  );
+      );
+    lastCanvasItemsSignature.current = signature;
+    return signature;
+  }, [edges, isNodeDragging, isNodeResizing, nodes]);
   useEffect(() => {
     if (!shouldSyncHistorySignatureFromRender.current) {
       return;
@@ -535,6 +547,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           change.resizing,
       );
       if (hasActiveResizeChange && !resizeStartNodeSnapshots.current) {
+        setIsNodeResizing(true);
         resizeStartNodeSnapshots.current = new Map(
           nodes.map((node) => [
             node.id,
@@ -583,6 +596,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           nodes: nodes.length,
         });
         resizeInteractionSample.current = null;
+      }
+      if (hasResizeEndChange) {
+        setIsNodeResizing(false);
       }
 
       onNodesChange(changes);
@@ -2229,11 +2245,17 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }
       const prompt = resolveTextGenerationPrompt(preflight.prompt);
       const model = preflight.model;
+      const contextTokenBudget = getCanvasContextTokenBudget({
+        contextWindow: configuredModelOptions.find((option) => option.id === model)
+          ?.contextWindow,
+        prompt,
+      });
       activeExecutionSourceNodeIdsRef.current.add(nodeId);
 
       const ownContext = getCanvasNodeContextText(sourceNode);
       const upstreamContext = collectTextGenerationContext({
         edges: currentEdges,
+        maxTokens: contextTokenBudget,
         nodeId,
         nodes: currentNodes,
       });
@@ -2242,7 +2264,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         nodeId,
         nodes: currentNodes,
       });
-      const context = [ownContext, upstreamContext].filter(Boolean).join("\n\n---\n\n");
+      const context = limitTextGenerationContext([
+        ownContext,
+        upstreamContext,
+      ], contextTokenBudget);
       const position = getNextConnectedChildNodePosition({
         childFallbackSize: { height: 260, width: 620 },
         edges: currentEdges,
@@ -2378,7 +2403,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         activeExecutionSourceNodeIdsRef.current.delete(nodeId);
       }
     },
-    [appendCanvasItems, configuredModelIds, defaultTextModel, edges, persistExecutionTaskNodes, projectId, reactFlow, setNodes],
+    [appendCanvasItems, configuredModelIds, configuredModelOptions, defaultTextModel, edges, persistExecutionTaskNodes, projectId, reactFlow, setNodes],
   );
 
   const updateVideoNode = useCallback((
@@ -2504,6 +2529,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       }
       activeExecutionSourceNodeIdsRef.current.add(nodeId);
 
+      const contextTokenBudget = getCanvasContextTokenBudget({
+        contextWindow: configuredImageModelOptions.find(
+          (option) => option.id === model,
+        )?.contextWindow,
+        prompt,
+      });
+
       const selectedTextReferenceNodeIds = mergeReferenceNodeIds(
         sourceNode.data.imageTextReferenceNodeIds,
         promptMentions,
@@ -2532,6 +2564,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       });
       const textContext = collectTextGenerationContext({
         edges: currentEdges,
+        maxTokens: contextTokenBudget,
         nodeId,
         nodes: currentNodes,
         sourceNodeIds: selectedTextReferenceNodeIds,
@@ -3457,11 +3490,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           nodes: currentNodes.length,
         },
       );
-      const beforeNodeSnapshots = new Map(
-        currentNodes.map((node) => [
-          node.id,
-          createCanvasHistoryNodeSnapshot(node),
-        ]),
+      const beforeNodeSnapshots = createDragStartNodeSnapshots(
+        currentNodes,
+        draggedNode.id,
       );
       dragStartNodeSnapshots.current = beforeNodeSnapshots;
       altDragSourceNodeId.current = duplicateOnDrop ? draggedNode.id : null;
@@ -4247,40 +4278,40 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     }
   }, [edges, fetchLyrics, nodes]);
 
-  const activeMusicSession = musicPlayback.session?.config.projectId === projectId
-    ? musicPlayback.session
-    : undefined;
-  const musicLyricsOverlayPlayerId = activeMusicSession?.overlay
-    ? activeMusicSession.config.playerNodeId
-    : undefined;
-
   useEffect(() => {
-    if (!activeMusicSession) return;
+    if (
+      musicPlaybackStatus.projectId !== projectId ||
+      !musicPlaybackStatus.playerNodeId ||
+      !musicPlaybackStatus.currentSourceId
+    ) {
+      return;
+    }
     setNodes((current) => current.map((node) => {
       if (
-        node.id !== activeMusicSession.config.playerNodeId ||
-        node.data.kind !== "musicPlayer"
-      ) return node;
-      if (
-        node.data.musicCurrentTime === activeMusicSession.currentTime &&
-        node.data.musicDuration === activeMusicSession.duration &&
-        node.data.musicError === activeMusicSession.error &&
-        node.data.musicIsPlaying === activeMusicSession.isPlaying &&
-        node.data.musicSourceNodeId === activeMusicSession.currentSourceId
-      ) return node;
+        node.id !== musicPlaybackStatus.playerNodeId ||
+        node.data.kind !== "musicPlayer" ||
+        node.data.musicSourceNodeId === musicPlaybackStatus.currentSourceId
+      ) {
+        return node;
+      }
       return {
         ...node,
         data: {
           ...node.data,
-          musicCurrentTime: activeMusicSession.currentTime,
-          musicDuration: activeMusicSession.duration,
-          musicError: activeMusicSession.error,
-          musicIsPlaying: activeMusicSession.isPlaying,
-          musicSourceNodeId: activeMusicSession.currentSourceId,
+          musicSourceNodeId: musicPlaybackStatus.currentSourceId,
+          musicWaveform: undefined,
+          musicWaveformSourceNodeId: undefined,
+          musicWaveformVersion: undefined,
         },
       };
     }));
-  }, [activeMusicSession, setNodes]);
+  }, [
+    musicPlaybackStatus.currentSourceId,
+    musicPlaybackStatus.playerNodeId,
+    musicPlaybackStatus.projectId,
+    projectId,
+    setNodes,
+  ]);
 
   const createMusicChild = useCallback((
     playerNodeId: string,
@@ -4330,7 +4361,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       getRenderedCanvasNodes({
         createNoteNode,
         edges,
-        musicLyricsOverlayPlayerNodeId: musicLyricsOverlayPlayerId,
         nodes,
         onCreateMusicChildNode: createMusicChild,
         onCreateMusicPlayerNode: createMusicPlayer,
@@ -4378,7 +4408,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       edges,
       nodes,
       locateMusicPlayer,
-      musicLyricsOverlayPlayerId,
       seekMusicPlayer,
       selectAdjacentMusicSource,
       selectMusicSource,
@@ -4463,7 +4492,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }
 
   return (
-    <div className={`zenme-canvas-shell h-full overflow-hidden bg-white text-zinc-950 ${isNodeDragging ? "zenme-canvas-node-dragging" : ""} ${isViewportMoving ? "zenme-canvas-viewport-moving" : ""}`}>
+    <div className={`zenme-canvas-shell h-full overflow-hidden bg-white text-zinc-950 ${isNodeDragging ? "zenme-canvas-node-dragging" : ""} ${isNodeConnecting ? "zenme-canvas-node-connecting" : ""} ${isViewportMoving ? "zenme-canvas-viewport-moving" : ""}`}>
       <main
         className="relative h-full w-full"
         onAuxClickCapture={(event) => {
@@ -4510,7 +4539,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           elementsSelectable
           nodeTypes={nodeTypes}
           nodes={displayedNodes}
-          connectionRadius={120}
+          connectionRadius={CANVAS_CONNECTION_RADIUS}
           isValidConnection={isCanvasConnectionValid}
           onConnect={onConnect}
           onConnectEnd={(event) => {
@@ -4535,12 +4564,18 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             connectingNodeId.current = null;
             connectingHandleId.current = null;
             didConnectToNode.current = false;
+            isCanvasInteractionActive.current = false;
+            setIsMiniMapSuspended(false);
+            setIsNodeConnecting(false);
             setIsContextConnecting(false);
           }}
           onConnectStart={(_event, params) => {
             connectingNodeId.current = params.nodeId ?? null;
             connectingHandleId.current = params.handleId ?? null;
             didConnectToNode.current = false;
+            isCanvasInteractionActive.current = true;
+            setIsMiniMapSuspended(true);
+            setIsNodeConnecting(true);
             setIsContextConnecting(params.handleId === NODE_CONTEXT_HANDLE_ID);
             setNodeActionMenu(null);
           }}
@@ -4631,7 +4666,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           ) : null}
         </ReactFlow>
 
-        {selectionToolbarPosition && !isNodeDragging && !isViewportMoving ? (
+        {selectionToolbarPosition &&
+        !isNodeDragging &&
+        !isNodeConnecting &&
+        !isViewportMoving ? (
           <CanvasSelectionToolbar
             left={selectionToolbarPosition.left}
             onGroupSelectedNodes={groupSelectedNodes}

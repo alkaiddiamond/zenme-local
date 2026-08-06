@@ -91,7 +91,22 @@ type MusicPlaybackContextValue = {
   updatePlayback: (config: MusicPlaybackConfig, updates: MusicPlaybackUpdates) => void;
 };
 
+type MusicPlaybackActions = Omit<
+  MusicPlaybackContextValue,
+  "isOverlayOpen" | "overlayDockLeft" | "session"
+>;
+
 const MusicPlaybackContext = createContext<MusicPlaybackContextValue | null>(null);
+const MusicPlaybackActionsContext = createContext<MusicPlaybackActions | null>(null);
+const MusicPlaybackSessionContext = createContext<{
+  session?: MusicPlaybackSession;
+} | null>(null);
+const MusicPlaybackStatusContext = createContext<{
+  currentSourceId?: string;
+  isPlaying: boolean;
+  playerNodeId?: string;
+  projectId?: string;
+} | null>(null);
 
 export function MusicPlaybackProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<MusicPlaybackSession>();
@@ -306,15 +321,10 @@ export function MusicPlaybackProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => () => releaseAudio(), [releaseAudio]);
 
-  const value = useMemo<MusicPlaybackContextValue>(() => ({
+  const actions = useMemo<MusicPlaybackActions>(() => ({
     ensurePlayback(config) {
       ensureAudio(activate(config));
     },
-    isOverlayOpen(projectId, playerNodeId) {
-      return Boolean(session?.overlay && session.config.projectId === projectId &&
-        session.config.playerNodeId === playerNodeId);
-    },
-    overlayDockLeft,
     seek(config, seconds) {
       const active = activate(config);
       const audio = ensureAudio(active);
@@ -330,7 +340,6 @@ export function MusicPlaybackProvider({ children }: { children: ReactNode }) {
       const active = activate(config);
       chooseSource(active, sourceNodeId, active.isPlaying);
     },
-    session,
     toggleOverlay(config, initialPosition) {
       const active = activate(config);
       commitSession(active.overlay
@@ -380,17 +389,44 @@ export function MusicPlaybackProvider({ children }: { children: ReactNode }) {
     chooseSource,
     commitSession,
     ensureAudio,
-    overlayDockLeft,
     playCurrent,
     selectAdjacentFromSession,
-    session,
     updateSession,
   ]);
 
+  const value = useMemo<MusicPlaybackContextValue>(() => ({
+    ...actions,
+    isOverlayOpen(projectId, playerNodeId) {
+      return Boolean(session?.overlay && session.config.projectId === projectId &&
+        session.config.playerNodeId === playerNodeId);
+    },
+    overlayDockLeft,
+    session,
+  }), [actions, overlayDockLeft, session]);
+
+  const sessionValue = useMemo(() => ({ session }), [session]);
+  const statusValue = useMemo(() => ({
+    currentSourceId: session?.currentSourceId,
+    isPlaying: session?.isPlaying === true,
+    playerNodeId: session?.config.playerNodeId,
+    projectId: session?.config.projectId,
+  }), [
+    session?.config.playerNodeId,
+    session?.config.projectId,
+    session?.currentSourceId,
+    session?.isPlaying,
+  ]);
+
   return (
-    <MusicPlaybackContext.Provider value={value}>
-      {children}
-    </MusicPlaybackContext.Provider>
+    <MusicPlaybackActionsContext.Provider value={actions}>
+      <MusicPlaybackStatusContext.Provider value={statusValue}>
+        <MusicPlaybackSessionContext.Provider value={sessionValue}>
+          <MusicPlaybackContext.Provider value={value}>
+            {children}
+          </MusicPlaybackContext.Provider>
+        </MusicPlaybackSessionContext.Provider>
+      </MusicPlaybackStatusContext.Provider>
+    </MusicPlaybackActionsContext.Provider>
   );
 }
 
@@ -439,6 +475,30 @@ export function MusicPlaybackOverlay() {
 export function useMusicPlayback() {
   const value = useContext(MusicPlaybackContext);
   if (!value) throw new Error("useMusicPlayback must be used inside MusicPlaybackProvider");
+  return value;
+}
+
+export function useMusicPlaybackActions() {
+  const value = useContext(MusicPlaybackActionsContext);
+  if (!value) {
+    throw new Error("useMusicPlaybackActions must be used inside MusicPlaybackProvider");
+  }
+  return value;
+}
+
+export function useMusicPlaybackSession() {
+  const value = useContext(MusicPlaybackSessionContext);
+  if (!value) {
+    throw new Error("useMusicPlaybackSession must be used inside MusicPlaybackProvider");
+  }
+  return value.session;
+}
+
+export function useMusicPlaybackStatus() {
+  const value = useContext(MusicPlaybackStatusContext);
+  if (!value) {
+    throw new Error("useMusicPlaybackStatus must be used inside MusicPlaybackProvider");
+  }
   return value;
 }
 

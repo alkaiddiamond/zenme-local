@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import type { RefObject } from "react";
 
 import type { ReadingAnnotationColor } from "@/lib/reading/types";
 
@@ -17,7 +18,7 @@ import type {
 import { reorderReadingNoteList } from "./utils";
 
 export function useReadingNotes(input: {
-  activeSection: number;
+  activeSectionRef: RefObject<number>;
   assetId: string;
   canSavePdfAnnotation: boolean;
   comment: string;
@@ -43,7 +44,7 @@ export function useReadingNotes(input: {
   onNoteCreated: () => void;
 }) {
   const {
-    activeSection,
+    activeSectionRef,
     assetId,
     canSavePdfAnnotation,
     comment,
@@ -113,7 +114,7 @@ export function useReadingNotes(input: {
 
       setIsSavingNote(true);
       try {
-        const sectionIndex = selection?.sectionIndex ?? activeSection;
+        const sectionIndex = selection?.sectionIndex ?? activeSectionRef.current;
         const note = await createReadingNote({
           assetId,
           projectId,
@@ -149,7 +150,7 @@ export function useReadingNotes(input: {
       }
     },
     [
-      activeSection,
+      activeSectionRef,
       assetId,
       comment,
       getSectionTitle,

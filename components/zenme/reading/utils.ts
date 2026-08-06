@@ -369,6 +369,20 @@ export function renderHighlightedSectionHtml(
   notes: ReadingNote[],
   focusedNoteId: string | null,
 ) {
+  const relevantFocusedNoteId = notes.some((note) => note.id === focusedNoteId)
+    ? focusedNoteId
+    : null;
+  const cachedEntries = highlightedSectionHtmlCache.get(section);
+  const cached = cachedEntries?.find(
+    (entry) =>
+      entry.focusedNoteId === relevantFocusedNoteId && entry.notes === notes,
+  );
+  if (cached) {
+    highlightedSectionHtmlCache.delete(section);
+    highlightedSectionHtmlCache.set(section, cachedEntries ?? [cached]);
+    return cached.html;
+  }
+
   const html = sanitizeReadingHtml(
     section.html || `<p>${escapeHtml(section.text)}</p>`,
   );
@@ -393,7 +407,12 @@ export function renderHighlightedSectionHtml(
     .sort((a, b) => b.range.offset - a.range.offset);
 
   if (targets.length === 0 || typeof DOMParser === "undefined") {
-    return sanitizeReadingHtml(html);
+    cacheHighlightedSectionHtml(section, {
+      focusedNoteId: relevantFocusedNoteId,
+      html,
+      notes,
+    });
+    return html;
   }
 
   const doc = new DOMParser().parseFromString(
@@ -402,7 +421,12 @@ export function renderHighlightedSectionHtml(
   );
   const root = doc.body.firstElementChild;
   if (!root) {
-    return sanitizeReadingHtml(html);
+    cacheHighlightedSectionHtml(section, {
+      focusedNoteId: relevantFocusedNoteId,
+      html,
+      notes,
+    });
+    return html;
   }
 
   for (const { note, range } of targets) {
@@ -415,7 +439,77 @@ export function renderHighlightedSectionHtml(
     });
   }
 
-  return sanitizeReadingHtml(root.innerHTML);
+  const highlightedHtml = root.innerHTML;
+  cacheHighlightedSectionHtml(section, {
+    focusedNoteId: relevantFocusedNoteId,
+    html: highlightedHtml,
+    notes,
+  });
+  return highlightedHtml;
+}
+
+type HighlightedSectionHtmlCacheEntry = {
+  focusedNoteId: string | null;
+  html: string;
+  notes: ReadingNote[];
+};
+
+const MAX_HIGHLIGHTED_SECTION_CACHE_SIZE = 256;
+const highlightedSectionHtmlCache = new Map<
+  ReadingSection,
+  HighlightedSectionHtmlCacheEntry[]
+>();
+
+function cacheHighlightedSectionHtml(
+  section: ReadingSection,
+  entry: HighlightedSectionHtmlCacheEntry,
+) {
+  const entries = highlightedSectionHtmlCache.get(section) ?? [];
+  highlightedSectionHtmlCache.delete(section);
+  highlightedSectionHtmlCache.set(section, [
+    entry,
+    ...entries.filter(
+      (candidate) =>
+        candidate.focusedNoteId !== entry.focusedNoteId ||
+        candidate.notes !== entry.notes,
+    ),
+  ].slice(0, 3));
+
+  if (highlightedSectionHtmlCache.size > MAX_HIGHLIGHTED_SECTION_CACHE_SIZE) {
+    const oldestSection = highlightedSectionHtmlCache.keys().next().value;
+    if (oldestSection) highlightedSectionHtmlCache.delete(oldestSection);
+  }
+}
+
+export function getReadingTextSample(
+  sections: ReadingSection[],
+  maxLength = 8_000,
+) {
+  let sample = "";
+  for (const section of sections) {
+    if (sample.length >= maxLength) break;
+    const separator = sample ? "\n" : "";
+    sample += separator + section.text.slice(0, maxLength - sample.length);
+  }
+  return sample.slice(0, maxLength);
+}
+
+export function indexReadingNotesBySection(notes: ReadingNote[]) {
+  const notesBySection = new Map<number, ReadingNote[]>();
+
+  for (const note of notes) {
+    const sectionIndexes = new Set<number>([note.sectionIndex]);
+    for (const range of note.ranges ?? []) {
+      sectionIndexes.add(range.sectionIndex);
+    }
+    for (const sectionIndex of sectionIndexes) {
+      const sectionNotes = notesBySection.get(sectionIndex);
+      if (sectionNotes) sectionNotes.push(note);
+      else notesBySection.set(sectionIndex, [note]);
+    }
+  }
+
+  return notesBySection;
 }
 
 function wrapTextRange(

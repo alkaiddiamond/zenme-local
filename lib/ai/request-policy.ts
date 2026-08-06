@@ -7,9 +7,7 @@ type ChatMessage = {
 
 const DEFAULT_MODEL = "glm-4-flash";
 const MAX_MESSAGES = 24;
-const MAX_MESSAGE_LENGTH = 8_000;
-const MAX_CONTEXT_LENGTH = 24_000;
-const MAX_TOTAL_CONTENT_LENGTH = 32_000;
+const MAX_REQUEST_TEXT_LENGTH = 2_000_000;
 const MAX_CHAT_IMAGES = 4;
 const MAX_CHAT_IMAGE_LENGTH = 12_000_000;
 const MAX_CHAT_IMAGES_TOTAL_LENGTH = 32_000_000;
@@ -57,9 +55,6 @@ export function validateChatBody(body: {
   }
 
   let totalContentLength = body.context?.length ?? 0;
-  if ((body.context?.length ?? 0) > MAX_CONTEXT_LENGTH) {
-    return "画布上下文过长，请减少选中内容后重试";
-  }
 
   for (const message of body.messages) {
     if (
@@ -70,15 +65,11 @@ export function validateChatBody(body: {
       return "messages 格式不正确";
     }
 
-    if (message.content.length > MAX_MESSAGE_LENGTH) {
-      return "单条消息过长，请缩短后重试";
-    }
-
     totalContentLength += message.content.length;
   }
 
-  if (totalContentLength > MAX_TOTAL_CONTENT_LENGTH) {
-    return "请求内容过长，请减少上下文后重试";
+  if (totalContentLength > MAX_REQUEST_TEXT_LENGTH) {
+    return "请求文本数据过大，请减少内容后重试";
   }
 
   return null;

@@ -3,10 +3,14 @@ import type { RefObject } from "react";
 
 import type { ReadingNote, ReadingSection } from "@/lib/reading/types";
 
-import { renderHighlightedSectionHtml } from "./utils";
+import {
+  indexReadingNotesBySection,
+  renderHighlightedSectionHtml,
+} from "./utils";
 import type { TextSelection } from "./types";
 
 type SelectionRect = TextSelection["rects"][number];
+const EMPTY_READING_NOTES: ReadingNote[] = [];
 
 type ReadingTextSectionsViewProps = {
   focusedNoteId: string | null;
@@ -23,13 +27,18 @@ export const ReadingTextSectionsView = memo(function ReadingTextSectionsView({
   sectionRefs,
   sections,
 }: ReadingTextSectionsViewProps) {
+  const notesBySection = useMemo(
+    () => indexReadingNotesBySection(notes),
+    [notes],
+  );
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       {sections.map((section) => (
         <ReadingTextSectionCard
           focusedNoteId={focusedNoteId}
           key={section.index}
-          notes={notes}
+          notes={notesBySection.get(section.index) ?? EMPTY_READING_NOTES}
           section={section}
           sectionRefs={sectionRefs}
           selectionRects={

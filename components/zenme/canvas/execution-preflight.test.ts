@@ -48,4 +48,25 @@ describe("execution preflight", () => {
     });
     expect(result.issues[0]?.code).toBe("node_not_executable");
   });
+
+  it("allows a reading note to execute a prompt with itself as context", () => {
+    const result = inspectCanvasNodeExecution({
+      availableModelIds: ["provider/text-model"],
+      node: createNode({
+        kind: "note",
+        title: "阅读笔记",
+        selectedText: "我认为泡沫是 2029 年",
+        textGenerationModel: "provider/text-model",
+      }),
+      requestedPrompt: "帮我调研相关人物和成就",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      kind: "text",
+      model: "provider/text-model",
+      prompt: "帮我调研相关人物和成就",
+      issues: [],
+    });
+  });
 });

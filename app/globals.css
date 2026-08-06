@@ -474,6 +474,7 @@ html[data-theme="warm"] ::selection {
   color: var(--color-text-primary);
 }
 
+.zenme-canvas-node-connecting .zenme-reader-workspace,
 .zenme-canvas-viewport-moving .zenme-reader-workspace {
   pointer-events: none;
 }

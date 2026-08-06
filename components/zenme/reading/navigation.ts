@@ -8,6 +8,28 @@ export type ReadingNavigationSection = {
   title: string;
 };
 
+export function findReadingNavigationIndex(
+  sections: ReadingNavigationSection[],
+  activeSection: number,
+) {
+  let low = 0;
+  let high = sections.length - 1;
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const section = sections[middle];
+    if (activeSection < section.index) {
+      high = middle - 1;
+    } else if (activeSection > section.endIndex) {
+      low = middle + 1;
+    } else {
+      return middle;
+    }
+  }
+
+  return -1;
+}
+
 export function isPagedReadingFormat(format: ReadingFormat) {
   return format === "epub" || format === "markdown" || format === "txt";
 }

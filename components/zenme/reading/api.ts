@@ -10,9 +10,22 @@ import type { ReadingPayload } from "./types";
 const READING_PROGRESS_CACHE_PREFIX = "zenme:reading-progress:";
 const READING_NOTES_SCROLL_CACHE_PREFIX = "zenme:reading-notes-scroll:";
 
-export async function loadReadingPayload(assetId: string) {
+export type ReadingLoadProgress = {
+  loadedBytes: number;
+  phase: "downloading" | "parsing";
+  totalBytes: number | null;
+};
+
+export async function loadReadingPayload(
+  assetId: string,
+  options?: {
+    onProgress?: (progress: ReadingLoadProgress) => void;
+    signal?: AbortSignal;
+  },
+) {
   const response = await fetch(`/api/reading/assets/${assetId}`, {
     cache: "no-store",
+    signal: options?.signal,
   });
 
   if (!response.ok) {
@@ -22,7 +35,18 @@ export async function loadReadingPayload(assetId: string) {
     throw new Error(body?.error ?? "阅读资料加载失败");
   }
 
-  const payload = (await response.json()) as ReadingPayload;
+  const totalBytes = getReadingPayloadByteLength(response);
+  const payloadText = await readReadingPayloadText(response, {
+    onProgress: options?.onProgress,
+    totalBytes,
+  });
+  options?.onProgress?.({
+    loadedBytes: totalBytes ?? payloadText.length,
+    phase: "parsing",
+    totalBytes,
+  });
+  await yieldBeforeReadingPayloadParse();
+  const payload = JSON.parse(payloadText) as ReadingPayload;
   const cachedProgress = readCachedReadingProgress(assetId);
   return {
     ...payload,
@@ -30,6 +54,71 @@ export async function loadReadingPayload(assetId: string) {
       ? { ...payload.progress, ...cachedProgress }
       : payload.progress,
   };
+}
+
+function getReadingPayloadByteLength(response: Response) {
+  const value = Number(
+    response.headers.get("x-zenme-content-length") ??
+      response.headers.get("content-length"),
+  );
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+async function readReadingPayloadText(
+  response: Response,
+  input: {
+    onProgress?: (progress: ReadingLoadProgress) => void;
+    totalBytes: number | null;
+  },
+) {
+  if (!response.body) {
+    return response.text();
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let loadedBytes = 0;
+  let payloadText = "";
+  let lastReportedAt = 0;
+  input.onProgress?.({
+    loadedBytes: 0,
+    phase: "downloading",
+    totalBytes: input.totalBytes,
+  });
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    loadedBytes += value.byteLength;
+    payloadText += decoder.decode(value, { stream: true });
+
+    const now = Date.now();
+    if (now - lastReportedAt >= 80) {
+      lastReportedAt = now;
+      input.onProgress?.({
+        loadedBytes,
+        phase: "downloading",
+        totalBytes: input.totalBytes,
+      });
+    }
+  }
+
+  payloadText += decoder.decode();
+  input.onProgress?.({
+    loadedBytes,
+    phase: "downloading",
+    totalBytes: input.totalBytes,
+  });
+  return payloadText;
+}
+
+function yieldBeforeReadingPayloadParse() {
+  if (typeof requestAnimationFrame !== "function") {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
 }
 
 export function cacheReadingProgress(

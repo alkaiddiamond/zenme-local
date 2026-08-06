@@ -15,15 +15,29 @@ import {
 import { NodeFrame } from "@/components/zenme/nodes/node-frame";
 import { NodeActionHandle, NodeEdgeSourceHandle, NodeTargetHandle } from "@/components/zenme/node-ui";
 import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
+import { useMusicPlaybackSession } from "@/components/zenme/music-playback-provider";
 
 export function MusicPlayerNode({ data, selected, id }: NodeProps) {
   const node = data as CanvasNodeData;
+  const playbackSession = useMusicPlaybackSession();
+  const activeSession = playbackSession &&
+    playbackSession.config.projectId === node.projectId &&
+    playbackSession.config.playerNodeId === id
+    ? playbackSession
+    : undefined;
   const { current, duration } = normalizeMusicPlaybackTimes(
-    node.musicDuration,
-    node.musicCurrentTime,
+    activeSession?.duration ?? node.musicDuration,
+    activeSession?.currentTime ?? node.musicCurrentTime,
   );
   const sources = node.musicSources ?? [];
-  const activeSource = sources.find((source) => source.id === node.musicSourceNodeId) ?? sources[0];
+  const activeSourceId = activeSession?.currentSourceId ?? node.musicSourceNodeId;
+  const activeSource = sources.find((source) => source.id === activeSourceId) ?? sources[0];
+  const activeRuntimeSource = activeSession?.config.sources.find(
+    (source) => source.id === activeSource?.id,
+  );
+  const hasPlayableSource = Boolean(activeRuntimeSource?.url ?? node.originalUrl);
+  const isPlaying = activeSession?.isPlaying ?? node.musicIsPlaying ?? false;
+  const isLyricsOverlayOpen = Boolean(activeSession?.overlay);
   const isSourceListExpanded = node.musicSourceListExpanded !== false;
   const loopMode = normalizeMusicLoopMode(node.musicLoopMode, node.musicLoop);
   const loopModeLabel = getMusicLoopModeLabel(loopMode);
@@ -95,13 +109,13 @@ export function MusicPlayerNode({ data, selected, id }: NodeProps) {
         <span className="w-10 text-right text-[11px] text-zinc-500">{formatTime(duration)}</span>
       </div>
       <div className="nodrag flex h-8 shrink-0 items-center gap-2 border-t border-zinc-100 pt-2 text-xs text-zinc-600">
-        <button aria-label="上一首" className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-zinc-100 disabled:opacity-40" disabled={!node.originalUrl} onClick={() => node.onSelectAdjacentMusicSource?.(id, "previous")} type="button">
+        <button aria-label="上一首" className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-zinc-100 disabled:opacity-40" disabled={!hasPlayableSource} onClick={() => node.onSelectAdjacentMusicSource?.(id, "previous")} type="button">
           <SkipBack className="size-4" />
         </button>
-        <button aria-label={node.musicIsPlaying ? "暂停" : "播放"} className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white disabled:opacity-40" disabled={!node.originalUrl} onClick={() => node.onToggleMusicPlayback?.(id, !node.musicIsPlaying)} type="button">
-          {node.musicIsPlaying ? <Pause className="size-4" /> : <Play className="ml-0.5 size-4" />}
+        <button aria-label={isPlaying ? "暂停" : "播放"} className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-900 text-white disabled:opacity-40" disabled={!hasPlayableSource} onClick={() => node.onToggleMusicPlayback?.(id, !isPlaying)} type="button">
+          {isPlaying ? <Pause className="size-4" /> : <Play className="ml-0.5 size-4" />}
         </button>
-        <button aria-label="下一首" className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-zinc-100 disabled:opacity-40" disabled={!node.originalUrl} onClick={() => node.onSelectAdjacentMusicSource?.(id, "next")} type="button">
+        <button aria-label="下一首" className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-zinc-100 disabled:opacity-40" disabled={!hasPlayableSource} onClick={() => node.onSelectAdjacentMusicSource?.(id, "next")} type="button">
           <SkipForward className="size-4" />
         </button>
         <button aria-label={node.musicMuted ? "取消静音" : "静音"} aria-pressed={Boolean(node.musicMuted)} className="flex size-7 items-center justify-center rounded-md hover:bg-zinc-100" onClick={() => node.onUpdateMusicPlayback?.(id, { muted: !node.musicMuted })} type="button">
@@ -122,11 +136,11 @@ export function MusicPlayerNode({ data, selected, id }: NodeProps) {
           {loopMode === "one" ? <Repeat1 className="size-4" /> : <Repeat2 className="size-4" />}
         </button>
         <button
-          aria-label={node.musicLyricsOverlayOpen ? "关闭歌词覆层" : "打开歌词覆层"}
-          aria-pressed={Boolean(node.musicLyricsOverlayOpen)}
-          className={musicOptionButtonClassName(Boolean(node.musicLyricsOverlayOpen))}
+          aria-label={isLyricsOverlayOpen ? "关闭歌词覆层" : "打开歌词覆层"}
+          aria-pressed={isLyricsOverlayOpen}
+          className={musicOptionButtonClassName(isLyricsOverlayOpen)}
           onClick={() => node.onToggleMusicLyricsOverlay?.(id)}
-          title={node.musicLyricsOverlayOpen ? "关闭歌词覆层" : "打开歌词覆层"}
+          title={isLyricsOverlayOpen ? "关闭歌词覆层" : "打开歌词覆层"}
           type="button"
         >
           <Captions className="size-4" />

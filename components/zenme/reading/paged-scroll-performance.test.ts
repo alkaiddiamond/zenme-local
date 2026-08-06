@@ -14,6 +14,8 @@ describe("paged reading scroll performance", () => {
     expect(source).toContain("visibleSections.map");
     expect(source).not.toContain("sections.map");
     expect(source).not.toContain("READING_PAGE_PLACEHOLDER_CLASSNAME");
+    expect(source).toContain("getReadingTextSample(sections)");
+    expect(source).not.toContain("sections.map((section) => section.text)");
   });
 
   it("shows the chapter title in the header and page number in the footer", () => {

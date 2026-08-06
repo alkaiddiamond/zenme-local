@@ -28,7 +28,7 @@ describe("AI request policy", () => {
     ).toBe("不支持的模型");
   });
 
-  it("rejects oversized chat requests", () => {
+  it("rejects excessive message counts and only applies a transport safety cap", () => {
     expect(
       validateChatBody({
         messages: Array.from({ length: 25 }, () => ({
@@ -43,13 +43,13 @@ describe("AI request policy", () => {
         context: "x".repeat(24_001),
         messages: [{ role: "user", content: "hello" }],
       }),
-    ).toBe("画布上下文过长，请减少选中内容后重试");
+    ).toBeNull();
 
     expect(
       validateChatBody({
-        messages: [{ role: "user", content: "x".repeat(8_001) }],
+        messages: [{ role: "user", content: "x".repeat(2_000_001) }],
       }),
-    ).toBe("单条消息过长，请缩短后重试");
+    ).toBe("请求文本数据过大，请减少内容后重试");
   });
 
   it("accepts image data URLs and rejects invalid multimodal input", () => {
