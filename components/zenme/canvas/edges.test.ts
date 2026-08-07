@@ -46,4 +46,28 @@ describe("rendered canvas edge states", () => {
 
     expect(edge.targetHandle).toBe("node-left");
   });
+
+  it("keeps unchanged rendered edge references stable when another edge is added", () => {
+    const sourceEdge = { id: "edge", source: "source", target: "target" };
+    const [first] = getRenderedCanvasEdges(kinds, [sourceEdge]);
+    const [second] = getRenderedCanvasEdges(kinds, [
+      sourceEdge,
+      { id: "added", source: "target", target: "source" },
+    ]);
+
+    expect(second).toBe(first);
+  });
+
+  it("invalidates a cached edge when its selection relation changes", () => {
+    const sourceEdge = { id: "edge", source: "source", target: "target" };
+    const [idle] = getRenderedCanvasEdges(kinds, [sourceEdge]);
+    const [related] = getRenderedCanvasEdges(
+      kinds,
+      [sourceEdge],
+      new Set(["source"]),
+    );
+
+    expect(related).not.toBe(idle);
+    expect(related.className).toContain("zenme-edge-node-related");
+  });
 });

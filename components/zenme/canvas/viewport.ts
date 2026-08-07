@@ -2,6 +2,9 @@ import type { Viewport } from "./types";
 
 export const CANVAS_ZOOM_MAX = 2.5;
 export const CANVAS_ZOOM_MIN = 0.2;
+export const CANVAS_VIEWPORT_FOCUS_DURATION_MS = 220;
+export const CANVAS_VIEWPORT_FIT_DURATION_MS = 300;
+const CANVAS_WHEEL_ZOOM_SENSITIVITY = 0.002;
 
 export function clampCanvasZoom(value: number) {
   if (!Number.isFinite(value)) {
@@ -13,6 +16,31 @@ export function clampCanvasZoom(value: number) {
 
 export function getNextCanvasZoom(currentZoom: number, delta: number) {
   return clampCanvasZoom(Number((currentZoom + delta).toFixed(2)));
+}
+
+export function normalizeCanvasWheelDelta(
+  deltaY: number,
+  deltaMode: number,
+  viewportHeight: number,
+) {
+  if (!Number.isFinite(deltaY)) return 0;
+  if (deltaMode === 1) return deltaY * 16;
+  if (deltaMode === 2) return deltaY * Math.max(viewportHeight, 1);
+  return deltaY;
+}
+
+export function getCanvasWheelZoom(currentZoom: number, deltaPixels: number) {
+  return clampCanvasZoom(
+    currentZoom * Math.exp(-deltaPixels * CANVAS_WHEEL_ZOOM_SENSITIVITY),
+  );
+}
+
+export function getCanvasMotionDuration(
+  duration: number,
+  reducedMotion = typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+) {
+  return reducedMotion ? 0 : duration;
 }
 
 export function createCanvasZoomViewport(
@@ -49,7 +77,7 @@ export function createPreservedZoomNodeFocusOptions(
   const zoom = clampCanvasZoom(currentZoom);
 
   return {
-    duration: 220,
+    duration: getCanvasMotionDuration(CANVAS_VIEWPORT_FOCUS_DURATION_MS),
     maxZoom: zoom,
     minZoom: zoom,
     nodes: [{ id: nodeId }],

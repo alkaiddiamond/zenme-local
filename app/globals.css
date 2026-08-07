@@ -479,6 +479,10 @@ html[data-theme="warm"] ::selection {
   pointer-events: none;
 }
 
+.zenme-canvas-node-connecting [data-canvas-selection-toolbar] {
+  visibility: hidden;
+}
+
 .zenme-reader-node,
 .zenme-reader-workspace {
   backface-visibility: hidden;

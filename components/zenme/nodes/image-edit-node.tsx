@@ -574,7 +574,13 @@ export function ImageReferencePicker({
             title={reference.title}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt={reference.title} className="h-full w-full object-cover" src={reference.url} />
+            <img
+              alt={reference.title}
+              className="h-full w-full object-cover"
+              decoding="async"
+              loading="lazy"
+              src={reference.url}
+            />
             <button
               aria-label={`取消引用 ${reference.title}`}
               className="absolute right-0.5 top-0.5 hidden size-4 items-center justify-center rounded-full bg-zinc-950/80 text-white group-hover/reference-item:flex"
@@ -657,7 +663,13 @@ export function ImageReferencePicker({
                   type="button"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img alt="" className="size-7 rounded object-cover" src={candidate.url} />
+                  <img
+                    alt=""
+                    className="size-7 rounded object-cover"
+                    decoding="async"
+                    loading="lazy"
+                    src={candidate.url}
+                  />
                   <span className="min-w-0 flex-1 truncate">{candidate.title}</span>
                   {selected ? <span className="text-zinc-500">已选</span> : null}
                 </button>

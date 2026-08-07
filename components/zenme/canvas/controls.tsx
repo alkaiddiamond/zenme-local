@@ -38,6 +38,7 @@ export function CanvasSelectionToolbar({
   return (
     <div
       className="zenme-shadow-canvas fixed z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-zinc-200 bg-white/95 p-1.5 text-zinc-800 backdrop-blur"
+      data-canvas-selection-toolbar
       data-thumbnail-hidden="true"
       style={{ left, top }}
     >

@@ -33,6 +33,8 @@ export function BookNode({ data, selected }: NodeProps) {
             <img
               alt={nodeData.title}
               className="h-full w-full object-cover"
+              decoding="async"
+              loading="lazy"
               src={nodeData.coverUrl}
             />
           ) : (

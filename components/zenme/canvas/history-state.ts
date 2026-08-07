@@ -211,6 +211,20 @@ export function createDragStartNodeSnapshots(
   );
 }
 
+export function createResizeStartNodeSnapshots(
+  nodes: CanvasNode[],
+  resizingNodeIds: Iterable<string>,
+) {
+  const affectedNodeIds = new Set(resizingNodeIds);
+  return new Map(
+    nodes.flatMap((node) =>
+      affectedNodeIds.has(node.id)
+        ? [[node.id, createCanvasHistoryNodeSnapshot(node)] as const]
+        : [],
+    ),
+  );
+}
+
 export function createCanvasItemsHistoryEntry(input: {
   edges?: Edge[];
   nodes?: CanvasNode[];

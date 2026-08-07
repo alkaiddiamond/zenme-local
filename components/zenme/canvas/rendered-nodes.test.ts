@@ -21,6 +21,37 @@ function node(input: {
 }
 
 describe("rendered canvas nodes", () => {
+  it("keeps running nodes active without mounting far multi-selected content", () => {
+    const selected = node({ id: "selected" });
+    selected.selected = true;
+    const renderedNodes = getRenderedCanvasNodes({
+      activeContentNodeIds: new Set(["nearby"]),
+      createNoteNode: vi.fn(),
+      edges: [],
+      nodes: [
+        node({ id: "nearby" }),
+        node({ id: "far" }),
+        selected,
+        node({ data: { aiStatus: "generating" }, id: "running" }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+
+    expect(renderedNodes.map((item) => item.data.canvasContentActive)).toEqual([
+      true,
+      false,
+      false,
+      true,
+    ]);
+  });
+
   it("reuses unchanged rendered nodes while another node moves", () => {
     const stable = node({ id: "stable" });
     const moving = node({ id: "moving" });
@@ -272,6 +303,7 @@ describe("rendered canvas nodes", () => {
 
   it("derives direct task children, progress and shared project tags", () => {
     const onLocateTaskNode = vi.fn();
+    const onRequestTaskParentOptions = vi.fn();
     const onSetTaskParent = vi.fn();
     const onUpdateTaskNode = vi.fn();
     const onToggleTaskChildren = vi.fn();
@@ -284,7 +316,12 @@ describe("rendered canvas nodes", () => {
       ],
       nodes: [
         node({
-          data: { kind: "task", tags: ["迭代"], taskStatus: "inProgress" },
+          data: {
+            kind: "task",
+            name: "父任务",
+            tags: ["迭代"],
+            taskStatus: "inProgress",
+          },
           id: "parent",
           type: "task",
         }),
@@ -325,6 +362,7 @@ describe("rendered canvas nodes", () => {
       onSubmitTextGenerationNode: vi.fn(),
       onUpdateImageNode: vi.fn(),
       onLocateTaskNode,
+      onRequestTaskParentOptions,
       onSetTaskParent,
       onUpdateTaskNode,
       onToggleTaskChildren,
@@ -341,11 +379,15 @@ describe("rendered canvas nodes", () => {
     ]);
     expect(parent?.data.taskProgress).toBe(0.5);
     expect(parent?.data.projectTags).toEqual(["迭代"]);
-    expect(parent?.data.taskParentOptions).toEqual([]);
+    expect(parent?.data.taskParentOptions).toBeUndefined();
     expect(parent?.data.onLocateTaskNode).toBe(onLocateTaskNode);
+    expect(parent?.data.onRequestTaskParentOptions)
+      .toBe(onRequestTaskParentOptions);
     expect(parent?.data.onSetTaskParent).toBe(onSetTaskParent);
     expect(parent?.data.onUpdateTaskNode).toBe(onUpdateTaskNode);
     expect(parent?.data.onToggleTaskChildren).toBe(onToggleTaskChildren);
+    expect(renderedNodes.find((item) => item.id === "done-child")?.data)
+      .toMatchObject({ taskParentId: "parent", taskParentName: "父任务" });
   });
 
   it("derives image-generation references from incoming image edges", () => {

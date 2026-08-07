@@ -31,6 +31,13 @@ const globalStylesSource = readFileSync(
 );
 
 describe("direct image editing workflow", () => {
+  it("keeps mounted canvas images from blocking initial interaction", () => {
+    expect(imageNodeSource).toContain('decoding="async"');
+    expect(imageNodeSource).toContain('loading="lazy"');
+    expect(imageGenerationNodeSource).toContain('decoding="async"');
+    expect(imageGenerationNodeSource).toContain('loading="lazy"');
+  });
+
   it("opens the AI composer for any image with local content", () => {
     expect(imageNodeSource).toContain("if (imageUrl) {");
     expect(imageNodeSource).toContain("描述想如何编辑这张图片");

@@ -307,6 +307,8 @@ export function ImageNode({ data, id, selected }: NodeProps) {
                 alt={nodeData.title}
                 className="h-full w-full object-contain"
                 crossOrigin="anonymous"
+                decoding="async"
+                loading="lazy"
                 onLoad={(event) => detectImageAspectRatio(event.currentTarget)}
                 src={displayImageUrl}
               />
@@ -556,6 +558,8 @@ export function ImageNode({ data, id, selected }: NodeProps) {
             alt={nodeData.title}
             className="h-full w-full object-contain"
             crossOrigin="anonymous"
+            decoding="async"
+            loading="lazy"
             onLoad={(event) => detectImageAspectRatio(event.currentTarget)}
             src={displayImageUrl}
           />

@@ -39,6 +39,8 @@
     "licenses:check": "npm run licenses:generate && git diff --exit-code -- THIRD_PARTY_LICENSES.md",
     "screenshots:readme": "npm run build && npm run desktop:pack && node scripts/capture-readme-screenshots.cjs",
     "desktop:smoke": "node desktop/smoke-packaged-app.cjs",
+    "desktop:perf": "node desktop/performance-packaged-app.cjs --profile=all",
+    "desktop:perf:assert": "node desktop/performance-packaged-app.cjs --profile=large --assert",
     "release:check": "npm run verify && npm run audit:prod && npm run licenses:check && npm run desktop:pack && npm run desktop:smoke"
   },
   "dependencies": {

@@ -31,10 +31,26 @@ describe("node border drag areas", () => {
 
   it("wraps regular nodes while leaving group interaction unchanged", () => {
     expect(nodesSource).toContain('<div className="contents">');
-    expect(nodesSource).toContain("group: memo(GroupNode)");
-    expect(nodesSource).toContain("text: withNodeDragBorder(TextNode)");
+    expect(nodesSource).toContain("group: withCanvasContentBoundary(GroupNode)");
+    expect(nodesSource).toContain("text: withCanvasContentBoundary(TextNode");
     expect(nodesSource).toContain("image: withNodeDragBorder(ImageNode)");
-    expect(nodesSource).toContain("task: withNodeDragBorder(TaskNode)");
+    expect(nodesSource).toContain("task: withCanvasContentBoundary(TaskNode");
+  });
+
+  it("keeps node chrome on lightweight content shells", () => {
+    expect(nodesSource).toContain("zenme-shadow-node group relative");
+    expect(nodesSource).toContain(
+      "data-canvas-shell-floating-handle={side}",
+    );
+    expect(nodesSource).toContain(
+      '<CanvasNodeShellFloatingHandle\n              selected={Boolean(selected)}\n              side="left"',
+    );
+    expect(nodesSource).toContain(
+      '<CanvasNodeShellFloatingHandle\n              selected={Boolean(selected)}\n              side="right"',
+    );
+    expect(nodesSource).toContain('isGroup ? "-top-7" : "-top-8"');
+    expect(nodesSource).toContain("nodeData.title || nodeData.name");
+    expect(nodesSource).not.toContain('overflow-hidden shadow-sm"}`');
   });
 
   it("keeps title-only note nodes draggable from their new border areas", () => {

@@ -12,6 +12,7 @@ import {
 } from "react";
 import {
   addEdge,
+  applyNodeChanges,
   Background,
   BackgroundVariant,
   Connection,
@@ -20,8 +21,10 @@ import {
   NodeChange,
   ReactFlow,
   ReactFlowInstance,
+  ReactFlowProvider,
   useEdgesState,
   useNodesState,
+  useStoreApi,
 } from "@xyflow/react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { AgentPanel } from "@/components/zenme/agent-panel";
@@ -123,6 +126,7 @@ import {
   isEditableTarget,
   isEditableClipboardEvent,
   isNodeDimensionChange,
+  mergeFinalResizeNodes,
   normalizeGroupNodeRelations,
   recoverInterruptedImageTasks,
   removeLegacyWelcomeNodes,
@@ -139,6 +143,7 @@ import {
   canSetTaskParent,
   createTaskConnectionNodeUpdate,
   createTaskParentSelectionUpdate,
+  getTaskParentOptions,
 } from "@/components/zenme/canvas/task-relationships";
 import { createQuickArrangeUpdate } from "@/components/zenme/canvas/quick-arrange";
 import {
@@ -149,6 +154,7 @@ import {
 import {
   createCanvasItemsHistoryEntry,
   createDragStartNodeSnapshots,
+  createResizeStartNodeSnapshots,
   createDeletedCanvasItemsHistoryEntry,
   createMutateCanvasItemsHistoryEntry,
   createNodeUpdateHistoryEntry,
@@ -217,10 +223,15 @@ import { createCanvasAddMenuFromPaneDoubleClick } from "@/components/zenme/canva
 import {
   CANVAS_ZOOM_MAX,
   CANVAS_ZOOM_MIN,
+  CANVAS_VIEWPORT_FIT_DURATION_MS,
+  CANVAS_VIEWPORT_FOCUS_DURATION_MS,
   clampCanvasZoom,
   createPreservedZoomNodeFocusOptions,
   createCanvasZoomViewport,
   createCanvasZoomViewportAtPoint,
+  getCanvasWheelZoom,
+  getCanvasMotionDuration,
+  normalizeCanvasWheelDelta,
 } from "@/components/zenme/canvas/viewport";
 import type {
   CanvasAddMenuState,
@@ -240,12 +251,17 @@ import {
   measureCanvasPerf,
   measureCanvasPerfAsync,
   observeCanvasLongTasks,
+  recordCanvasClientCommit,
   scheduleCanvasIdleTask,
   startCanvasInteractionSample,
   stopCanvasInteractionSample,
   tickCanvasInteractionSample,
 } from "@/components/zenme/canvas/performance";
 import { createPerformanceSeedCanvas } from "@/components/zenme/canvas/performance-seed";
+import {
+  getCanvasContentWorkset,
+  getCanvasEdgeWorkset,
+} from "@/components/zenme/canvas/content-workset";
 import { prepareReadingAssetForCanvasNode } from "@/components/zenme/canvas/reading-assets";
 import { createOpenReadingWorkspaceUpdate } from "@/components/zenme/canvas/reading-workspace-update";
 import { createReaderCollapseUpdate } from "@/components/zenme/canvas/reader-collapse";
@@ -292,7 +308,8 @@ type CanvasClientProps = {
 };
 
 const THUMBNAIL_PERIODIC_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
-const THUMBNAIL_CHANGE_REFRESH_DELAY_MS = 1200;
+// 缩略图是昂贵的视觉快照，只在内容长期静默后刷新，避免与连续编辑争抢主线程。
+const THUMBNAIL_CHANGE_REFRESH_DELAY_MS = 60_000;
 const CANVAS_CONNECTION_RADIUS = 32;
 const DEFAULT_EDGE_OPTIONS = {
   interactionWidth: 24,
@@ -302,7 +319,16 @@ const DEFAULT_EDGE_OPTIONS = {
 const MINI_MAP_CLASS =
   "zenme-shadow-canvas !bottom-[66px] !left-3 !right-auto !top-auto !m-0 !h-[150px] !w-[200px] !overflow-hidden !rounded-xl !border !border-zinc-200 !bg-white/95 !backdrop-blur";
 
-export function CanvasClient({ projectId }: CanvasClientProps) {
+export function CanvasClient(props: CanvasClientProps) {
+  return (
+    <ReactFlowProvider>
+      <CanvasClientInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function CanvasClientInner({ projectId }: CanvasClientProps) {
+  const canvasFlowStore = useStoreApi<CanvasNode, Edge>();
   const musicPlayback = useMusicPlaybackActions();
   const musicPlaybackStatus = useMusicPlaybackStatus();
   const musicPlaybackRef = useRef(musicPlayback);
@@ -316,7 +342,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const [isMiniMapSuspended, setIsMiniMapSuspended] = useState(false);
   const [isNodeDragging, setIsNodeDragging] = useState(false);
   const [isNodeResizing, setIsNodeResizing] = useState(false);
-  const [isNodeConnecting, setIsNodeConnecting] = useState(false);
   const [isViewportMoving, setIsViewportMoving] = useState(false);
   const [altDragPreviewNodes, setAltDragPreviewNodes] = useState<CanvasNode[]>([]);
   const [altDragMovingNodeIds, setAltDragMovingNodeIds] = useState<Set<string>>(
@@ -373,10 +398,12 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const [pendingViewport, setPendingViewport] = useState<Viewport | null>(null);
   const [canvasLoaded, setCanvasLoaded] = useState(false);
   const [canvasHydrated, setCanvasHydrated] = useState(false);
+  const [activeCanvasContentNodeIds, setActiveCanvasContentNodeIds] =
+    useState<Set<string> | null>(null);
   const [canvasLoadError, setCanvasLoadError] = useState<string | null>(null);
   const [canvasLoadAttempt, setCanvasLoadAttempt] = useState(0);
   const [hasProjectThumbnail, setHasProjectThumbnail] = useState(false);
-  const [isContextConnecting, setIsContextConnecting] = useState(false);
+  const canvasShellRef = useRef<HTMLDivElement | null>(null);
   const saveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const historyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -405,6 +432,11 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }, [projectId]);
   const canvasViewportStateRef = useRef<Viewport>(canvasViewport);
   const zoomLevelStateRef = useRef(zoomLevel);
+  const canvasWheelZoomDelta = useRef(0);
+  const canvasWheelZoomFrame = useRef<number | null>(null);
+  const canvasWheelZoomPoint = useRef<{ x: number; y: number } | null>(null);
+  const canvasWheelZoomTimer = useRef<number | null>(null);
+  const isCanvasWheelZoomActive = useRef(false);
   const reactFlowRef = useRef<ReactFlowInstance<CanvasNode, Edge> | null>(null);
   const fileUploadInputRef = useRef<HTMLInputElement | null>(null);
   const pendingUploadPosition = useRef<{ x: number; y: number } | null>(null);
@@ -429,6 +461,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const pendingCanvasSignature = useRef("");
   const isCanvasInteractionActive = useRef(false);
   const skipNextHistoryEntryCount = useRef(0);
+  const viewportInteractionSample = useRef<ReturnType<
+    typeof startCanvasInteractionSample
+  > | null>(null);
   const dragInteractionSample = useRef<ReturnType<
     typeof startCanvasInteractionSample
   > | null>(null);
@@ -437,6 +472,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   const resizeInteractionSample = useRef<ReturnType<
     typeof startCanvasInteractionSample
   > | null>(null);
+  const selectionInteractionSample = useRef<ReturnType<
+    typeof startCanvasInteractionSample
+  > | null>(null);
+  const canvasSelectionPointerActive = useRef(false);
   const resizeHistoryFrame = useRef<number | null>(null);
   const resizeStartNodeSnapshots = useRef<Map<string, CanvasNode> | null>(null);
   const pushNodeUpdateHistoryRef = useRef<
@@ -473,6 +512,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }, [projectId]);
 
   useEffect(() => {
+    recordCanvasClientCommit();
+  });
+
+  useEffect(() => {
     nodesRef.current = nodes;
   }, [nodes]);
 
@@ -495,6 +538,85 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   useEffect(() => {
     reactFlowRef.current = reactFlow ?? null;
   }, [reactFlow]);
+
+  const commitCanvasViewport = useCallback((viewport: Viewport) => {
+    canvasViewportStateRef.current = viewport;
+    zoomLevelStateRef.current = viewport.zoom;
+    setCanvasViewport((currentViewport) =>
+      currentViewport.x === viewport.x &&
+      currentViewport.y === viewport.y &&
+      currentViewport.zoom === viewport.zoom
+        ? currentViewport
+        : viewport,
+    );
+    setZoomLevel((currentZoom) =>
+      currentZoom === viewport.zoom ? currentZoom : viewport.zoom,
+    );
+  }, []);
+
+  const refreshCanvasContentWorkset = useCallback((
+    currentNodes: CanvasNode[],
+    viewport: Viewport = canvasViewportStateRef.current,
+  ) => {
+    const bounds = canvasViewportRef.current?.getBoundingClientRect();
+    const focusedNodeId = document.activeElement
+      ?.closest?.(".react-flow__node")
+      ?.getAttribute("data-id");
+    const alwaysActiveNodeIds = currentNodes.flatMap((node) =>
+      node.data.aiStatus === "generating" ||
+      node.data.imageStatus === "editing" ||
+      node.data.musicIsPlaying ||
+      node.data.videoStatus === "generating"
+        ? [node.id]
+        : [],
+    );
+    if (focusedNodeId) alwaysActiveNodeIds.push(focusedNodeId);
+    setActiveCanvasContentNodeIds(getCanvasContentWorkset({
+      alwaysActiveNodeIds,
+      nodes: currentNodes,
+      viewport,
+      viewportSize: {
+        height: bounds?.height ?? window.innerHeight,
+        width: bounds?.width ?? window.innerWidth,
+      },
+    }));
+  }, []);
+
+  const canvasNodeCount = nodes.length;
+  useEffect(() => {
+    refreshCanvasContentWorkset(nodesRef.current);
+  }, [canvasNodeCount, refreshCanvasContentWorkset]);
+
+  const finishCanvasWheelZoom = useCallback(() => {
+    canvasWheelZoomTimer.current = null;
+    isCanvasWheelZoomActive.current = false;
+    const viewport = reactFlowRef.current?.getViewport();
+    if (viewport) {
+      commitCanvasViewport(viewport);
+      refreshCanvasContentWorkset(nodesRef.current, viewport);
+    }
+    stopCanvasInteractionSample(viewportInteractionSample.current, {
+      edges: edgesRef.current.length,
+      nodes: nodesRef.current.length,
+    });
+    viewportInteractionSample.current = null;
+    isCanvasInteractionActive.current = false;
+    setIsMiniMapSuspended(false);
+    setIsViewportMoving(false);
+  }, [commitCanvasViewport, refreshCanvasContentWorkset]);
+
+  useEffect(() => () => {
+    if (canvasWheelZoomFrame.current !== null) {
+      window.cancelAnimationFrame(canvasWheelZoomFrame.current);
+    }
+    if (canvasWheelZoomTimer.current) {
+      window.clearTimeout(canvasWheelZoomTimer.current);
+    }
+    stopCanvasInteractionSample(viewportInteractionSample.current);
+    viewportInteractionSample.current = null;
+    stopCanvasInteractionSample(selectionInteractionSample.current);
+    selectionInteractionSample.current = null;
+  }, []);
 
   const canvasItemsSignature = useMemo(() => {
     if ((isNodeDragging || isNodeResizing) && lastCanvasItemsSignature.current) {
@@ -546,59 +668,104 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           "resizing" in change &&
           change.resizing,
       );
-      if (hasActiveResizeChange && !resizeStartNodeSnapshots.current) {
-        setIsNodeResizing(true);
-        resizeStartNodeSnapshots.current = new Map(
-          nodes.map((node) => [
-            node.id,
-            createCanvasHistoryNodeSnapshot(node),
-          ]),
-        );
-      }
-      if (hasActiveResizeChange && !resizeInteractionSample.current) {
-        resizeInteractionSample.current = startCanvasInteractionSample(
-          "interaction resize",
-          {
-            edges: edges.length,
-            nodes: nodes.length,
-          },
-        );
-      }
-      if (hasActiveDragChange || hasActiveResizeChange) {
-        isCanvasInteractionActive.current = true;
-        setIsMiniMapSuspended(true);
-        skipNextHistoryEntryCount.current += 1;
-      }
-      if (hasActiveResizeChange) {
-        tickCanvasInteractionSample(resizeInteractionSample.current);
-      }
+      const hasDragEndChange = changes.some(
+        (change) =>
+          change.type === "position" &&
+          "dragging" in change &&
+          change.dragging === false,
+      );
       const hasResizeEndChange = changes.some(
         (change) =>
           change.type === "dimensions" &&
           "resizing" in change &&
           change.resizing === false,
       );
-      if (
-        changes.some(
-          (change) =>
-            (change.type === "position" &&
-              "dragging" in change &&
-              change.dragging === false) ||
-            hasResizeEndChange,
-        )
-      ) {
+
+      // React Flow 已经拥有拖拽所需的临时节点状态。拖拽帧只同步它的内部
+      // store，避免每个 pointer move 都让 CanvasClient 提交整批受控节点；
+      // 松手时再把最终位置合并回持久节点状态。
+      if ((hasActiveDragChange || hasDragEndChange) && !hasActiveResizeChange) {
+        const flowState = canvasFlowStore.getState();
+        flowState.setNodes(applyNodeChanges(changes, flowState.nodes));
+
+        if (hasActiveDragChange) {
+          isCanvasInteractionActive.current = true;
+          setIsMiniMapSuspended(true);
+          return;
+        }
+
+        const nextNodes = applyNodeChanges(changes, nodesRef.current);
+        nodesRef.current = nextNodes;
+        skipNextHistoryEntryCount.current += 1;
+        setNodes(nextNodes);
         isCanvasInteractionActive.current = false;
         setIsMiniMapSuspended(false);
+        return;
       }
-      if (hasResizeEndChange && resizeInteractionSample.current) {
+
+      if (hasActiveResizeChange || hasResizeEndChange) {
+        if (hasActiveResizeChange && !resizeStartNodeSnapshots.current) {
+          resizeStartNodeSnapshots.current = createResizeStartNodeSnapshots(
+            nodesRef.current,
+            changes.flatMap((change) =>
+              change.type === "dimensions" &&
+              "resizing" in change &&
+              change.resizing
+                ? [change.id]
+                : [],
+            ),
+          );
+          setIsNodeResizing(true);
+        }
+        if (hasActiveResizeChange && !resizeInteractionSample.current) {
+          resizeInteractionSample.current = startCanvasInteractionSample(
+            "interaction resize",
+            {
+              edges: edgesRef.current.length,
+              nodes: nodesRef.current.length,
+            },
+          );
+        }
+
+        const flowState = canvasFlowStore.getState();
+        flowState.setNodes(applyNodeChanges(changes, flowState.nodes));
+
+        if (hasActiveResizeChange) {
+          isCanvasInteractionActive.current = true;
+          setIsMiniMapSuspended(true);
+          tickCanvasInteractionSample(resizeInteractionSample.current);
+          return;
+        }
+
+        const beforeNodeSnapshots = resizeStartNodeSnapshots.current;
+        const nextNodes = mergeFinalResizeNodes(
+          nodesRef.current,
+          canvasFlowStore.getState().nodes,
+          beforeNodeSnapshots?.keys() ?? [],
+        );
+        resizeStartNodeSnapshots.current = null;
+        nodesRef.current = nextNodes;
+        skipNextHistoryEntryCount.current += 1;
+        setNodes(nextNodes);
+        isCanvasInteractionActive.current = false;
+        setIsMiniMapSuspended(false);
+        setIsNodeResizing(false);
         stopCanvasInteractionSample(resizeInteractionSample.current, {
-          edges: edges.length,
-          nodes: nodes.length,
+          edges: edgesRef.current.length,
+          nodes: nextNodes.length,
         });
         resizeInteractionSample.current = null;
-      }
-      if (hasResizeEndChange) {
-        setIsNodeResizing(false);
+
+        if (beforeNodeSnapshots) {
+          if (resizeHistoryFrame.current) {
+            window.cancelAnimationFrame(resizeHistoryFrame.current);
+          }
+          resizeHistoryFrame.current = window.requestAnimationFrame(() => {
+            resizeHistoryFrame.current = null;
+            pushNodeUpdateHistoryRef.current(beforeNodeSnapshots, nextNodes);
+          });
+        }
+        return;
       }
 
       onNodesChange(changes);
@@ -609,32 +776,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         return;
       }
 
-      if (hasResizeEndChange && resizeStartNodeSnapshots.current) {
-        if (resizeHistoryFrame.current) {
-          window.cancelAnimationFrame(resizeHistoryFrame.current);
-        }
-
-        resizeHistoryFrame.current = window.requestAnimationFrame(() => {
-          resizeHistoryFrame.current = null;
-          const beforeNodeSnapshots = resizeStartNodeSnapshots.current;
-          resizeStartNodeSnapshots.current = null;
-
-          if (!beforeNodeSnapshots) {
-            return;
-          }
-
-          pushNodeUpdateHistoryRef.current(
-            beforeNodeSnapshots,
-            reactFlow?.getNodes() ?? nodes,
-          );
-        });
-      }
+      const dimensionChangeByNodeId = new Map(
+        dimensionChanges.map((change) => [change.id, change]),
+      );
 
       setNodes((currentNodes) =>
         currentNodes.map((node) => {
-          const change = dimensionChanges.find(
-            (item) => item.id === node.id,
-          );
+          const change = dimensionChangeByNodeId.get(node.id);
 
           if (
             !change ||
@@ -675,7 +823,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         }),
       );
     },
-    [edges.length, nodes, onNodesChange, reactFlow, setNodes],
+    [canvasFlowStore, onNodesChange, setNodes],
   );
   const edgeNodeKindSignature = useMemo(
     () => nodes.map((node) => `${node.id}:${node.data.kind}`).join("|"),
@@ -701,13 +849,36 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
     return nodeKindById;
   }, [edgeNodeKindSignature]);
-  const renderedEdges = useMemo(
-    () => getRenderedCanvasEdges(
-      edgeNodeKindById,
+  const selectedNodeIdsSignature = useMemo(
+    () => nodes.flatMap((node) => node.selected ? [node.id] : []).join("|"),
+    [nodes],
+  );
+  const selectedNodeIds = useMemo(
+    () => new Set(selectedNodeIdsSignature.split("|").filter(Boolean)),
+    [selectedNodeIdsSignature],
+  );
+  const renderableEdges = useMemo(
+    () => getCanvasEdgeWorkset({
+      activeNodeIds: activeCanvasContentNodeIds,
       edges,
-      new Set(nodes.filter((node) => node.selected).map((node) => node.id)),
+    }),
+    [activeCanvasContentNodeIds, edges],
+  );
+  const renderedEdges = useMemo(
+    () => measureCanvasPerf(
+      "rendered canvas edges",
+      () => getRenderedCanvasEdges(
+        edgeNodeKindById,
+        renderableEdges,
+        selectedNodeIds,
+      ),
+      {
+        edges: edges.length,
+        nodes: nodes.length,
+        renderedEdges: renderableEdges.length,
+      },
     ),
-    [edgeNodeKindById, edges, nodes],
+    [edgeNodeKindById, edges.length, nodes.length, renderableEdges, selectedNodeIds],
   );
 
   const resetCanvasHistory = useCallback(
@@ -918,7 +1089,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
   useEffect(() => {
     let cancelled = false;
-    let hydrationFrame: number | null = null;
+    let hydrationTimer: number | null = null;
 
     async function loadCanvas() {
       isHydrating.current = true;
@@ -928,6 +1099,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       setCanvasHydrated(false);
       setCanvasLoadError(null);
       setPendingViewport(null);
+      setActiveCanvasContentNodeIds(null);
       setNodes([]);
       setEdges([]);
       try {
@@ -954,6 +1126,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             restored.edges,
             restoredNodes,
           );
+          refreshCanvasContentWorkset(
+            restoredNodes,
+            snapshot.viewport ?? canvasViewportStateRef.current,
+          );
           setNodes(restoredNodes);
           setEdges(restoredEdges);
           resetCanvasHistory(
@@ -971,6 +1147,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           void refreshImageNodeUrls(restoredNodes, setNodes, isRefreshingUrls);
         } else {
           const initialNodes = createWelcomeNodes();
+          refreshCanvasContentWorkset(initialNodes);
           setNodes(initialNodes);
           setEdges([]);
           resetCanvasHistory(initialNodes, []);
@@ -978,13 +1155,13 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
         setSaveStatus("已保存");
         setCanvasLoaded(true);
-        // 放开 isHydrating 延后一帧：确保 setNodes/setEdges 触发的 effect 先被屏蔽，
-        // 避免快照回流把"已保存"误改写为"未保存"。
-        hydrationFrame = requestAnimationFrame(() => {
+        // 下一任务再放开 hydration：确保节点和边的 state 先提交，同时避免
+        // Electron 窗口被遮挡时 requestAnimationFrame 暂停而永久卡在加载态。
+        hydrationTimer = window.setTimeout(() => {
           if (cancelled) return;
           isHydrating.current = false;
           setCanvasHydrated(true);
-        });
+        }, 0);
       } catch (error) {
         if (cancelled) return;
         isHydrating.current = false;
@@ -1001,13 +1178,14 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
     return () => {
       cancelled = true;
-      if (hydrationFrame !== null) {
-        cancelAnimationFrame(hydrationFrame);
+      if (hydrationTimer !== null) {
+        window.clearTimeout(hydrationTimer);
       }
     };
   }, [
     canvasLoadAttempt,
     projectId,
+    refreshCanvasContentWorkset,
     resetCanvasHistory,
     setEdges,
     setNodes,
@@ -1364,15 +1542,33 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       Number.isFinite(requestedEdgesPerRow) && requestedEdgesPerRow > 0
         ? Math.min(Math.max(Math.floor(requestedEdgesPerRow), 1), 20)
         : undefined;
+    const edgeCountValue = params.get("zenmePerfEdgeCount");
+    const requestedEdgeCount = edgeCountValue === null
+      ? Number.NaN
+      : Number(edgeCountValue);
+    const edgeCount =
+      Number.isFinite(requestedEdgeCount) && requestedEdgeCount >= 0
+        ? Math.min(Math.floor(requestedEdgeCount), 2_000)
+        : undefined;
+    const requestedKind = params.get("zenmePerfSeedKind");
+    const kind = requestedKind === "mixed" || requestedKind === "task"
+      ? requestedKind
+      : "text";
 
     const seedCanvas = measureCanvasPerf(
       "performance seed canvas",
-      () => createPerformanceSeedCanvas({ count, edgesPerRow }),
-      { edgesPerRow: edgesPerRow ?? 1, requestedNodes: count },
+      () => createPerformanceSeedCanvas({ count, edgeCount, edgesPerRow, kind }),
+      {
+        edgeCount,
+        edgesPerRow: edgesPerRow ?? 1,
+        kind,
+        requestedNodes: count,
+      },
     );
 
     perfSeedDidRun.current = true;
     skipNextHistoryEntryCount.current += 1;
+    refreshCanvasContentWorkset(seedCanvas.nodes);
     setNodes(seedCanvas.nodes);
     setEdges(seedCanvas.edges);
     resetCanvasHistory(seedCanvas.nodes, seedCanvas.edges);
@@ -1380,6 +1576,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     canvasLoaded,
     canvasHydrated,
     nodes.length,
+    refreshCanvasContentWorkset,
     resetCanvasHistory,
     setEdges,
     setNodes,
@@ -1399,24 +1596,33 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     }
 
     thumbnailSaveCancelIdle.current?.();
-    thumbnailSaveCancelIdle.current = scheduleCanvasIdleTask(() => {
-      thumbnailSaveCancelIdle.current = null;
-
-      void (async () => {
-        const thumbnail = await createThumbnail();
-        if (!thumbnail) {
+    const scheduleWhenIdle = () => {
+      thumbnailSaveCancelIdle.current = scheduleCanvasIdleTask(() => {
+        thumbnailSaveCancelIdle.current = null;
+        if (isCanvasInteractionActive.current) {
+          const retryTimer = window.setTimeout(scheduleWhenIdle, 1000);
+          thumbnailSaveCancelIdle.current = () =>
+            window.clearTimeout(retryTimer);
           return;
         }
 
-        await saveProjectThumbnailToApi({
-          projectId,
-          thumbnail,
+        void (async () => {
+          const thumbnail = await createThumbnail();
+          if (!thumbnail) {
+            return;
+          }
+
+          await saveProjectThumbnailToApi({
+            projectId,
+            thumbnail,
+          });
+          setHasProjectThumbnail(true);
+        })().catch(() => {
+          // 缩略图后台刷新失败不影响画布快照保存状态。
         });
-        setHasProjectThumbnail(true);
-      })().catch(() => {
-        // 缩略图后台刷新失败不影响画布快照保存状态。
-      });
-    }, 3000);
+      }, 3000);
+    };
+    scheduleWhenIdle();
   }, [
     createThumbnail,
     projectId,
@@ -1658,6 +1864,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
   useEffect(() => {
     saveTimer.current = setInterval(() => {
+      if (isCanvasInteractionActive.current) return;
       void saveCanvasRef.current({ includeThumbnail: true });
     }, THUMBNAIL_PERIODIC_REFRESH_INTERVAL_MS);
 
@@ -1682,9 +1889,17 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       clearTimeout(autosaveTimer.current);
     }
 
-    autosaveTimer.current = setTimeout(() => {
-      void saveCanvasRef.current();
-    }, autoSaveIntervalMs);
+    const scheduleAutosave = () => {
+      autosaveTimer.current = setTimeout(() => {
+        autosaveTimer.current = null;
+        if (isCanvasInteractionActive.current) {
+          scheduleAutosave();
+          return;
+        }
+        void saveCanvasRef.current();
+      }, autoSaveIntervalMs);
+    };
+    scheduleAutosave();
 
     return () => {
       if (autosaveTimer.current) {
@@ -1714,15 +1929,17 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       clearTimeout(thumbnailTimer.current);
     }
 
-    thumbnailTimer.current = setTimeout(() => {
-      thumbnailTimer.current = null;
-
-      if (isCanvasInteractionActive.current) {
-        return;
-      }
-
-      void saveCanvasRef.current({ includeThumbnail: true });
-    }, THUMBNAIL_CHANGE_REFRESH_DELAY_MS);
+    const scheduleThumbnailRefresh = () => {
+      thumbnailTimer.current = setTimeout(() => {
+        thumbnailTimer.current = null;
+        if (isCanvasInteractionActive.current) {
+          scheduleThumbnailRefresh();
+          return;
+        }
+        void saveCanvasRef.current({ includeThumbnail: true });
+      }, THUMBNAIL_CHANGE_REFRESH_DELAY_MS);
+    };
+    scheduleThumbnailRefresh();
 
     return () => {
       if (thumbnailTimer.current) {
@@ -1827,7 +2044,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
     const nextViewport = createCanvasZoomViewport(reactFlow.getViewport(), zoom);
     setCanvasViewport(nextViewport);
-    void reactFlow.setViewport(nextViewport, { duration: 120 });
+    void reactFlow.setViewport(nextViewport, {
+      duration: getCanvasMotionDuration(120),
+    });
   }
 
   function groupSelectedNodes() {
@@ -3247,7 +3466,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     setCanvasAddMenu(null);
     window.requestAnimationFrame(() => {
       void reactFlowRef.current?.fitView({
-        duration: 300,
+        duration: getCanvasMotionDuration(CANVAS_VIEWPORT_FIT_DURATION_MS),
         padding: 0.16,
       });
     });
@@ -3318,20 +3537,59 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
     event.preventDefault();
     event.stopPropagation();
-    const currentViewport = flow.getViewport();
-    const zoomFactor = event.deltaY < 0 ? 1.1 : 0.9;
-    const nextZoom = clampCanvasZoom(currentViewport.zoom * zoomFactor);
-    const nextViewport = createCanvasZoomViewportAtPoint(
-      currentViewport,
-      nextZoom,
-      {
-        x: event.clientX - bounds.left,
-        y: event.clientY - bounds.top,
-      },
+    canvasWheelZoomDelta.current += normalizeCanvasWheelDelta(
+      event.deltaY,
+      event.deltaMode,
+      bounds.height,
     );
-    setZoomLevel(nextViewport.zoom);
-    setCanvasViewport(nextViewport);
-    void flow.setViewport(nextViewport, { duration: 0 });
+    canvasWheelZoomPoint.current = {
+      x: event.clientX - bounds.left,
+      y: event.clientY - bounds.top,
+    };
+
+    if (!isCanvasWheelZoomActive.current) {
+      isCanvasWheelZoomActive.current = true;
+      isCanvasInteractionActive.current = true;
+      viewportInteractionSample.current ??= startCanvasInteractionSample(
+        "interaction viewport",
+        {
+          edges: edgesRef.current.length,
+          kind: "wheel-zoom",
+          nodes: nodesRef.current.length,
+        },
+      );
+      setIsMiniMapSuspended(true);
+      setIsViewportMoving(true);
+    }
+
+    if (canvasWheelZoomFrame.current === null) {
+      canvasWheelZoomFrame.current = window.requestAnimationFrame(() => {
+        canvasWheelZoomFrame.current = null;
+        const activeFlow = reactFlowRef.current;
+        const point = canvasWheelZoomPoint.current;
+        const delta = canvasWheelZoomDelta.current;
+        canvasWheelZoomDelta.current = 0;
+        if (!activeFlow || !point || delta === 0) return;
+
+        const currentViewport = activeFlow.getViewport();
+        const nextViewport = createCanvasZoomViewportAtPoint(
+          currentViewport,
+          getCanvasWheelZoom(currentViewport.zoom, delta),
+          point,
+        );
+        canvasViewportStateRef.current = nextViewport;
+        zoomLevelStateRef.current = nextViewport.zoom;
+        void activeFlow.setViewport(nextViewport, { duration: 0 });
+      });
+    }
+
+    if (canvasWheelZoomTimer.current) {
+      window.clearTimeout(canvasWheelZoomTimer.current);
+    }
+    canvasWheelZoomTimer.current = window.setTimeout(
+      finishCanvasWheelZoom,
+      160,
+    );
   }
 
   async function handleUploadInputChange(event: ChangeEvent<HTMLInputElement>) {
@@ -3735,7 +3993,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             noteNode.position.x + 160,
             noteNode.position.y + 120,
             {
-              duration: 220,
+              duration: getCanvasMotionDuration(
+                CANVAS_VIEWPORT_FOCUS_DURATION_MS,
+              ),
               zoom: reactFlow.getViewport().zoom,
             },
           );
@@ -3977,7 +4237,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
               flow.getViewport().zoom,
             )
           : {
-              duration: 220,
+              duration: getCanvasMotionDuration(
+                CANVAS_VIEWPORT_FOCUS_DURATION_MS,
+              ),
               nodes: [{ id: nodeId }],
               padding: 0.3,
             },
@@ -4356,9 +4618,17 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
     focusCanvasNode(nodeId);
   }, [focusCanvasNode]);
 
+  const requestTaskParentOptions = useCallback((nodeId: string) =>
+    getTaskParentOptions({
+      edges: edgesRef.current,
+      nodeId,
+      nodes: nodesRef.current,
+    }), []);
+
   const renderedNodes = useMemo(
     () =>
-      getRenderedCanvasNodes({
+      measureCanvasPerf("rendered canvas nodes", () => getRenderedCanvasNodes({
+        activeContentNodeIds: activeCanvasContentNodeIds,
         createNoteNode,
         edges,
         nodes,
@@ -4387,6 +4657,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         onUpdateTextNode: updateTextNode,
         onUpdateTaskNode: updateTaskNode,
         onSetTaskParent: setTaskParent,
+        onRequestTaskParentOptions: requestTaskParentOptions,
         onLocateTaskNode: locateTaskNode,
         onToggleTaskChildren: toggleTaskChildren,
         onToggleAiResponseExpanded: toggleAiResponseExpanded,
@@ -4396,8 +4667,12 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         onUpdateProjectTag: updateProjectTag,
         projectId,
         toggleReaderCollapse,
+      }), {
+        edges: edges.length,
+        nodes: nodes.length,
       }),
     [
+      activeCanvasContentNodeIds,
       createNoteNode,
       createMusicChild,
       createMusicPlayer,
@@ -4428,6 +4703,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
       updateTextNode,
       updateTaskNode,
       setTaskParent,
+      requestTaskParentOptions,
       locateTaskNode,
       toggleTaskChildren,
       toggleAiResponseExpanded,
@@ -4439,20 +4715,26 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   );
 
   const displayedNodes = useMemo(
-    () => [
-      ...altDragPreviewNodes,
-      ...renderedNodes.map((node) => {
-        const stableNode = removeAltDragPreviewClasses(node);
-        return altDragMovingNodeIds.has(node.id)
-          ? {
-              ...stableNode,
-              className: [stableNode.className, "zenme-alt-drag-copy-preview"]
-                .filter(Boolean)
-                .join(" "),
-            }
-          : stableNode;
-      }),
-    ],
+    () => {
+      if (altDragPreviewNodes.length === 0 && altDragMovingNodeIds.size === 0) {
+        return renderedNodes;
+      }
+
+      return [
+        ...altDragPreviewNodes,
+        ...renderedNodes.map((node) => {
+          const stableNode = removeAltDragPreviewClasses(node);
+          return altDragMovingNodeIds.has(node.id)
+            ? {
+                ...stableNode,
+                className: [stableNode.className, "zenme-alt-drag-copy-preview"]
+                  .filter(Boolean)
+                  .join(" "),
+              }
+            : stableNode;
+        }),
+      ];
+    },
     [altDragMovingNodeIds, altDragPreviewNodes, renderedNodes],
   );
 
@@ -4492,7 +4774,10 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
   }
 
   return (
-    <div className={`zenme-canvas-shell h-full overflow-hidden bg-white text-zinc-950 ${isNodeDragging ? "zenme-canvas-node-dragging" : ""} ${isNodeConnecting ? "zenme-canvas-node-connecting" : ""} ${isViewportMoving ? "zenme-canvas-viewport-moving" : ""}`}>
+    <div
+      className={`zenme-canvas-shell h-full overflow-hidden bg-white text-zinc-950 ${isNodeDragging ? "zenme-canvas-node-dragging" : ""} ${isViewportMoving ? "zenme-canvas-viewport-moving" : ""}`}
+      ref={canvasShellRef}
+    >
       <main
         className="relative h-full w-full"
         onAuxClickCapture={(event) => {
@@ -4506,8 +4791,33 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             event.preventDefault();
           }
         }}
+        onPointerDownCapture={(event) => {
+          const target = event.target;
+          if (
+            event.button === 0 &&
+            target instanceof Element &&
+            target.closest(".react-flow__pane")
+          ) {
+            canvasSelectionPointerActive.current = true;
+            isCanvasInteractionActive.current = true;
+          }
+        }}
+        onPointerCancelCapture={() => {
+          if (!canvasSelectionPointerActive.current) return;
+          canvasSelectionPointerActive.current = false;
+          isCanvasInteractionActive.current = false;
+        }}
         onPointerMove={(event) => {
           lastCanvasPointer.current = { x: event.clientX, y: event.clientY };
+        }}
+        onPointerUpCapture={() => {
+          if (!canvasSelectionPointerActive.current) return;
+          canvasSelectionPointerActive.current = false;
+          window.setTimeout(() => {
+            if (!selectionInteractionSample.current) {
+              isCanvasInteractionActive.current = false;
+            }
+          }, 0);
         }}
         onWheelCapture={handleCanvasWheelCapture}
         ref={canvasViewportRef}
@@ -4530,9 +4840,7 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         />
 
         <ReactFlow
-          className={`zenme-canvas bg-white ${
-            isContextConnecting ? "zenme-context-connecting" : ""
-          }`}
+          className="zenme-canvas bg-white"
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
           edgesFocusable
           edges={renderedEdges}
@@ -4565,18 +4873,27 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             connectingHandleId.current = null;
             didConnectToNode.current = false;
             isCanvasInteractionActive.current = false;
-            setIsMiniMapSuspended(false);
-            setIsNodeConnecting(false);
-            setIsContextConnecting(false);
+            canvasShellRef.current?.classList.remove(
+              "zenme-canvas-node-connecting",
+            );
+            canvasViewportRef.current
+              ?.querySelector(".react-flow")
+              ?.classList.remove("zenme-context-connecting");
           }}
           onConnectStart={(_event, params) => {
             connectingNodeId.current = params.nodeId ?? null;
             connectingHandleId.current = params.handleId ?? null;
             didConnectToNode.current = false;
             isCanvasInteractionActive.current = true;
-            setIsMiniMapSuspended(true);
-            setIsNodeConnecting(true);
-            setIsContextConnecting(params.handleId === NODE_CONTEXT_HANDLE_ID);
+            canvasShellRef.current?.classList.add(
+              "zenme-canvas-node-connecting",
+            );
+            canvasViewportRef.current
+              ?.querySelector(".react-flow")
+              ?.classList.toggle(
+                "zenme-context-connecting",
+                params.handleId === NODE_CONTEXT_HANDLE_ID,
+              );
             setNodeActionMenu(null);
           }}
           onDragOver={(event) => event.preventDefault()}
@@ -4585,27 +4902,33 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
           onInit={setReactFlow}
           onMoveStart={() => {
             isCanvasInteractionActive.current = true;
+            viewportInteractionSample.current ??= startCanvasInteractionSample(
+              "interaction viewport",
+              {
+                edges: edgesRef.current.length,
+                kind: "pan-or-zoom",
+                nodes: nodesRef.current.length,
+              },
+            );
             setIsMiniMapSuspended(true);
             setIsViewportMoving(true);
           }}
           onMove={(_event, viewport) => {
             canvasViewportStateRef.current = viewport;
-            if (zoomLevelStateRef.current !== viewport.zoom) {
-              zoomLevelStateRef.current = viewport.zoom;
-              setZoomLevel(viewport.zoom);
-            }
+            zoomLevelStateRef.current = viewport.zoom;
+            tickCanvasInteractionSample(viewportInteractionSample.current);
           }}
           onMoveEnd={(_event, viewport) => {
             canvasViewportStateRef.current = viewport;
             zoomLevelStateRef.current = viewport.zoom;
-            setCanvasViewport((currentViewport) =>
-              currentViewport.x === viewport.x &&
-              currentViewport.y === viewport.y &&
-              currentViewport.zoom === viewport.zoom
-                ? currentViewport
-                : viewport,
-            );
-            setZoomLevel(viewport.zoom);
+            if (isCanvasWheelZoomActive.current) return;
+            commitCanvasViewport(viewport);
+            refreshCanvasContentWorkset(nodesRef.current, viewport);
+            stopCanvasInteractionSample(viewportInteractionSample.current, {
+              edges: edgesRef.current.length,
+              nodes: nodesRef.current.length,
+            });
+            viewportInteractionSample.current = null;
             isCanvasInteractionActive.current = false;
             setIsMiniMapSuspended(false);
             setIsViewportMoving(false);
@@ -4625,11 +4948,31 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
             setCanvasAddMenu(null);
           }}
           panOnDrag={[1]}
-          panOnScroll={false}
+          panOnScroll
+          panActivationKeyCode="Space"
           proOptions={{ hideAttribution: true }}
           selectionOnDrag
           selectionKeyCode={null}
-          onlyRenderVisibleElements
+          onSelectionStart={() => {
+            isCanvasInteractionActive.current = true;
+            selectionInteractionSample.current ??= startCanvasInteractionSample(
+              "interaction selection",
+              {
+                edges: edgesRef.current.length,
+                nodes: nodesRef.current.length,
+              },
+            );
+            setIsMiniMapSuspended(true);
+          }}
+          onSelectionEnd={() => {
+            stopCanvasInteractionSample(selectionInteractionSample.current, {
+              edges: edgesRef.current.length,
+              nodes: nodesRef.current.length,
+            });
+            selectionInteractionSample.current = null;
+            isCanvasInteractionActive.current = false;
+            setIsMiniMapSuspended(false);
+          }}
           snapGrid={[20, 20]}
           snapToGrid={snapToGrid}
           zoomActivationKeyCode="Control"
@@ -4668,7 +5011,6 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
 
         {selectionToolbarPosition &&
         !isNodeDragging &&
-        !isNodeConnecting &&
         !isViewportMoving ? (
           <CanvasSelectionToolbar
             left={selectionToolbarPosition.left}
@@ -4696,7 +5038,9 @@ export function CanvasClient({ projectId }: CanvasClientProps) {
         ) : null}
 
         <CanvasBottomControls
-          onFitView={() => reactFlow?.fitView({ duration: 300 })}
+          onFitView={() => reactFlow?.fitView({
+            duration: getCanvasMotionDuration(CANVAS_VIEWPORT_FIT_DURATION_MS),
+          })}
           onToggleMiniMap={() => setShowMiniMap((current) => !current)}
           onToggleSnapToGrid={() => setSnapToGrid((current) => !current)}
           onZoomChange={setCanvasZoom}

@@ -8,10 +8,12 @@ import type {
 
 export const READER_DEFAULT_SIZE = { height: 620, width: 960 };
 export const READER_COLLAPSED_SIZE = { height: 110, width: 288 };
+export const READER_CHILD_GAP = 48;
 export const GROUP_PADDING = 28;
 export const GROUP_NODE_GAP = 28;
 
 export const CANVAS_HISTORY_TRANSIENT_DATA_KEYS = new Set([
+  "canvasContentActive",
   "lyricsFetchDurationMs",
   "lyricsFetchStatus",
   "lyricsWarnings",
@@ -34,6 +36,8 @@ export const CANVAS_HISTORY_TRANSIENT_DATA_KEYS = new Set([
   "musicWaveform",
   "musicWaveformSourceNodeId",
   "musicWaveformVersion",
+  "taskParentName",
+  "taskParentOptions",
   "textScrollState",
 ]);
 
@@ -67,6 +71,18 @@ export function readNodeSize(
       numericSize((node as CanvasNode & { width?: number }).width) ??
       numericSize(style?.width) ??
       fallback.width,
+  };
+}
+
+export function getReaderChildOrigin(
+  readerNode: CanvasNode,
+  readerSize = readNodeSize(readerNode, READER_DEFAULT_SIZE),
+) {
+  return {
+    x: readerNode.position.x + readerSize.width + READER_CHILD_GAP,
+    y:
+      readerNode.position.y +
+      Math.min(Math.max(readerSize.height * 0.18, 80), 180),
   };
 }
 
@@ -313,6 +329,55 @@ export function isEditableTarget(target: EventTarget | null) {
   );
 }
 
+export function mergeFinalResizeNodes(
+  currentNodes: CanvasNode[],
+  flowNodes: CanvasNode[],
+  resizedNodeIds: Iterable<string>,
+) {
+  const resizedIds = new Set(resizedNodeIds);
+  const flowNodeById = new Map(flowNodes.map((node) => [node.id, node]));
+
+  return currentNodes.map((node) => {
+    if (!resizedIds.has(node.id)) {
+      return node;
+    }
+
+    const finalNode = flowNodeById.get(node.id);
+    if (!finalNode) {
+      return node;
+    }
+
+    const width = finalNode.measured?.width ?? finalNode.width;
+    const height = finalNode.measured?.height ?? finalNode.height;
+    if (!width || !height) {
+      return {
+        ...node,
+        position: finalNode.position,
+      };
+    }
+
+    return {
+      ...node,
+      height,
+      measured: { height, width },
+      position: finalNode.position,
+      style: {
+        ...node.style,
+        height,
+        width,
+      },
+      width,
+      data:
+        node.data.kind === "reader"
+          ? {
+              ...node.data,
+              readerExpandedSize: { height, width },
+            }
+          : node.data,
+    } satisfies CanvasNode;
+  });
+}
+
 export function isEditableClipboardEvent(
   event: Pick<Event, "composedPath" | "target">,
   activeElement: EventTarget | null,
@@ -379,8 +444,11 @@ function getCanvasHistorySignatureSnapshot(
 
 const canvasHistoryDataSignatureCache = new WeakMap<object, string>();
 const canvasHistoryEdgeSignatureCache = new WeakMap<object, string>();
+const canvasHistoryNodeSignatureCache = new WeakMap<object, string>();
 
 function getCanvasHistoryNodeSignature(node: CanvasNode) {
+  const cached = canvasHistoryNodeSignatureCache.get(node);
+  if (cached) return cached;
   const historyNodeFields = getCanvasHistoryNodeFields(node);
   const nodeFields = { ...historyNodeFields } as Partial<CanvasNode>;
   delete nodeFields.data;
@@ -396,7 +464,9 @@ function getCanvasHistoryNodeSignature(node: CanvasNode) {
     canvasHistoryDataSignatureCache.set(node.data, dataSignature);
   }
 
-  return `${createCompactCanvasSignature(JSON.stringify(nodeFields))}:${dataSignature}`;
+  const signature = `${createCompactCanvasSignature(JSON.stringify(nodeFields))}:${dataSignature}`;
+  canvasHistoryNodeSignatureCache.set(node, signature);
+  return signature;
 }
 
 function getCanvasHistoryEdgeSignature(edge: Edge) {

@@ -5,6 +5,7 @@
 ## 导航
 
 - [系统架构](architecture.md)
+- [画布性能基线与回归](canvas-performance.md)
 - [本地数据与迁移](data-and-migrations.md)
 - [节点执行与恢复](execution-runtime.md)
 - [安全模型](security-model.md)

@@ -85,6 +85,8 @@ export type TaskParentOption = {
 };
 
 export type CanvasNodeData = {
+  /** Runtime-only LOD flag; the React Flow node remains mounted when false. */
+  canvasContentActive?: boolean;
   kind:
     | "image"
     | "file"
@@ -120,6 +122,7 @@ export type CanvasNodeData = {
   taskComplexity?: TaskComplexity;
   taskUrgency?: TaskUrgency;
   taskParentId?: string;
+  taskParentName?: string;
   taskParentOptions?: TaskParentOption[];
   taskChildren?: TaskChildSummary[];
   taskProgress?: number;
@@ -302,6 +305,7 @@ export type CanvasNodeData = {
     nodeId: string,
     parentId?: string,
   ) => void;
+  onRequestTaskParentOptions?: (nodeId: string) => TaskParentOption[];
   onLocateTaskNode?: (nodeId: string) => void;
   onToggleTaskChildren?: (
     nodeId: string,

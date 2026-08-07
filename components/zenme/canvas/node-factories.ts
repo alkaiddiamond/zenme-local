@@ -16,7 +16,7 @@ type ExecutionIdentity = {
   nodeRunId: string;
 };
 
-import { readNodeSize } from "./geometry";
+import { getReaderChildOrigin, readNodeSize } from "./geometry";
 import type { CanvasNode } from "./types";
 
 const TEXT_NODE_DEFAULT_SIZE = { height: 176, width: 560 };
@@ -732,15 +732,13 @@ export function createReadingNoteCanvasNode(input: {
     height: 180,
     width: 320,
   });
-  const defaultPosition = {
-    x: isReaderSource
-      ? sourcePosition.x + sourceSize.width + 48
-      : sourcePosition.x + sourceSize.width + 60,
-    y: isReaderSource
-      ? sourcePosition.y +
-        Math.min(Math.max(sourceSize.height * 0.18, 80), 180)
-      : sourcePosition.y + 80,
-  };
+  const defaultPosition =
+    isReaderSource && sourceNode
+      ? getReaderChildOrigin(sourceNode, sourceSize)
+      : {
+          x: sourcePosition.x + sourceSize.width + 60,
+          y: sourcePosition.y + 80,
+        };
   const node: CanvasNode = {
     id: input.id,
     type: "note",

@@ -32,6 +32,7 @@ export type CanvasPerfSummaryItem = {
 type WindowWithCanvasPerf = Window & {
   __ZENME_CANVAS_PERF__?: CanvasPerfMetric[];
   __ZENME_CANVAS_PERF_SUMMARY__?: () => CanvasPerfSummaryItem[];
+  __ZENME_CANVAS_RUNTIME_COMMIT_COUNT__?: number;
 };
 
 type PerformanceObserverEntryListLike = {
@@ -41,22 +42,65 @@ type PerformanceObserverEntryListLike = {
 const PERF_DEBUG_ENABLED =
   process.env.NEXT_PUBLIC_ZENME_PERF_DEBUG === "1";
 const MAX_PERF_METRICS = 100;
+let runtimePerfHref = "";
+let runtimePerfEnabled = false;
+
+function isCanvasPerfDebugEnabled() {
+  if (PERF_DEBUG_ENABLED) return true;
+  if (typeof window === "undefined") return false;
+  if (runtimePerfHref !== window.location.href) {
+    runtimePerfHref = window.location.href;
+    runtimePerfEnabled = new URLSearchParams(window.location.search).has(
+      "zenmePerfRuntime",
+    );
+  }
+  return runtimePerfEnabled;
+}
+
+export function recordCanvasClientCommit() {
+  if (
+    typeof window === "undefined" ||
+    !new URLSearchParams(window.location.search).has("zenmePerfRuntime")
+  ) {
+    return;
+  }
+
+  const perfWindow = window as WindowWithCanvasPerf;
+  perfWindow.__ZENME_CANVAS_RUNTIME_COMMIT_COUNT__ =
+    (perfWindow.__ZENME_CANVAS_RUNTIME_COMMIT_COUNT__ ?? 0) + 1;
+}
 
 type CanvasInteractionSample = {
   detail?: Record<string, unknown>;
+  eventCount: number;
+  frameDurations: number[];
   frameCount: number;
+  frameHandle: number | null;
   label: string;
-  lastTickAt: number;
+  lastFrameAt: number;
   maxFrameGap: number;
   startedAt: number;
 };
+
+export type CanvasFrameSummary = {
+  averageFrameGap: number;
+  droppedFrameCount: number;
+  longFrameCount: number;
+  maxFrameGap: number;
+  p50FrameGap: number;
+  p95FrameGap: number;
+  p99FrameGap: number;
+};
+
+const CANVAS_FRAME_BUDGET_MS = 1000 / 60;
+const MAX_INTERACTION_FRAME_SAMPLES = 20_000;
 
 export function measureCanvasPerf<T>(
   label: string,
   callback: () => T,
   detail?: Record<string, unknown>,
 ) {
-  if (!PERF_DEBUG_ENABLED || typeof performance === "undefined") {
+  if (!isCanvasPerfDebugEnabled() || typeof performance === "undefined") {
     return callback();
   }
 
@@ -71,7 +115,7 @@ export function inspectCanvasPerf<T>(
   callback: () => T,
   fallback: T,
 ) {
-  if (!PERF_DEBUG_ENABLED) {
+  if (!isCanvasPerfDebugEnabled()) {
     return fallback;
   }
 
@@ -83,7 +127,7 @@ export async function measureCanvasPerfAsync<T>(
   callback: () => Promise<T>,
   detail?: Record<string, unknown>,
 ) {
-  if (!PERF_DEBUG_ENABLED || typeof performance === "undefined") {
+  if (!isCanvasPerfDebugEnabled() || typeof performance === "undefined") {
     return callback();
   }
 
@@ -113,19 +157,36 @@ export function startCanvasInteractionSample(
   label: string,
   detail?: Record<string, unknown>,
 ) {
-  if (!PERF_DEBUG_ENABLED || typeof performance === "undefined") {
+  if (!isCanvasPerfDebugEnabled() || typeof performance === "undefined") {
     return null;
   }
 
   const startedAt = performance.now();
   const sample: CanvasInteractionSample = {
     detail,
+    eventCount: 0,
+    frameDurations: [],
     frameCount: 0,
+    frameHandle: null,
     label,
-    lastTickAt: startedAt,
+    lastFrameAt: startedAt,
     maxFrameGap: 0,
     startedAt,
   };
+
+  if (typeof window !== "undefined") {
+    const captureFrame = (now: number) => {
+      const frameGap = now - sample.lastFrameAt;
+      sample.frameCount += 1;
+      sample.lastFrameAt = now;
+      sample.maxFrameGap = Math.max(sample.maxFrameGap, frameGap);
+      if (sample.frameDurations.length < MAX_INTERACTION_FRAME_SAMPLES) {
+        sample.frameDurations.push(frameGap);
+      }
+      sample.frameHandle = window.requestAnimationFrame(captureFrame);
+    };
+    sample.frameHandle = window.requestAnimationFrame(captureFrame);
+  }
 
   return sample;
 }
@@ -136,12 +197,7 @@ export function tickCanvasInteractionSample(
   if (!sample || typeof performance === "undefined") {
     return;
   }
-
-  const now = performance.now();
-  const frameGap = now - sample.lastTickAt;
-  sample.frameCount += 1;
-  sample.lastTickAt = now;
-  sample.maxFrameGap = Math.max(sample.maxFrameGap, frameGap);
+  sample.eventCount += 1;
 }
 
 export function stopCanvasInteractionSample(
@@ -152,22 +208,70 @@ export function stopCanvasInteractionSample(
     return;
   }
 
+  if (sample.frameHandle !== null && typeof window !== "undefined") {
+    window.cancelAnimationFrame(sample.frameHandle);
+    sample.frameHandle = null;
+  }
+
   const duration = performance.now() - sample.startedAt;
+  const frameSummary = summarizeCanvasFrameDurations(sample.frameDurations);
   logCanvasPerf(sample.label, duration, {
     ...sample.detail,
     ...detail,
-    averageFrameGap:
-      sample.frameCount > 0 ? duration / sample.frameCount : duration,
+    ...frameSummary,
+    eventCount: sample.eventCount,
     frameCount: sample.frameCount,
-    maxFrameGap: sample.maxFrameGap,
   });
+}
+
+export function summarizeCanvasFrameDurations(
+  frameDurations: number[],
+): CanvasFrameSummary {
+  const sortedDurations = frameDurations
+    .filter((duration) => Number.isFinite(duration) && duration >= 0)
+    .sort((first, second) => first - second);
+  if (sortedDurations.length === 0) {
+    return {
+      averageFrameGap: 0,
+      droppedFrameCount: 0,
+      longFrameCount: 0,
+      maxFrameGap: 0,
+      p50FrameGap: 0,
+      p95FrameGap: 0,
+      p99FrameGap: 0,
+    };
+  }
+
+  const total = sortedDurations.reduce((sum, duration) => sum + duration, 0);
+  return {
+    averageFrameGap: total / sortedDurations.length,
+    droppedFrameCount: sortedDurations.filter(
+      (duration) => duration > CANVAS_FRAME_BUDGET_MS,
+    ).length,
+    longFrameCount: sortedDurations.filter((duration) => duration > 50).length,
+    maxFrameGap: sortedDurations.at(-1) ?? 0,
+    p50FrameGap: percentile(sortedDurations, 0.5),
+    p95FrameGap: percentile(sortedDurations, 0.95),
+    p99FrameGap: percentile(sortedDurations, 0.99),
+  };
+}
+
+function percentile(sortedValues: number[], percentileValue: number) {
+  const index = Math.max(
+    0,
+    Math.min(
+      sortedValues.length - 1,
+      Math.ceil(sortedValues.length * percentileValue) - 1,
+    ),
+  );
+  return sortedValues[index] ?? 0;
 }
 
 export function observeCanvasLongTasks(
   detail?: Record<string, unknown>,
 ) {
   if (
-    !PERF_DEBUG_ENABLED ||
+    !isCanvasPerfDebugEnabled() ||
     typeof PerformanceObserver === "undefined" ||
     !PerformanceObserver.supportedEntryTypes?.includes("longtask")
   ) {

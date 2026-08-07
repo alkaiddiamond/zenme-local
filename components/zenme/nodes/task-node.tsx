@@ -64,10 +64,12 @@ export function TaskNode({ data, id, selected }: NodeProps) {
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [colorEditingTag, setColorEditingTag] = useState<string | null>(null);
   const [activeOptionMenu, setActiveOptionMenu] = useState<string | null>(null);
+  const [parentOptions, setParentOptions] = useState<TaskParentOption[]>(
+    () => nodeData.taskParentOptions ?? [],
+  );
   const tags = nodeData.tags ?? [];
   const projectTags = nodeData.projectTags ?? [];
   const children = nodeData.taskChildren ?? [];
-  const parentOptions = nodeData.taskParentOptions ?? [];
   const completedChildrenCount = children.filter(
     (child) => normalizeTaskStatus(child.status) === "completed",
   ).length;
@@ -317,12 +319,20 @@ export function TaskNode({ data, id, selected }: NodeProps) {
               onChange={(parentId) =>
                 nodeData.onSetTaskParent?.(id, parentId)
               }
-              onOpenChange={(open) =>
-                setActiveOptionMenu(open ? "parent" : null)
-              }
+              onOpenChange={(open) => {
+                if (open) {
+                  setParentOptions(
+                    nodeData.onRequestTaskParentOptions?.(id) ??
+                      nodeData.taskParentOptions ??
+                      [],
+                  );
+                }
+                setActiveOptionMenu(open ? "parent" : null);
+              }}
               open={activeOptionMenu === "parent"}
               options={parentOptions}
               parentId={nodeData.taskParentId}
+              parentName={nodeData.taskParentName}
             />
             <span
               aria-label={`已完成 ${completedChildrenCount} 个子任务，共 ${children.length} 个`}
@@ -737,27 +747,30 @@ function TaskParentMenu({
   open,
   options,
   parentId,
+  parentName,
 }: {
   onChange: (parentId?: string) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   options: TaskParentOption[];
   parentId?: string;
+  parentName?: string;
 }) {
   const selectedParent = options.find((option) => option.id === parentId);
+  const selectedParentName = selectedParent?.name ?? parentName;
 
   return (
     <DropdownMenu onOpenChange={onOpenChange} open={open}>
       <DropdownMenuTrigger asChild>
         <button
-          aria-label={`父任务：${selectedParent?.name ?? "无父任务"}`}
+          aria-label={`父任务：${selectedParentName ?? "无父任务"}`}
           className="nodrag nowheel flex h-9 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50 px-2 text-left text-xs text-zinc-600 transition-colors hover:border-zinc-300 hover:bg-white"
-          title={`父任务：${selectedParent?.name ?? "无父任务"}`}
+          title={`父任务：${selectedParentName ?? "无父任务"}`}
           type="button"
         >
           <ListTree className="size-3.5 shrink-0 text-zinc-400" />
           <span className="min-w-0 flex-1 truncate">
-            {selectedParent?.name ?? "选择父任务"}
+            {selectedParentName ?? "选择父任务"}
           </span>
           <ChevronDown className="size-3.5 shrink-0 text-zinc-400" />
         </button>

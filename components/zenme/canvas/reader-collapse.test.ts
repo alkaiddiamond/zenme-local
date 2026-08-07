@@ -102,20 +102,37 @@ describe("reader collapse helper", () => {
         title: "阅读器",
       },
       id: "reader",
+      position: { x: 100, y: 100 },
       style: { height: 110, width: 288 },
       type: "reader",
     });
-    const child = node({ hidden: true, id: "child" });
+    const child = node({
+      hidden: true,
+      id: "child",
+      position: { x: 40, y: 900 },
+    });
+    const grandchild = node({
+      hidden: true,
+      id: "grandchild",
+      position: { x: 420, y: 940 },
+    });
+    const outside = node({ id: "outside", position: { x: 12, y: 34 } });
     const readerEdge = edge({
       hidden: true,
       id: "reader-child",
       source: "reader",
       target: "child",
     });
+    const childEdge = edge({
+      hidden: true,
+      id: "child-grandchild",
+      source: "child",
+      target: "grandchild",
+    });
 
     const update = createReaderCollapseUpdate({
-      edges: [readerEdge],
-      nodes: [reader, child],
+      edges: [readerEdge, childEdge],
+      nodes: [reader, child, grandchild, outside],
       readerNodeId: "reader",
     });
 
@@ -128,8 +145,21 @@ describe("reader collapse helper", () => {
         readerExpandedSize: { height: 700, width: 1000 },
       },
     });
-    expect(update?.nextNodes.find((item) => item.id === "child")?.hidden).toBe(false);
+    expect(update?.nextNodes.find((item) => item.id === "child")).toMatchObject({
+      hidden: false,
+      position: { x: 1148, y: 226 },
+    });
+    expect(
+      update?.nextNodes.find((item) => item.id === "grandchild"),
+    ).toMatchObject({
+      hidden: false,
+      position: { x: 1528, y: 266 },
+    });
+    expect(update?.nextNodes.find((item) => item.id === "outside")).toMatchObject({
+      position: { x: 12, y: 34 },
+    });
     expect(update?.nextEdges.find((item) => item.id === "reader-child")?.hidden).toBe(false);
-    expect(update?.edgeUpdates).toHaveLength(1);
+    expect(update?.nextEdges.find((item) => item.id === "child-grandchild")?.hidden).toBe(false);
+    expect(update?.edgeUpdates).toHaveLength(2);
   });
 });

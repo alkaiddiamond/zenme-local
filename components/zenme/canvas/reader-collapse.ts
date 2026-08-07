@@ -2,6 +2,7 @@ import type { Edge } from "@xyflow/react";
 
 import {
   collectReaderChildNodeIds,
+  getReaderChildOrigin,
   readNodeSize,
   READER_COLLAPSED_SIZE,
   READER_DEFAULT_SIZE,
@@ -23,14 +24,36 @@ export function createReaderCollapseUpdate(input: {
 
   const nextCollapsed = !readerNode.data.readerCollapsed;
   const childIds = collectReaderChildNodeIds(input.readerNodeId, input.edges);
+  const currentSize = readNodeSize(readerNode, READER_DEFAULT_SIZE);
+  const expandedSize = nextCollapsed
+    ? currentSize
+    : (readerNode.data.readerExpandedSize ?? READER_DEFAULT_SIZE);
+  const nextSize = nextCollapsed ? READER_COLLAPSED_SIZE : expandedSize;
+  const directChildIds = new Set(
+    input.edges
+      .filter(
+        (edge) =>
+          edge.source === input.readerNodeId && childIds.has(edge.target),
+      )
+      .map((edge) => edge.target),
+  );
+  const directChildren = input.nodes.filter((node) =>
+    directChildIds.has(node.id),
+  );
+  const desiredChildOrigin = getReaderChildOrigin(readerNode, expandedSize);
+  const childTranslation =
+    !nextCollapsed && directChildren.length > 0
+      ? {
+          x:
+            desiredChildOrigin.x -
+            Math.min(...directChildren.map((node) => node.position.x)),
+          y:
+            desiredChildOrigin.y -
+            Math.min(...directChildren.map((node) => node.position.y)),
+        }
+      : { x: 0, y: 0 };
   const nextNodes = input.nodes.map((node) => {
     if (node.id === input.readerNodeId) {
-      const currentSize = readNodeSize(node, READER_DEFAULT_SIZE);
-      const expandedSize = nextCollapsed
-        ? currentSize
-        : (node.data.readerExpandedSize ?? READER_DEFAULT_SIZE);
-      const nextSize = nextCollapsed ? READER_COLLAPSED_SIZE : expandedSize;
-
       return {
         ...node,
         height: nextSize.height,
@@ -49,6 +72,12 @@ export function createReaderCollapseUpdate(input: {
       return {
         ...node,
         hidden: nextCollapsed,
+        position: nextCollapsed
+          ? node.position
+          : {
+              x: node.position.x + childTranslation.x,
+              y: node.position.y + childTranslation.y,
+            },
       };
     }
 

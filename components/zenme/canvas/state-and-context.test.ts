@@ -17,6 +17,7 @@ import {
 import {
   createCanvasItemsHistoryEntry,
   createDragStartNodeSnapshots,
+  createResizeStartNodeSnapshots,
   createDeletedCanvasItemsHistoryEntry,
   createMutateCanvasItemsHistoryEntry,
   createNodeUpdateHistoryEntry,
@@ -208,6 +209,29 @@ describe("canvas state and context helpers", () => {
     });
   });
 
+  it("ignores derived task parent presentation in persistable signatures", () => {
+    const base = canvasNode({
+      data: { kind: "task", taskParentId: "parent" },
+      id: "task",
+      type: "task",
+    });
+    const derived = canvasNode({
+      data: {
+        kind: "task",
+        taskParentId: "parent",
+        taskParentName: "父任务",
+        taskParentOptions: [{ id: "parent", name: "父任务" }],
+      },
+      id: "task",
+      type: "task",
+    });
+    const viewport = { x: 0, y: 0, zoom: 1 };
+
+    expect(getCanvasPersistableSignature([derived], [], viewport)).toBe(
+      getCanvasPersistableSignature([base], [], viewport),
+    );
+  });
+
   it("collects upstream context for text generation nodes with depth labels", () => {
     const source = canvasNode({
       data: {
@@ -394,6 +418,18 @@ describe("canvas state and context helpers", () => {
         dragged.id,
       ).keys()],
     ).toEqual(["dragged", "selected", "group", "child"]);
+  });
+
+  it("snapshots only nodes participating in a resize", () => {
+    const resized = canvasNode({ id: "resized" });
+    const unrelated = canvasNode({ id: "unrelated" });
+
+    expect(
+      [...createResizeStartNodeSnapshots(
+        [resized, unrelated],
+        [resized.id],
+      ).keys()],
+    ).toEqual(["resized"]);
   });
 
   it("uses a reading note as context without traversing into its reader", () => {

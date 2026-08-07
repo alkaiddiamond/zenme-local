@@ -14,11 +14,11 @@ import { IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE } from "./node-factories";
 import type { CanvasNode } from "./types";
 import {
   deriveTaskRelationships,
-  getTaskParentOptions,
 } from "./task-relationships";
 import { hasCanvasNodeContextText } from "./text-generation-context";
 
 type RenderedCanvasNodeInput = {
+  activeContentNodeIds?: ReadonlySet<string> | null;
   createNoteNode: (
     note: ReadingNote,
     asset: ReadingAsset,
@@ -77,6 +77,7 @@ type RenderedCanvasNodeInput = {
   ) => void;
   onUpdateTaskNode?: NonNullable<CanvasNodeData["onUpdateTaskNode"]>;
   onSetTaskParent?: NonNullable<CanvasNodeData["onSetTaskParent"]>;
+  onRequestTaskParentOptions?: NonNullable<CanvasNodeData["onRequestTaskParentOptions"]>;
   onLocateTaskNode?: NonNullable<CanvasNodeData["onLocateTaskNode"]>;
   onToggleTaskChildren?: NonNullable<CanvasNodeData["onToggleTaskChildren"]>;
   onToggleAiResponseExpanded?: NonNullable<
@@ -150,6 +151,7 @@ type RenderedNodeCacheEntry = {
   onUpdateTextNode?: RenderedCanvasNodeInput["onUpdateTextNode"];
   onUpdateTaskNode?: RenderedCanvasNodeInput["onUpdateTaskNode"];
   onSetTaskParent?: RenderedCanvasNodeInput["onSetTaskParent"];
+  onRequestTaskParentOptions?: RenderedCanvasNodeInput["onRequestTaskParentOptions"];
   onLocateTaskNode?: RenderedCanvasNodeInput["onLocateTaskNode"];
   onToggleTaskChildren?: RenderedCanvasNodeInput["onToggleTaskChildren"];
   onToggleAiResponseExpanded?: RenderedCanvasNodeInput["onToggleAiResponseExpanded"];
@@ -166,7 +168,8 @@ type RenderedNodeCacheEntry = {
 const renderedNodeCache = new WeakMap<CanvasNode, RenderedNodeCacheEntry>();
 
 function hasSameSharedDerivedState(left: CanvasNode, right: CanvasNode) {
-  return left.data.hasIncomingEdge === right.data.hasIncomingEdge &&
+  return left.data.canvasContentActive === right.data.canvasContentActive &&
+    left.data.hasIncomingEdge === right.data.hasIncomingEdge &&
     left.data.hasOutgoingEdge === right.data.hasOutgoingEdge &&
     left.data.hasRunningGenerationChild === right.data.hasRunningGenerationChild &&
     left.data.isMultiSelection === right.data.isMultiSelection;
@@ -174,6 +177,7 @@ function hasSameSharedDerivedState(left: CanvasNode, right: CanvasNode) {
 
 function getSharedDerivedStateKey(node: CanvasNode) {
   return [
+    node.data.canvasContentActive === false ? 0 : 1,
     node.data.hasIncomingEdge ? 1 : 0,
     node.data.hasOutgoingEdge ? 1 : 0,
     node.data.hasRunningGenerationChild ? 1 : 0,
@@ -213,6 +217,7 @@ function setDependencyCachedNode(
 }
 
 export function getRenderedCanvasNodes({
+  activeContentNodeIds,
   createNoteNode,
   edges,
   nodes,
@@ -242,6 +247,7 @@ export function getRenderedCanvasNodes({
   onUpdateTextNode,
   onUpdateTaskNode,
   onSetTaskParent,
+  onRequestTaskParentOptions,
   onLocateTaskNode,
   onToggleTaskChildren,
   onToggleAiResponseExpanded,
@@ -394,6 +400,14 @@ export function getRenderedCanvasNodes({
       ...nodeWithoutGroupDragLimit,
       data: {
         ...nodeWithoutGroupDragLimit.data,
+        canvasContentActive:
+          activeContentNodeIds === null || activeContentNodeIds === undefined
+            ? true
+            : activeContentNodeIds.has(node.id) ||
+              node.data.aiStatus === "generating" ||
+              node.data.imageStatus === "editing" ||
+              Boolean(node.data.musicIsPlaying) ||
+              node.data.videoStatus === "generating",
         hasIncomingEdge: connectedNodeIdsByDirection.incoming.has(node.id),
         hasOutgoingEdge: connectedNodeIdsByDirection.outgoing.has(node.id),
         isMultiSelection:
@@ -660,22 +674,20 @@ export function getRenderedCanvasNodes({
           : 0;
       const taskParentId =
         taskRelationships.parentIdByChildId.get(nodeWithConnectionState.id);
-      const taskParentOptions = getTaskParentOptions({
-        edges,
-        nodeId: nodeWithConnectionState.id,
-        nodes,
-      });
+      const taskParent = taskParentId ? nodeById.get(taskParentId) : undefined;
+      const taskParentName = taskParent?.data.name?.trim() || undefined;
       const dependencyKey = JSON.stringify({
         projectTagColors,
         projectTags,
         shared: getSharedDerivedStateKey(nodeWithConnectionState),
         taskChildren,
         taskParentId,
-        taskParentOptions,
+        taskParentName,
         taskProgress,
       });
       const dependencies = [
         onLocateTaskNode,
+        onRequestTaskParentOptions,
         onSetTaskParent,
         onToggleTaskChildren,
         onUpdateProjectTag,
@@ -689,6 +701,7 @@ export function getRenderedCanvasNodes({
         data: {
           ...nodeWithConnectionState.data,
           onLocateTaskNode,
+          onRequestTaskParentOptions,
           onSetTaskParent,
           onUpdateProjectTag,
           onUpdateTaskNode,
@@ -697,7 +710,7 @@ export function getRenderedCanvasNodes({
           projectTags,
           taskChildren,
           taskParentId,
-          taskParentOptions,
+          taskParentName,
           taskProgress,
         },
       };

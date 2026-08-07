@@ -80,6 +80,7 @@ export async function createCanvasThumbnail(element: HTMLElement | null) {
   }
 
   try {
+    const captureBounds = element.getBoundingClientRect();
     return await measureCanvasPerfAsync("thumbnail toBlob", async () => {
       const canvas = await toCanvas(element, {
         cacheBust: true,
@@ -90,6 +91,16 @@ export async function createCanvasThumbnail(element: HTMLElement | null) {
 
           if (node === element) {
             return true;
+          }
+
+          if (
+            node.classList.contains("react-flow__node") ||
+            node.classList.contains("react-flow__edge")
+          ) {
+            return intersectsCanvasThumbnailBounds(
+              node.getBoundingClientRect(),
+              captureBounds,
+            );
           }
 
           return !node.closest(
@@ -105,6 +116,8 @@ export async function createCanvasThumbnail(element: HTMLElement | null) {
         },
         pixelRatio: 0.5,
         backgroundColor: "#ffffff",
+        // 项目缩略图不需要内嵌字体文件；扫描和编码字体会显著放大大画布截图成本。
+        skipFonts: true,
       });
 
       return canvasToWebpBlob(canvas);
@@ -112,6 +125,19 @@ export async function createCanvasThumbnail(element: HTMLElement | null) {
   } catch {
     return null;
   }
+}
+
+export function intersectsCanvasThumbnailBounds(
+  rect: Pick<DOMRect, "bottom" | "left" | "right" | "top">,
+  bounds: Pick<DOMRect, "bottom" | "left" | "right" | "top">,
+  overscan = 80,
+) {
+  return (
+    rect.right >= bounds.left - overscan &&
+    rect.left <= bounds.right + overscan &&
+    rect.bottom >= bounds.top - overscan &&
+    rect.top <= bounds.bottom + overscan
+  );
 }
 
 export function canvasToWebpBlob(canvas: HTMLCanvasElement) {
@@ -189,6 +215,9 @@ export function getPersistableCanvasNodes(nodes: CanvasNode[]) {
           key !== "hasIncomingEdge" &&
           key !== "hasOutgoingEdge" &&
           key !== "isMultiSelection" &&
+          key !== "canvasContentActive" &&
+          key !== "taskParentName" &&
+          key !== "taskParentOptions" &&
           key !== "musicCurrentTime" &&
           key !== "musicIsPlaying" &&
           key !== "musicLyricsOverlayOpen" &&
