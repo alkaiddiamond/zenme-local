@@ -53,6 +53,15 @@ describe("node border drag areas", () => {
     expect(nodesSource).not.toContain('overflow-hidden shadow-sm"}`');
   });
 
+  it("keeps reader handles outside the node paint boundary", () => {
+    expect(globalStyles).toMatch(
+      /\.zenme-reader-node \{[\s\S]*?contain: layout style;[\s\S]*?\}/,
+    );
+    expect(globalStyles).toMatch(
+      /\.zenme-reader-workspace \{[\s\S]*?contain: layout paint style;[\s\S]*?\}/,
+    );
+  });
+
   it("keeps title-only note nodes draggable from their new border areas", () => {
     expect(renderedNodesSource).toContain(
       'dragHandle: ".zenme-node-title-bar, .zenme-node-drag-border"',

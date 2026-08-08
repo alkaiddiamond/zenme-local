@@ -16,7 +16,11 @@ type ExecutionIdentity = {
   nodeRunId: string;
 };
 
-import { getReaderChildOrigin, readNodeSize } from "./geometry";
+import {
+  getNodeSizeFallback,
+  getReaderChildOrigin,
+  readNodeSize,
+} from "./geometry";
 import type { CanvasNode } from "./types";
 
 const TEXT_NODE_DEFAULT_SIZE = { height: 176, width: 560 };
@@ -548,11 +552,15 @@ export function createReaderCanvasNode(input: {
   readingAssetId: string;
   sourceNode: CanvasNode;
 }): { edge: Edge; node: CanvasNode } {
+  const sourceSize = readNodeSize(
+    input.sourceNode,
+    getNodeSizeFallback(input.sourceNode),
+  );
   const node: CanvasNode = {
     id: input.id,
     type: "reader",
     position: {
-      x: input.sourceNode.position.x + 360,
+      x: input.sourceNode.position.x + sourceSize.width + 80,
       y: input.sourceNode.position.y,
     },
     style: {

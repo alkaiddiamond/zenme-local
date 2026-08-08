@@ -483,7 +483,12 @@ html[data-theme="warm"] ::selection {
   visibility: hidden;
 }
 
-.zenme-reader-node,
+.zenme-reader-node {
+  backface-visibility: hidden;
+  contain: layout style;
+  isolation: isolate;
+}
+
 .zenme-reader-workspace {
   backface-visibility: hidden;
   contain: layout paint style;
@@ -898,6 +903,11 @@ html[data-theme="warm"] ::selection {
   cursor: text !important;
   -webkit-user-select: text !important;
   user-select: text !important;
+}
+
+.zenme-canvas .zenme-agent-response-text a {
+  cursor: pointer !important;
+  pointer-events: auto;
 }
 
 .zenme-canvas .zenme-agent-response-text {

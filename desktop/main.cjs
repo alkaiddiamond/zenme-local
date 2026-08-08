@@ -282,6 +282,18 @@ async function createWindow() {
     },
   });
 
+  const sendWindowMaximizedState = () => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+      return;
+    }
+    mainWindow.webContents.send(
+      "zenme:window-maximized-change",
+      mainWindow.isMaximized(),
+    );
+  };
+  mainWindow.on("maximize", sendWindowMaximizedState);
+  mainWindow.on("unmaximize", sendWindowMaximizedState);
+
   mainWindow.webContents.on("console-message", (details) => {
     console.log(
       `[zenme-renderer:${details.level}] ${details.message} (${details.sourceId}:${details.lineNumber})`,
@@ -357,13 +369,19 @@ function registerIpcHandlers() {
     mainWindow.minimize();
   });
 
+  ipcMain.handle("zenme:is-window-maximized", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    return mainWindow.isMaximized();
+  });
+
   ipcMain.handle("zenme:toggle-maximize-window", () => {
-    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
     if (mainWindow.isMaximized()) {
       mainWindow.unmaximize();
     } else {
       mainWindow.maximize();
     }
+    return mainWindow.isMaximized();
   });
 
   ipcMain.handle("zenme:close-window", () => {

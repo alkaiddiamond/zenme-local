@@ -101,4 +101,17 @@ describe("parseMarkdownBlocks", () => {
 
     expect(html.match(/data-markdown-block/g)).toHaveLength(6);
   });
+
+  it("renders only http and https Markdown links as external anchors", () => {
+    const html = renderToStaticMarkup(renderMarkdown(
+      "[官网](https://example.com/docs) [不安全](javascript:alert(1)) [本地文件](file:///tmp/a)",
+    ));
+
+    expect(html).toContain('href="https://example.com/docs"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noreferrer noopener"');
+    expect(html).not.toContain('href="javascript:');
+    expect(html).not.toContain('href="file:');
+    expect(html.match(/<a /g)).toHaveLength(1);
+  });
 });

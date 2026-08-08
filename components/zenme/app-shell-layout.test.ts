@@ -10,6 +10,14 @@ const appShellSource = readFileSync(
   new URL("./app-shell.tsx", import.meta.url),
   "utf8",
 );
+const desktopMainSource = readFileSync(
+  new URL("../../desktop/main.cjs", import.meta.url),
+  "utf8",
+);
+const desktopPreloadSource = readFileSync(
+  new URL("../../desktop/preload.cjs", import.meta.url),
+  "utf8",
+);
 
 const pageSources = [
   "../../app/page.tsx",
@@ -49,5 +57,18 @@ describe("persistent app shell", () => {
     expect(appShellSource).not.toContain(
       'className="fixed inset-0 z-[90] flex items-start justify-center bg-black/20 pt-24"',
     );
+  });
+
+  it("shows the restore icon while the desktop window is maximized", () => {
+    expect(desktopMainSource).toContain('mainWindow.on("maximize"');
+    expect(desktopMainSource).toContain('mainWindow.on("unmaximize"');
+    expect(desktopMainSource).toContain('"zenme:is-window-maximized"');
+    expect(desktopPreloadSource).toContain("isWindowMaximized:");
+    expect(desktopPreloadSource).toContain("onWindowMaximizedChange:");
+    expect(appShellSource).toContain(
+      'aria-label={isWindowMaximized ? "还原" : "最大化"}',
+    );
+    expect(appShellSource).toContain('<Copy className="size-3.5" />');
+    expect(appShellSource).toContain('<Square className="size-3.5" />');
   });
 });

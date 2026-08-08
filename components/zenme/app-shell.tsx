@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   ChevronLeft,
   ChevronRight,
+  Copy,
   Folder,
   HardDrive,
   Home,
@@ -59,8 +60,12 @@ const PROJECT_ORDER_KEY = "zenme.projectOrder.v1";
 
 type DesktopWindowApi = {
   closeWindow?: () => Promise<void>;
+  isWindowMaximized?: () => Promise<boolean>;
   minimizeWindow?: () => Promise<void>;
-  toggleMaximizeWindow?: () => Promise<void>;
+  onWindowMaximizedChange?: (
+    listener: (isMaximized: boolean) => void,
+  ) => () => void;
+  toggleMaximizeWindow?: () => Promise<boolean>;
 };
 
 function getDesktopWindowApi() {
@@ -120,6 +125,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
   const [deleteProjectError, setDeleteProjectError] = useState("");
   const [isDeletingProject, setIsDeletingProject] = useState(false);
+  const [isWindowMaximized, setIsWindowMaximized] = useState(false);
 
   const currentProjectId = useMemo(() => {
     const match = pathname.match(/^\/projects\/([^/?#]+)/);
@@ -137,6 +143,23 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void refreshProjects();
   }, [refreshProjects]);
+
+  useEffect(() => {
+    const desktopWindowApi = getDesktopWindowApi();
+    let cancelled = false;
+    const unsubscribe = desktopWindowApi?.onWindowMaximizedChange?.(
+      setIsWindowMaximized,
+    );
+
+    void desktopWindowApi?.isWindowMaximized?.().then((maximized) => {
+      if (!cancelled) setIsWindowMaximized(maximized);
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -490,7 +513,9 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   }
 
   function handleWindowMaximize() {
-    void getDesktopWindowApi()?.toggleMaximizeWindow?.();
+    void getDesktopWindowApi()?.toggleMaximizeWindow?.().then(
+      setIsWindowMaximized,
+    );
   }
 
   function handleWindowClose() {
@@ -909,13 +934,17 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             <Minus className="size-4" />
           </button>
           <button
-            aria-label="最大化"
+            aria-label={isWindowMaximized ? "还原" : "最大化"}
             className="flex h-10 w-12 items-center justify-center transition hover:bg-[var(--color-surface-container-high)]"
             onClick={handleWindowMaximize}
-            title="最大化"
+            title={isWindowMaximized ? "还原" : "最大化"}
             type="button"
           >
-            <Square className="size-3.5" />
+            {isWindowMaximized ? (
+              <Copy className="size-3.5" />
+            ) : (
+              <Square className="size-3.5" />
+            )}
           </button>
           <button
             aria-label="关闭"

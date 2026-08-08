@@ -89,7 +89,7 @@ describe("open reading workspace update", () => {
     ]);
     expect(update?.createdNodes[0]).toMatchObject({
       data: { kind: "reader", readingAssetId: "asset-existing", title: "阅读：旧书" },
-      position: { x: 460, y: 200 },
+      position: { x: 468, y: 200 },
     });
     expect(update?.nodeUpdates).toEqual([]);
   });

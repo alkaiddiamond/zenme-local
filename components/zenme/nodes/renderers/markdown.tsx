@@ -348,11 +348,22 @@ function renderMarkdownInline(text: string) {
       nodes.push(<u key={key}>{value.slice(3, -4)}</u>);
     } else {
       const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(value);
-      nodes.push(
+      const safeHref = getSafeMarkdownLinkHref(link?.[2]);
+      nodes.push(safeHref ? (
+        <a
+          className="text-blue-600 underline underline-offset-2"
+          href={safeHref}
+          key={key}
+          rel="noreferrer noopener"
+          target="_blank"
+        >
+          {link?.[1] ?? value}
+        </a>
+      ) : (
         <span className="text-blue-600 underline underline-offset-2" key={key}>
           {link?.[1] ?? value}
-        </span>,
-      );
+        </span>
+      ));
     }
 
     cursor = index + value.length;
@@ -363,6 +374,19 @@ function renderMarkdownInline(text: string) {
   }
 
   return nodes.length ? nodes : " ";
+}
+
+function getSafeMarkdownLinkHref(rawHref: string | undefined) {
+  if (!rawHref) return undefined;
+
+  try {
+    const url = new URL(rawHref.trim());
+    return url.protocol === "https:" || url.protocol === "http:"
+      ? url.toString()
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function renderKatex(content: string, displayMode: boolean, key: string) {

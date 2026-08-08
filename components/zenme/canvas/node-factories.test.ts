@@ -429,7 +429,7 @@ describe("canvas node factories", () => {
     });
     expect(reader.edge).toEqual(expectedEdge("source", "reader-1"));
     expect(reader.node).toMatchObject({
-      position: { x: 460, y: 200 },
+      position: { x: 740, y: 200 },
       style: { height: 620, width: 960 },
       data: { kind: "reader", readingAssetId: "asset-1", title: "阅读：地师" },
     });

@@ -123,11 +123,11 @@ describe("canvas pan performance", () => {
       canvasClientSource.indexOf("onConnectStart={"),
       canvasClientSource.indexOf("onDragOver={"),
     );
-    expect(connectStartHandler).toContain(
-      'classList.add(\n              "zenme-canvas-node-connecting"',
+    expect(connectStartHandler).toMatch(
+      /classList\.add\(\s*"zenme-canvas-node-connecting"/,
     );
-    expect(connectStartHandler).toContain(
-      'classList.toggle(\n                "zenme-context-connecting"',
+    expect(connectStartHandler).toMatch(
+      /classList\.toggle\(\s*"zenme-context-connecting"/,
     );
     expect(connectStartHandler).not.toContain("setIsMiniMapSuspended");
     expect(canvasClientSource).toContain("zenme-canvas-node-connecting");
