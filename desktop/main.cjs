@@ -157,10 +157,11 @@ function getDataDir() {
 }
 
 function getAppIconPath() {
-  return path.resolve(
-    __dirname,
-    "..",
-    "public",
+  const publicDir = app.isPackaged
+    ? path.join(process.resourcesPath, "standalone", "public")
+    : path.resolve(__dirname, "..", "public");
+  return path.join(
+    publicDir,
     "brand",
     "icons",
     "zenme-logo-256.png",
@@ -190,31 +191,39 @@ async function startLocalServer() {
 
 function spawnNextServer(port, dataDir) {
   const root = app.isPackaged
-    ? path.join(process.resourcesPath, "app.asar.unpacked")
+    ? path.join(process.resourcesPath, "standalone")
     : path.resolve(__dirname, "..");
-  const nextCli = require.resolve("next/dist/bin/next");
   const nodeRuntime = app.isPackaged
     ? process.execPath
     : (process.env.npm_node_execpath || "node");
   const env = {
     ...process.env,
+    HOSTNAME: SERVER_HOST,
+    LOCAL_MODEL_OCR_CACHE_PATH: path.join(dataDir, "ocr-models", "tesseract-cache-v2"),
+    LOCAL_MODEL_OCR_LANG_PATH: path.join(dataDir, "ocr-models", "tessdata"),
+    PORT: String(port),
     ZENME_DATA_DIR: dataDir,
     ZENME_DESKTOP: "1",
   };
+  let serverArguments;
   if (app.isPackaged) {
     env.ELECTRON_RUN_AS_NODE = "1";
-  }
-
-  serverProcess = spawn(
-    nodeRuntime,
-    [
-      nextCli,
-      app.isPackaged ? "start" : "dev",
+    env.NODE_ENV = "production";
+    serverArguments = [path.join(root, "server.js")];
+  } else {
+    serverArguments = [
+      require.resolve("next/dist/bin/next"),
+      "dev",
       "--hostname",
       SERVER_HOST,
       "--port",
       String(port),
-    ],
+    ];
+  }
+
+  serverProcess = spawn(
+    nodeRuntime,
+    serverArguments,
     {
       cwd: root,
       env,

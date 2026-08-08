@@ -23,11 +23,11 @@
     "dev": "next dev --hostname 127.0.0.1",
     "desktop:dev": "node desktop/scripts/run-dev-electron.cjs desktop/main.cjs",
     "desktop:demo": "node scripts/capture-readme-screenshots.cjs --demo",
-    "desktop:pack": "electron-builder --dir",
-    "desktop:dist:win": "electron-builder --win nsis --x64 --publish never",
+    "desktop:pack": "node desktop/scripts/verify-standalone-runtime.cjs && electron-builder --dir",
+    "desktop:dist:win": "node desktop/scripts/verify-standalone-runtime.cjs && electron-builder --win nsis --x64 --publish never",
     "desktop:prepare:mac": "bash desktop/scripts/prepare-macos-icon.sh",
-    "desktop:pack:mac:intel": "npm run desktop:prepare:mac && electron-builder --mac dir --x64 --publish never",
-    "desktop:dist:mac:intel": "npm run desktop:prepare:mac && electron-builder --mac dmg zip --x64 --publish never",
+    "desktop:pack:mac:intel": "npm run desktop:prepare:mac && node desktop/scripts/verify-standalone-runtime.cjs && electron-builder --mac dir --x64 --publish never",
+    "desktop:dist:mac:intel": "npm run desktop:prepare:mac && node desktop/scripts/verify-standalone-runtime.cjs && electron-builder --mac dmg zip --x64 --publish never",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -88,37 +88,49 @@
     "sharp": "0.35.3"
   },
   "build": {
-    "asarUnpack": [
-      ".next/**/*",
-      "next.config.ts",
-      "node_modules/**/*",
-      "package.json",
-      "public/**/*"
-    ],
+    "afterPack": "desktop/scripts/verify-packaged-runtime.cjs",
     "appId": "local.zenme.desktop",
     "productName": "Zenme",
     "directories": {
       "output": "dist-desktop"
     },
     "files": [
+      "!node_modules/**/*",
+      "desktop/main.cjs",
+      "desktop/preload.cjs",
+      "LICENSE",
+      "package.json",
+      "THIRD_PARTY_LICENSES.md"
+    ],
+    "extraResources": [
       {
-        "from": ".next",
-        "to": ".next",
+        "from": ".next/standalone",
+        "to": "standalone",
         "filter": [
-          "**/*",
-          "!cache/**/*",
-          "!dev/**/*"
+          "**/*"
         ]
       },
-      "app/**/*",
-      "components/**/*",
-      "desktop/**/*",
-      "lib/**/*",
-      "LICENSE",
-      "next.config.ts",
-      "package.json",
-      "public/**/*",
-      "THIRD_PARTY_LICENSES.md"
+      {
+        "from": ".next/standalone/node_modules",
+        "to": "standalone/node_modules",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": ".next/static",
+        "to": "standalone/.next/static",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "public",
+        "to": "standalone/public",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "extraMetadata": {
       "main": "desktop/main.cjs"
