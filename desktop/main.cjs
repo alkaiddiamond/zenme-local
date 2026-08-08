@@ -167,6 +167,14 @@ function getAppIconPath() {
   );
 }
 
+function configureDockIcon() {
+  if (process.platform !== "darwin" || !app.dock) {
+    return;
+  }
+
+  app.dock.setIcon(getAppIconPath());
+}
+
 async function startLocalServer() {
   const dataDir = getDataDir();
   fs.mkdirSync(dataDir, { recursive: true });
@@ -458,6 +466,7 @@ function registerIpcHandlers() {
 
 app.whenReady().then(async () => {
   try {
+    configureDockIcon();
     configureApplicationMenu();
     registerIpcHandlers();
     await createWindow();

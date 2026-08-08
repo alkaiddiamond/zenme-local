@@ -2534,7 +2534,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         model,
         nodeId,
         nodes: reactFlow?.getNodes() ?? nodesRef.current,
-        prompt: preflight.prompt,
+        prompt: input?.prompt,
       });
       const latestEdges = reactFlow?.getEdges() ?? edgesRef.current;
       appendCanvasItems({

@@ -30,6 +30,13 @@ describe("text generation request boundary", () => {
     expect(source).not.toContain("!nextPrompt || isGenerating");
   });
 
+  it("does not write implicit source text back into the composer", () => {
+    const source = readProjectFile("components/zenme/canvas-client.tsx");
+
+    expect(source).toContain("prompt: input?.prompt");
+    expect(source).not.toContain("prompt: preflight.prompt");
+  });
+
   it("does not paint an empty composer placeholder as selected", () => {
     const source = readProjectFile("app/globals.css");
 
