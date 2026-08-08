@@ -169,11 +169,11 @@ function getAppIconPath() {
 }
 
 function configureDockIcon() {
-  if (process.platform !== "darwin" || !app.dock) {
+  if (process.platform !== "darwin" || !app.dock || app.isPackaged) {
     return;
   }
 
-  app.dock.setIcon(getAppIconPath());
+  app.dock.setIcon(path.resolve(__dirname, "..", "build", "icon-source-rounded.png"));
 }
 
 async function startLocalServer() {
@@ -285,7 +285,7 @@ async function createWindow() {
     autoHideMenuBar: true,
     frame: false,
     height: 900,
-    icon: getAppIconPath(),
+    ...(process.platform === "darwin" ? {} : { icon: getAppIconPath() }),
     minHeight: 700,
     minWidth: 1100,
     title: APP_NAME,

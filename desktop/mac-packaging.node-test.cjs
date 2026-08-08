@@ -61,10 +61,15 @@ test("macOS Intel build tooling prepares the icon and uses an Intel runner", () 
   assert.match(devAppScript, /\$\{APP_NAME\}\.app/);
   assert.match(devAppScript, /CFBundleDisplayName/);
   assert.match(devAppScript, /CFBundleExecutable/);
+  assert.match(devAppScript, /prepare-macos-icon\.sh/);
+  assert.match(devAppScript, /CFBundleIconFile/);
+  assert.match(devAppScript, /fs\.copyFileSync\(generatedIconPath, bundledIconPath\)/);
   assert.match(devAppScript, /Contents", "MacOS", "Electron"/);
   assert.match(devAppScript, /local\.zenme\.desktop\.dev/);
   assert.match(devRunner, /spawn\(electronExecutable/);
-  assert.match(desktopMain, /app\.dock\.setIcon\(getAppIconPath\(\)\)/);
+  assert.match(desktopMain, /!app\.dock \|\| app\.isPackaged/);
+  assert.match(desktopMain, /app\.dock\.setIcon\(path\.resolve\([^\n]+icon-source-rounded\.png/);
+  assert.match(desktopMain, /process\.platform === "darwin" \? \{\} : \{ icon: getAppIconPath\(\) \}/);
   assert.match(desktopMain, /trafficLightPosition: \{ x: 14, y: 14 \}/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.doesNotMatch(workflow, /pull_request:/);

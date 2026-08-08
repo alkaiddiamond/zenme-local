@@ -21,6 +21,9 @@ const sourceElectronApp = path.join(electronDistDir, "Electron.app");
 const electronApp = path.join(electronDistDir, `${APP_NAME}.app`);
 const executablePath = path.join(electronApp, "Contents", "MacOS", "Electron");
 const plistPath = path.join(electronApp, "Contents", "Info.plist");
+const prepareMacIconScript = path.join(projectRoot, "desktop", "scripts", "prepare-macos-icon.sh");
+const generatedIconPath = path.join(projectRoot, "build", "icon.icns");
+const bundledIconPath = path.join(electronApp, "Contents", "Resources", "icon.icns");
 
 if (!fs.existsSync(sourceElectronApp)) {
   console.warn(`Skipping dev app name setup; missing ${sourceElectronApp}`);
@@ -29,6 +32,8 @@ if (!fs.existsSync(sourceElectronApp)) {
 
 fs.rmSync(electronApp, { force: true, recursive: true });
 execFileSync("ditto", [sourceElectronApp, electronApp], { stdio: "ignore" });
+execFileSync("bash", [prepareMacIconScript], { stdio: "ignore" });
+fs.copyFileSync(generatedIconPath, bundledIconPath);
 
 const renamedExecutablePath = path.join(electronApp, "Contents", "MacOS", APP_NAME);
 if (fs.existsSync(renamedExecutablePath) && !fs.existsSync(executablePath)) {
@@ -60,6 +65,7 @@ setPlistValue("CFBundleName", APP_NAME);
 setPlistValue("CFBundleDisplayName", APP_NAME);
 setPlistValue("CFBundleIdentifier", APP_ID);
 setPlistValue("CFBundleExecutable", "Electron");
+setPlistValue("CFBundleIconFile", "icon.icns");
 fs.utimesSync(electronApp, new Date(), new Date());
 
 console.log(executablePath);
