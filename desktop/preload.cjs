@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("zenmeDesktop", {
   },
   openDataDir: () => ipcRenderer.invoke("zenme:open-data-dir"),
   openExternal: (url) => ipcRenderer.invoke("zenme:open-external", url),
+  platform: process.platform,
   selectDataDir: () => ipcRenderer.invoke("zenme:select-data-dir"),
   toggleMaximizeWindow: () => ipcRenderer.invoke("zenme:toggle-maximize-window"),
   writeClipboardText: (text) => ipcRenderer.invoke("zenme:write-clipboard-text", text),

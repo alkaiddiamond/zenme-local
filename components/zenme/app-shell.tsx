@@ -65,6 +65,7 @@ type DesktopWindowApi = {
   onWindowMaximizedChange?: (
     listener: (isMaximized: boolean) => void,
   ) => () => void;
+  platform?: string;
   toggleMaximizeWindow?: () => Promise<boolean>;
 };
 
@@ -125,7 +126,10 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
   const [deleteProjectError, setDeleteProjectError] = useState("");
   const [isDeletingProject, setIsDeletingProject] = useState(false);
+  const [desktopPlatform, setDesktopPlatform] = useState<string | null>(null);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+  const showCustomWindowControls =
+    desktopPlatform !== null && desktopPlatform !== "darwin";
 
   const currentProjectId = useMemo(() => {
     const match = pathname.match(/^\/projects\/([^/?#]+)/);
@@ -147,6 +151,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const desktopWindowApi = getDesktopWindowApi();
     let cancelled = false;
+    setDesktopPlatform(desktopWindowApi?.platform ?? null);
     const unsubscribe = desktopWindowApi?.onWindowMaximizedChange?.(
       setIsWindowMaximized,
     );
@@ -923,39 +928,41 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
           })}
         </div>
 
-        <div className="ml-auto flex h-full border-l border-[var(--color-border)]" data-desktop-no-drag>
-          <button
-            aria-label="最小化"
-            className="flex h-10 w-12 items-center justify-center transition hover:bg-[var(--color-surface-container-high)]"
-            onClick={handleWindowMinimize}
-            title="最小化"
-            type="button"
-          >
-            <Minus className="size-4" />
-          </button>
-          <button
-            aria-label={isWindowMaximized ? "还原" : "最大化"}
-            className="flex h-10 w-12 items-center justify-center transition hover:bg-[var(--color-surface-container-high)]"
-            onClick={handleWindowMaximize}
-            title={isWindowMaximized ? "还原" : "最大化"}
-            type="button"
-          >
-            {isWindowMaximized ? (
-              <Copy className="size-3.5" />
-            ) : (
-              <Square className="size-3.5" />
-            )}
-          </button>
-          <button
-            aria-label="关闭"
-            className="flex h-10 w-12 items-center justify-center transition hover:bg-red-500 hover:text-white"
-            onClick={handleWindowClose}
-            title="关闭"
-            type="button"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
+        {showCustomWindowControls ? (
+          <div className="ml-auto flex h-full border-l border-[var(--color-border)]" data-desktop-no-drag>
+            <button
+              aria-label="最小化"
+              className="flex h-10 w-12 items-center justify-center transition hover:bg-[var(--color-surface-container-high)]"
+              onClick={handleWindowMinimize}
+              title="最小化"
+              type="button"
+            >
+              <Minus className="size-4" />
+            </button>
+            <button
+              aria-label={isWindowMaximized ? "还原" : "最大化"}
+              className="flex h-10 w-12 items-center justify-center transition hover:bg-[var(--color-surface-container-high)]"
+              onClick={handleWindowMaximize}
+              title={isWindowMaximized ? "还原" : "最大化"}
+              type="button"
+            >
+              {isWindowMaximized ? (
+                <Copy className="size-3.5" />
+              ) : (
+                <Square className="size-3.5" />
+              )}
+            </button>
+            <button
+              aria-label="关闭"
+              className="flex h-10 w-12 items-center justify-center transition hover:bg-red-500 hover:text-white"
+              onClick={handleWindowClose}
+              title="关闭"
+              type="button"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <main

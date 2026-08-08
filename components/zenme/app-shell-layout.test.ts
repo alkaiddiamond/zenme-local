@@ -71,4 +71,12 @@ describe("persistent app shell", () => {
     expect(appShellSource).toContain('<Copy className="size-3.5" />');
     expect(appShellSource).toContain('<Square className="size-3.5" />');
   });
+
+  it("uses native macOS traffic light controls instead of custom window controls", () => {
+    expect(desktopPreloadSource).toContain("platform: process.platform");
+    expect(appShellSource).toContain(
+      "desktopPlatform !== null && desktopPlatform !== \"darwin\"",
+    );
+    expect(appShellSource).toContain("{showCustomWindowControls ? (");
+  });
 });
