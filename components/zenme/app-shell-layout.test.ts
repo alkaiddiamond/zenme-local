@@ -75,8 +75,15 @@ describe("persistent app shell", () => {
   it("uses native macOS traffic light controls instead of custom window controls", () => {
     expect(desktopPreloadSource).toContain("platform: process.platform");
     expect(appShellSource).toContain(
-      "desktopPlatform !== null && desktopPlatform !== \"darwin\"",
+      'const isMacDesktop = desktopPlatform === "darwin"',
     );
+    expect(appShellSource).toContain("desktopPlatform !== null && !isMacDesktop");
     expect(appShellSource).toContain("{showCustomWindowControls ? (");
+  });
+
+  it("reserves titlebar space for macOS traffic light controls", () => {
+    expect(appShellSource).toContain("const MAC_COLLAPSED_SIDEBAR_WIDTH = 112");
+    expect(appShellSource).toContain("? MAC_COLLAPSED_SIDEBAR_WIDTH");
+    expect(appShellSource).toContain('isMacDesktop && "justify-start pl-[76px]"');
   });
 });

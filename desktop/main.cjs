@@ -290,6 +290,7 @@ async function createWindow() {
     minWidth: 1100,
     title: APP_NAME,
     titleBarStyle: "hidden",
+    trafficLightPosition: { x: 14, y: 14 },
     width: 1440,
     webPreferences: {
       contextIsolation: true,

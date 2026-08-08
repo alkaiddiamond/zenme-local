@@ -37,6 +37,10 @@ test("macOS Intel build tooling prepares the icon and uses an Intel runner", () 
     path.join(projectRoot, "desktop", "scripts", "run-dev-electron.cjs"),
     "utf8",
   );
+  const iconRenderer = fs.readFileSync(
+    path.join(projectRoot, "desktop", "scripts", "render-macos-icon.cjs"),
+    "utf8",
+  );
   const desktopMain = fs.readFileSync(
     path.join(projectRoot, "desktop", "main.cjs"),
     "utf8",
@@ -48,7 +52,12 @@ test("macOS Intel build tooling prepares the icon and uses an Intel runner", () 
 
   assert.match(packageJson.scripts["desktop:dist:mac:intel"], /--mac dmg zip --x64/);
   assert.match(packageJson.scripts["desktop:dev"], /run-dev-electron\.cjs/);
+  assert.match(iconScript, /render-macos-icon\.cjs/);
+  assert.match(iconScript, /icon-source-rounded\.png/);
   assert.match(iconScript, /iconutil -c icns/);
+  assert.match(iconRenderer, /const tileSize = 824/);
+  assert.match(iconRenderer, /const tileRadius = 185/);
+  assert.match(iconRenderer, /const logoWidth = 620/);
   assert.match(devAppScript, /\$\{APP_NAME\}\.app/);
   assert.match(devAppScript, /CFBundleDisplayName/);
   assert.match(devAppScript, /CFBundleExecutable/);
@@ -56,6 +65,7 @@ test("macOS Intel build tooling prepares the icon and uses an Intel runner", () 
   assert.match(devAppScript, /local\.zenme\.desktop\.dev/);
   assert.match(devRunner, /spawn\(electronExecutable/);
   assert.match(desktopMain, /app\.dock\.setIcon\(getAppIconPath\(\)\)/);
+  assert.match(desktopMain, /trafficLightPosition: \{ x: 14, y: 14 \}/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.doesNotMatch(workflow, /pull_request:/);
   assert.match(workflow, /runs-on: macos-15-intel/);

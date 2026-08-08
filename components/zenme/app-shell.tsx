@@ -51,6 +51,7 @@ import {
 
 const SIDEBAR_WIDTH = 280;
 const COLLAPSED_SIDEBAR_WIDTH = 48;
+const MAC_COLLAPSED_SIDEBAR_WIDTH = 112;
 const TITLEBAR_HEIGHT = 40;
 const OPEN_PROJECT_TABS_KEY = "zenme.openProjectTabs.v1";
 const SIDEBAR_COLLAPSED_KEY = "zenme.sidebarCollapsed.v1";
@@ -128,8 +129,9 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const [isDeletingProject, setIsDeletingProject] = useState(false);
   const [desktopPlatform, setDesktopPlatform] = useState<string | null>(null);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+  const isMacDesktop = desktopPlatform === "darwin";
   const showCustomWindowControls =
-    desktopPlatform !== null && desktopPlatform !== "darwin";
+    desktopPlatform !== null && !isMacDesktop;
 
   const currentProjectId = useMemo(() => {
     const match = pathname.match(/^\/projects\/([^/?#]+)/);
@@ -343,7 +345,9 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
     (active === "home" ? "home" : active === "settings" ? "settings" : "projects");
   const activeTabIndex = shellTabs.findIndex((tab) => tab.id === activeTabId);
   const sidebarWidth = isSidebarCollapsed
-    ? COLLAPSED_SIDEBAR_WIDTH
+    ? isMacDesktop
+      ? MAC_COLLAPSED_SIDEBAR_WIDTH
+      : COLLAPSED_SIDEBAR_WIDTH
     : SIDEBAR_WIDTH;
 
   async function handleNewProject() {
@@ -537,6 +541,8 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
           className={cn(
             "flex h-10 items-center border-b border-[var(--color-border)]",
             isSidebarCollapsed ? "justify-center px-1" : "gap-2 px-2",
+            isMacDesktop && "justify-start pl-[76px]",
+            isMacDesktop && (isSidebarCollapsed ? "pr-1" : "pr-2"),
           )}
           data-desktop-drag-region
         >
