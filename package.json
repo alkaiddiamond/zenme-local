@@ -69,19 +69,19 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@types/adm-zip": "^0.5.8",
-    "@types/node": "^20",
+    "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "autoprefixer": "^10.4.20",
-    "electron": "^42.3.0",
+    "autoprefixer": "^10.5.4",
+    "electron": "^43.3.0",
     "electron-builder": "^26.8.1",
-    "eslint": "^9",
-    "eslint-config-next": "^16.2.10",
-    "postcss": "8.5.22",
-    "tailwindcss": "^3.4.1",
+    "eslint": "^10",
+    "eslint-config-next": "^16.3.0",
+    "postcss": "8.5.25",
+    "tailwindcss": "^4.3.3",
     "tailwindcss-animate": "^1.0.7",
-    "typescript": "^5",
-    "vitest": "^4.1.9"
+    "typescript": "^7",
+    "vitest": "^4.1.10"
   },
   "overrides": {
     "postcss": "$postcss",
