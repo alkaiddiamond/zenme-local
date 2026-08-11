@@ -1,3 +1,7 @@
+export const TEXT_GENERATION_TIMEOUT_MINUTES = 5;
+export const TEXT_GENERATION_TIMEOUT_MS =
+  TEXT_GENERATION_TIMEOUT_MINUTES * 60 * 1000;
+
 export function createTimedExecutionController(timeoutMs: number) {
   const controller = new AbortController();
   const timer = setTimeout(() => {

@@ -3,11 +3,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createTimedExecutionController,
   isExecutionTimeout,
+  TEXT_GENERATION_TIMEOUT_MINUTES,
+  TEXT_GENERATION_TIMEOUT_MS,
 } from "./execution-abort";
 
 afterEach(() => vi.useRealTimers());
 
 describe("execution abort", () => {
+  it("allows text generation to run for five minutes", () => {
+    expect(TEXT_GENERATION_TIMEOUT_MINUTES).toBe(5);
+    expect(TEXT_GENERATION_TIMEOUT_MS).toBe(5 * 60 * 1000);
+  });
+
   it("aborts an attempt with a diagnosable timeout reason", () => {
     vi.useFakeTimers();
     const task = createTimedExecutionController(1_000);

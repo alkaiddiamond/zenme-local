@@ -178,6 +178,8 @@ import { inspectCanvasNodeExecution } from "@/components/zenme/canvas/execution-
 import {
   createTimedExecutionController,
   isExecutionTimeout,
+  TEXT_GENERATION_TIMEOUT_MINUTES,
+  TEXT_GENERATION_TIMEOUT_MS,
 } from "@/components/zenme/canvas/execution-abort";
 import { reconcileCanvasExecutions } from "@/components/zenme/canvas/execution-recovery";
 import {
@@ -2544,7 +2546,9 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         nodes: [nextNode],
       });
 
-      const executionController = createTimedExecutionController(2 * 60 * 1000);
+      const executionController = createTimedExecutionController(
+        TEXT_GENERATION_TIMEOUT_MS,
+      );
       activeExecutionControllersRef.current.set(resultNodeId, executionController.controller);
       try {
         await persistExecutionTaskNodes(nodesRef.current);
@@ -2588,7 +2592,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       } catch (error) {
         const timedOut = isExecutionTimeout(executionController.controller.signal);
         const message = timedOut
-          ? "文本生成超过 2 分钟，已停止，请重试"
+          ? `文本生成超过 ${TEXT_GENERATION_TIMEOUT_MINUTES} 分钟，已停止，请重试`
           : error instanceof Error ? error.message : "文本生成失败";
         await updateExecutionAttemptInApi({
           ...executionIdentity,
