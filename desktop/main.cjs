@@ -1,19 +1,25 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } = require("electron");
-const { spawn } = require("node:child_process");
+const { spawn, spawnSync } = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
+const { startBrowserControlServer } = require("./browser-control.cjs");
 
 const SERVER_HOST = "127.0.0.1";
 const STARTUP_TIMEOUT_MS = 45_000;
 const APP_NAME = "Zenme";
 const APP_ID = "local.zenme.desktop";
 const IS_SMOKE_TEST = process.argv.includes("--smoke-test");
+const DESKTOP_API_TOKEN = crypto.randomBytes(32).toString("hex");
 
 let mainWindow = null;
 let serverProcess = null;
 let serverUrl = null;
+let browserControlServer = null;
+const projectWorkspaceSelections = new Map();
+const PROJECT_WORKSPACE_SELECTION_TTL_MS = 30 * 60 * 1000;
 
 app.setName(APP_NAME);
 if (process.platform === "win32") {
@@ -147,6 +153,9 @@ function removeLegacyMusicServiceConfiguration() {
 }
 
 function getDataDir() {
+  if (process.env.ZENME_DATA_DIR) {
+    return path.resolve(process.env.ZENME_DATA_DIR);
+  }
   const configured = readDesktopConfig().dataDir;
   if (configured && typeof configured === "string") {
     return configured;
@@ -183,13 +192,14 @@ async function startLocalServer() {
 
   const port = await findAvailablePort();
   const nextServerUrl = `http://${SERVER_HOST}:${port}`;
-  spawnNextServer(port, dataDir);
+  browserControlServer ??= await startBrowserControlServer({ BrowserWindow, token: DESKTOP_API_TOKEN });
+  spawnNextServer(port, dataDir, browserControlServer.url);
   await waitForServer(nextServerUrl);
   serverUrl = nextServerUrl;
   return nextServerUrl;
 }
 
-function spawnNextServer(port, dataDir) {
+function spawnNextServer(port, dataDir, browserControlUrl) {
   const root = app.isPackaged
     ? path.join(process.resourcesPath, "standalone")
     : path.resolve(__dirname, "..");
@@ -204,6 +214,9 @@ function spawnNextServer(port, dataDir) {
     PORT: String(port),
     ZENME_DATA_DIR: dataDir,
     ZENME_DESKTOP: "1",
+    ZENME_DESKTOP_TOKEN: DESKTOP_API_TOKEN,
+    ZENME_BROWSER_CONTROL_URL: browserControlUrl,
+    ZENME_SERVER_INSTANCE_ID: crypto.randomUUID(),
   };
   let serverArguments;
   if (app.isPackaged) {
@@ -251,6 +264,13 @@ function stopLocalServer() {
   if (!serverProcess) return;
   const child = serverProcess;
   serverProcess = null;
+  if (process.platform === "win32" && child.pid) {
+    spawnSync("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    return;
+  }
   child.kill();
 }
 
@@ -311,6 +331,9 @@ async function createWindow() {
   };
   mainWindow.on("maximize", sendWindowMaximizedState);
   mainWindow.on("unmaximize", sendWindowMaximizedState);
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+  });
 
   mainWindow.webContents.on("console-message", (details) => {
     console.log(
@@ -361,8 +384,36 @@ async function createWindow() {
   await mainWindow.loadURL(nextServerUrl);
 
   if (IS_SMOKE_TEST) {
-    setTimeout(() => app.quit(), 1_000);
+    await verifyPackagedBrowserController(nextServerUrl);
+    setTimeout(() => app.quit(), 250);
   }
+}
+
+async function verifyPackagedBrowserController(targetUrl) {
+  if (!browserControlServer) throw new Error("Browser control server is unavailable");
+  const sessionId = `smoke:${crypto.randomUUID()}`;
+  const request = async (body) => {
+    const response = await fetch(browserControlServer.url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${DESKTOP_API_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ sessionId, ...body }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(`Browser controller smoke failed: ${String(payload.error ?? response.status)}`);
+    return payload;
+  };
+  const snapshot = await request({ operation: "navigate", url: targetUrl, includeScreenshot: false });
+  if (snapshot.url !== targetUrl && !String(snapshot.url ?? "").startsWith(`${targetUrl}/`)) {
+    throw new Error("Browser controller smoke returned an unexpected URL");
+  }
+  if (!Array.isArray(snapshot.elements) || typeof snapshot.text !== "string") {
+    throw new Error("Browser controller smoke returned an invalid DOM snapshot");
+  }
+  await request({ operation: "close" });
+  console.log(`[zenme-browser] smoke verified ${snapshot.url}`);
 }
 
 function registerIpcHandlers() {
@@ -433,6 +484,246 @@ function registerIpcHandlers() {
     return { canceled: false, dataDir, restarted: true };
   });
 
+  ipcMain.handle("zenme:select-project-workspace", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      buttonLabel: "选择文件夹",
+      properties: ["openDirectory", "createDirectory"],
+      title: "选择项目源文件夹",
+    });
+    if (result.canceled || !result.filePaths[0]) return { canceled: true };
+
+    const now = Date.now();
+    for (const [selectionId, selection] of projectWorkspaceSelections) {
+      if (now - selection.createdAt > PROJECT_WORKSPACE_SELECTION_TTL_MS) {
+        projectWorkspaceSelections.delete(selectionId);
+      }
+    }
+    const rootPath = result.filePaths[0];
+    const selectionId = crypto.randomUUID();
+    projectWorkspaceSelections.set(selectionId, { createdAt: now, rootPath });
+    return {
+      canceled: false,
+      selection: {
+        displayName: path.basename(rootPath),
+        displayPath: rootPath,
+        selectionId,
+      },
+    };
+  });
+
+  ipcMain.handle("zenme:create-project-with-workspace", async (_event, input) => {
+    const name = input && typeof input.name === "string" ? input.name.trim() : "";
+    const selectionId = input && typeof input.selectionId === "string" ? input.selectionId : "";
+    const selection = projectWorkspaceSelections.get(selectionId);
+    projectWorkspaceSelections.delete(selectionId);
+    if (!name || name.length > 200) throw new TypeError("项目名称无效");
+    if (!selection || Date.now() - selection.createdAt > PROJECT_WORKSPACE_SELECTION_TTL_MS) {
+      throw new Error("所选项目文件夹已失效，请重新选择");
+    }
+    if (!serverUrl) throw new Error("Zenme 本地服务尚未就绪");
+
+    let project = null;
+    try {
+      const createResponse = await fetch(`${serverUrl}/api/projects`, {
+        body: JSON.stringify({ name, prompt: "", model: "" }),
+        headers: {
+          "content-type": "application/json",
+          "x-zenme-desktop-token": DESKTOP_API_TOKEN,
+        },
+        method: "POST",
+      });
+      const createBody = await createResponse.json();
+      if (!createResponse.ok) {
+        throw new Error(createBody && typeof createBody.error === "string" ? createBody.error : "项目创建失败");
+      }
+      project = createBody;
+
+      const bindResponse = await fetch(
+        `${serverUrl}/api/projects/${encodeURIComponent(project.id)}/workspace`,
+        {
+          body: JSON.stringify({ rootPath: selection.rootPath }),
+          headers: {
+            "content-type": "application/json",
+            "x-zenme-desktop-token": DESKTOP_API_TOKEN,
+          },
+          method: "POST",
+        },
+      );
+      const binding = await bindResponse.json();
+      if (!bindResponse.ok) {
+        throw new Error(binding && typeof binding.error === "string" ? binding.error : "Workspace 绑定失败");
+      }
+      return { binding, project };
+    } catch (error) {
+      if (project && typeof project.id === "string") {
+        await fetch(`${serverUrl}/api/projects/${encodeURIComponent(project.id)}`, {
+          headers: { "x-zenme-desktop-token": DESKTOP_API_TOKEN },
+          method: "DELETE",
+        }).catch(() => undefined);
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle("zenme:bind-project-workspace", async (_event, projectId) => {
+    if (
+      typeof projectId !== "string" ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(projectId)
+    ) {
+      throw new TypeError("Project ID is invalid");
+    }
+    if (!serverUrl) {
+      throw new Error("Zenme local server is not ready");
+    }
+    const result = await dialog.showOpenDialog(mainWindow, {
+      buttonLabel: "绑定 Workspace",
+      properties: ["openDirectory"],
+      title: "选择项目 Workspace",
+    });
+    if (result.canceled || !result.filePaths[0]) {
+      return { canceled: true };
+    }
+
+    const response = await fetch(
+      `${serverUrl}/api/projects/${encodeURIComponent(projectId)}/workspace`,
+      {
+        body: JSON.stringify({ rootPath: result.filePaths[0] }),
+        headers: {
+          "content-type": "application/json",
+          "x-zenme-desktop-token": DESKTOP_API_TOKEN,
+        },
+        method: "POST",
+      },
+    );
+    const body = await response.json();
+    if (!response.ok) {
+      throw new Error(
+        body && typeof body.error === "string"
+          ? body.error
+          : "Workspace binding failed",
+      );
+    }
+    return { binding: body, canceled: false };
+  });
+
+  ipcMain.handle(
+    "zenme:set-project-workspace-write-access",
+    async (_event, projectId, allowed) => {
+      if (
+        typeof projectId !== "string" ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(projectId) ||
+        typeof allowed !== "boolean"
+      ) {
+        throw new TypeError("Workspace permission request is invalid");
+      }
+      if (!serverUrl) throw new Error("Zenme local server is not ready");
+      const response = await fetch(
+        `${serverUrl}/api/projects/${encodeURIComponent(projectId)}/workspace`,
+        {
+          body: JSON.stringify({ write: allowed }),
+          headers: {
+            "content-type": "application/json",
+            "x-zenme-desktop-token": DESKTOP_API_TOKEN,
+          },
+          method: "PATCH",
+        },
+      );
+      const body = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          body && typeof body.error === "string"
+            ? body.error
+            : "Workspace permission update failed",
+        );
+      }
+      return body;
+    },
+  );
+
+  ipcMain.handle(
+    "zenme:set-project-workspace-delete-access",
+    async (_event, projectId, allowed) => {
+      if (
+        typeof projectId !== "string" ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(projectId) ||
+        typeof allowed !== "boolean"
+      ) {
+        throw new TypeError("Workspace permission request is invalid");
+      }
+      if (!serverUrl) throw new Error("Zenme local server is not ready");
+      const response = await fetch(
+        `${serverUrl}/api/projects/${encodeURIComponent(projectId)}/workspace`,
+        {
+          body: JSON.stringify({ delete: allowed }),
+          headers: {
+            "content-type": "application/json",
+            "x-zenme-desktop-token": DESKTOP_API_TOKEN,
+          },
+          method: "PATCH",
+        },
+      );
+      const body = await response.json();
+      if (!response.ok) throw new Error("Workspace permission update failed");
+      return body;
+    },
+  );
+
+  ipcMain.handle(
+    "zenme:set-project-workspace-execute-access",
+    async (_event, projectId, allowed) => {
+      if (
+        typeof projectId !== "string" ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(projectId) ||
+        typeof allowed !== "boolean"
+      ) {
+        throw new TypeError("Workspace permission request is invalid");
+      }
+      if (!serverUrl) throw new Error("Zenme local server is not ready");
+      const response = await fetch(
+        `${serverUrl}/api/projects/${encodeURIComponent(projectId)}/workspace`,
+        {
+          body: JSON.stringify({ execute: allowed }),
+          headers: {
+            "content-type": "application/json",
+            "x-zenme-desktop-token": DESKTOP_API_TOKEN,
+          },
+          method: "PATCH",
+        },
+      );
+      const body = await response.json();
+      if (!response.ok) throw new Error("Workspace permission update failed");
+      return body;
+    },
+  );
+
+  ipcMain.handle(
+    "zenme:set-project-workspace-git-write-access",
+    async (_event, projectId, allowed) => {
+      if (
+        typeof projectId !== "string" ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(projectId) ||
+        typeof allowed !== "boolean"
+      ) {
+        throw new TypeError("Workspace permission request is invalid");
+      }
+      if (!serverUrl) throw new Error("Zenme local server is not ready");
+      const response = await fetch(
+        `${serverUrl}/api/projects/${encodeURIComponent(projectId)}/workspace`,
+        {
+          body: JSON.stringify({ gitWrite: allowed }),
+          headers: {
+            "content-type": "application/json",
+            "x-zenme-desktop-token": DESKTOP_API_TOKEN,
+          },
+          method: "PATCH",
+        },
+      );
+      const body = await response.json();
+      if (!response.ok) throw new Error("Workspace permission update failed");
+      return body;
+    },
+  );
+
   ipcMain.handle("zenme:inspect-music-folder", async (_event, rawPath) => {
     if (typeof rawPath !== "string" || !path.isAbsolute(rawPath)) return null;
     const directoryPath = path.resolve(rawPath);
@@ -490,7 +781,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
     void createWindow();
   }
 });
@@ -503,4 +794,9 @@ app.on("window-all-closed", () => {
 
 app.on("before-quit", () => {
   stopLocalServer();
+  if (browserControlServer) {
+    const controller = browserControlServer;
+    browserControlServer = null;
+    void controller.close();
+  }
 });

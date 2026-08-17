@@ -15,12 +15,22 @@ describe("canvas side toolbar", () => {
   it("keeps only working actions and exposes quick arrange", () => {
     expect(source).toContain('title="搜索画布"');
     expect(source).toContain('title="快速整理画布"');
-    expect(source).toContain('title="开启 Agent 对话"');
     expect(source).toContain('title="手动保存"');
     expect(source).not.toContain('title="项目文件"');
     expect(source).not.toContain('title="项目侧栏占位"');
     expect(source).not.toContain('title="放大画布"');
     expect(source).not.toContain(">A</button>");
+  });
+
+  it("offers one node-based Agent entry instead of separate chat and orchestration surfaces", () => {
+    expect(source).toContain('title="新建 Agent 对话"');
+    expect(source).toContain("onCreateAgentPrompt");
+    expect(source).not.toContain("onOpenGlobalAgent");
+    expect(source).not.toContain('title="运行 Global Agent"');
+    expect(source).not.toContain('title="开启 Agent 对话"');
+    expect(source).not.toContain("onOpenAgent");
+    expect(source).toContain("onStartAgentWithSelection");
+    expect(source).toContain("对话或执行");
   });
 
   it("renders a full-text search panel with accessible controls", () => {

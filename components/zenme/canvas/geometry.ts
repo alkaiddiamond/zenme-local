@@ -92,6 +92,7 @@ export function getNodeSizeFallback(node: CanvasNode) {
   if (node.data.kind === "note") return { height: 180, width: 320 };
   if (node.data.kind === "image") return { height: 370, width: 280 };
   if (node.data.kind === "file") return { height: 68, width: 256 };
+  if (node.data.kind === "workspaceFile") return { height: 420, width: 720 };
   if (node.data.kind === "text") return { height: 176, width: 560 };
   if (node.data.kind === "imageGeneration") {
     return node.data.imageGenerationResult

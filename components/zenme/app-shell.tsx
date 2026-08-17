@@ -7,6 +7,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
+  Brain,
+  Database,
+  FileDiff,
   Folder,
   HardDrive,
   Home,
@@ -27,7 +30,16 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import {
+  CreateProjectDialog,
+  OPEN_CREATE_PROJECT_DIALOG_EVENT,
+} from "@/components/zenme/create-project-dialog";
 import { UserMenu } from "@/components/zenme/user-menu";
+import { WorkspaceBindingDialog } from "@/components/zenme/workspace-binding-dialog";
+import { ChangeSetDialog } from "@/components/zenme/change-set-dialog";
+import { ProjectMemoryDialog } from "@/components/zenme/project-memory-dialog";
+import { ProjectKnowledgeDialog } from "@/components/zenme/project-knowledge-dialog";
+import { ContinuousGlobalAgentSupervisor } from "@/components/zenme/continuous-global-agent-driver";
 import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 import {
   MusicPlaybackOverlay,
@@ -36,7 +48,6 @@ import {
 } from "@/components/zenme/music-playback-provider";
 import { cn } from "@/lib/utils";
 import {
-  createProjectInApi,
   deleteProjectInApi,
   getAppShellStateFromApi,
   listProjectsFromApi,
@@ -44,7 +55,6 @@ import {
   updateProjectNameInApi,
 } from "@/lib/zenme-api";
 import {
-  createProjectName,
   getProjectActivityTime,
   type ZenmeProject,
 } from "@/lib/zenme";
@@ -115,7 +125,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<ZenmeProject[]>([]);
   const [query, setQuery] = useState("");
   const [openProjectIds, setOpenProjectIds] = useState<string[]>([]);
-  const [isCreating, setIsCreating] = useState(false);
+  const [isCreateProjectOpen, setIsCreateProjectOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [pinnedProjectIds, setPinnedProjectIds] = useState<string[]>([]);
   const [favoriteProjectIds, setFavoriteProjectIds] = useState<string[]>([]);
@@ -127,6 +137,10 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
   const [deleteProjectError, setDeleteProjectError] = useState("");
   const [isDeletingProject, setIsDeletingProject] = useState(false);
+  const [workspaceProjectId, setWorkspaceProjectId] = useState<string | null>(null);
+  const [changeSetProjectId, setChangeSetProjectId] = useState<string | null>(null);
+  const [memoryProjectId, setMemoryProjectId] = useState<string | null>(null);
+  const [knowledgeProjectId, setKnowledgeProjectId] = useState<string | null>(null);
   const [desktopPlatform, setDesktopPlatform] = useState<string | null>(null);
   const [isWindowMaximized, setIsWindowMaximized] = useState(false);
   const isMacDesktop = desktopPlatform === "darwin";
@@ -149,6 +163,14 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void refreshProjects();
   }, [refreshProjects]);
+
+  useEffect(() => {
+    function openCreateProject() {
+      setIsCreateProjectOpen(true);
+    }
+    window.addEventListener(OPEN_CREATE_PROJECT_DIALOG_EVENT, openCreateProject);
+    return () => window.removeEventListener(OPEN_CREATE_PROJECT_DIALOG_EVENT, openCreateProject);
+  }, []);
 
   useEffect(() => {
     const desktopWindowApi = getDesktopWindowApi();
@@ -324,7 +346,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         href: "/projects",
         id: "projects",
         isProject: false,
-        label: "项目",
+        label: "全部项目",
       });
     }
 
@@ -350,21 +372,8 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
       : COLLAPSED_SIDEBAR_WIDTH
     : SIDEBAR_WIDTH;
 
-  async function handleNewProject() {
-    if (isCreating) return;
-    setIsCreating(true);
-
-    try {
-      const project = await createProjectInApi({
-        name: createProjectName(""),
-        prompt: "",
-        model: "",
-      });
-      await refreshProjects();
-      router.push(`/projects/${project.id}`);
-    } finally {
-      setIsCreating(false);
-    }
+  function handleNewProject() {
+    setIsCreateProjectOpen(true);
   }
 
   function persistOpenProjectIds(nextIds: string[]) {
@@ -376,11 +385,11 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
   function closeProjectTab(projectId: string) {
     const nextIds = openProjectIds.filter((id) => id !== projectId);
     persistOpenProjectIds(nextIds);
+    router.push("/");
+  }
 
-    if (currentProjectId !== projectId) return;
-
-    const nextProjectId = nextIds.find((id) => projectsById.has(id));
-    router.push(nextProjectId ? `/projects/${nextProjectId}` : "/");
+  function closeTransientTab() {
+    router.push("/");
   }
 
   function switchTab(offset: -1 | 1) {
@@ -533,6 +542,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="h-[100dvh] overflow-hidden bg-[var(--color-surface)] text-[var(--color-text-primary)]">
+      <ContinuousGlobalAgentSupervisor projectIds={projects.map((project) => project.id)} />
       <aside
         className="fixed bottom-0 left-0 top-0 z-50 flex flex-col overflow-hidden border-r border-[var(--color-border)] bg-[var(--color-surface-sidebar)] transition-[width] duration-150 ease-out"
         style={{ width: sidebarWidth }}
@@ -582,7 +592,6 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             <button
               aria-label="新建项目"
               className="flex size-9 items-center justify-center rounded-md text-[var(--color-text-secondary)] transition hover:bg-[var(--color-surface-container-high)] hover:text-[var(--color-text-primary)]"
-              disabled={isCreating}
               onClick={handleNewProject}
               title="新建项目"
               type="button"
@@ -629,16 +638,6 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
         ) : (
           <>
         <div className="space-y-3 px-3 py-3">
-          <button
-            className="flex h-9 w-full items-center justify-start gap-2 rounded-md bg-transparent px-2 text-sm font-medium text-[var(--color-text-primary)] transition hover:bg-[var(--color-surface-container-high)] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isCreating}
-            onClick={handleNewProject}
-            type="button"
-          >
-            <Plus className="size-4" />
-            新建项目
-          </button>
-
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--color-text-tertiary)]" />
             <Input
@@ -685,14 +684,25 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <div className="mb-2 flex items-center justify-between px-1 text-xs font-medium text-[var(--color-text-secondary)]">
+          <div className="group mb-2 flex h-7 items-center justify-between px-1 text-xs font-medium text-[var(--color-text-secondary)]">
             <span>项目</span>
-            <Link
-              className="font-medium text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
-              href="/projects"
-            >
-              全部
-            </Link>
+            <div className="pointer-events-none flex items-center gap-1 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+              <Link
+                className="rounded px-1.5 py-1 text-[11px] font-medium text-[var(--color-text-tertiary)] transition hover:bg-[var(--color-surface-container-high)] hover:text-[var(--color-text-primary)]"
+                href="/projects"
+              >
+                全部
+              </Link>
+              <button
+                aria-label="新建项目"
+                className="flex size-6 items-center justify-center rounded-md text-[var(--color-text-tertiary)] transition hover:bg-[var(--color-surface-container-high)] hover:text-[var(--color-text-primary)]"
+                onClick={handleNewProject}
+                title="新建项目"
+                type="button"
+              >
+                <Plus aria-hidden="true" className="size-4" strokeWidth={1.6} />
+              </button>
+            </div>
           </div>
 
           <div className="space-y-1">
@@ -756,7 +766,51 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
                     <Pencil className="size-4" />
                   </button>
                   {openProjectMenuId === project.id ? (
-                    <div className="zenme-shadow-dropdown absolute right-1 top-8 z-50 w-32 rounded-md border border-[var(--color-border)] bg-white p-1 text-sm">
+                    <div className="zenme-shadow-dropdown absolute right-1 top-8 z-50 w-36 rounded-md border border-[var(--color-border)] bg-white p-1 text-sm">
+                      <button
+                        className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-container-low)] hover:text-[var(--color-text-primary)]"
+                        onClick={() => {
+                          setOpenProjectMenuId(null);
+                          setWorkspaceProjectId(project.id);
+                        }}
+                        type="button"
+                      >
+                        <HardDrive className="size-4" />
+                        Workspace
+                      </button>
+                      <button
+                        className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-container-low)] hover:text-[var(--color-text-primary)]"
+                        onClick={() => {
+                          setOpenProjectMenuId(null);
+                          setChangeSetProjectId(project.id);
+                        }}
+                        type="button"
+                      >
+                        <FileDiff className="size-4" />
+                        ChangeSets
+                      </button>
+                      <button
+                        className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-container-low)] hover:text-[var(--color-text-primary)]"
+                        onClick={() => {
+                          setOpenProjectMenuId(null);
+                          setMemoryProjectId(project.id);
+                        }}
+                        type="button"
+                      >
+                        <Brain className="size-4" />
+                        Project Memory
+                      </button>
+                      <button
+                        className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-container-low)] hover:text-[var(--color-text-primary)]"
+                        onClick={() => {
+                          setOpenProjectMenuId(null);
+                          setKnowledgeProjectId(project.id);
+                        }}
+                        type="button"
+                      >
+                        <Database className="size-4" />
+                        Project Knowledge
+                      </button>
                       <button
                         className="flex h-8 w-full items-center gap-2 rounded px-2 text-left text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-container-low)] hover:text-[var(--color-text-primary)]"
                         onClick={() => toggleProjectFavorite(project.id)}
@@ -907,6 +961,37 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
                       event.stopPropagation();
                       closeProjectTab(tab.id);
                     }}
+                    title="关闭标签"
+                    type="button"
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              );
+            }
+
+            if (tab.id === "projects") {
+              return (
+                <div
+                  className={cn(
+                    "group relative flex h-full min-w-0 max-w-[220px] flex-1 items-center justify-center border-r border-transparent text-sm transition hover:bg-[var(--color-surface-container-high)]",
+                    isActive &&
+                      "font-medium text-[var(--color-text-primary)] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:bg-[var(--color-tab-active)]",
+                  )}
+                  data-desktop-no-drag
+                  key={tab.id}
+                  title={tab.label}
+                >
+                  <Link
+                    className="flex h-full min-w-0 flex-1 items-center justify-center px-4 pr-7"
+                    href={tab.href}
+                  >
+                    <span className="min-w-0 truncate">{tab.label}</span>
+                  </Link>
+                  <button
+                    aria-label={`关闭 ${tab.label}`}
+                    className="absolute right-2 hidden size-5 shrink-0 items-center justify-center rounded hover:bg-[var(--color-surface-container-high)] group-hover:flex"
+                    onClick={closeTransientTab}
                     title="关闭标签"
                     type="button"
                   >
@@ -1083,7 +1168,7 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
                   className="mt-2 text-sm leading-6 text-[var(--color-text-secondary)]"
                   id="delete-project-description"
                 >
-                  将永久删除“{projectPendingDeletion.name}”及其画布和本地文件，此操作无法恢复。
+                  将永久删除“{projectPendingDeletion.name}”及其画布和 Zenme 本地数据，此操作无法恢复。绑定的外部 Workspace 不会被删除。
                 </p>
               </div>
               <button
@@ -1123,6 +1208,40 @@ function AppShellContent({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </div>
+      ) : null}
+      {isCreateProjectOpen ? (
+        <CreateProjectDialog
+          onClose={() => setIsCreateProjectOpen(false)}
+          onCreated={async (project) => {
+            setIsCreateProjectOpen(false);
+            await refreshProjects();
+            router.push(`/projects/${project.id}`);
+          }}
+        />
+      ) : null}
+      {workspaceProjectId ? (
+        <WorkspaceBindingDialog
+          onClose={() => setWorkspaceProjectId(null)}
+          projectId={workspaceProjectId}
+        />
+      ) : null}
+      {changeSetProjectId ? (
+        <ChangeSetDialog
+          onClose={() => setChangeSetProjectId(null)}
+          projectId={changeSetProjectId}
+        />
+      ) : null}
+      {memoryProjectId ? (
+        <ProjectMemoryDialog
+          onClose={() => setMemoryProjectId(null)}
+          projectId={memoryProjectId}
+        />
+      ) : null}
+      {knowledgeProjectId ? (
+        <ProjectKnowledgeDialog
+          onClose={() => setKnowledgeProjectId(null)}
+          projectId={knowledgeProjectId}
+        />
       ) : null}
     </div>
   );

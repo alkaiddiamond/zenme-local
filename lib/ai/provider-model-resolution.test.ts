@@ -63,4 +63,18 @@ describe("provider-scoped model resolution", () => {
       provider: { id: VOLCENGINE_AGENT_PLAN_PROVIDER_ID },
     });
   });
+
+  it("exposes embedding-only models through the same provider-scoped resolution", () => {
+    const option = getProviderModelSelections(providers, "embedding")[0];
+
+    expect(option).toMatchObject({
+      label: "Doubao Embedding Vision",
+      modelId: "doubao-embedding-vision",
+      provider: { id: VOLCENGINE_AGENT_PLAN_PROVIDER_ID },
+    });
+    expect(resolveProviderModelSelection(option.id, providers, "embedding")).toEqual(option);
+    expect(getProviderModelSelections(providers, "text").some(
+      (selection) => selection.modelId === "doubao-embedding-vision",
+    )).toBe(false);
+  });
 });

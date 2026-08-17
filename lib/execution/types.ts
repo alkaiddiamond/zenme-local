@@ -1,6 +1,6 @@
 export const EXECUTION_STORE_VERSION = 1 as const;
 
-export type ExecutionKind = "text" | "image" | "video";
+export type ExecutionKind = "text" | "image" | "video" | "agent";
 
 export type ExecutionStatus =
   | "queued"

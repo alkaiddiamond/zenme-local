@@ -5,6 +5,16 @@
 ## 导航
 
 - [系统架构](architecture.md)
+- [Workspace Foundation 工程规格](workspace-foundation.md)
+- [Live File 与 File Document](live-files.md)
+- [Editable File 与 ChangeSet](editable-files-and-change-sets.md)
+- [Agent Workspace Runtime](agent-workspace-runtime.md)
+- [Global Agent 与并行 Sub-agent](global-agent-and-subagents.md)
+- [Continuous Global Agent](continuous-global-agent.md)
+- [Project Memory](project-memory.md)
+- [Project Knowledge Graph 与向量检索](project-knowledge.md)
+- [Canvas Convergence](canvas-convergence.md)
+- [AI Project Workspace 需求—证据矩阵](ai-project-workspace-verification.md)
 - [画布性能基线与回归](canvas-performance.md)
 - [本地数据与迁移](data-and-migrations.md)
 - [节点执行与恢复](execution-runtime.md)

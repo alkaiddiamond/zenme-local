@@ -6,6 +6,8 @@ import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 
 import {
   createAiResponseChildCanvasNode,
+  createAgentExecutionCanvasNode,
+  createGlobalAgentCanvasNode,
   createCodeCanvasNode,
   createConnectedPlaceholderCanvasNode,
   createDerivedImageChildCanvasNode,
@@ -21,6 +23,7 @@ import {
   createTextCanvasNode,
   createTextChildCanvasNode,
   createTextGenerationCanvasNode,
+  createWorkspaceFileCanvasNode,
 } from "./node-factories";
 import type { CanvasNode } from "./types";
 
@@ -80,6 +83,80 @@ const note: ReadingNote = {
 };
 
 describe("canvas node factories", () => {
+  it("creates a durable Global Agent orchestration node", () => {
+    expect(createGlobalAgentCanvasNode({
+      goal: "并行修复两个模块",
+      id: "global-node",
+      model: "provider/model",
+      orchestrationId: "orchestration-1",
+      position: { x: 100, y: 200 },
+      projectId: "project-1",
+    })).toMatchObject({
+      id: "global-node",
+      type: "globalAgent",
+      style: { height: 520, width: 680 },
+      data: {
+        globalGoal: "并行修复两个模块",
+        globalOrchestrationId: "orchestration-1",
+        kind: "globalAgent",
+        nodeLifecycle: "working",
+        ownerExecutionId: "orchestration-1",
+      },
+    });
+  });
+  it("creates a connected durable Agent execution node", () => {
+    const source = textNode();
+    const result = createAgentExecutionCanvasNode({
+      attemptId: "attempt-1",
+      executionId: "execution-1",
+      id: "agent-execution-1",
+      instruction: "检查并修复保存逻辑",
+      model: "provider/model",
+      nodeRunId: "run-1",
+      position: { x: 700, y: 200 },
+      projectId: "project-1",
+      sourceNode: source,
+    });
+    expect(result.edge).toEqual(expectedEdge("source", "agent-execution-1"));
+    expect(result.node).toMatchObject({
+      type: "agentExecution",
+      style: { height: 440, width: 620 },
+      data: {
+        agentInstruction: "检查并修复保存逻辑",
+        executionId: "execution-1",
+        kind: "agentExecution",
+        nodeLifecycle: "working",
+        ownerExecutionId: "execution-1",
+      },
+    });
+  });
+  it("creates a workspace file reference without embedding file content", () => {
+    const node = createWorkspaceFileCanvasNode({
+      documentId: "document-1",
+      id: "workspace-file-1",
+      position: { x: 10, y: 20 },
+      projectId: "project-1",
+      relativePath: "src/app.ts",
+      rootId: "root-1",
+    });
+
+    expect(node).toMatchObject({
+      id: "workspace-file-1",
+      type: "workspaceFile",
+      position: { x: 10, y: 20 },
+      style: { height: 420, width: 720 },
+      data: {
+        kind: "workspaceFile",
+        projectId: "project-1",
+        title: "app.ts",
+        workspaceFileDocumentId: "document-1",
+        workspaceRootId: "root-1",
+        workspaceRelativePath: "src/app.ts",
+      },
+    });
+    expect(node.data).not.toHaveProperty("plainText");
+    expect(node.data).not.toHaveProperty("codeContent");
+  });
   beforeEach(() => {
     vi.useRealTimers();
   });

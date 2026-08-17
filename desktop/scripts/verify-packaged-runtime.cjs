@@ -30,5 +30,5 @@ module.exports = async function verifyPackagedRuntime(context) {
     );
   }
 
-  console.log("Packaged runtime verified with chi_sim and eng OCR models.");
+  console.log("Packaged runtime verified with OCR models.");
 };

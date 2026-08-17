@@ -44,6 +44,39 @@ describe("local project repository", () => {
     expect(renamed.name).toBe("Renamed");
   });
 
+  it("migrates v1 projects to an unbound v2 project without dropping unknown fields", async () => {
+    const projectId = "legacy-project";
+    const projectDir = path.join(dataDir, "projects", projectId);
+    await fs.mkdir(projectDir, { recursive: true });
+    await fs.writeFile(path.join(projectDir, "project.json"), JSON.stringify({
+      version: 1,
+      id: projectId,
+      name: "Legacy",
+      prompt: "",
+      model: "",
+      thumbnailPath: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      lastSavedAt: null,
+      lastOpenedAt: null,
+      ownerId: "local",
+      futureField: { keep: true },
+    }), "utf8");
+
+    await expect(getLocalProject(projectId, dataDir)).resolves.toMatchObject({
+      id: projectId,
+      workspaceBindingId: null,
+    });
+    const migrated = JSON.parse(
+      await fs.readFile(path.join(projectDir, "project.json"), "utf8"),
+    );
+    expect(migrated).toMatchObject({
+      version: 2,
+      workspaceBindingId: null,
+      futureField: { keep: true },
+    });
+  });
+
   it("saves and restores the latest canvas snapshot", async () => {
     const project = await createLocalProject({
       name: "Canvas",

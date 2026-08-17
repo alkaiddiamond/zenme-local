@@ -11,8 +11,12 @@ export async function writeTextToClipboard(text: string) {
     window as Window & { zenmeDesktop?: DesktopClipboardApi }
   ).zenmeDesktop;
   if (desktopApi?.writeClipboardText) {
-    await desktopApi.writeClipboardText(text);
-    return true;
+    try {
+      if (await desktopApi.writeClipboardText(text)) return true;
+    } catch {
+      // Fall through to the browser clipboard when the desktop bridge is stale
+      // or temporarily unavailable during development reloads.
+    }
   }
 
   try {

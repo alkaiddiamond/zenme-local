@@ -31,6 +31,7 @@ import {
   hasCanvasNodeContextText,
   isTextGenerationContextNode,
   limitTextGenerationContext,
+  organizeTextGenerationContext,
 } from "./text-generation-context";
 import type { CanvasHistoryEntry, CanvasNode } from "./types";
 
@@ -260,6 +261,63 @@ describe("canvas state and context helpers", () => {
         nodes: [source, middle, generator],
       }),
     ).toContain("上游上下文 L2\n代码节点「片段」\n语言：typescript\nconst value = 1 && 2");
+  });
+
+  it("collects upstream context beyond three levels when it fits the model budget", () => {
+    const nodes = [
+      canvasNode({ data: { kind: "text", plainText: "第一层", title: "一" }, id: "one" }),
+      canvasNode({ data: { kind: "text", plainText: "第二层", title: "二" }, id: "two" }),
+      canvasNode({ data: { kind: "text", plainText: "第三层", title: "三" }, id: "three" }),
+      canvasNode({ data: { kind: "text", plainText: "第四层仍应进入上下文", title: "四" }, id: "four" }),
+      canvasNode({ data: { kind: "textGeneration", title: "生成" }, id: "generator", type: "textGeneration" }),
+    ];
+
+    const context = collectTextGenerationContext({
+      edges: [edge("four", "three"), edge("three", "two"), edge("two", "one"), edge("one", "generator")],
+      maxTokens: 1_000,
+      nodeId: "generator",
+      nodes,
+    });
+
+    expect(context).toContain("上游上下文 L4");
+    expect(context).toContain("第四层仍应进入上下文");
+  });
+
+  it("organizes and deduplicates upstream nodes before applying the token budget", () => {
+    const context = organizeTextGenerationContext([
+      { depth: 1, nodeId: "near", text: "直接相关内容" },
+      { depth: 2, nodeId: "duplicate", text: "直接相关内容" },
+      { depth: 3, nodeId: "background", text: "背景资料" },
+    ], 200);
+
+    expect(context).toContain("画布上游上下文（已整理，共 2 个节点，最远 L3，由近到远）");
+    expect(context.indexOf("上游上下文 L1")).toBeLessThan(context.indexOf("上游上下文 L3"));
+  });
+
+  it("deduplicates repeated upstream node content during collection", () => {
+    const duplicateA = canvasNode({
+      data: { kind: "text", plainText: "相同正文", title: "相同标题" },
+      id: "duplicate-a",
+    });
+    const duplicateB = canvasNode({
+      data: { kind: "text", plainText: "相同正文", title: "相同标题" },
+      id: "duplicate-b",
+    });
+    const generator = canvasNode({
+      data: { kind: "textGeneration", title: "生成" },
+      id: "generator",
+      type: "textGeneration",
+    });
+
+    const context = collectTextGenerationContext({
+      edges: [edge("duplicate-a", "generator"), edge("duplicate-b", "generator")],
+      maxTokens: 1_000,
+      nodeId: "generator",
+      nodes: [duplicateA, duplicateB, generator],
+    });
+
+    expect(context.match(/相同正文/g)).toHaveLength(1);
+    expect(context).toContain("共 1 个节点");
   });
 
   it("normalizes text generation context handles into readable edge direction", () => {

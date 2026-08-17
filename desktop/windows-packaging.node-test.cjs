@@ -40,6 +40,26 @@ test("Windows release targets an x64 NSIS installer without deleting user data",
   assert.match(packageJson.scripts["desktop:dist:win"], /--win nsis --x64/);
 });
 
+test("Windows release uses the native cc-haha command lifecycle without a bundled Codex sandbox", () => {
+  assert.equal(packageJson.dependencies["@openai/codex"], undefined);
+  assert.equal(packageJson.build.win.extraResources, undefined);
+  assert.doesNotMatch(desktopMain, /ZENME_WINDOWS_SANDBOX_BIN/);
+  assert.doesNotMatch(desktopMain, /codex-win32-x64/);
+  assert.match(desktopMain, /ZENME_SERVER_INSTANCE_ID: crypto\.randomUUID\(\)/);
+  assert.match(desktopMain, /spawnSync\("taskkill\.exe", \["\/PID", String\(child\.pid\), "\/T", "\/F"\]/);
+});
+
+test("desktop release bundles the isolated Agent browser controller", () => {
+  assert.ok(packageJson.build.files.includes("desktop/browser-control.cjs"));
+  assert.match(desktopMain, /startBrowserControlServer/);
+  assert.match(desktopMain, /ZENME_BROWSER_CONTROL_URL: browserControlUrl/);
+  const browserControl = fs.readFileSync(path.join(projectRoot, "desktop", "browser-control.cjs"), "utf8");
+  assert.match(browserControl, /hostname === "localhost" \|\| hostname === "127\.0\.0\.1" \|\| hostname === "::1"/);
+  assert.match(browserControl, /contextIsolation: true/);
+  assert.match(browserControl, /nodeIntegration: false/);
+  assert.match(browserControl, /sandbox: true/);
+});
+
 test("release package declares MIT and includes license notices", () => {
   assert.equal(packageJson.license, "MIT");
   assert.ok(packageJson.build.files.includes("LICENSE"));

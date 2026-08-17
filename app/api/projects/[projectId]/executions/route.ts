@@ -76,7 +76,7 @@ function normalizeInput(value: unknown): ExecutionInputSnapshot | undefined {
 }
 
 function isExecutionKind(value: unknown): value is ExecutionKind {
-  return value === "text" || value === "image" || value === "video";
+  return value === "text" || value === "image" || value === "video" || value === "agent";
 }
 
 function optionalString(value: unknown) {

@@ -72,7 +72,8 @@ describe("model provider settings", () => {
   });
 
   it("offers persistent light, black, warm eye-care, and system themes", () => {
-    expect(source).toContain('label="外观"');
+    expect(source).toContain('label="通用"');
+    expect(source).toContain('title="外观"');
     expect(source).toContain('label: "浅色"');
     expect(source).toContain('label: "黑色"');
     expect(source).toContain('label: "护眼"');
@@ -80,5 +81,37 @@ describe("model provider settings", () => {
     expect(source).toContain('label: "跟随系统"');
     expect(source).toContain("announceThemePreference(nextTheme)");
     expect(source).toContain("persistSettings({ theme: nextTheme })");
+  });
+
+  it("places functional session defaults in General settings", () => {
+    expect(source).toContain('title="默认会话权限"');
+    expect(source).toContain('title="默认模型"');
+    expect(source).toContain('title="推理强度"');
+    expect(source).toContain('title="模型速度"');
+    expect(source).toContain('{ value: "low", label: "轻" }');
+    expect(source).toContain('{ value: "medium", label: "中" }');
+    expect(source).toContain('{ value: "high", label: "高" }');
+    expect(source).toContain('{ value: "xhigh", label: "极高" }');
+    expect(source).not.toContain('{ value: "none", label: "无" }');
+    expect(source).not.toContain('{ value: "max", label: "最大" }');
+    expect(source).toContain('label="启用自动做梦"');
+    expect(source).toContain("showAutoDreamConfirmation");
+    expect(source).toContain("persistSettings({ defaultSessionPermissionMode: mode })");
+    expect(source).toContain("defaultReasoningEffort: effort");
+    expect(source).toContain("defaultModelSpeed: speed");
+    expect(source).toContain('rememberAiModelPreference("text", modelId)');
+    expect(source).toContain("persistSettings({ autoDreamEnabled: true })");
+    expect(source).toContain('value: "untrusted", label: "不可信"');
+    expect(source).toContain('value: "onRequest", label: "按请求"');
+    expect(source).toContain('value: "neverAsk", label: "从不请求审批"');
+    expect(source).not.toContain('value: "bypassPermissions"');
+  });
+
+  it("provides a cc-haha-compatible Agent plugin configuration surface", () => {
+    expect(source).toContain('label="Agent 插件"');
+    expect(source).toContain('fetch("/api/settings/agent-plugins"');
+    expect(source).toContain("configuration.configuredKeys.includes(key)");
+    expect(source).toContain("已配置；留空保持原值");
+    expect(source).toContain("敏感字段独立保存在本地凭据文件中");
   });
 });

@@ -18,6 +18,58 @@ describe("text generation request boundary", () => {
     expect(source).not.toContain("没有可用的上游上下文。");
   });
 
+  it("routes the composer beneath an existing node into the unified Project Agent", () => {
+    const source = readProjectFile("components/zenme/canvas-client.tsx");
+
+    expect(source).toContain("const submitNodeToProjectAgent = useCallback");
+    expect(source).toContain("onSubmitTextGenerationNode: submitNodeToProjectAgent");
+    expect(source).toContain("runProjectAgentTurnFromApi");
+    expect(source).toContain("createAiResponseChildCanvasNode");
+    expect(source).toContain("agentTurnId: turnId");
+    expect(source).toContain("steerProjectAgentTurnFromApi");
+    expect(source).toContain("onSteerTextGenerationNode: steerNodeProjectAgent");
+    expect(source).toContain("turnId,");
+    const nodeSubmitSource = source.slice(
+      source.indexOf("const submitNodeToProjectAgent"),
+      source.indexOf("const stopNodeProjectAgent"),
+    );
+    expect(nodeSubmitSource).not.toContain("setIsAgentOpen(true)");
+    expect(source).not.toContain('onSubmitTextGenerationNode: submitTextGenerationNode');
+  });
+
+  it("routes every canvas Agent entry into the same AI reply node composer", () => {
+    const canvasSource = readProjectFile("components/zenme/canvas-client.tsx");
+    const menuSource = readProjectFile("components/zenme/canvas/menus.tsx");
+
+    expect(canvasSource).toContain("createUnifiedAgentPrompt");
+    expect(menuSource).toContain('onCreateConnectedPlaceholder("textGeneration")');
+    expect(canvasSource).not.toContain("<AgentPanel");
+    expect(canvasSource).not.toContain("<GlobalAgentDialog");
+    expect(canvasSource).not.toContain("<WorkspaceAgentTaskDialog");
+    expect(menuSource).toContain("继续对话或执行任务");
+    expect(menuSource).not.toContain("作为 Workspace Agent 任务运行");
+    expect(menuSource).not.toContain("作为 Agent 任务运行");
+  });
+
+  it("passes structured upstream node and file references into Project Agent turns", () => {
+    const source = readProjectFile("components/zenme/canvas-client.tsx");
+    const nodeSubmitSource = source.slice(
+      source.indexOf("const submitNodeToProjectAgent"),
+      source.indexOf("const stopNodeProjectAgent"),
+    );
+
+    expect(nodeSubmitSource).toContain("collectAgentTurnReferences");
+    expect(nodeSubmitSource).toContain("fileDocumentIds: references.fileDocumentIds");
+    expect(nodeSubmitSource).toContain("selectedNodeIds: references.selectedNodeIds");
+    expect(nodeSubmitSource).not.toContain("selectedNodeIds: [sourceNode.id]");
+  });
+
+  it("remounts the canvas session when navigating between projects", () => {
+    const source = readProjectFile("components/zenme/canvas-client.tsx");
+
+    expect(source).toContain("<ReactFlowProvider key={props.projectId}>");
+  });
+
   it("allows the text node composer to submit an empty prompt", () => {
     const source = readProjectFile(
       "components/zenme/nodes/text-node-composer.tsx",
@@ -28,6 +80,55 @@ describe("text generation request boundary", () => {
     );
     expect(source).not.toContain("!prompt.trim()");
     expect(source).not.toContain("!nextPrompt || isGenerating");
+  });
+
+  it("gives the node composer functional Codex-style controls", () => {
+    const source = readProjectFile(
+      "components/zenme/nodes/text-node-composer.tsx",
+    );
+
+    expect(source).toContain('aria-label="节点对话框"');
+    expect(source).toContain('aria-label="会话权限"');
+    expect(source).toContain('aria-label="添加图片上下文"');
+    expect(source).toContain("imageDataUrls: images.map");
+    expect(source).toContain("nodeData.onStopTextGenerationNode?.(nodeId)");
+    expect(source).toContain("nodeData.onSteerTextGenerationNode?.(nodeId, nextPrompt)");
+    expect(source).toContain('isGenerating ? "追加指令"');
+    expect(source).toContain("createImagePreview(file)");
+    expect(source).toContain('fetch("/api/settings"');
+    expect(source).toContain("getProjectAgentSessionFromApi(nodeData.projectId)");
+    expect(source).toContain("updateProjectAgentSessionPermissionFromApi(nodeData.projectId, nextMode)");
+    expect(source).not.toContain("defaultSessionPermissionMode: nextMode");
+    expect(source).toContain('aria-label="推理强度"');
+    expect(source).toContain("reasoningEffort,");
+    expect(source).toContain("modelSpeed,");
+    expect(source).toContain("permissionMode,");
+  });
+
+  it("retries a failed AI reply as a new downstream Project Agent Turn", () => {
+    const source = readProjectFile("components/zenme/nodes/text-node.tsx");
+    const timeline = readProjectFile("components/zenme/nodes/agent-turn-timeline.tsx");
+
+    expect(source).toContain("onRetry={() => nodeData.onSubmitTextGenerationNode?.(id,");
+    expect(source).toContain("prompt: nodeData.aiPrompt");
+    expect(source).toContain("model: nodeData.aiModel || nodeData.textGenerationModel");
+    expect(timeline).toContain("projectTurnCanRetry(events) && onRetry");
+    expect(timeline).toContain("重试");
+  });
+
+  it("carries image context and an abort signal through the unified Project Agent", () => {
+    const canvasSource = readProjectFile("components/zenme/canvas-client.tsx");
+    const apiSource = readProjectFile("lib/zenme-api.ts");
+    const modelSource = readProjectFile("lib/agent/project-agent-model.ts");
+
+    expect(canvasSource).toContain("collectTextGenerationImageUrls");
+    expect(canvasSource).toContain("fetchImageAsDataUrl(url)");
+    expect(canvasSource).toContain("imageDataUrls: mergedImageDataUrls");
+    expect(canvasSource).toContain("signal: controller.signal");
+    expect(canvasSource).toContain("active.controller.abort()");
+    expect(canvasSource).toContain("stopProjectAgentTurnFromApi(projectId");
+    expect(apiSource).toContain("imageDataUrls: input.imageDataUrls");
+    expect(modelSource).toContain("imageDataUrls: input.imageDataUrls");
   });
 
   it("does not write implicit source text back into the composer", () => {

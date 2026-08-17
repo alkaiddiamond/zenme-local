@@ -22,12 +22,40 @@ afterEach(async () => {
 });
 
 describe("local settings", () => {
+  it("normalizes local stdio MCP servers and migrates legacy settings without them", async () => {
+    await expect(getLocalSettings(dataDir)).resolves.toMatchObject({ mcpServers: [] });
+    const settings = await updateLocalSettings({
+      mcpServers: [{
+        id: "filesystem",
+        name: "Filesystem",
+        enabled: true,
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem", "."],
+        connectTimeoutMs: 100,
+        callTimeoutMs: 900_000,
+        access: "full",
+      }],
+    }, dataDir);
+
+    expect(settings.mcpServers).toEqual([expect.objectContaining({
+      id: "filesystem",
+      access: "full",
+      connectTimeoutMs: 1_000,
+      callTimeoutMs: 300_000,
+    })]);
+  });
+
   it("returns defaults and persists updates to settings.json", async () => {
     await expect(getLocalSettings(dataDir)).resolves.toMatchObject({
       autoSaveIntervalMs: 5000,
       dataDir,
       modelProviders: [],
       theme: "light",
+      defaultSessionPermissionMode: "onRequest",
+      thinkingEnabled: true,
+      defaultReasoningEffort: "low",
+      defaultModelSpeed: "standard",
+      autoDreamEnabled: false,
       version: 1,
     });
 
@@ -52,6 +80,40 @@ describe("local settings", () => {
     ).resolves.toContain('"lastImageAspectRatio": "auto"');
   });
 
+  it("persists Agent reasoning effort and speed while migrating the short-lived extra levels", async () => {
+    await expect(updateLocalSettings({
+      defaultReasoningEffort: "xhigh",
+      defaultModelSpeed: "fast",
+    }, dataDir)).resolves.toMatchObject({
+      defaultReasoningEffort: "xhigh",
+      defaultModelSpeed: "fast",
+    });
+
+    await fs.writeFile(getLocalSettingsPath(dataDir), JSON.stringify({
+      version: 1,
+      dataDir,
+      autoSaveIntervalMs: 5_000,
+      theme: "light",
+      defaultReasoningEffort: "none",
+      modelProviders: [],
+    }));
+    await expect(getLocalSettings(dataDir)).resolves.toMatchObject({
+      defaultReasoningEffort: "low",
+      defaultModelSpeed: "standard",
+    });
+    await fs.writeFile(getLocalSettingsPath(dataDir), JSON.stringify({
+      version: 1,
+      dataDir,
+      autoSaveIntervalMs: 5_000,
+      theme: "light",
+      defaultReasoningEffort: "max",
+      modelProviders: [],
+    }));
+    await expect(getLocalSettings(dataDir)).resolves.toMatchObject({
+      defaultReasoningEffort: "xhigh",
+    });
+  });
+
   it("persists a theme and falls back safely for legacy or invalid values", async () => {
     await expect(updateLocalSettings({ theme: "warm" }, dataDir)).resolves.toMatchObject({
       theme: "warm",
@@ -69,6 +131,31 @@ describe("local settings", () => {
     );
 
     await expect(getLocalSettings(dataDir)).resolves.toMatchObject({ theme: "light" });
+  });
+
+  it("migrates the short-lived six-option permission values into three modes", async () => {
+    await fs.writeFile(getLocalSettingsPath(dataDir), JSON.stringify({
+      version: 1,
+      dataDir,
+      autoSaveIntervalMs: 5_000,
+      theme: "light",
+      defaultSessionPermissionMode: "plan",
+      modelProviders: [],
+    }));
+    await expect(getLocalSettings(dataDir)).resolves.toMatchObject({
+      defaultSessionPermissionMode: "untrusted",
+    });
+    await fs.writeFile(getLocalSettingsPath(dataDir), JSON.stringify({
+      version: 1,
+      dataDir,
+      autoSaveIntervalMs: 5_000,
+      theme: "light",
+      defaultSessionPermissionMode: "dontAsk",
+      modelProviders: [],
+    }));
+    await expect(getLocalSettings(dataDir)).resolves.toMatchObject({
+      defaultSessionPermissionMode: "neverAsk",
+    });
   });
 
   it("migrates a legacy global proxy to each provider", async () => {

@@ -53,6 +53,7 @@ export function reconcileCanvasExecutions(input: {
         };
       }
       if (isActiveExecutionStatus(record.attempt.status)) {
+        if (node.data.agentTurnId) return node;
         interruptedAttempts.push(record);
         changed = true;
         return failInterruptedNode(node, identity, "文本请求因应用重启而中断，请重试");

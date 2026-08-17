@@ -27,6 +27,12 @@ describe("dashboard project composer", () => {
     expect(source).not.toContain("window.location.href");
   });
 
+  it("routes the new-project card through the shared name-and-folder modal", () => {
+    expect(source).toContain("openCreateProjectDialog()");
+    expect(source).toContain("onClick={openNewProjectDialog}");
+    expect(source).not.toContain('zenme:create-new-project');
+  });
+
   it("has no input placeholder and follows the text composer keyboard behavior", () => {
     expect(source).not.toMatch(/\bplaceholder=/);
     expect(source).toContain('event.key !== "Enter"');

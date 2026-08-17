@@ -36,6 +36,8 @@ type RenderedCanvasNodeInput = {
     },
   ) => void;
   nodes: CanvasNode[];
+  onUpdateNodeLifecycle?: NonNullable<CanvasNodeData["onUpdateNodeLifecycle"]>;
+  onToggleAgentDetailsFolded?: NonNullable<CanvasNodeData["onToggleAgentDetailsFolded"]>;
   musicLyricsOverlayPlayerNodeId?: string;
   onEnsureMusicPlayback?: NonNullable<CanvasNodeData["onEnsureMusicPlayback"]>;
   onEnsureMusicWaveform?: NonNullable<CanvasNodeData["onEnsureMusicWaveform"]>;
@@ -83,6 +85,7 @@ type RenderedCanvasNodeInput = {
   onToggleAiResponseExpanded?: NonNullable<
     CanvasNodeData["onToggleAiResponseExpanded"]
   >;
+  onSyncAgentTurnState?: NonNullable<CanvasNodeData["onSyncAgentTurnState"]>;
   onToggleTextExpanded?: NonNullable<CanvasNodeData["onToggleTextExpanded"]>;
   onToggleImagePromptExpanded?: NonNullable<
     CanvasNodeData["onToggleImagePromptExpanded"]
@@ -93,8 +96,10 @@ type RenderedCanvasNodeInput = {
   onUpdateProjectTag?: NonNullable<CanvasNodeData["onUpdateProjectTag"]>;
   onSubmitTextGenerationNode: (
     nodeId: string,
-    input?: { model?: string; prompt?: string },
+    input?: { imageDataUrls?: string[]; model?: string; prompt?: string },
   ) => Promise<void> | void;
+  onSteerTextGenerationNode?: NonNullable<CanvasNodeData["onSteerTextGenerationNode"]>;
+  onStopTextGenerationNode?: NonNullable<CanvasNodeData["onStopTextGenerationNode"]>;
   onSubmitImageNode: (
     nodeId: string,
     input?: Parameters<NonNullable<CanvasNodeData["onSubmitImageNode"]>>[1],
@@ -142,6 +147,8 @@ type RenderedNodeCacheEntry = {
   node: CanvasNode;
   onCreateTextChildNode?: RenderedCanvasNodeInput["onCreateTextChildNode"];
   onSubmitTextGenerationNode?: RenderedCanvasNodeInput["onSubmitTextGenerationNode"];
+  onSteerTextGenerationNode?: RenderedCanvasNodeInput["onSteerTextGenerationNode"];
+  onStopTextGenerationNode?: RenderedCanvasNodeInput["onStopTextGenerationNode"];
   onSubmitImageNode?: RenderedCanvasNodeInput["onSubmitImageNode"];
   onSubmitVideoNode?: RenderedCanvasNodeInput["onSubmitVideoNode"];
   onUpdateVideoNode?: RenderedCanvasNodeInput["onUpdateVideoNode"];
@@ -155,6 +162,7 @@ type RenderedNodeCacheEntry = {
   onLocateTaskNode?: RenderedCanvasNodeInput["onLocateTaskNode"];
   onToggleTaskChildren?: RenderedCanvasNodeInput["onToggleTaskChildren"];
   onToggleAiResponseExpanded?: RenderedCanvasNodeInput["onToggleAiResponseExpanded"];
+  onSyncAgentTurnState?: RenderedCanvasNodeInput["onSyncAgentTurnState"];
   onToggleTextExpanded?: RenderedCanvasNodeInput["onToggleTextExpanded"];
   onToggleImagePromptExpanded?: RenderedCanvasNodeInput["onToggleImagePromptExpanded"];
   onToggleMusicChildExpanded?: RenderedCanvasNodeInput["onToggleMusicChildExpanded"];
@@ -221,6 +229,8 @@ export function getRenderedCanvasNodes({
   createNoteNode,
   edges,
   nodes,
+  onUpdateNodeLifecycle,
+  onToggleAgentDetailsFolded,
   musicLyricsOverlayPlayerNodeId,
   onResolveImageDimensions,
   onCreateDerivedImageNode,
@@ -241,6 +251,8 @@ export function getRenderedCanvasNodes({
   onSubmitImageNode,
   onSubmitVideoNode,
   onSubmitTextGenerationNode,
+  onSteerTextGenerationNode,
+  onStopTextGenerationNode,
   onUpdateImageNode,
   onUpdateVideoNode,
   onUpdateTextGenerationNode,
@@ -251,6 +263,7 @@ export function getRenderedCanvasNodes({
   onLocateTaskNode,
   onToggleTaskChildren,
   onToggleAiResponseExpanded,
+  onSyncAgentTurnState,
   onToggleTextExpanded,
   onToggleImagePromptExpanded,
   onToggleMusicChildExpanded,
@@ -258,6 +271,9 @@ export function getRenderedCanvasNodes({
   projectId,
   toggleReaderCollapse,
 }: RenderedCanvasNodeInput) {
+  nodes = nodes.filter((node) => node.data.nodeLifecycle !== "archived");
+  const visibleNodeIds = new Set(nodes.map((node) => node.id));
+  edges = edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target));
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const projectTags = Array.from(
     new Set(
@@ -400,6 +416,7 @@ export function getRenderedCanvasNodes({
       ...nodeWithoutGroupDragLimit,
       data: {
         ...nodeWithoutGroupDragLimit.data,
+        projectId,
         canvasContentActive:
           activeContentNodeIds === null || activeContentNodeIds === undefined
             ? true
@@ -412,7 +429,9 @@ export function getRenderedCanvasNodes({
         hasOutgoingEdge: connectedNodeIdsByDirection.outgoing.has(node.id),
         isMultiSelection:
           hasMultipleSelectedNodes && Boolean(node.selected),
-        hasRunningGenerationChild: runningGenerationSourceIds.has(node.id),
+        hasRunningGenerationChild:
+          runningGenerationSourceIds.has(node.id) ||
+          (node.data.kind === "agent" && node.data.aiStatus === "generating"),
         ...(
           nodeWithoutGroupDragLimit.data.kind === "imageGeneration" ||
           nodeWithoutGroupDragLimit.data.kind === "videoGeneration" ||
@@ -465,6 +484,12 @@ export function getRenderedCanvasNodes({
         ...(nodeWithoutGroupDragLimit.data.kind === "image"
           ? { onCreateDerivedImageNode, onResolveImageDimensions }
           : {}),
+        ...(
+          nodeWithoutGroupDragLimit.data.kind === "agentExecution" ||
+          nodeWithoutGroupDragLimit.data.kind === "globalAgent"
+            ? { onUpdateNodeLifecycle, onToggleAgentDetailsFolded }
+            : {}
+        ),
       },
     };
 
@@ -731,6 +756,8 @@ export function getRenderedCanvasNodes({
       const dependencies = [
         onCreateTextChildNode,
         onSubmitTextGenerationNode,
+        onSteerTextGenerationNode,
+        onStopTextGenerationNode,
         onToggleTextExpanded,
         onUpdateProjectTag,
         onUpdateTextGenerationNode,
@@ -745,6 +772,8 @@ export function getRenderedCanvasNodes({
           ...nodeWithConnectionState.data,
           onCreateTextChildNode,
           onSubmitTextGenerationNode,
+          onSteerTextGenerationNode,
+          onStopTextGenerationNode,
           onToggleTextExpanded,
           onUpdateProjectTag,
           onUpdateTextGenerationNode,
@@ -771,6 +800,8 @@ export function getRenderedCanvasNodes({
       if (
         cached?.onCreateTextChildNode === onCreateTextChildNode &&
         cached.onSubmitTextGenerationNode === onSubmitTextGenerationNode &&
+        cached.onSteerTextGenerationNode === onSteerTextGenerationNode &&
+        cached.onStopTextGenerationNode === onStopTextGenerationNode &&
         cached.onToggleTextExpanded === onToggleTextExpanded &&
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
         cached.onUpdateTextNode === onUpdateTextNode &&
@@ -785,6 +816,8 @@ export function getRenderedCanvasNodes({
           ...nodeWithConnectionState.data,
           onCreateTextChildNode,
           onSubmitTextGenerationNode,
+          onSteerTextGenerationNode,
+          onStopTextGenerationNode,
           onToggleTextExpanded,
           onUpdateTextGenerationNode,
           onUpdateTextNode,
@@ -795,6 +828,8 @@ export function getRenderedCanvasNodes({
         node: renderedTextNode,
         onCreateTextChildNode,
         onSubmitTextGenerationNode,
+        onSteerTextGenerationNode,
+        onStopTextGenerationNode,
         onToggleTextExpanded,
         onUpdateTextGenerationNode,
         onUpdateTextNode,
@@ -808,6 +843,8 @@ export function getRenderedCanvasNodes({
 
       if (
         cached?.onSubmitTextGenerationNode === onSubmitTextGenerationNode &&
+        cached.onSteerTextGenerationNode === onSteerTextGenerationNode &&
+        cached.onStopTextGenerationNode === onStopTextGenerationNode &&
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
         hasSameSharedDerivedState(cached.node, nodeWithConnectionState)
       ) {
@@ -819,6 +856,8 @@ export function getRenderedCanvasNodes({
         data: {
           ...nodeWithConnectionState.data,
           onSubmitTextGenerationNode,
+          onSteerTextGenerationNode,
+          onStopTextGenerationNode,
           onUpdateTextGenerationNode,
         },
       };
@@ -826,6 +865,8 @@ export function getRenderedCanvasNodes({
       renderedNodeCache.set(node, {
         node: renderedTextGenerationNode,
         onSubmitTextGenerationNode,
+        onSteerTextGenerationNode,
+        onStopTextGenerationNode,
         onUpdateTextGenerationNode,
       });
 
@@ -999,6 +1040,8 @@ export function getRenderedCanvasNodes({
 
       if (
         cached?.onSubmitTextGenerationNode === onSubmitTextGenerationNode &&
+        cached.onSteerTextGenerationNode === onSteerTextGenerationNode &&
+        cached.onStopTextGenerationNode === onStopTextGenerationNode &&
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
         hasSameSharedDerivedState(cached.node, nodeWithConnectionState)
       ) {
@@ -1011,6 +1054,8 @@ export function getRenderedCanvasNodes({
         data: {
           ...nodeWithConnectionState.data,
           onSubmitTextGenerationNode,
+          onSteerTextGenerationNode,
+          onStopTextGenerationNode,
           onUpdateTextGenerationNode,
         },
       };
@@ -1018,6 +1063,8 @@ export function getRenderedCanvasNodes({
       renderedNodeCache.set(node, {
         node: renderedNoteNode,
         onSubmitTextGenerationNode,
+        onSteerTextGenerationNode,
+        onStopTextGenerationNode,
         onUpdateTextGenerationNode,
       });
 
@@ -1029,7 +1076,10 @@ export function getRenderedCanvasNodes({
 
       if (
         cached?.onSubmitTextGenerationNode === onSubmitTextGenerationNode &&
+        cached.onSteerTextGenerationNode === onSteerTextGenerationNode &&
+        cached.onStopTextGenerationNode === onStopTextGenerationNode &&
         cached.onToggleAiResponseExpanded === onToggleAiResponseExpanded &&
+        cached.onSyncAgentTurnState === onSyncAgentTurnState &&
         cached.onUpdateTextGenerationNode === onUpdateTextGenerationNode &&
         hasSameSharedDerivedState(cached.node, nodeWithConnectionState)
       ) {
@@ -1040,8 +1090,12 @@ export function getRenderedCanvasNodes({
         ...nodeWithConnectionState,
         data: {
           ...nodeWithConnectionState.data,
+          projectId,
           onToggleAiResponseExpanded,
+          onSyncAgentTurnState,
           onSubmitTextGenerationNode,
+          onSteerTextGenerationNode,
+          onStopTextGenerationNode,
           onUpdateTextGenerationNode,
         },
       };
@@ -1049,7 +1103,10 @@ export function getRenderedCanvasNodes({
       renderedNodeCache.set(node, {
         node: renderedAgentNode,
         onToggleAiResponseExpanded,
+        onSyncAgentTurnState,
         onSubmitTextGenerationNode,
+        onSteerTextGenerationNode,
+        onStopTextGenerationNode,
         onUpdateTextGenerationNode,
       });
 

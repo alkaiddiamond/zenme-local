@@ -1,28 +1,39 @@
 "use client";
 
-import { FormEvent, useEffect, useRef } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   AgentComposer,
   AgentErrorNotice,
-  AgentMessageList,
+  AgentEventWaterfall,
   AgentPanelHeader,
   AgentPanelShell,
   AgentWelcomeState,
 } from "@/components/zenme/agent-panel-parts";
+import type { AgentQuestionSubmission } from "@/components/zenme/agent-question-form";
 import {
+  appendAgentAssistantMessage,
   appendAgentUserMessage,
-  appendEmptyAssistantMessage,
-  applyAssistantMessageContent,
+  getActiveProjectAgentTurnId,
+  hasPendingProjectAgentBackgroundTask,
+  hasPendingProjectAgentMemoryTask,
 } from "@/components/zenme/agent-message-state";
 import type { AgentMessage } from "@/components/zenme/agent-types";
-import { requestAgentChat } from "@/components/zenme/agent-chat-request";
-import { readAiChatStreamDeltas } from "@/components/zenme/canvas/ai-stream";
 import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 import {
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
 import { writeTextToClipboard } from "@/lib/clipboard";
+import {
+  getProjectAgentSessionFromApi,
+  appendProjectAgentEventFromApi,
+  approveAgentCommandFromApi,
+  executeAgentWorkspaceToolFromApi,
+  runProjectAgentTurnFromApi,
+  rejectAgentCommandFromApi,
+  steerProjectAgentTurnFromApi,
+} from "@/lib/zenme-api";
+import type { ProjectAgentEvent } from "@/lib/agent/project-session-types";
 
 export type { AgentMessage } from "@/components/zenme/agent-types";
 
@@ -34,6 +45,7 @@ type AgentPanelProps = {
   isSubmitting: boolean;
   messages: Message[];
   model: string;
+  projectId: string;
   setError: (error: string | null) => void;
   setInput: (input: string) => void;
   setIsSubmitting: (isSubmitting: boolean) => void;
@@ -51,6 +63,7 @@ export function AgentPanel({
   messages,
   model,
   onClose,
+  projectId,
   setError,
   setInput,
   setIsSubmitting,
@@ -58,15 +71,138 @@ export function AgentPanel({
   setModel,
 }: AgentPanelProps) {
   const abortRef = useRef<AbortController | null>(null);
+  const [events, setEvents] = useState<ProjectAgentEvent[]>([]);
+  const [busyCommandId, setBusyCommandId] = useState<string>();
+  const [busyQuestionId, setBusyQuestionId] = useState<string>();
+  const [isSteering, setIsSteering] = useState(false);
   const configuredModels = useAiModelOptions();
   const pickerModels = configuredModels;
+  const activeTurnId = useMemo(() => getActiveProjectAgentTurnId(events), [events]);
+  const hasActiveTurn = Boolean(activeTurnId);
+  const hasPendingBackgroundTask = useMemo(() => hasPendingProjectAgentBackgroundTask(events), [events]);
+  const hasPendingMemoryTask = useMemo(() => hasPendingProjectAgentMemoryTask(events), [events]);
+
+  const loadSession = useCallback(async () => {
+    const session = await getProjectAgentSessionFromApi(projectId);
+    setEvents(session.events);
+    setMessages(session.events.flatMap((event): Message[] => {
+      if ((event.type !== "user" && event.type !== "assistant") || !event.content) return [];
+      return [{ role: event.type, content: event.content }];
+    }));
+  }, [projectId, setMessages]);
 
   useEffect(() => {
+    let cancelled = false;
+    void loadSession().catch((loadError) => {
+      if (!cancelled) {
+        setError(loadError instanceof Error ? loadError.message : "项目 Agent 会话加载失败");
+      }
+    });
     return () => {
+      cancelled = true;
       abortRef.current?.abort();
       abortRef.current = null;
     };
-  }, []);
+  }, [loadSession, setError]);
+
+  useEffect(() => {
+    if (!isSubmitting) void loadSession().catch(() => undefined);
+  }, [isSubmitting, loadSession]);
+
+  useEffect(() => {
+    if (!isSubmitting && !hasActiveTurn && !hasPendingBackgroundTask && !hasPendingMemoryTask) return;
+    const timer = window.setInterval(() => {
+      void loadSession().catch(() => undefined);
+    }, 750);
+    return () => window.clearInterval(timer);
+  }, [hasActiveTurn, hasPendingBackgroundTask, hasPendingMemoryTask, isSubmitting, loadSession]);
+
+  async function approveCommand(event: ProjectAgentEvent) {
+    const executionId = typeof event.data?.executionId === "string" ? event.data.executionId : "";
+    const commandId = typeof event.data?.commandRequestId === "string" ? event.data.commandRequestId : "";
+    if (!executionId || !commandId || busyCommandId) return;
+    setBusyCommandId(commandId);
+    setError(null);
+    try {
+      await approveAgentCommandFromApi(projectId, executionId, commandId);
+      const result = await executeAgentWorkspaceToolFromApi({
+        arguments: { commandRequestId: commandId },
+        executionId,
+        name: "run_approved_command",
+        projectId,
+      });
+      await appendProjectAgentEventFromApi({
+        projectId,
+        turnId: event.turnId,
+        type: "approval",
+        content: result.stdout || result.stderr || (result.status === "running" ? `后台任务已启动：${result.id}` : "命令执行完成"),
+        data: { commandRequestId: commandId, executionId, status: result.status },
+      });
+      await appendProjectAgentEventFromApi({
+        projectId,
+        turnId: event.turnId,
+        type: "toolResult",
+        content: result.stdout || result.stderr || (result.status === "running" ? `后台任务已启动：${result.id}` : "命令执行完成"),
+        data: {
+          executionId,
+          name: "shell_command",
+          output: result,
+          status: result.status === "succeeded" || result.status === "running" ? "succeeded" : "failed",
+        },
+      });
+      const session = await getProjectAgentSessionFromApi(projectId);
+      const userEvent = session.events.find((candidate) => candidate.turnId === event.turnId && candidate.type === "user");
+      const turnModel = typeof userEvent?.data?.model === "string" ? userEvent.data.model : model;
+      if (userEvent?.content && turnModel) {
+        await runProjectAgentTurnFromApi({ projectId, turnId: event.turnId, prompt: userEvent.content, model: turnModel, resume: true });
+      }
+      await loadSession();
+    } catch (approvalError) {
+      setError(approvalError instanceof Error ? approvalError.message : "命令执行失败");
+    } finally {
+      setBusyCommandId(undefined);
+    }
+  }
+
+  async function rejectCommand(event: ProjectAgentEvent) {
+    const executionId = typeof event.data?.executionId === "string" ? event.data.executionId : "";
+    const commandId = typeof event.data?.commandRequestId === "string" ? event.data.commandRequestId : "";
+    if (!executionId || !commandId || busyCommandId) return;
+    setBusyCommandId(commandId);
+    setError(null);
+    try {
+      const result = await rejectAgentCommandFromApi(projectId, executionId, commandId);
+      await appendProjectAgentEventFromApi({ projectId, turnId: event.turnId, type: "approval", content: "用户拒绝执行命令", data: { commandRequestId: commandId, executionId, status: "rejected" } });
+      await appendProjectAgentEventFromApi({ projectId, turnId: event.turnId, type: "toolResult", content: "用户拒绝执行命令", data: { executionId, name: "shell_command", output: result, status: "failed" } });
+      const session = await getProjectAgentSessionFromApi(projectId);
+      const userEvent = session.events.find((candidate) => candidate.turnId === event.turnId && candidate.type === "user");
+      const turnModel = typeof userEvent?.data?.model === "string" ? userEvent.data.model : model;
+      if (turnModel) await runProjectAgentTurnFromApi({ projectId, turnId: event.turnId, prompt: "用户拒绝了上一条命令。不要重复请求相同命令；请继续或说明受阻原因。", model: turnModel, resume: true });
+      await loadSession();
+    } catch (approvalError) {
+      setError(approvalError instanceof Error ? approvalError.message : "命令拒绝失败");
+    } finally {
+      setBusyCommandId(undefined);
+    }
+  }
+
+  async function answerQuestion(event: ProjectAgentEvent, answer: string | AgentQuestionSubmission) {
+    const answerText = typeof answer === "string" ? answer.trim() : Object.entries(answer.answers).map(([question, value]) => `${question} → ${value}`).join("；");
+    if (!answerText || busyQuestionId) return;
+    const userEvent = events.find((candidate) => candidate.turnId === event.turnId && candidate.type === "user");
+    const turnModel = typeof userEvent?.data?.model === "string" ? userEvent.data.model : model;
+    if (!turnModel) return;
+    setBusyQuestionId(event.id);
+    setError(null);
+    try {
+      await runProjectAgentTurnFromApi({ projectId, turnId: event.turnId, prompt: `用户对上一条问题的回答：${answerText}`, model: turnModel, resume: true, questionAnswer: { eventId: event.id, ...(typeof answer === "string" ? { value: answer.trim() } : answer) } });
+      await loadSession();
+    } catch (answerError) {
+      setError(answerError instanceof Error ? answerError.message : "回答提交失败");
+    } finally {
+      setBusyQuestionId(undefined);
+    }
+  }
 
   async function copyMessage(content: string) {
     try {
@@ -83,7 +219,24 @@ export function AgentPanel({
     event.preventDefault();
 
     const content = input.trim();
-    if (!content || isSubmitting) {
+    if (!content || isSteering || (isSubmitting && !hasActiveTurn)) {
+      return;
+    }
+
+    if (hasActiveTurn) {
+      if (!activeTurnId) return;
+      setInput("");
+      setIsSteering(true);
+      setError(null);
+      try {
+        await steerProjectAgentTurnFromApi({ projectId, prompt: content, turnId: activeTurnId });
+        await loadSession();
+      } catch (steeringError) {
+        setInput(content);
+        setError(steeringError instanceof Error ? steeringError.message : "补充指令提交失败");
+      } finally {
+        setIsSteering(false);
+      }
       return;
     }
 
@@ -97,27 +250,20 @@ export function AgentPanel({
     abortRef.current = controller;
 
     try {
-      const response = await requestAgentChat({
-        context,
-        messages: nextMessages,
+      const response = await runProjectAgentTurnFromApi({
+        canvasContext: context,
         model,
+        projectId,
+        prompt: content,
         signal: controller.signal,
       });
-
-      if (!response.ok) {
-        // 错误以独立状态展示，不写入对话历史，避免污染后续多轮上下文。
-        setError(response.error);
-        return;
+      const assistantContent = response.status === "waitingApproval"
+        ? "任务需要执行命令，已等待你的确认。"
+        : response.status === "waitingInput" ? response.question?.trim() : response.answer?.trim();
+      if (assistantContent) {
+        setMessages((current) => appendAgentAssistantMessage(current, assistantContent));
       }
-
-      setMessages(appendEmptyAssistantMessage(nextMessages));
-
-      let acc = "";
-
-      await readAiChatStreamDeltas(response.body, (delta) => {
-        acc += delta;
-        setMessages((prev) => applyAssistantMessageContent(prev, acc));
-      });
+      await loadSession();
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         setError(err instanceof Error ? err.message : "调用失败");
@@ -140,13 +286,26 @@ export function AgentPanel({
           {messages.length === 0 ? (
             <AgentWelcomeState context={context} />
           ) : (
-            <AgentMessageList messages={messages} onCopyMessage={copyMessage} />
+            <>
+              <AgentEventWaterfall
+                busyCommandId={busyCommandId}
+                busyQuestionId={busyQuestionId}
+                events={events}
+                messages={messages}
+                onAnswerQuestion={(event, answer) => void answerQuestion(event, answer)}
+                onApproveCommand={(event) => void approveCommand(event)}
+                onCopyMessage={copyMessage}
+                onRejectCommand={(event) => void rejectCommand(event)}
+              />
+            </>
           )}
         </OverlayScrollArea>
 
         <AgentErrorNotice error={error} />
         <AgentComposer
+          allowSteering={hasActiveTurn}
           input={input}
+          isSteering={isSteering}
           isSubmitting={isSubmitting}
           model={model}
           models={pickerModels}

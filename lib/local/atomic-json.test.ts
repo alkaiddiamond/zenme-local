@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { readJsonFile, writeJsonFile } from "@/lib/local/atomic-json";
+import { readJsonFile, replaceFileWithRetry, writeJsonFile } from "@/lib/local/atomic-json";
 
 let tmpDir: string;
 
@@ -36,5 +36,31 @@ describe("atomic json files", () => {
     const files = await fs.readdir(tmpDir);
     expect(files.some((file) => file.startsWith("settings.json.invalid-"))).toBe(true);
   });
-});
 
+  it("retries transient Windows rename failures with bounded backoff", async () => {
+    const attempts: string[] = [];
+    const delays: number[] = [];
+    await replaceFileWithRetry("source.tmp", "session.json", {
+      rename: async () => {
+        attempts.push("rename");
+        if (attempts.length < 3) throw Object.assign(new Error("locked"), { code: "EPERM" });
+      },
+      wait: async (delayMs) => { delays.push(delayMs); },
+    });
+
+    expect(attempts).toHaveLength(3);
+    expect(delays).toEqual([20, 50]);
+  });
+
+  it("does not retry permanent rename failures", async () => {
+    let attempts = 0;
+    await expect(replaceFileWithRetry("source.tmp", "session.json", {
+      rename: async () => {
+        attempts += 1;
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      },
+      wait: async () => undefined,
+    })).rejects.toMatchObject({ code: "ENOENT" });
+    expect(attempts).toBe(1);
+  });
+});

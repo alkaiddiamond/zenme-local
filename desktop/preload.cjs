@@ -2,6 +2,20 @@
 const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("zenmeDesktop", {
+  createProjectWithWorkspace: (input) =>
+    ipcRenderer.invoke("zenme:create-project-with-workspace", input),
+  bindProjectWorkspace: (projectId) =>
+    ipcRenderer.invoke("zenme:bind-project-workspace", projectId),
+  selectProjectWorkspace: () =>
+    ipcRenderer.invoke("zenme:select-project-workspace"),
+  setProjectWorkspaceWriteAccess: (projectId, allowed) =>
+    ipcRenderer.invoke("zenme:set-project-workspace-write-access", projectId, allowed),
+  setProjectWorkspaceDeleteAccess: (projectId, allowed) =>
+    ipcRenderer.invoke("zenme:set-project-workspace-delete-access", projectId, allowed),
+  setProjectWorkspaceExecuteAccess: (projectId, allowed) =>
+    ipcRenderer.invoke("zenme:set-project-workspace-execute-access", projectId, allowed),
+  setProjectWorkspaceGitWriteAccess: (projectId, allowed) =>
+    ipcRenderer.invoke("zenme:set-project-workspace-git-write-access", projectId, allowed),
   closeWindow: () => ipcRenderer.invoke("zenme:close-window"),
   getDataDir: () => ipcRenderer.invoke("zenme:get-data-dir"),
   getPathForFile: (file) => webUtils.getPathForFile(file),

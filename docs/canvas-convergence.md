@@ -1,0 +1,29 @@
+# Canvas Convergence
+
+Agent 相关节点从创建时即带有生命周期：`ephemeral`、`working`、`knowledge`、`pinned` 或 `archived`。生命周期只控制画布呈现和普通上下文选择，不改变 Workspace、Execution、ChangeSet 或 Project Memory 的真相源。
+
+## 用户操作
+
+- **Fold**：把 Agent/Global Agent 详情缩成 168px 结果卡片；完整工具、Sub-agent、命令和审批记录仍在独立 Execution 中。
+- **Promote**：将已结束结果标记为 `knowledge`，表示它是可复用的长期画布资产。
+- **Pin**：标记为 `pinned`，明确保留在主画布。
+- **Archive**：把节点标记为 `archived`，从主画布、画布全文搜索、普通 Agent 画布上下文和知识检索中隐藏。节点仍保存在 Canvas Snapshot，并可从左侧工具栏的归档面板恢复到归档前生命周期。
+
+运行中的任务不能通过节点 UI 归档，必须先停止或等待终态。归档节点关联的连线在主画布渲染阶段被过滤，恢复节点后原始节点和连线仍存在。
+
+## Global Agent 收敛建议
+
+Global Orchestration 进入终态后生成一次可追溯的 `convergenceProposal`，包含：
+
+- 聚合结果摘要；
+- 建议 Promote 或 Archive；
+- 是否折叠执行详情；
+- 必须保留的 ChangeSet ID；
+- 本次 Execution 产生的候选 Memory ID；
+- 不删除 Workspace 文件、审批历史和 Memory 的理由。
+
+Global Agent 只提出方案，不自行改变画布。用户点击“确认收敛”后才应用折叠与生命周期变化。
+
+## 证据
+
+`components/zenme/canvas/convergence.test.ts` 验证归档不会删除节点或领域引用，且 Fold 可逆。`components/zenme/canvas/rendered-nodes.test.ts` 验证归档节点和相关边不会进入主画布。`lib/global-agent/orchestration-store.test.ts` 验证终态调度会生成保留 ChangeSet 的收敛建议。

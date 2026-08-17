@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import path from "node:path";
 
 const writeLocks = new Map<string, Promise<unknown>>();
+const WINDOWS_RENAME_RETRY_DELAYS_MS = [20, 50, 100, 200, 400];
 
 function cloneDefault<T>(value: T): T {
   if (value && typeof value === "object") {
@@ -82,7 +83,7 @@ export async function writeJsonFile(filePath: string, value: unknown) {
         } finally {
           await handle.close();
         }
-        await fs.rename(tmpPath, filePath);
+        await replaceFileWithRetry(tmpPath, filePath);
         return;
       } catch (error) {
         lastError = error;
@@ -95,6 +96,31 @@ export async function writeJsonFile(filePath: string, value: unknown) {
 
     throw lastError;
   });
+}
+
+export async function replaceFileWithRetry(
+  sourcePath: string,
+  destinationPath: string,
+  options: {
+    rename?: typeof fs.rename;
+    wait?: (delayMs: number) => Promise<void>;
+  } = {},
+) {
+  const rename = options.rename ?? fs.rename;
+  const wait = options.wait ?? ((delayMs: number) => new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(sourcePath, destinationPath);
+      return;
+    } catch (error) {
+      if (!isTransientRenameError(error) || attempt >= WINDOWS_RENAME_RETRY_DELAYS_MS.length) throw error;
+      await wait(WINDOWS_RENAME_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+}
+
+function isTransientRenameError(error: unknown) {
+  return ["EACCES", "EBUSY", "EPERM"].includes(errorCode(error) ?? "");
 }
 
 async function withWriteLock<T>(filePath: string, task: () => Promise<T>) {
@@ -110,4 +136,3 @@ async function withWriteLock<T>(filePath: string, task: () => Promise<T>) {
     }
   }
 }
-

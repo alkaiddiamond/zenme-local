@@ -10,6 +10,34 @@ import type {
   ExecutionStatus,
 } from "@/lib/execution/types";
 import type { CanvasSnapshotPayload, ZenmeProject } from "@/lib/zenme";
+import type { WorkspaceBinding } from "@/lib/workspace/types";
+import type {
+  WorkspaceFileDocumentView,
+  WorkspaceFileEntry,
+} from "@/lib/workspace/file-document-types";
+import type { WorkspaceChangeSet } from "@/lib/workspace/change-set-types";
+import type {
+  AgentCommandRequest,
+  AgentExecutionDetail,
+  AgentWorkspaceToolArguments,
+  AgentWorkspaceToolName,
+  AgentWorkspaceToolResult,
+} from "@/lib/agent/types";
+import type {
+  GlobalContextEvidence,
+  GlobalOrchestration,
+  GlobalTaskPlanInput,
+} from "@/lib/global-agent/types";
+import type { ContinuousAgentSuggestion, ContinuousGlobalAgentMode, ContinuousGlobalAgentState } from "@/lib/global-agent/continuous-types";
+import type {
+  ProjectMemory,
+  ProjectMemoryContextItem,
+  ProjectMemoryKind,
+  ProjectMemorySource,
+} from "@/lib/memory/types";
+import type { KnowledgeSearchResponse } from "@/lib/knowledge/types";
+import type { ProjectAgentSession } from "@/lib/agent/project-session-types";
+import type { ZenmeModelSpeed, ZenmeReasoningEffort, ZenmeSessionPermissionMode } from "@/lib/local/settings";
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -207,6 +235,604 @@ export async function createVideoTask(input: {
     status: VideoTaskStatus;
     taskId: string;
   }>(response);
+}
+
+export async function getProjectAgentSessionFromApi(projectId: string) {
+  return readJson<ProjectAgentSession>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/agent-session`,
+    { cache: "no-store" },
+  ));
+}
+
+export async function updateProjectAgentSessionPermissionFromApi(
+  projectId: string,
+  permissionMode: ZenmeSessionPermissionMode,
+) {
+  return readJson<ProjectAgentSession>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/agent-session`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "updateContext", permissionMode }),
+    },
+  ));
+}
+
+export type ProjectAgentTurnApiResult = {
+  answer?: string;
+  commandRequestId?: string;
+  executionId?: string;
+  options?: Array<{ label: string; description?: string }>;
+  question?: string;
+  questions?: Array<{ question: string; header: string; options: Array<{ label: string; description?: string; preview?: string }>; multiSelect?: boolean }>;
+  status: "completed" | "waitingApproval" | "waitingInput";
+  turnId: string;
+};
+
+export async function runProjectAgentTurnFromApi(input: {
+  canvasContext?: string;
+  fileDocumentIds?: string[];
+  imageDataUrls?: string[];
+  model: string;
+  projectId: string;
+  prompt: string;
+  selectedNodeIds?: string[];
+  signal?: AbortSignal;
+  turnId?: string;
+  reasoningEffort?: ZenmeReasoningEffort;
+  modelSpeed?: ZenmeModelSpeed;
+  permissionMode?: ZenmeSessionPermissionMode;
+  resume?: boolean;
+  questionAnswer?: {
+    eventId: string;
+    value?: string;
+    answers?: Record<string, string>;
+    annotations?: Record<string, { notes?: string; preview?: string }>;
+  };
+}): Promise<ProjectAgentTurnApiResult> {
+  const started = await readJson<{ status: "running"; turnId: string } | ProjectAgentTurnApiResult>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/agent-session/turns`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        canvasContext: input.canvasContext,
+        fileDocumentIds: input.fileDocumentIds,
+        imageDataUrls: input.imageDataUrls,
+        model: input.model,
+        prompt: input.prompt,
+        selectedNodeIds: input.selectedNodeIds,
+        turnId: input.turnId,
+        reasoningEffort: input.reasoningEffort,
+        modelSpeed: input.modelSpeed,
+        permissionMode: input.permissionMode,
+        resume: input.resume,
+        questionAnswer: input.questionAnswer,
+      }),
+      signal: input.signal,
+    },
+  ));
+  if (started.status !== "running") return started;
+  while (true) {
+    if (input.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    await delayApiPoll(400, input.signal);
+    const state = await readJson<(ProjectAgentTurnApiResult | { status: "running" | "failed" | "stopped"; turnId: string; error?: string })>(await fetch(
+      `/api/projects/${encodeURIComponent(input.projectId)}/agent-session/turns?turnId=${encodeURIComponent(started.turnId)}`,
+      { cache: "no-store", signal: input.signal },
+    ));
+    if (state.status === "running") continue;
+    if (state.status === "failed") throw new Error(state.error || "项目 Agent Turn 执行失败");
+    if (state.status === "stopped") throw new DOMException("项目 Agent Turn 已停止", "AbortError");
+    return state as ProjectAgentTurnApiResult;
+  }
+}
+
+export async function stopProjectAgentTurnFromApi(projectId: string, turnId: string) {
+  return readJson<{ stopped: boolean; turnId: string }>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/agent-session/turns?turnId=${encodeURIComponent(turnId)}`,
+    { method: "DELETE" },
+  ));
+}
+
+export async function steerProjectAgentTurnFromApi(input: {
+  projectId: string;
+  prompt: string;
+  signal?: AbortSignal;
+  turnId: string;
+}) {
+  return readJson<{ revision: number; status: "steered"; turnId: string }>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/agent-session/turns`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: input.prompt, steer: true, turnId: input.turnId }),
+      signal: input.signal,
+    },
+  ));
+}
+
+function delayApiPoll(milliseconds: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+export async function appendProjectAgentEventFromApi(input: {
+  content?: string;
+  data?: Record<string, unknown>;
+  projectId: string;
+  turnId: string;
+  type: "approval" | "toolCall" | "toolResult" | "status";
+}) {
+  return readJson<import("@/lib/agent/project-session-types").ProjectAgentEvent>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/agent-session`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "appendEvent", ...input, projectId: undefined }),
+    },
+  ));
+}
+
+export async function stopProjectAgentBackgroundTaskFromApi(projectId: string, taskId: string) {
+  return readJson<import("@/lib/agent/types").AgentCommandRequest>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/agent-session`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "stopBackgroundTask", taskId }),
+    },
+  ));
+}
+
+export async function getWorkspaceBindingFromApi(projectId: string) {
+  return readJson<WorkspaceBinding | null>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/workspace`,
+    { cache: "no-store" },
+  ));
+}
+
+export async function unbindWorkspaceFromApi(projectId: string) {
+  return readJson<{ ok: true }>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/workspace`,
+    { method: "DELETE" },
+  ));
+}
+
+export async function getWorkspaceFilesFromApi(projectId: string, rootId?: string) {
+  return readJson<{ entries: WorkspaceFileEntry[] }>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/workspace/files${rootId ? `?rootId=${encodeURIComponent(rootId)}` : ""}`,
+    { cache: "no-store" },
+  ));
+}
+
+export async function openWorkspaceFileFromApi(
+  projectId: string,
+  relativePath: string,
+  rootId?: string,
+) {
+  return readJson<WorkspaceFileDocumentView>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/workspace/documents`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ relativePath, rootId }),
+    },
+  ));
+}
+
+export async function getWorkspaceFileDocumentFromApi(
+  projectId: string,
+  documentId: string,
+) {
+  return readJson<WorkspaceFileDocumentView>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/workspace/documents/${encodeURIComponent(documentId)}`,
+    { cache: "no-store" },
+  ));
+}
+
+export async function saveWorkspaceFileDocumentFromApi(input: {
+  content: string;
+  documentId: string;
+  expectedHash: string;
+  projectId: string;
+}) {
+  return readJson<WorkspaceFileDocumentView>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/workspace/documents/${encodeURIComponent(input.documentId)}`,
+    {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ content: input.content, expectedHash: input.expectedHash }),
+    },
+  ));
+}
+
+export async function listWorkspaceChangeSetsFromApi(projectId: string) {
+  return readJson<{ changeSets: WorkspaceChangeSet[] }>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/workspace/change-sets`,
+    { cache: "no-store" },
+  ));
+}
+
+export async function createWorkspaceChangeSetFromApi(
+  projectId: string,
+  input: {
+    description?: string;
+    operations: Array<{
+      fileDocumentId?: string;
+      kind: "create" | "modify" | "delete" | "rename";
+      proposedContent?: string | null;
+      relativePath: string;
+      targetRelativePath?: string;
+    }>;
+    source?: "user" | "agent";
+    title: string;
+  },
+) {
+  return readJson<WorkspaceChangeSet>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/workspace/change-sets`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  ));
+}
+
+export async function updateWorkspaceChangeSetFromApi(
+  projectId: string,
+  changeSetId: string,
+  action: "approve" | "apply" | "reject" | "revert",
+) {
+  return readJson<WorkspaceChangeSet>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/workspace/change-sets/${encodeURIComponent(changeSetId)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action }),
+    },
+  ));
+}
+
+export async function createAgentExecutionFromApi(input: {
+  agentId?: string;
+  allowedPathPrefixes?: string[];
+  allowedTools?: AgentWorkspaceToolName[];
+  canvasContext?: string;
+  fileDocumentIds?: string[];
+  instruction: string;
+  orchestrationId?: string;
+  projectId: string;
+  resultNodeId: string;
+  selectedNodeIds?: string[];
+  subtaskId?: string;
+  triggerNodeId: string;
+  workspaceRootId?: string;
+}) {
+  return readJson<{ detail: AgentExecutionDetail; execution: Execution }>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/agent-executions`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  ));
+}
+
+export async function getAgentExecutionFromApi(projectId: string, executionId: string) {
+  return readJson<AgentExecutionDetail>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/agent-executions/${encodeURIComponent(executionId)}`,
+    { cache: "no-store" },
+  ));
+}
+
+export async function runAgentExecutionFromApi(input: {
+  executionId: string;
+  model: string;
+  projectId: string;
+  signal?: AbortSignal;
+}) {
+  return readJson<AgentExecutionDetail>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/agent-executions/${encodeURIComponent(input.executionId)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "run", model: input.model }),
+      signal: input.signal,
+    },
+  ));
+}
+
+export async function executeAgentWorkspaceToolFromApi<Name extends AgentWorkspaceToolName>(input: {
+  arguments: AgentWorkspaceToolArguments[Name];
+  executionId: string;
+  name: Name;
+  progressEventId?: string;
+  projectId: string;
+}) {
+  return readJson<AgentWorkspaceToolResult[Name]>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/agent-executions/${encodeURIComponent(input.executionId)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "tool",
+        name: input.name,
+        arguments: input.arguments,
+        ...(input.progressEventId ? { progressEventId: input.progressEventId } : {}),
+      }),
+    },
+  ));
+}
+
+export async function updateAgentExecutionFromApi(input: {
+  action: "complete" | "fail" | "retry" | "stop";
+  error?: string;
+  executionId: string;
+  projectId: string;
+  resultSummary?: string;
+  timedOut?: boolean;
+}) {
+  return readJson<AgentExecutionDetail | { detail: AgentExecutionDetail; execution: Execution }>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/agent-executions/${encodeURIComponent(input.executionId)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  ));
+}
+
+export async function proposeAgentCommandFromApi(input: {
+  args: string[];
+  cwd?: string;
+  executable: string;
+  executionId: string;
+  projectId: string;
+  reason: string;
+  timeoutMs?: number;
+}) {
+  return readJson<AgentCommandRequest>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/agent-executions/${encodeURIComponent(input.executionId)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...input, action: "proposeCommand" }),
+    },
+  ));
+}
+
+export async function approveAgentCommandFromApi(projectId: string, executionId: string, commandId: string, scope: "once" | "project" = "once") {
+  return readJson<AgentCommandRequest>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/agent-executions/${encodeURIComponent(executionId)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "approveCommand", commandId, scope }),
+    },
+  ));
+}
+
+export async function rejectAgentCommandFromApi(projectId: string, executionId: string, commandId: string) {
+  return readJson<AgentCommandRequest>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/agent-executions/${encodeURIComponent(executionId)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "rejectCommand", commandId }),
+    },
+  ));
+}
+
+export async function createGlobalOrchestrationFromApi(input: {
+  canvasContext?: string;
+  concurrencyLimit?: number;
+  contextEvidence?: GlobalContextEvidence[];
+  fileDocumentIds?: string[];
+  goal: string;
+  maxSubagents?: number;
+  projectId: string;
+  resultNodeId: string;
+  selectedNodeIds?: string[];
+  tasks: GlobalTaskPlanInput[];
+  triggerNodeId: string;
+}) {
+  return readJson<GlobalOrchestration>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/global-agent`,
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
+  ));
+}
+
+export async function planGlobalAgentTasksFromApi(input: {
+  canvasContext?: string;
+  goal: string;
+  model: string;
+  projectId: string;
+  signal?: AbortSignal;
+}) {
+  return readJson<{ tasks: GlobalTaskPlanInput[] }>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/global-agent`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "plan",
+        canvasContext: input.canvasContext,
+        goal: input.goal,
+        model: input.model,
+      }),
+      signal: input.signal,
+    },
+  ));
+}
+
+export async function runGlobalOrchestrationFromApi(input: {
+  model: string;
+  orchestrationId: string;
+  projectId: string;
+  signal?: AbortSignal;
+}) {
+  return readJson<GlobalOrchestration>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/global-agent/${encodeURIComponent(input.orchestrationId)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "run", model: input.model }),
+      signal: input.signal,
+    },
+  ));
+}
+
+export async function getGlobalOrchestrationFromApi(projectId: string, orchestrationId: string) {
+  return readJson<GlobalOrchestration>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/global-agent/${encodeURIComponent(orchestrationId)}`,
+    { cache: "no-store" },
+  ));
+}
+
+export async function updateGlobalOrchestrationFromApi(input: {
+  action: "dispatch" | "refresh" | "retry" | "stop";
+  orchestrationId: string;
+  projectId: string;
+  subtaskId?: string;
+}) {
+  return readJson<GlobalOrchestration | { orchestration: GlobalOrchestration; dispatched: GlobalOrchestration["tasks"] }>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/global-agent/${encodeURIComponent(input.orchestrationId)}`,
+    { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
+  ));
+}
+
+export async function getContinuousGlobalAgentFromApi(projectId: string) {
+  return readJson<ContinuousGlobalAgentState>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/global-agent/continuous`,
+    { cache: "no-store" },
+  ));
+}
+
+export async function configureContinuousGlobalAgentFromApi(input: {
+  projectId: string;
+  mode?: ContinuousGlobalAgentMode;
+  modelId?: string | null;
+  budget?: Partial<ContinuousGlobalAgentState["budget"]>;
+}) {
+  return readJson<ContinuousGlobalAgentState>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/global-agent/continuous`,
+    { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...input, action: "configure" }) },
+  ));
+}
+
+export async function runContinuousGlobalAgentFromApi(projectId: string, signal?: AbortSignal) {
+  return readJson<{ ran: boolean; runId?: string; state: ContinuousGlobalAgentState }>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/global-agent/continuous`,
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "runOnce" }), signal },
+  ));
+}
+
+export async function updateContinuousGlobalAgentSuggestionFromApi(input: {
+  projectId: string;
+  suggestionId: string;
+  status: ContinuousAgentSuggestion["status"];
+}) {
+  return readJson<ContinuousGlobalAgentState>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/global-agent/continuous`,
+    { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...input, action: "suggestion" }) },
+  ));
+}
+
+export async function listProjectMemoriesFromApi(projectId: string, validate = false) {
+  return readJson<{ memories: ProjectMemory[] }>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/memories${validate ? "?validate=1" : ""}`,
+    { cache: "no-store" },
+  ));
+}
+
+export async function getConfirmedProjectMemoryContextFromApi(projectId: string) {
+  return readJson<{ memories: ProjectMemoryContextItem[] }>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/memories?context=1`,
+    { cache: "no-store" },
+  ));
+}
+
+export async function createProjectMemoryFromApi(projectId: string, input: {
+  content: string;
+  createdBy?: "user" | "agent";
+  kind: ProjectMemoryKind;
+  reason?: string;
+  sources: ProjectMemorySource[];
+  status?: "candidate" | "confirmed";
+  title: string;
+}) {
+  return readJson<ProjectMemory>(await fetch(`/api/projects/${encodeURIComponent(projectId)}/memories`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input),
+  }));
+}
+
+export async function updateProjectMemoryFromApi(projectId: string, memoryId: string, input: {
+  action: "confirm" | "reject" | "revise" | "pin" | "unpin";
+  content?: string;
+  reason?: string;
+  sources?: ProjectMemorySource[];
+  title?: string;
+}) {
+  return readJson<ProjectMemory>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/memories/${encodeURIComponent(memoryId)}`,
+    { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
+  ));
+}
+
+export async function deleteProjectMemoryFromApi(projectId: string, memoryId: string) {
+  return readJson<{ ok: true }>(await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/memories/${encodeURIComponent(memoryId)}`,
+    { method: "DELETE" },
+  ));
+}
+
+export type ProjectKnowledgeStatus = {
+  version: number;
+  projectId: string;
+  status: "missing" | "ready" | "paused" | "error";
+  diskBytes: number;
+  entities: number;
+  edges: number;
+  chunks: number;
+  ignoredSensitiveFiles: number;
+  reusedChunks?: number;
+  updatedAt: string | null;
+  embeddingProvider: { id: string; kind: "local" | "cloud"; dimension: number; disclosure?: string; authorizedAt?: string } | null;
+  embeddingOptions: Array<{ id: string; kind: "local" | "cloud"; label: string; disclosure: string }>;
+};
+
+export async function getProjectKnowledgeStatusFromApi(projectId: string) {
+  return readJson<ProjectKnowledgeStatus>(await fetch(`/api/projects/${encodeURIComponent(projectId)}/knowledge`, { cache: "no-store" }));
+}
+
+export async function updateProjectKnowledgeFromApi(
+  projectId: string,
+  action: "rebuild" | "pause" | "resume" | "clear",
+  options: { cloudAuthorized?: boolean; embeddingModel?: string; force?: boolean } = {},
+) {
+  return readJson<ProjectKnowledgeStatus | { ok: true }>(await fetch(`/api/projects/${encodeURIComponent(projectId)}/knowledge`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...options }),
+  }));
+}
+
+export async function searchProjectKnowledgeFromApi(projectId: string, query: string, options?: { budgetCharacters?: number; limit?: number }) {
+  const params = new URLSearchParams({ query });
+  if (options?.limit) params.set("limit", String(options.limit));
+  if (options?.budgetCharacters) params.set("budgetCharacters", String(options.budgetCharacters));
+  return readJson<KnowledgeSearchResponse>(await fetch(`/api/projects/${encodeURIComponent(projectId)}/knowledge?${params}`, { cache: "no-store" }));
 }
 
 export async function referenceProjectFileInApi(input: {
