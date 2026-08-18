@@ -411,9 +411,29 @@ export function AgentTurnTimeline({
       ))}
       {error ? <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
       {terminalError ? <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{agentEventContentForDisplay(terminalError)}</p> : null}
-      {projectTurnCanRetry(events) && onRetry ? <Button className="h-8 w-fit border border-zinc-200 bg-white px-3 text-xs text-zinc-700 hover:bg-zinc-50" disabled={retrying} onClick={() => void retryTurn()} type="button">{retrying ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <RotateCcw className="mr-1.5 size-3.5" />}重试</Button> : null}
+      {projectTurnCanRetry(events) && onRetry ? (
+        <button
+          className="inline-flex h-8 w-fit items-center rounded-lg border border-red-200 bg-white px-3 text-xs font-medium text-red-700 shadow-sm transition-colors hover:border-red-300 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={retrying}
+          onClick={() => void retryTurn()}
+          type="button"
+        >
+          {retrying ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <RotateCcw className="mr-1.5 size-3.5" />}
+          重试
+        </button>
+      ) : null}
       {displayedAnswer ? <div className="zenme-agent-response-text text-sm leading-6 text-zinc-800">{renderMarkdown(agentEventContentForDisplay(displayedAnswer))}{liveAnswerDraft && !finalAnswer ? <span aria-label="正在生成" className="ml-1 inline-block h-4 w-0.5 animate-pulse bg-zinc-400 align-middle" /> : null}</div> : terminal ? null : events.length ? <div className="flex items-center gap-2 py-2 text-xs text-zinc-500"><Loader2 className="size-3.5 animate-spin" />Agent 正在处理…</div> : null}
-      {terminal && evidenceEvents.length ? <Button className="h-8 w-fit border border-zinc-200 bg-white px-3 text-xs text-zinc-700 hover:bg-zinc-50" onClick={() => setShowEvidence((value) => !value)} type="button"><Wrench className="mr-1.5 size-3.5" />{showEvidence ? "收起执行证据" : `查看执行证据 (${evidenceEvents.length})`}</Button> : null}
+      {terminal && evidenceEvents.length ? (
+        <button
+          aria-expanded={showEvidence}
+          className="inline-flex h-8 w-fit items-center rounded-lg border border-zinc-200/80 bg-zinc-50/70 px-3 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:bg-zinc-100 hover:text-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200"
+          onClick={() => setShowEvidence((value) => !value)}
+          type="button"
+        >
+          <Wrench className="mr-1.5 size-3.5 text-zinc-400" />
+          {showEvidence ? "收起执行证据" : `查看执行证据 (${evidenceEvents.length})`}
+        </button>
+      ) : null}
       {outputTargets.map((target) => (
         <button
           className="flex w-fit max-w-full items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-xs text-zinc-700 hover:bg-zinc-50"

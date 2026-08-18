@@ -1,6 +1,6 @@
 # AI Project Workspace 需求—证据矩阵
 
-本文件对应 `../zenme-doc/AI Project Workspace 开发指导.md`（基线日期 2026-08-12），用于记录当前实现与验收证据。产品要求仍以 `zenme-doc` 为准；这里不复制产品定义，只记录工程映射、证据和仍待执行的门禁。
+本文件对应 `../zenme-doc/AI Project Workspace 开发指导.md`（基线日期 2026-08-12），用于记录当前实现与验收证据。Agent Runtime 的能力定义与自治边界以 [`agent-runtime-capabilities.md`](agent-runtime-capabilities.md) 为准；本文件只记录工程映射、证据和仍待执行的门禁。
 
 状态说明：
 
@@ -60,7 +60,7 @@
 | 路径、敏感文件、命令和任务能力受限 | realpath、路径 scope、Workspace 范围、风险分类与一次性批准 | `lib/agent/workspace-tools.test.ts` | 通过 |
 | 原生多工具调用不丢失 | Chat Completions 与 Responses 流按 index 保留完整调用批次；主 Agent 在再次请求模型前执行所有独立读取 | `lib/ai/openai-responses-stream.test.ts`、`lib/agent/project-agent-model.test.ts`、`lib/agent/project-turn-runtime.test.ts` | 通过 |
 | MCP 工具按需发现与续跑恢复 | MCP Schema 默认不进入模型上下文；`tool_search` 仅激活当前 Turn 的匹配工具，同一 Turn 恢复时从持久事件重建激活集合 | `lib/agent/mcp-runtime.test.ts`、`lib/agent/project-turn-runtime.test.ts`、`lib/agent/tool-registry.test.ts` | 通过 |
-| 编辑后结构化代码诊断 | `code_diagnostics` 分析 tsconfig/jsconfig；主 Agent 与编辑型 Sub-agent 完成前强制诊断，并叠加尚未应用的 ChangeSet 内容 | `lib/agent/code-diagnostics.test.ts`、`lib/agent/workspace-tools.test.ts`、`lib/agent/project-turn-runtime.test.ts`、`lib/global-agent/delegated-runtime.test.ts` | 通过 |
+| 结构化代码诊断 | `code_diagnostics` 分析 tsconfig/jsconfig 并叠加尚未应用的 ChangeSet 内容；它是模型可自主选择的 observation，不再由 Runtime 在完成前强制插入 | `lib/agent/code-diagnostics.test.ts`、`lib/agent/workspace-tools.test.ts`、`lib/agent/project-turn-runtime.test.ts`、`lib/global-agent/delegated-runtime.test.ts` | 通过 |
 | 语义代码导航 | `code_intelligence` 对齐 cc-haha LSP，支持 TS/JS 定义、引用、Hover、文档/工作区符号、实现与调用层级；结果限定到稳定 Root 和 Sub-agent 路径范围，并读取未应用 ChangeSet | `lib/agent/code-intelligence.test.ts`、`lib/agent/workspace-tools.test.ts`、`lib/agent/project-turn-runtime.test.ts` | 通过 |
 | 本地 Web 界面验证 | `browser` 使用 Electron 隔离 Chromium 会话执行 loopback 导航、DOM snapshot、元素引用点击/输入/按键和截图；主 Agent/Sub-agent 可基于真实页面继续推理，截图正文不进入持久化审计 | `desktop/browser-control.node-test.cjs`、`lib/agent/browser-control.test.ts`、`lib/agent/workspace-tools.test.ts`、`lib/agent/project-turn-runtime.test.ts`、`lib/global-agent/delegated-runtime.test.ts` | 通过 |
 | 不可信页面交互审批 | 页面观察保持可用；主 Agent 的 click/type/press 进入一次性确认并在批准后恢复原 Turn，Sub-agent 不得绕过用户确认 | `lib/agent/project-turn-runtime.test.ts`、`lib/global-agent/delegated-runtime.test.ts` | 通过 |
@@ -81,7 +81,7 @@
 | 重启恢复与待审阅结果 | 复用 Agent 恢复，Orchestration 从持久记录同步 | `lib/agent/execution-store.test.ts`、`lib/global-agent/orchestration-store.test.ts` | 通过 |
 | Windows 并行调度、停止和审阅交互 | 2026-08-12 Electron 开发版：两个不重叠任务同时运行并各自产生 Proposed ChangeSet；失败任务可单独重试，停止后结果仍保留 | 本文件“Windows Electron 最终回归记录” | 通过 |
 | 统一 Project Agent 入口并行委派 | `delegate_tasks` 复用 Global Orchestration，服务端 Sub-agent 使用统一原生工具协议、路径/工具范围和命令权限边界；主 Turn 等待结果后汇总 | `lib/global-agent/delegated-runtime.test.ts`、`lib/agent/project-turn-runtime.test.ts` | 通过 |
-| 复杂任务计划持续性 | `todo_write` 更新独立 Session 任务计划；跨 Turn、重启和上下文压缩保留，并在 AI 回复节点瀑布中展示最新进度 | `lib/agent/project-session-store.test.ts`、`lib/agent/project-turn-runtime.test.ts`、`components/zenme/nodes/agent-turn-timeline.test.ts` | 通过 |
+| 历史个人任务计划兼容 | `todo_write` 仅用于恢复旧 Turn/旧 UI 记录；当前模型默认使用 Task V2，不再把旧个人任务协议作为新 Agent 的计划语义 | `lib/agent/project-session-store.test.ts`、`lib/agent/project-context-policy.test.ts`、`components/zenme/nodes/agent-turn-timeline.test.ts` | 通过 |
 | 主/子 Agent 共享任务列表 | `task_create/task_get/task_list/task_update` 使用稳定 ID 原子维护描述、负责人、状态和依赖；主 Agent、独立 Execution 与真实 Orchestration Sub-agent 共享，循环依赖在写入前拒绝，且不与后台进程任务混用 | `lib/agent/project-session-store.test.ts`、`lib/agent/workspace-tools.test.ts`、`lib/global-agent/delegated-runtime.test.ts` | 通过 |
 | Codex/cc-haha 项目指令继承 | 主 Agent 首轮自动加载每个可读 Root 的根目录 `AGENTS.md`/`CLAUDE.md`，触及子目录后按稳定 Root ID 懒加载更具体指令；并行 Sub-agent 只继承分配 Root 与允许路径的规则且不能借此扩大权限 | `lib/agent/project-instructions.test.ts`、`lib/agent/project-turn-runtime.test.ts`、`lib/global-agent/delegated-runtime.test.ts` | 通过 |
 | 多 Root Sub-agent 隔离 | Global 任务显式绑定稳定 Root ID；文件、诊断、补丁、Git 与命令工具自动注入并强制校验该 Root，不同 Root 的同名路径不产生冲突，基线与 ChangeSet 不串根 | `lib/agent/workspace-tools.test.ts`、`lib/global-agent/orchestration-store.test.ts` | 通过 |
@@ -89,7 +89,7 @@
 | Sub-agent 原生读取批次 | 单个 Sub-agent 完整执行一次模型响应中的多个读取调用，再以汇总后的工具历史继续推理 | `lib/global-agent/delegated-runtime.test.ts` | 通过 |
 | Sub-agent 动态 MCP 工具池 | `tool_search` 按需激活匹配 MCP Schema；原生调用经过 JSON Schema 与 Server 权限校验，Execution 续跑时从持久工具历史恢复 | `lib/global-agent/delegated-runtime.test.ts`、`lib/agent/mcp-runtime.test.ts` | 通过 |
 | 多 Root MCP 隔离 | MCP 工具发现、资源和调用使用 Sub-agent 任务 Root；连接缓存按 Project/Root/Server 分区并以目标 Root 为 cwd，Root 未授权执行时在启动进程前拒绝 | `lib/agent/mcp-runtime.test.ts`、`lib/global-agent/delegated-runtime.test.ts` | 通过 |
-| Sub-agent 工具错误恢复 | 单次失败持久化后回传模型，可修正调用继续；相同工具、参数与错误连续三次触发无进展保护 | `lib/global-agent/delegated-runtime.test.ts` | 通过 |
+| Sub-agent 工具错误恢复 | 单次执行失败或 schema 失败都作为具体 observation 回传同一 Sub-agent；Runtime 不因相同工具/参数/结果重复而强制结束，只保留总轮数资源上限 | `lib/global-agent/delegated-runtime.test.ts` | 通过 |
 | Sub-agent 审批闭环 | 子命令审批提升到原 Project Agent Turn；批准执行后恢复同一编排和子 Execution，父 Turn 收到更新结果后继续回答；子 Agent 不进入无人可回答的提问状态 | `lib/agent/project-turn-runtime.test.ts`、`lib/global-agent/delegated-runtime.test.ts`、`lib/global-agent/orchestration-store.test.ts` | 通过 |
 | Turn 配置连续性 | 节点选择的模型推理强度与速度持久化到原用户事件，等待输入、命令审批、后台恢复与 Sub-agent 续跑均复用，不退回默认值 | `lib/agent/project-turn-runtime.test.ts` | 通过 |
 | Turn 执行轨迹连续性 | 用户回答或命令审批后按稳定 `turnId/resultNodeId` 复用同一父 Agent Execution；不重复用户事件、命令或工具历史 | `lib/agent/project-turn-runtime.test.ts`、`lib/agent/execution-store.test.ts` | 通过 |
@@ -155,12 +155,12 @@
 | 稳定 ID、失败阶段、重启恢复与安全重试 | Execution、Attempt、ChangeSet、Orchestration 测试 | 通过 |
 | 父 Turn 停止级联与后台任务续接 | 停止父 Turn 后 Global Orchestration、Sub-agent Execution 和命令进程统一收束；后台终态只产生一次内部通知，不启动第二个命令，并通过恢复原 Turn 继续处理 | `lib/agent/project-turn-runtime.test.ts`、`lib/global-agent/orchestration-store.test.ts` | 通过 |
 | Agent 所属命令退出语义 | Agent 结束或父级停止清理后台命令时持久化为 `stopped`，不被进程关闭回调误报为普通失败 | `lib/agent/workspace-tools.test.ts` | 通过 |
-| 网页意图路由边界 | 明确搜索或时间敏感外部事实确定性联网；普通“当前项目/现在代码”开发请求不被误路由到网页工具 | `lib/agent/project-turn-runtime.test.ts` | 通过 |
-| `npm run check` | 2026-08-15：Windows 将 Vitest 并发限制为 2 后，222 个 Vitest 文件、1180 项测试、23 项桌面进程测试与 ESLint 全部通过 | 通过 |
-| `npm run verify` | 2026-08-15：216 个 Vitest 文件、1124 项测试、18 项桌面进程测试与 Next 生产构建全部通过；检查与构建阶段均已完成 | 通过 |
+| 网页工具自治边界 | Runtime 不再按“最新/新闻/影响”等关键词替模型分类研究任务或规定来源数量；`web_search` 只发现候选，`web_fetch` 读取正文，是否继续检索由模型依据当前证据决定 | `lib/agent/project-turn-runtime.test.ts` | 通过 |
+| `npm run check` | 2026-08-18 当前自治清理工作树：251/252 个 Vitest 文件通过，1 个真实模型 Live Autonomy 文件按设计跳过；1440/1441 项测试通过，1 项 live 测试按设计跳过；23/23 desktop node tests 与 ESLint 全部通过。真实 `gpt-5.3-codex-spark` Live Autonomy 已另行显式执行 1/1 通过 | 通过 |
+| `npm run verify` | 2026-08-18 当前自治清理工作树：常规 Vitest 251/252 文件、1440/1441 项测试通过，唯一跳过项为默认不调用在线模型的 Live Autonomy；Desktop Node tests 23/23；ESLint 与 Next production build 全部通过，命令 exit 0。真实 `gpt-5.3-codex-spark` Live Autonomy 已另行显式 1/1、exit 0 | 通过 |
 | 独立运行时追踪 | `node desktop/scripts/verify-standalone-runtime.cjs` 通过；Workspace 动态目录不会把源码树打进 NFT | 通过 |
-| Windows 目录包与启动冒烟 | `npm run desktop:pack` 生成最新 `win-unpacked`；`npm run desktop:smoke` 使用临时数据目录启动打包应用，并由隔离 Chromium 实际加载 loopback 页面、读取 DOM 后自动退出 | 通过 |
-| `git diff --check`、完整 Diff 与仓库状态 | 2026-08-12 最终审计；工作树保留在 `codex/ai-project-workspace`，不混入生成物 | 通过 |
+| Windows 目录包与启动冒烟 | 2026-08-18 当前自治清理工作树：clean standalone 明确 `standalone-trace-clean`；`npm run desktop:pack` exit 0 生成最新 `win-unpacked`；`npm run desktop:smoke` exit 0，使用临时数据目录启动打包应用并完成 packaged Workspace/Browser 冒烟 | 通过 |
+| `git diff --check`、完整 Diff 与仓库状态 | 2026-08-18 当前自治清理审计：`git diff --check` exit 0；分支 `codex/ai-project-workspace`、基线 `6f8b793`；状态仅含本轮源码/测试/文档修改和新增自治文档/live test，`dist-desktop/.next` 等生成物未进入 Git；敏感 fixture/真实 token 扫描通过 | 通过 |
 
 ## 明确不在当前实现范围
 

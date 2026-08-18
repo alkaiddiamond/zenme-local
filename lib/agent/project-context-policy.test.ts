@@ -152,6 +152,72 @@ describe("project agent context policy", () => {
     expect(projected[1]?.content).toContain("Command running in background with ID: task-1.");
     expect(events.map((item) => item.data?.name)).toEqual(["run_command", "run_command"]);
   });
+
+  it("drops legacy Shell task_list history without hiding current Task V2 task_list", () => {
+    const events = [
+      event(1, "turn-1", "toolCall", undefined, { name: "task_list", arguments: { status: "running", limit: 20 } }),
+      event(2, "turn-1", "toolResult", "task_list 完成", {
+        name: "task_list",
+        toolCallEventId: "event-1",
+        output: {
+          tasks: [{ id: "shell-1", executable: "pnpm", args: ["run", "dev"], status: "running" }],
+          guidance: "需要重启任务时，把 restartCommand 原样传给 shell_command。",
+        },
+      }),
+      event(3, "turn-2", "toolCall", undefined, { name: "task_list", arguments: {} }),
+      event(4, "turn-2", "toolResult", "task_list 完成：项目任务", {
+        name: "task_list",
+        toolCallEventId: "event-3",
+        output: { tasks: [{ id: "project-1", subject: "检查实现", status: "pending" }] },
+      }),
+    ];
+
+    const projected = projectProjectAgentToolResultsForModel(events);
+
+    expect(projected.map((item) => item.id)).toEqual(["event-3", "event-4"]);
+  });
+
+  it("migrates legacy tool protocol only in the model projection", () => {
+    const events = [
+      event(1, "turn-1", "toolCall", undefined, {
+        name: "run_command",
+        arguments: { command: "npm run dev", background: true },
+      }),
+      event(2, "turn-1", "toolResult", "running", {
+        name: "run_command",
+        toolCallEventId: "event-1",
+        output: { id: "shell-1", status: "running" },
+      }),
+      event(3, "turn-2", "toolCall", undefined, { name: "project_task_list", arguments: {} }),
+      event(4, "turn-2", "toolResult", "tasks", {
+        name: "project_task_list",
+        toolCallEventId: "event-3",
+        output: { tasks: [] },
+      }),
+    ];
+
+    const projected = projectProjectAgentToolResultsForModel(events);
+
+    expect(projected[0]?.data).toMatchObject({
+      name: "shell_command",
+      arguments: { command: "npm run dev", run_in_background: true },
+    });
+    expect(projected[2]?.data?.name).toBe("task_list");
+    expect(projected[3]?.data?.name).toBe("task_list");
+    expect(events[0]?.data).toMatchObject({ name: "run_command", arguments: { background: true } });
+  });
+
+  it("keeps retired runtime strategy tools out of new model context", () => {
+    const events = [
+      event(1, "turn-1", "toolCall", undefined, { name: "restart_service", arguments: { port: 5173 } }),
+      event(2, "turn-1", "toolResult", "restarted", { name: "restart_service", toolCallEventId: "event-1" }),
+      event(3, "turn-2", "toolCall", undefined, { name: "todo_write", arguments: { items: [] } }),
+      event(4, "turn-2", "toolResult", "saved", { name: "todo_write", toolCallEventId: "event-3" }),
+      event(5, "turn-3", "assistant", {}, "current answer"),
+    ];
+
+    expect(projectProjectAgentToolResultsForModel(events).map((item) => item.id)).toEqual(["event-5"]);
+  });
   it("does not microcompact when the actual token saving is below the threshold", () => {
     const events = [
       event(1, "turn-1", "toolResult", "small", { name: "read_file", output: "tiny" }),

@@ -8,6 +8,7 @@ import {
 import {
   createOpenAiAuthHeaders,
   ensureFreshOpenAiTokens,
+  forceRefreshOpenAiTokens,
   RESPONSES_URL,
   SEARCH_URL,
 } from "@/lib/ai/openai-oauth";
@@ -464,11 +465,11 @@ async function fetchOpenAiOAuthChat(
     : undefined;
   const requestBody = createOpenAiOAuthRequestBody(input, webContext);
 
-  return await fetch(RESPONSES_URL, {
+  const request = (activeTokens: typeof tokens) => fetch(RESPONSES_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...createOpenAiAuthHeaders(tokens),
+      ...createOpenAiAuthHeaders(activeTokens),
       ...(responsesLite
         ? { "x-openai-internal-codex-responses-lite": "true" }
         : {}),
@@ -476,6 +477,36 @@ async function fetchOpenAiOAuthChat(
     body: JSON.stringify(requestBody),
     ...getProxyFetchOptions(RESPONSES_URL, input.provider.networkProxy),
   });
+
+  return retryOpenAiOAuthRequestAfterTokenInvalidation(
+    tokens,
+    request,
+    forceRefreshOpenAiTokens,
+  );
+}
+
+export async function retryOpenAiOAuthRequestAfterTokenInvalidation<TTokens>(
+  tokens: TTokens,
+  request: (tokens: TTokens) => Promise<Response>,
+  refresh: () => Promise<TTokens | null>,
+) {
+  const response = await request(tokens);
+  if (!(await isOpenAiOAuthTokenInvalidatedResponse(response))) return response;
+  const refreshed = await refresh();
+  return refreshed ? request(refreshed) : response;
+}
+
+async function isOpenAiOAuthTokenInvalidatedResponse(response: Response) {
+  if (response.status !== 401) return false;
+  try {
+    const payload = await response.clone().json() as {
+      code?: unknown;
+      error?: { code?: unknown };
+    };
+    return (payload.error?.code ?? payload.code) === "token_invalidated";
+  } catch {
+    return false;
+  }
 }
 
 async function fetchOpenAiWebContext(input: {
@@ -1029,6 +1060,9 @@ async function createSafeProviderError(
   const status = upstream.status || 500;
   const upstreamText = await upstream.text().catch(() => "");
   const trimmed = upstreamText.trim().slice(0, 600);
+  const upstreamCode = provider.apiFormat === "openai_oauth"
+    ? parseOpenAiOAuthErrorCode(upstreamText)
+    : undefined;
 
   if (trimmed) {
     console.warn(
@@ -1042,6 +1076,9 @@ async function createSafeProviderError(
 
   if (status === 401 || status === 403) {
     if (provider.apiFormat === "openai_oauth") {
+      if (upstreamCode === "token_invalidated") {
+        return "ChatGPT 登录令牌已失效，自动刷新失败，请到设置 > 模型配置中重新登录。";
+      }
       return `ChatGPT 调用 ${provider.model} 失败（${status}），请重新登录或检查账号模型权限。`;
     }
     return `${provider.name} 调用 ${provider.model} 失败（${status}），请检查 API 密钥或模型权限。`;
@@ -1064,4 +1101,15 @@ async function createSafeProviderError(
   }
 
   return AI_PROVIDER_ERROR_MESSAGE;
+}
+
+function parseOpenAiOAuthErrorCode(value: string) {
+  if (!value.trim()) return undefined;
+  try {
+    const payload = JSON.parse(value) as { code?: unknown; error?: { code?: unknown } };
+    const code = payload.error?.code ?? payload.code;
+    return typeof code === "string" ? code : undefined;
+  } catch {
+    return undefined;
+  }
 }

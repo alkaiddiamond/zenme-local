@@ -217,6 +217,7 @@ export async function executeAgentWorkspaceTool<Name extends AgentWorkspaceToolN
             argumentsValue as AgentWorkspaceToolArguments["shell_command"];
           preparedShellCommand = await proposeAgentCommand({
             ...commandArguments,
+            reason: commandArguments.reason?.trim() || shellCommandReason(commandArguments),
             background: run_in_background ?? background,
             projectId: input.projectId,
             executionId: input.executionId,
@@ -625,6 +626,7 @@ async function runTool<Name extends AgentWorkspaceToolName>(
       const { run_in_background, background, ...commandArguments } = args;
       const command = await proposeAgentCommand({
         ...commandArguments,
+        reason: commandArguments.reason?.trim() || shellCommandReason(commandArguments),
         background: run_in_background ?? background,
         projectId: input.projectId,
         executionId: input.executionId,
@@ -1744,6 +1746,13 @@ function delegatedResultSummary(title: string, name: string, output: unknown, er
   if (error) return `${title}：${name} 失败：${error.slice(0, 2_000)}`;
   if (typeof output === "string" && output.trim()) return `${title}：${output.trim().slice(-2_000)}`;
   return `${title}：${name} 已完成`;
+}
+
+function shellCommandReason(input: AgentWorkspaceToolArguments["shell_command"]) {
+  const text = "command" in input && input.command
+    ? input.command
+    : [input.executable, ...(input.args ?? [])].filter(Boolean).join(" ");
+  return text.trim().slice(0, 2_000) || "运行命令";
 }
 
 function shellCommandMatchesAdditionalAllowance(command: AgentCommandRequest, rules: string[] | undefined) {

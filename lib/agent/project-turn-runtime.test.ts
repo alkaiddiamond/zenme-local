@@ -17,7 +17,6 @@ import {
   answerProjectAgentTurnRun,
   parseProjectTurnDecision,
   ProjectAgentTurnError,
-  requiresIndependentWebSources,
   runProjectAgentTurn,
   startProjectAgentTurnRun,
   stopProjectAgentTurnRun,
@@ -2660,7 +2659,7 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
       .toMatchObject({ operationCount: 2, status: "applied" });
   });
 
-  it("forces code diagnostics before accepting completion after a TypeScript edit", async () => {
+  it("does not replace the model's completion decision with forced code diagnostics after an edit", async () => {
     await fs.mkdir(path.join(workspaceRoot, "src"), { recursive: true });
     await fs.writeFile(path.join(workspaceRoot, "tsconfig.json"), JSON.stringify({
       compilerOptions: { strict: true, skipLibCheck: true },
@@ -2680,18 +2679,49 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
           toolCall: { name: "edit_file", arguments: { relativePath: "src/index.ts", oldText: "= 1", newText: "= 'broken'" } },
           usage: null,
         };
-        if (modelCall === 2) return { text: "修改完成", usage: null };
-        expect(modelInputText(modelInput)).toContain("code_diagnostics");
-        expect(modelInputText(modelInput)).toContain("2322");
-        return { text: "诊断发现类型错误，尚未完成。", usage: null };
+        expect(modelInput.allowedAgentTools).toContain("code_diagnostics");
+        return { text: "修改完成，但我没有运行诊断。", usage: null };
       },
     });
 
-    expect(result).toMatchObject({ status: "completed", answer: "诊断发现类型错误，尚未完成。" });
-    expect(modelCall).toBe(3);
+    expect(result).toMatchObject({ status: "completed", answer: "修改完成，但我没有运行诊断。" });
+    expect(modelCall).toBe(2);
     const session = await getProjectAgentSession(projectId, dataDir);
-    expect(session.events.find((event) => event.type === "toolResult" && event.data?.name === "code_diagnostics")?.data?.output)
-      .toMatchObject({ available: true, errorCount: 1 });
+    expect(session.events.some((event) => event.type === "toolResult" && event.data?.name === "code_diagnostics")).toBe(false);
+  }, 15_000);
+
+  it("lets the model choose code diagnostics and reason from the real diagnostic result", async () => {
+    await fs.mkdir(path.join(workspaceRoot, "src"), { recursive: true });
+    await fs.writeFile(path.join(workspaceRoot, "tsconfig.json"), JSON.stringify({
+      compilerOptions: { strict: true, skipLibCheck: true },
+      include: ["src/**/*.ts"],
+    }));
+    await fs.writeFile(path.join(workspaceRoot, "src", "index.ts"), "export const value: number = 1;\n");
+    await bindLocalWorkspace({ projectId, rootPath: workspaceRoot }, dataDir);
+    await setLocalWorkspacePermissions({ projectId, permissions: { write: true } }, dataDir);
+    let modelCall = 0;
+
+    const result = await runProjectAgentTurn({ projectId, prompt: "修改 TypeScript 并自行判断如何验证", model }, {
+      dataDir,
+      callModel: async (modelInput) => {
+        modelCall += 1;
+        if (modelCall === 1) return {
+          text: "",
+          toolCall: { name: "edit_file", arguments: { relativePath: "src/index.ts", oldText: "= 1", newText: "= 'broken'" } },
+          usage: null,
+        };
+        if (modelCall === 2) return {
+          text: "",
+          toolCall: { name: "code_diagnostics", arguments: { relativePaths: ["src/index.ts"] } },
+          usage: null,
+        };
+        expect(modelInputText(modelInput)).toContain("2322");
+        return { text: "诊断发现类型错误，不能声称修改成功。", usage: null };
+      },
+    });
+
+    expect(result).toMatchObject({ status: "completed", answer: "诊断发现类型错误，不能声称修改成功。" });
+    expect(modelCall).toBe(3);
   }, 15_000);
 
   it("lets the unified Project Agent navigate code semantically before answering", async () => {
@@ -2944,7 +2974,7 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
           return { text: "", toolCalls: [validCall, invalidCall], usage: null };
         }
         expect(modelInputText(modelInput)).toContain("valid content");
-        expect(modelInputText(modelInput)).toContain("missing_tool 不存在");
+        expect(modelInputText(modelInput)).toContain("missing_tool 当前不可调用");
         return { text: "已根据工具失败结果修正。", usage: null };
       },
       executeTool: async () => {
@@ -3242,11 +3272,6 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
     expect(execution?.commandRequests.map((command) => command.status)).toEqual(["succeeded", "failed"]);
   }, 15_000);
 
-  it("classifies open-ended current news as research without bypassing the model", () => {
-    expect(requiresIndependentWebSources("帮我查一下最近上海受台风影响的新闻")).toBe(true);
-    expect(requiresIndependentWebSources("总结这个指定网页")).toBe(false);
-  });
-
   it("lets the ChatGPT provider handle current web research in one model turn", async () => {
     const chatGptProvider = createChatGptProvider();
     chatGptProvider.modelMapping.main = "gpt-5.6-sol";
@@ -3334,9 +3359,9 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
       status: "completed",
       answer: "根据已读取的权威一手来源，上海今天发布了新的公共信息；当前结论仅基于该直接来源。",
     });
-    expect(modelPrompts[1]).toContain("已执行 1 次搜索，已读取 0 个候选来源");
-    expect(modelPrompts[2]).toContain("不要按固定来源数量停止");
-    expect(modelPrompts[2]).toContain("同一稿件的转载只算一条证据链");
+    expect(modelPrompts[1]).toContain("本轮已搜索 1 个查询并读取 0 个页面");
+    expect(modelPrompts[2]).toContain("自行根据问题风险、证据质量和冲突情况决定是否继续检索");
+    expect(modelPrompts[2]).toContain("不按固定来源数或关键词规则停止");
     const session = await getProjectAgentSession(projectId, dataDir);
     const searchResult = session.events.find((event) => event.type === "toolResult" && event.data?.name === "web_search");
     expect(searchResult?.content).toBe("网页搜索完成，发现 2 个候选来源；来源需读取验证后才能引用。");
@@ -3455,8 +3480,8 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
 
     expect(result.answer).toContain("8月11日");
     expect(searchCount).toBe(2);
-    expect(modelPrompts[2]).toContain("已读取 1 个候选来源");
-    expect(modelPrompts[2]).toContain("不要重复搜索已有主题");
+    expect(modelPrompts[2]).toContain("本轮已搜索 1 个查询并读取 1 个页面");
+    expect(modelPrompts[2]).toContain("把这些数据视为当前 observation，自行判断下一步");
   });
 
   it("rejects citations that were discovered but never fetched", async () => {
@@ -3604,7 +3629,7 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
           expect(input.prompt).not.toContain("启动开发模式只是一次 Shell 任务");
           expect(input.prompt).not.toContain("不得再次启动、重启或扫描端口");
           expect(input.prompt).not.toContain("严格返回：{\"type\":\"command\"");
-          expect(input.prompt).toContain("直接调用 shell_command");
+          expect(input.prompt).toContain("需要真实执行命令时调用 shell_command");
           expect(input.prompt).toContain("Browser 只操作用户提供或工具输出中真实出现的 URL");
           if (modelCalls === 1) {
             return {
@@ -4959,6 +4984,32 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
     expect(modelCalls).toBe(4);
     expect(toolCalls).toBe(3);
   }, 30_000);
+
+  it("returns actionable native tool validation feedback so the model can repair its own call", async () => {
+    await bindLocalWorkspace({ projectId, rootPath: workspaceRoot }, dataDir);
+    let modelCalls = 0;
+    const result = await runProjectAgentTurn({ projectId, prompt: "读取 README", model }, {
+      dataDir,
+      callModel: async (modelInput) => {
+        modelCalls += 1;
+        if (modelCalls === 1) {
+          return { text: "", toolCall: { name: "read_file", arguments: { invented: true } }, usage: null };
+        }
+        if (modelCalls === 2) {
+          expect(modelInputText(modelInput)).toContain("不支持的字段：invented");
+          return { text: "", toolCall: { name: "read_file", arguments: { relativePath: "README.md" } }, usage: null };
+        }
+        return { text: "已根据真实工具反馈修正调用并完成读取。", usage: null };
+      },
+      executeTool: async (toolInput) => {
+        expect(toolInput.name).toBe("read_file");
+        return { relativePath: "README.md", content: "ok" } as never;
+      },
+    });
+
+    expect(result).toMatchObject({ status: "completed", answer: "已根据真实工具反馈修正调用并完成读取。" });
+    expect(modelCalls).toBe(3);
+  });
 
   it("uses the cc-haha-compatible task_list name and continues to a final answer", async () => {
     let modelCalls = 0;

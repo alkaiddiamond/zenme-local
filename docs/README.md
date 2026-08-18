@@ -9,6 +9,7 @@
 - [Live File 与 File Document](live-files.md)
 - [Editable File 与 ChangeSet](editable-files-and-change-sets.md)
 - [Agent Workspace Runtime](agent-workspace-runtime.md)
+- [Agent Runtime 能力与自治边界](agent-runtime-capabilities.md)
 - [Global Agent 与并行 Sub-agent](global-agent-and-subagents.md)
 - [Continuous Global Agent](continuous-global-agent.md)
 - [Project Memory](project-memory.md)

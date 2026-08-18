@@ -2375,6 +2375,83 @@ describe("approved agent commands", { timeout: 15_000 }, () => {
     }
   }, 90_000);
 
+  it("provides a Corepack pnpm bridge to package-script descendants when pnpm is not installed", async () => {
+    if (process.platform !== "win32") return;
+    const corepackDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "zenme-corepack-shim-"));
+    const corepackPath = path.join(corepackDirectory, "corepack.cmd");
+    const previousPath = process.env.PATH;
+    const packageJsonPath = path.join(workspaceRoot, "package.json");
+    try {
+      const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf8")) as { scripts: Record<string, string>; packageManager?: string };
+      packageJson.packageManager = "pnpm@11.16.0";
+      packageJson.scripts.bridge = "pnpm --version";
+      await fs.writeFile(packageJsonPath, JSON.stringify(packageJson));
+      await fs.writeFile(corepackPath, [
+        "@echo off",
+        "if /I not \"%1\"==\"pnpm\" exit /b 2",
+        "echo corepack-pnpm-bridge",
+        "exit /b 0",
+        "",
+      ].join("\r\n"));
+      process.env.PATH = [corepackDirectory, path.dirname(process.execPath), process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32") : ""]
+        .filter(Boolean)
+        .join(path.delimiter);
+
+      const command = await proposeAgentCommand({
+        projectId, executionId, executable: "npm", args: ["run", "bridge"], reason: "Run bridge script",
+      }, dataDir);
+      await approveAgentCommand(projectId, executionId, command.id, dataDir);
+      const result = await runApprovedAgentCommand({ projectId, executionId, commandId: command.id }, dataDir);
+      expect(result).toMatchObject({ status: "succeeded", exitCode: 0 });
+      expect(result.stdout).toContain("corepack-pnpm-bridge");
+      await expect(fs.access(path.join(dataDir, "agent-command-shims", "corepack", "pnpm.cmd"))).resolves.toBeUndefined();
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      await fs.rm(corepackDirectory, { force: true, recursive: true });
+    }
+  }, 90_000);
+
+  it("falls back to Corepack for a direct pnpm invocation when no pnpm shim exists", async () => {
+    if (process.platform !== "win32") return;
+    const fakeProgramFiles = await fs.mkdtemp(path.join(os.tmpdir(), "zenme-corepack-install-"));
+    const nodeDirectory = path.join(fakeProgramFiles, "nodejs");
+    const corepackCliDirectory = path.join(nodeDirectory, "node_modules", "corepack", "dist");
+    const previousPath = process.env.PATH;
+    const previousProgramFiles = process.env.ProgramFiles;
+    try {
+      await fs.mkdir(corepackCliDirectory, { recursive: true });
+      await fs.writeFile(path.join(nodeDirectory, "corepack.cmd"), "@echo off\r\nexit /b 0\r\n");
+      await fs.link(process.execPath, path.join(nodeDirectory, "node.exe"));
+      await fs.writeFile(path.join(corepackCliDirectory, "corepack.js"), [
+        "if (process.argv.slice(2).join(' ') !== 'pnpm run test') {",
+        "  console.error('unexpected corepack arguments');",
+        "  process.exit(2);",
+        "}",
+        "console.log('direct-corepack-pnpm');",
+        "",
+      ].join("\n"));
+      process.env.ProgramFiles = fakeProgramFiles;
+      process.env.PATH = [nodeDirectory, process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32") : ""]
+        .filter(Boolean)
+        .join(path.delimiter);
+
+      const command = await proposeAgentCommand({
+        projectId, executionId, executable: "pnpm", args: ["run", "test"], reason: "Run pnpm test via Corepack",
+      }, dataDir);
+      await approveAgentCommand(projectId, executionId, command.id, dataDir);
+      const result = await runApprovedAgentCommand({ projectId, executionId, commandId: command.id }, dataDir);
+      expect(result).toMatchObject({ status: "succeeded", exitCode: 0 });
+      expect(result.stdout).toContain("direct-corepack-pnpm");
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      if (previousProgramFiles === undefined) delete process.env.ProgramFiles;
+      else process.env.ProgramFiles = previousProgramFiles;
+      await fs.rm(fakeProgramFiles, { force: true, recursive: true });
+    }
+  }, 90_000);
+
   it("starts, observes and stops a declared background development task", async () => {
     const started = await executeAgentWorkspaceTool({
       projectId, executionId, name: "shell_command",

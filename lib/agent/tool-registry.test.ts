@@ -4,6 +4,7 @@ import {
   AGENT_TOOL_NAMES,
   createNativeAgentTools,
   DEFERRED_MODEL_AGENT_TOOL_NAMES,
+  describeAgentToolCallValidationError,
   formatAgentToolProtocol,
   getAgentToolDefinition,
   parseAgentToolCall,
@@ -86,13 +87,13 @@ describe("agent tool registry", () => {
       additionalProperties: false,
     });
     expect(tools.find((tool) => tool.name === "shell_command")?.parameters).toMatchObject({
-      required: ["reason"],
       properties: {
         run_in_background: { type: "boolean" },
       },
       oneOf: expect.any(Array),
       additionalProperties: false,
     });
+    expect(tools.find((tool) => tool.name === "shell_command")?.parameters).not.toHaveProperty("required");
     expect((tools.find((tool) => tool.name === "shell_command")?.parameters as { properties?: Record<string, unknown> })
       .properties).not.toHaveProperty("background");
     expect(tools.find((tool) => tool.name === "delegate_tasks")?.parameters).toMatchObject({
@@ -223,7 +224,16 @@ describe("agent tool registry", () => {
       command: "pnpm run dev",
       reason: "不再向模型暴露旧后台字段",
       background: true,
-    })).toBeNull();
+    })).toMatchObject({ name: "shell_command", arguments: { run_in_background: true } });
+    expect(parseAgentToolCall("shell_command", {
+      executable: "pnpm",
+      args: ["run", "dev"],
+      background: true,
+      run_in_background: true,
+    })).toMatchObject({
+      name: "shell_command",
+      arguments: { executable: "pnpm", args: ["run", "dev"], run_in_background: true },
+    });
     expect(parseAgentToolCall("shell_command", { reason: "缺少命令" })).toBeNull();
     expect(parseAgentToolCall("shell_command", {
       command: "Write-Output ok",
@@ -238,6 +248,8 @@ describe("agent tool registry", () => {
     })).toMatchObject({ name: "delegate_tasks" });
     expect(parseAgentToolCall("team_create", { teamName: "reviewers", maxMembers: 3 }))
       .toMatchObject({ name: "team_create" });
+    expect(parseAgentToolCall("shell_command", { command: "npm run dev" }))
+      .toMatchObject({ name: "shell_command", arguments: { command: "npm run dev" } });
     expect(parseAgentToolCall("agent_spawn", { name: "tester", instruction: "运行回归测试" }))
       .toMatchObject({ name: "agent_spawn" });
     expect(parseAgentToolCall("agent_spawn", { instruction: "运行一次普通子 Agent" }))
@@ -257,5 +269,14 @@ describe("agent tool registry", () => {
       message: { type: "plan_approval_response", request_id: "request-1", approve: false },
     })).toBeNull();
     expect(parseAgentToolCall("team_delete", {})).toMatchObject({ name: "team_delete" });
+  });
+
+  it("describes invalid tool calls with actionable schema feedback", () => {
+    expect(describeAgentToolCallValidationError("read_file", { invented: true }))
+      .toContain("不支持的字段：invented");
+    expect(describeAgentToolCallValidationError("shell_command", {}))
+      .toContain("需要二选一");
+    expect(describeAgentToolCallValidationError("missing_tool", {}))
+      .toContain("当前不可调用");
   });
 });

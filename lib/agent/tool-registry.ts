@@ -29,7 +29,7 @@ const NON_CONCURRENT_READ_TOOLS = new Set<AgentWorkspaceToolName>([
 ]);
 
 const definitions = [
-  define("workspace_status", "检查 Workspace 当前状态；适用于普通文件夹和 Git 仓库。返回文件概况、权限、顶层结构、最近修改文件以及可选 Git 信息。检查项目状态时优先使用此工具；git_diff 只用于读取 Git 变更内容。", "read", true, { recentFileLimit: 20 },
+  define("workspace_status", "读取 Workspace 当前状态；适用于普通文件夹和 Git 仓库。返回文件概况、权限、顶层结构、最近修改文件以及可选 Git 信息。git_diff 是另一项读取 Git 变更正文的能力。", "read", true, { recentFileLimit: 20 },
     (value) => isObject(value) && optionalInteger(value.recentFileLimit) && optionalString(value.rootId)),
   define("list_directory", "列出 Workspace 指定目录的直接子项。", "read", true, { relativePath: "." },
     (value) => isObject(value) && optionalString(value.relativePath) && optionalString(value.rootId)),
@@ -37,7 +37,7 @@ const definitions = [
     (value) => isObject(value) && requiredString(value.pattern) && optionalString(value.pathPrefix) && optionalInteger(value.maxResults) && optionalString(value.rootId)),
   define("search_files", "在所有可读 Workspace 根目录的文本文件中搜索内容；传 rootId 时只搜索指定根。跨根结果会返回每条匹配的 rootId。", "read", true, { query: "symbol", pathPrefix: ".", maxResults: 50 },
     (value) => isObject(value) && requiredString(value.query) && optionalString(value.pathPrefix) && optionalInteger(value.maxResults) && optionalString(value.rootId)),
-  define("code_diagnostics", "读取 Workspace 的 tsconfig/jsconfig，并返回 TypeScript/JavaScript 语法与类型诊断。修改代码后、宣称完成前调用；它只分析和返回结构化问题，不写文件。对应 cc-haha 的被动诊断闭环。", "read", true, { relativePaths: ["src/index.ts"], maxProblems: 100 },
+  define("code_diagnostics", "读取 Workspace 的 tsconfig/jsconfig，并返回 TypeScript/JavaScript 语法与类型诊断。它只提供结构化 observation，不写文件；是否需要调用由当前问题和验证策略决定。对应 cc-haha 的诊断能力。", "read", true, { relativePaths: ["src/index.ts"], maxProblems: 100 },
     (value) => isObject(value) && optionalString(value.configPath) && optionalStringArray(value.relativePaths) && optionalInteger(value.maxProblems) && optionalString(value.rootId)),
   define("code_intelligence", "通过已启用插件声明的 Language Server 执行跨语言语义导航；TypeScript/JavaScript 在没有插件 LSP 时使用内置语义服务降级。支持定义、引用、悬停、文档/工作区符号、实现与调用层级；位置使用从 1 开始的行列号，并读取当前 Execution 尚未应用的 ChangeSet。对应 cc-haha 的 LSP。", "read", true, { operation: "goToDefinition", filePath: "src/index.ts", line: 10, character: 5, maxResults: 100 },
     (value) => isObject(value) && isCodeIntelligenceOperation(value.operation) && requiredString(value.filePath) && requiredPositiveInteger(value.line) && requiredPositiveInteger(value.character) && optionalString(value.query) && optionalString(value.configPath) && optionalInteger(value.maxResults) && optionalString(value.rootId)),
@@ -75,7 +75,7 @@ const definitions = [
     (value) => isObject(value) && requiredString(value.title) && Array.isArray(value.operations) && optionalString(value.rootId)),
   define("propose_memory", "创建等待确认的长期 Project Memory 候选。", "write", false, { kind: "decision", title: "Decision", content: "...", sources: [] },
     (value) => isObject(value) && requiredString(value.title) && requiredString(value.content) && Array.isArray(value.sources) && ["file", "architecture", "decision", "todo"].includes(String(value.kind))),
-  define("git_diff", "仅在 Workspace 已确认是 Git 仓库时读取 Git diff；普通文件夹的状态请使用 workspace_status。", "read", true, { relativePaths: ["src/index.ts"] },
+  define("git_diff", "读取 Git Workspace 的 diff；普通文件夹没有 Git diff 时会返回相应失败 observation。", "read", true, { relativePaths: ["src/index.ts"] },
     (value) => isObject(value) && optionalStringArray(value.relativePaths) && optionalString(value.rootId)),
   define("ask_user_question", "缺少会显著改变结果的信息时，暂停当前 Turn 并向用户提出 1–4 个短问题。每题提供 2–4 个选项；multiSelect=true 时允许多选。界面会自动提供自由输入，不要创建“其他”选项。", "interact", false, {
     questions: [{ question: "选择实现方案？", header: "方案", options: [{ label: "方案 A", description: "影响说明" }, { label: "方案 B", description: "影响说明" }], multiSelect: false }],
@@ -90,7 +90,7 @@ const definitions = [
     (value) => isObject(value) && (value.action === "keep" || value.action === "remove") &&
       (value.discardChanges === undefined || typeof value.discardChanges === "boolean")),
   define("shell_command", "在 Workspace 中执行完整的 PowerShell（Windows）或 Bash（macOS/Linux）命令，支持管道、环境变量与复合命令；优先传 command。shell 只用于 Skill/Command 明确选择解释器，不进行静默回退。命令默认在前台运行，超过交互预算后将同一进程转为后台并返回稳定 taskId 与 outputFilePath；不会重新执行命令。仅当不需要立即取得结果且可以等待完成通知时才设置 run_in_background=true；无需在命令末尾添加 &。后台任务结束后运行时会主动通知，不要立即检查或轮询。兼容旧 executable + args 协议。对应 cc-haha 的 Bash/PowerShell。", "execute", true, { command: "pnpm test", cwd: ".", reason: "运行项目测试" },
-    (value) => isObject(value) && requiredString(value.reason) && hasExactlyOneShellCommandShape(value) && optionalString(value.cwd) && optionalString(value.rootId) && (value.shell === undefined || value.shell === "bash" || value.shell === "powershell") && optionalInteger(value.timeoutMs) && optionalShellBackground(value)),
+    (value) => isObject(value) && optionalString(value.reason) && hasExactlyOneShellCommandShape(value) && optionalString(value.cwd) && optionalString(value.rootId) && (value.shell === undefined || value.shell === "bash" || value.shell === "powershell") && optionalInteger(value.timeoutMs) && optionalShellBackground(value)),
   define("task_output", "兼容 cc-haha 的旧式后台输出读取工具，可读取已知 ID 的 Shell、Workflow 或后台 Agent。Shell 优先使用 shell_command 返回的 outputFilePath 配合 read_file 按需读取；任务完成时运行时会主动通知，不得调用本工具轮询。", "read", false, { task_id: "task-id", block: true, timeout: 30_000 },
     (value) => isObject(value) && hasTaskId(value) && optionalTaskOutputOptions(value)),
   define("task_stop", "停止当前项目中已知 ID 的 Shell、Workflow 或后台 Agent。只在用户明确要求停止，或任务明显失控、有害、重复或已无用途时调用；不要仅因已获得足够输出就停止任务。对应 cc-haha 的 TaskStop。", "execute", false, { task_id: "task-id" },
@@ -134,9 +134,9 @@ const definitions = [
       (value) => isObject(value) && Object.keys(value).length === 0),
     internal: true,
   },
-  define("task_update", "原子更新共享项目任务的内容、负责人、状态或依赖；完成后再次读取任务列表以发现被解除阻塞的工作。对应 cc-haha 的 TaskUpdate。", "write", false, { taskId: "task-id", status: "in_progress", owner: "subagent" },
+  define("task_update", "原子更新共享项目任务的内容、负责人、状态或依赖。是否需要继续读取或更新其他任务，由 Agent 根据返回状态和当前目标决定。对应 cc-haha 的 TaskUpdate。", "write", false, { taskId: "task-id", status: "in_progress", owner: "subagent" },
     (value) => isObject(value) && requiredString(value.taskId) && optionalString(value.subject) && optionalString(value.description) && optionalString(value.activeForm) && optionalString(value.owner) && optionalStringArray(value.addBlockedBy) && (value.status === undefined || ["pending", "in_progress", "completed", "deleted"].includes(String(value.status)))),
-  define("skill", "加载已发现技能的完整 SKILL.md 指令并在当前 Agent Turn 中执行。项目技能属于特定 Workspace Root；多根项目应传入列表展示的 rootId。匹配任务时必须先调用此工具，对应 cc-haha 的 Skill。", "read", false, { skill: "release-check", args: "windows", rootId: "workspace-root-id" },
+  define("skill", "加载已发现技能的完整 SKILL.md 指令并在当前 Agent Turn 中执行。项目技能属于特定 Workspace Root；多根项目应传入列表展示的 rootId。当某项已发现技能对当前目标有帮助时可调用，对应 cc-haha 的 Skill。", "read", false, { skill: "release-check", args: "windows", rootId: "workspace-root-id" },
     (value) => isObject(value) && requiredString(value.skill) && optionalString(value.args) && optionalString(value.rootId)),
   define("tool_search", "按名称或描述发现当前真正可调用的内置工具与延迟加载的 MCP 工具；匹配的 MCP 工具只在当前 Turn 中激活。对应 cc-haha 的 ToolSearch。", "read", false, { query: "编辑文件", maxResults: 10 },
     (value) => isObject(value) && requiredString(value.query) && optionalInteger(value.maxResults)),
@@ -322,7 +322,7 @@ const AGENT_TOOL_PARAMETER_SCHEMAS = {
     shell: { type: "string", enum: ["bash", "powershell"] },
     timeoutMs: integerSchema,
     run_in_background: booleanSchema,
-  }, ["reason"], {
+  }, [], {
     oneOf: [
       { required: ["command"], not: { anyOf: [{ required: ["executable"] }, { required: ["args"] }] } },
       { required: ["executable", "args"], not: { required: ["command"] } },
@@ -474,13 +474,62 @@ export function searchAgentToolDefinitions(
 
 export function parseAgentToolCall(name: unknown, argumentsValue: unknown) {
   const definition = getAgentToolDefinition(name);
+  const normalizedArguments = normalizeLegacyToolCallArguments(definition?.name, argumentsValue);
   if (!definition || definition.internal ||
-    !hasOnlyDeclaredTopLevelParameters(definition.name, argumentsValue) ||
-    !definition.validate(argumentsValue)) return null;
+    !hasOnlyDeclaredTopLevelParameters(definition.name, normalizedArguments) ||
+    !definition.validate(normalizedArguments)) return null;
   return {
     name: definition.name,
-    arguments: argumentsValue as AgentWorkspaceToolArguments[AgentWorkspaceToolName],
+    arguments: normalizedArguments as AgentWorkspaceToolArguments[AgentWorkspaceToolName],
   };
+}
+
+export function describeAgentToolCallValidationError(name: unknown, argumentsValue: unknown) {
+  if (typeof name !== "string" || !name.trim()) return "工具调用缺少有效工具名。";
+  const definition = getAgentToolDefinition(name);
+  if (!definition || definition.internal) {
+    return `工具 ${name} 当前不可调用。请根据本轮实际暴露的工具定义选择能力；若需要延迟工具，可先调用 tool_search。`;
+  }
+  const normalizedArguments = normalizeLegacyToolCallArguments(definition.name, argumentsValue);
+  if (!isObject(normalizedArguments)) {
+    return `工具 ${definition.name} 的参数必须是 JSON 对象。参数示例：${JSON.stringify(definition.example)}`;
+  }
+  const schema = AGENT_TOOL_PARAMETER_SCHEMAS[definition.name];
+  const properties = isObject(schema.properties) ? Object.keys(schema.properties) : [];
+  const unknown = Object.keys(normalizedArguments).filter((key) => !properties.includes(key));
+  if (unknown.length) {
+    return `工具 ${definition.name} 包含当前 schema 不支持的字段：${unknown.join("、")}。允许字段：${properties.join("、") || "无"}。参数示例：${JSON.stringify(definition.example)}`;
+  }
+  const required = Array.isArray(schema.required)
+    ? schema.required.filter((key): key is string => typeof key === "string")
+    : [];
+  const missing = required.filter((key) => normalizedArguments[key] === undefined);
+  if (missing.length) {
+    return `工具 ${definition.name} 缺少必填字段：${missing.join("、")}。参数示例：${JSON.stringify(definition.example)}`;
+  }
+  if (definition.name === "shell_command") {
+    const hasCommand = requiredString(normalizedArguments.command);
+    const hasExecutable = requiredString(normalizedArguments.executable);
+    const hasArgs = Array.isArray(normalizedArguments.args) && normalizedArguments.args.every((item) => typeof item === "string");
+    if (!hasCommand && !(hasExecutable && hasArgs)) {
+      return "工具 shell_command 需要二选一：{command}，或 {executable,args}。reason、cwd、timeoutMs、run_in_background 均为可选字段。";
+    }
+    if (hasCommand && (normalizedArguments.executable !== undefined || normalizedArguments.args !== undefined)) {
+      return "工具 shell_command 不能同时使用 command 与 executable/args；请选择一种命令协议。";
+    }
+  }
+  if (!definition.validate(normalizedArguments)) {
+    return `工具 ${definition.name} 的参数值或字段组合不符合当前 schema。允许字段：${properties.join("、") || "无"}。参数示例：${JSON.stringify(definition.example)}`;
+  }
+  return `工具 ${definition.name} 调用未通过运行时校验，请依据当前工具定义调整后重试。`;
+}
+
+function normalizeLegacyToolCallArguments(name: AgentWorkspaceToolName | undefined, value: unknown) {
+  if (name !== "shell_command" || !isObject(value) || typeof value.background !== "boolean") return value;
+  const normalized = { ...value };
+  if (normalized.run_in_background === undefined) normalized.run_in_background = normalized.background;
+  delete normalized.background;
+  return normalized;
 }
 
 function hasOnlyDeclaredTopLevelParameters(name: AgentWorkspaceToolName, value: unknown) {

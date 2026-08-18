@@ -46,6 +46,7 @@ import { mergeModelImageDataUrls, readWorkspaceImage } from "@/lib/agent/workspa
 import { browserScreenshotDataUrl } from "@/lib/agent/browser-control";
 import {
   DEFERRED_MODEL_AGENT_TOOL_NAMES,
+  describeAgentToolCallValidationError,
   getAgentToolDefinition,
   MODEL_AGENT_TOOL_DEFINITIONS,
   parseAgentToolCall,
@@ -90,7 +91,6 @@ import {
   enqueueProjectAgentMessage,
   listProjectAgentMessages,
 } from "@/lib/agent/project-message-queue";
-import { applyPatchPaths } from "@/lib/agent/apply-patch";
 import { getAcceptedContinuousAgentSuggestions } from "@/lib/global-agent/continuous-store";
 import type { ContinuousAgentSuggestion } from "@/lib/global-agent/continuous-types";
 import { loadProjectAgentHooks } from "@/lib/agent/project-hook-config";
@@ -410,7 +410,7 @@ export async function runProjectAgentTurn(input: {
     event: Exclude<ProjectAgentHookEvent, "PreToolUse" | "PostToolUse" | "PostToolUseFailure">,
     payload?: Record<string, unknown>,
   ) => Promise<ProjectAgentHookRuntimeResult | undefined>) | undefined;
-  let research = createTurnResearchState(input.prompt);
+  let research = createTurnResearchState();
   let approvedBrowserAction: Record<string, unknown> | undefined;
   let approvedWorkflowAction: Record<string, unknown> | undefined;
   let approvedMcpAction: { name: McpToolName; arguments: Record<string, unknown> } | undefined;
@@ -505,7 +505,7 @@ export async function runProjectAgentTurn(input: {
         model: turnModel,
         reasoningEffort: turnReasoningEffort,
       };
-      research = createTurnResearchState(slashCommand.content);
+      research = createTurnResearchState();
     }
     const resumedAgentHooks = input.resume && executionId
       ? (await getAgentExecution(input.projectId, executionId, dataDir))?.context.agentHooks
@@ -750,7 +750,7 @@ export async function runProjectAgentTurn(input: {
     };
     if (skillInvocationEvent?.data?.promptShellExpanded === true && skillInvocationEvent.content) {
       input = { ...input, prompt: skillInvocationEvent.content };
-      research = createTurnResearchState(skillInvocationEvent.content);
+      research = createTurnResearchState();
     }
     if (skillInvocationEvent && skillInvocationEvent.data?.promptShellExpanded !== true) {
       const promptShell = skillInvocationEvent.data?.commandShell === "powershell" ? "powershell" : "bash";
@@ -888,7 +888,7 @@ export async function runProjectAgentTurn(input: {
           data: { promptShellExpanded: true, commandShell: promptShell },
         }, dataDir);
         input = { ...input, prompt: expanded };
-        research = createTurnResearchState(expanded);
+        research = createTurnResearchState();
       } else {
         skillInvocationEvent = await updateProjectAgentEvent({
           projectId: input.projectId,
@@ -1284,9 +1284,6 @@ export async function runProjectAgentTurn(input: {
       ...(approvedWorkflowAction ? [{ type: "tool" as const, name: "workflow" as const, arguments: approvedWorkflowAction }] : []),
       ...(approvedMcpAction ? [{ type: "tool" as const, name: approvedMcpAction.name, arguments: approvedMcpAction.arguments }] : []),
     ];
-    const pendingDiagnosticPaths = new Set<string>();
-    let codeEditRevision = 0;
-    let diagnosticsRevision = 0;
     const observedImageCache = new Map<string, string>();
     let browserScreenshot: string | undefined;
     const recordAutoApprovedShell = async (output: unknown) => {
@@ -1405,17 +1402,6 @@ export async function runProjectAgentTurn(input: {
           browserScreenshot = browserScreenshotDataUrl(output) ?? browserScreenshot;
         }
         if (decision.name === "shell_command") await recordAutoApprovedShell(output);
-        if (decision.name === "code_diagnostics") {
-          diagnosticsRevision = codeEditRevision;
-          pendingDiagnosticPaths.clear();
-        } else if (!isMcpToolName(decision.name) && isObject(output) && typeof output.changeSetId === "string") {
-          const codePaths = codePathsFromToolDecision(decision.name, decision.arguments);
-          if (codePaths.length) {
-            codeEditRevision += 1;
-            diagnosticsRevision = Math.min(diagnosticsRevision, codeEditRevision - 1);
-            for (const relativePath of codePaths) pendingDiagnosticPaths.add(relativePath);
-          }
-        }
         if (!isMcpToolName(decision.name)) {
           updateTurnResearchState(research, decision.name, decision.arguments, output);
         }
@@ -2035,7 +2021,7 @@ export async function runProjectAgentTurn(input: {
             projectId: input.projectId,
             turnId,
             type: "toolResult",
-            content: `工具 ${entry.toolCall.name} 不存在，或参数不符合该工具的 schema。请读取当前可用工具定义后修正调用。`,
+            content: describeAgentToolCallValidationError(entry.toolCall.name, entry.toolCall.arguments),
             data: { status: "failed", executionId, toolCallEventId: invalidEvent.id, name: entry.toolCall.name },
           }, dataDir);
         }
@@ -2250,10 +2236,6 @@ export async function runProjectAgentTurn(input: {
               callModel,
             });
           }
-          if (outcome.decision.name === "code_diagnostics") {
-            diagnosticsRevision = codeEditRevision;
-            pendingDiagnosticPaths.clear();
-          }
         }
         continue;
       }
@@ -2265,17 +2247,7 @@ export async function runProjectAgentTurn(input: {
           response?.text ?? "",
           mcpDiscovery.tools.filter((tool) => activeMcpToolNames.has(tool.name)),
         );
-      let decision = parsedDecision;
-      if ((!decision || decision.type === "complete") && codeEditRevision > diagnosticsRevision) {
-        decision = {
-          type: "tool",
-          name: "code_diagnostics",
-          arguments: {
-            relativePaths: [...pendingDiagnosticPaths].slice(0, 100),
-            maxProblems: 100,
-          },
-        };
-      }
+      const decision = parsedDecision;
       if (!decision) {
         const answer = response?.text ?? "";
         const researchIssue = validateResearchAnswer(answer, research);
@@ -2994,17 +2966,6 @@ export async function runProjectAgentTurn(input: {
             data: { items },
           }, dataDir);
         }
-        if (decision.name === "code_diagnostics") {
-          diagnosticsRevision = codeEditRevision;
-          pendingDiagnosticPaths.clear();
-        } else if (isObject(output) && typeof output.changeSetId === "string") {
-          const codePaths = isMcpToolName(decision.name) ? [] : codePathsFromToolDecision(decision.name, toolArguments);
-          if (codePaths.length) {
-            codeEditRevision += 1;
-            diagnosticsRevision = Math.min(diagnosticsRevision, codeEditRevision - 1);
-            for (const relativePath of codePaths) pendingDiagnosticPaths.add(relativePath);
-          }
-        }
         if (!isMcpToolName(decision.name)) updateTurnResearchState(research, decision.name, toolArguments, output);
         if (decision.name === "skill") {
           mergeSkillAllowedTools(turnAdditionalAllowedTools, output);
@@ -3101,10 +3062,6 @@ export async function runProjectAgentTurn(input: {
           content: message,
           data: { status: "failed", executionId, toolCallEventId: (await ensureToolEvent()).id, name: decision.name },
         }, dataDir);
-        if (decision.name === "web_fetch" && !input.signal?.aborted) {
-          recordTurnResearchFetchFailure(research, toolArguments, message);
-          continue;
-        }
         if (input.signal?.aborted) throw new ProjectAgentTurnError(message, "tool_failed");
         // Match cc-haha's Agent loop: an ordinary tool failure is a tool
         // result for the model to reason over, not a terminal Turn failure.
@@ -4313,7 +4270,7 @@ function buildTurnContext(
     `默认会话权限：${permissionMode}。${permissionMode === "untrusted" ? "允许安全读取和生成待审阅 ChangeSet；执行命令必须逐次批准。" : permissionMode === "neverAsk" ? "禁止请求审批；受阻动作直接失败。" : "需要提升权限时请求用户批准。"} Zenme 的 ChangeSet 与命令审批硬边界始终有效。`,
     context.interactionMode === "plan"
       ? `当前处于规划模式。只允许读取、搜索、观察、提问、维护计划以及只读 MCP 工具；除 @plan/PLAN.md 外禁止修改文件，禁止执行 Shell、启动 Sub-agent 或调用有外部副作用的工具。使用 write_file/edit_file 持续维护 @plan/PLAN.md；彻底探索现有实现和同类模式，形成具体且可验证的实施计划。存在关键歧义时调用 ask_user_question；计划完成后调用 exit_plan_mode，并把文件中的最终计划放入 plan 参数请求用户批准。批准前不得开始实施。${context.activePlan ? `\n当前待修订计划：\n${context.activePlan}` : ""}`
-      : "当前处于普通执行模式。仅在实现路径存在重大歧义或高影响重构、提前取得用户认可能显著避免返工时调用 enter_plan_mode；明确、简单或已有具体方案的任务直接执行。",
+      : "当前处于普通执行模式。enter_plan_mode 会切换到受限的只读规划状态；是否需要进入规划模式由你根据当前目标、风险和已有信息自行判断。",
     workspaceBinding ? `当前项目 Workspace 根目录（工具参数中的 rootId 必须使用这里的稳定 ID；未传 rootId 的精确读写默认主根，glob_files/search_files 默认跨全部可读根）：\n${JSON.stringify(listWorkspaceRoots(workspaceBinding).map((root) => ({
       rootId: root.id,
       primary: root.primary,
@@ -4338,7 +4295,7 @@ function buildTurnContext(
     })))}` : "",
     memories.length ? `与当前请求相关的已确认 Project Memory：\n${JSON.stringify(memories)}` : "",
     relevantKnowledge.length ? `自动召回的相关 Project Knowledge（需要更多细节时调用 search_knowledge）：\n${formatRelevantProjectKnowledge(relevantKnowledge)}` : "",
-    availableSkills.length ? `当前可用技能（匹配任务时先调用 skill 加载完整指令）：\n${formatProjectSkillListing(availableSkills)}` : "",
+    availableSkills.length ? `当前可用技能（需要其专门指令时调用 skill 加载）：\n${formatProjectSkillListing(availableSkills)}` : "",
     availableAgents.length ? `当前可用自定义 Agent（调用 agent_spawn 时用 agentType 选择；其系统提示、工具边界和模型配置由运行时加载，不要复述定义正文）：\n${formatProjectAgentDefinitionListing(availableAgents)}` : "",
     outputStylePrompt ? `当前输出风格指令（只影响回答表达，不得覆盖工具、权限、安全或验证协议）：\n${outputStylePrompt}` : "",
     formatProjectAgentInstructions(projectInstructions),
@@ -4385,8 +4342,8 @@ function buildTurnInstruction(
   research: TurnResearchState,
   providerManagedWebResearch = false,
 ) {
-  const backgroundInstruction = "Shell 命令默认前台执行；只有不需要立即取得结果且可以等待完成通知时才设置 run_in_background=true，且无需在命令末尾添加 &。前台命令超过交互预算后，运行时会将同一进程转为后台并返回 taskId 与 outputFilePath；不要重新执行命令。后台任务结束时会主动通知，无需立即检查、枚举或轮询。只有当前请求必须立即读取更多输出时，才对该 outputFilePath 调用一次 read_file；不要用 task_list 查询 Shell 进程。";
-  const teamInstruction = "需要多个持续协作的具名成员时，先调用 team_create，再用 agent_spawn 启动成员；一次性并行工作使用 delegate_tasks。需要成员先规划、经负责人批准后才能实施时，为 agent_spawn 设置 mode='plan'。成员提交计划后会返回 teammateName、requestId 与 plan；必须审阅计划，再用 send_message 向该成员发送 message={type:'plan_approval_response',request_id,approve,feedback?}。拒绝时 feedback 必填，成员会在同一 Execution 中修订；批准后才获得写入和执行工具。后台成员完成时会主动通知。用 send_message 按成员名称协调，to='*' 才广播；结构化消息不能广播；存在活跃、待审批或等待输入的成员时不得 team_delete。";
+  const backgroundInstruction = "Shell 默认前台执行；run_in_background=true 会立即返回 taskId 与 outputFilePath，前台长命令也可能由运行时把同一进程转为后台。后台终态会主动通知；task_list 是项目工作项列表，不是 Shell 进程列表。";
+  const teamInstruction = "team_create + agent_spawn 可建立持续存在、可寻址的具名成员；delegate_tasks 提供一次性并行 Sub-agent。根据当前协作目标自行选择。agent_spawn mode='plan' 会让成员先进入只读计划协议：成员返回 teammateName、requestId 与 plan 后，负责人必须用 send_message 的 plan_approval_response 明确批准或拒绝；拒绝时 feedback 必填，批准后成员才获得写入和执行工具。后台成员完成时会主动通知。send_message 可按成员名称定向，to='*' 只广播纯文本；结构化消息不能广播；存在活跃、待审批或等待输入的成员时不得 team_delete。";
   const browserInstruction = "Browser 只操作用户提供或工具输出中真实出现的 URL；不得扫描端口、猜测 localhost 地址或用 Browser 代替 Shell 管理开发服务。";
   const workflowInstruction = "只有用户明确要求运行 Workflow、多 Agent 编排，或已加载的 Skill 明确要求时，才可调用 workflow；普通开发、启动服务、检查状态和单次委派不得自行升级为 Workflow。Workflow 启动前只批准一次，运行期间不要轮询，结束后会主动通知。";
   if (providerManagedWebResearch) {
@@ -4395,15 +4352,15 @@ function buildTurnInstruction(
       "如果可以直接回答，返回普通文本，或返回 {\"type\":\"complete\",\"summary\":\"...\"}。",
       "当前服务商会在请求需要最新网页信息时自动提供托管网页检索结果。直接基于服务商返回的网页证据完成回答，并保留可验证的来源链接；不要调用 Zenme 本地的 web_search 或 web_fetch。",
       "不要向用户暴露搜索命令、内部引用编号、原始工具载荷或中间抓取状态。若托管检索没有提供足够证据，应明确说明限制，不要编造，也不要用本地网页抓取器重复检索。",
-      "检查项目或 Workspace 当前状态时调用 workspace_status；普通文件夹也可以检查。只有 workspace_status 确认 Git 可用且用户需要变更详情时，才调用 git_diff。",
+      "workspace_status 提供 Workspace/Git 状态摘要；git_diff 读取 Git 变更正文。根据当前问题选择需要的观察工具，不要把其中一个当成另一个的固定前置步骤。",
       "仅当缺少的信息会显著改变结果且不能通过现有上下文或工具发现时，调用 ask_user_question；当前 Turn 会暂停，用户回答后会作为工具结果写回并继续同一 Turn。",
-      "如果用户要求执行命令（例如 git init、测试或检查），不要返回教程或把命令包装成文本 JSON；直接调用 shell_command。Workspace 外绝对 cwd 会触发目录授权。",
+      "需要真实执行命令时调用 shell_command；Workspace 外绝对 cwd 会触发目录授权。",
       backgroundInstruction,
       browserInstruction,
       teamInstruction,
       workflowInstruction,
-      "复杂任务存在两个以上可独立推进的工作流时，可调用 delegate_tasks 并行委派；必须给每个 Sub-agent 最小路径和工具范围。简单任务不要委派，Sub-agent 不得递归委派。等待委派结果返回后再形成最终答复。",
-      "复杂任务确实需要共享协作计划时才使用 task_create、task_list、task_get、task_update；普通 Shell 或一次性请求不需要项目任务。不要用任务工具查询后台进程或代替实际执行。",
+      "当独立并行工作能显著帮助完成目标时可调用 delegate_tasks；给每个 Sub-agent 清晰目标和最小必要范围。Sub-agent 不得递归委派。",
+      "task_create/task_list/task_get/task_update 管理共享项目工作项；它们不查询后台进程，也不代替实际执行。是否需要任务结构由你根据当前目标决定。",
       "上下文中若存在已采纳的 Continuous Global Agent 建议，只在它与当前请求相关且需要结构化协作时才创建项目任务，并把它视为待验证的工作提示；不得把建议描述当作已完成事实，也不得绕过工具、权限或审批直接执行。",
       "工具通过服务商原生 function/tool calling 提供；必须使用原生工具调用，不要输出工具 JSON、伪造工具结果或把命令写成教程。",
     ].join("\n");
@@ -4411,73 +4368,49 @@ function buildTurnInstruction(
   return [
     `当前用户请求：${prompt}`,
     "如果可以直接回答，返回普通文本，或返回 {\"type\":\"complete\",\"summary\":\"...\"}。",
-    "如果请求依赖最新网页信息，必须先调用 web_search 发现候选 URL。web_search 结果只是未验证的候选，严禁直接据此作答或引用。",
+    "web_search 用于发现未知候选 URL；若已经有明确 URL，可直接用 web_fetch 读取。web_search 结果只是发现信息，不等于已读取页面正文。",
     research.usedSearch
-      ? `本轮已执行 ${research.searchQueries.size} 次搜索，已读取 ${research.fetchedEvidence.length} 个候选来源。不要重复搜索已有主题；优先读取尚未验证的候选，证据足够后立即综合回答。`
-      : "本轮尚未执行网页搜索。",
-    research.openEnded
-      ? "这是开放性检索任务。不要按固定来源数量停止；应根据证据充分性决定是否继续：核心结论是否有直接证据、来源是否真正独立而非转载、是否存在未解释的冲突，以及任务风险是否需要额外核验。简单事实若已有直接且权威的一手来源，可以只读一个来源并明确局限；新闻汇总、影响判断、比较和争议结论通常应继续读取独立来源。"
-      : "对于明确的单页或指定来源问题，读取该直接来源并确认其内容足以回答即可；不要为了凑数量继续搜索。",
-    "准备完成前评估证据是否足以支持最终答案。若证据不足或相互冲突，继续 web_search/web_fetch；若已经充分，直接综合作答。多个域名不自动等于独立来源，同一稿件的转载只算一条证据链。",
-    "完成使用过网页工具的 Turn 前，请自行检查已读正文是否足以支持结论；证据不足或冲突时继续检索，充分时立即综合回答。",
+      ? `本轮已搜索 ${research.searchQueries.size} 个查询并读取 ${research.fetchedEvidence.length} 个页面。把这些数据视为当前 observation，自行判断下一步。`
+      : "本轮尚未使用网页工具。",
+    "web_search 只发现候选 URL，web_fetch 才读取页面正文。自行根据问题风险、证据质量和冲突情况决定是否继续检索，不按固定来源数或关键词规则停止。",
     "必须用 web_fetch 阅读实际采用的页面。读取完成后，基于正文进行综合总结：直接回答用户问题，提炼共同事实，合并重复信息，区分时间与事件，并在来源冲突时明确说明。",
     "最终回答不得复述 web_search 列表、工具输出或逐条摘抄网页。来源链接不是回答主体；可以不附链接。若附链接，只能引用本轮 web_fetch 成功读取的页面。",
     research.correction ? `上一次完成回答被运行时拒绝：${research.correction} 请继续调用必要工具后重新作答。` : "",
-    "检查项目或 Workspace 当前状态时调用 workspace_status；普通文件夹也可以检查。只有 workspace_status 确认 Git 可用且用户需要变更详情时，才调用 git_diff。",
+    "workspace_status 提供 Workspace/Git 状态摘要；git_diff 读取 Git 变更正文。根据当前问题选择需要的观察工具，不要把其中一个当成另一个的固定前置步骤。",
     "仅当缺少的信息会显著改变结果且不能通过工具发现时，调用 ask_user_question；当前 Turn 会暂停，用户回答后会作为工具结果写回并继续同一 Turn。",
-    "如果用户要求执行命令（例如 git init、测试或检查），不要返回教程或把命令包装成文本 JSON；直接调用 shell_command。Workspace 外绝对 cwd 会触发目录授权。",
+    "需要真实执行命令时调用 shell_command；Workspace 外绝对 cwd 会触发目录授权。",
     backgroundInstruction,
     browserInstruction,
     teamInstruction,
     workflowInstruction,
-    "复杂任务存在两个以上可独立推进的工作流时，可调用 delegate_tasks 并行委派；必须给每个 Sub-agent 最小路径和工具范围。简单任务不要委派，Sub-agent 不得递归委派。等待委派结果返回后再形成最终答复。",
-    "复杂任务确实需要共享协作计划时才使用 task_create、task_list、task_get、task_update；普通 Shell 或一次性请求不需要项目任务。不要用任务工具查询后台进程或代替实际执行。",
+    "当独立并行工作能显著帮助完成目标时可调用 delegate_tasks；给每个 Sub-agent 清晰目标和最小必要范围。Sub-agent 不得递归委派。",
+    "task_create/task_list/task_get/task_update 管理共享项目工作项；它们不查询后台进程，也不代替实际执行。是否需要任务结构由你根据当前目标决定。",
     "上下文中若存在已采纳的 Continuous Global Agent 建议，只在它与当前请求相关且需要结构化协作时才创建项目任务，并把它视为待验证的工作提示；不得把建议描述当作已完成事实，也不得绕过工具、权限或审批直接执行。",
     "工具通过服务商原生 function/tool calling 提供；必须使用原生工具调用，不要输出工具 JSON、伪造工具结果或把命令写成教程。",
   ].filter(Boolean).join("\n");
 }
 
 type TurnResearchState = {
-  userPrompt: string;
   usedSearch: boolean;
   searchQueries: Set<string>;
-  discoveredUrls: string[];
   fetchedUrls: Set<string>;
-  failedFetchUrls: Set<string>;
-  fetchedHosts: Set<string>;
   fetchedEvidence: Array<{
     url: string;
     title?: string;
     summary: string;
     claims: unknown[];
   }>;
-  openEnded: boolean;
   correction: string;
 };
 
-function createTurnResearchState(prompt: string): TurnResearchState {
+function createTurnResearchState(): TurnResearchState {
   return {
-    userPrompt: prompt,
     usedSearch: false,
     searchQueries: new Set<string>(),
-    discoveredUrls: [],
     fetchedUrls: new Set<string>(),
-    failedFetchUrls: new Set<string>(),
-    fetchedHosts: new Set<string>(),
     fetchedEvidence: [],
-    openEnded: requiresIndependentWebSources(prompt),
     correction: "",
   };
-}
-
-function recordTurnResearchFetchFailure(
-  state: TurnResearchState,
-  argumentsValue: Record<string, unknown>,
-  message: string,
-) {
-  const url = typeof argumentsValue.url === "string" ? normalizeCitationUrl(argumentsValue.url) : "";
-  if (url) state.failedFetchUrls.add(url);
-  state.correction = `读取候选来源失败${url ? `（${url}）` : ""}：${message}。不要重试该 URL；改读其他候选来源，或在已有证据足以回答时收窄结论并完成总结。`;
 }
 
 function updateTurnResearchState(
@@ -4491,13 +4424,6 @@ function updateTurnResearchState(
     state.usedSearch = true;
     const query = typeof argumentsValue.query === "string" ? argumentsValue.query.trim().toLocaleLowerCase() : "";
     if (query) state.searchQueries.add(query);
-    if (isObject(output) && Array.isArray(output.sources)) {
-      for (const source of output.sources) {
-        if (typeof source !== "string") continue;
-        const url = normalizeCitationUrl(source);
-        if (url && !state.discoveredUrls.includes(url)) state.discoveredUrls.push(url);
-      }
-    }
     return;
   }
   if (name !== "web_fetch" || !isObject(output)) return;
@@ -4505,8 +4431,6 @@ function updateTurnResearchState(
   const finalUrl = typeof output.finalUrl === "string" ? output.finalUrl : "";
   if (requestedUrl) state.fetchedUrls.add(normalizeCitationUrl(requestedUrl));
   if (finalUrl) state.fetchedUrls.add(normalizeCitationUrl(finalUrl));
-  const host = sourceHost(finalUrl || requestedUrl);
-  if (host) state.fetchedHosts.add(host);
   state.fetchedEvidence.push({
     url: finalUrl || requestedUrl,
     ...(typeof output.title === "string" ? { title: output.title } : {}),
@@ -4522,15 +4446,6 @@ function validateResearchAnswer(answer: string, state: TurnResearchState) {
   const unverified = citedUrls.filter((url) => !state.fetchedUrls.has(url));
   if (unverified.length) return `最终答案引用了未经 web_fetch 读取的来源：${unverified.slice(0, 3).join("、")}`;
   return "";
-}
-
-export function requiresIndependentWebSources(prompt: string) {
-  return /(最近|近期|最新|新闻|报道|影响|现状|进展|趋势|对比|比较|汇总|综述|调查|核实|验证|是否.*(?:发生|存在|影响)|latest|recent|news|impact|compare|overview|verify)/i.test(prompt);
-}
-
-function sourceHost(value: string) {
-  try { return new URL(value).hostname.toLowerCase().replace(/^www\./, ""); }
-  catch { return ""; }
 }
 
 function normalizeCitationUrl(value: string) {
@@ -4698,24 +4613,6 @@ async function collectTurnWorkspaceImages(input: {
     if (dataUrl) dataUrls.push(dataUrl);
   }
   return dataUrls;
-}
-
-function codePathsFromToolDecision(name: AgentWorkspaceToolName, argumentsValue: Record<string, unknown>) {
-  const candidates: string[] = [];
-  if ((name === "write_file" || name === "edit_file") && typeof argumentsValue.relativePath === "string") {
-    candidates.push(argumentsValue.relativePath);
-  }
-  if (name === "apply_patch" && typeof argumentsValue.patch === "string") {
-    try { candidates.push(...applyPatchPaths(argumentsValue.patch)); } catch { /* The tool result reports malformed patches. */ }
-  }
-  if (name === "propose_patch" && Array.isArray(argumentsValue.operations)) {
-    for (const operation of argumentsValue.operations) {
-      if (!isObject(operation)) continue;
-      if (typeof operation.relativePath === "string") candidates.push(operation.relativePath);
-      if (typeof operation.targetRelativePath === "string") candidates.push(operation.targetRelativePath);
-    }
-  }
-  return [...new Set(candidates.filter((candidate) => /\.[cm]?[jt]sx?$/i.test(candidate)))];
 }
 
 function summarizeCommandResult(executable: string, args: string[], output: { status: string; stdout?: string; stderr?: string }, command?: string) {

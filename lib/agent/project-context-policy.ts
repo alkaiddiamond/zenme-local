@@ -180,6 +180,7 @@ export function thinProjectAgentToolResults(
 
 export function normalizeProjectAgentToolName(value: unknown): string {
   if (value === "run_command") return "shell_command";
+  if (value === "project_task_list") return "task_list";
   return typeof value === "string" ? value : "";
 }
 
@@ -187,17 +188,53 @@ export function isProjectAgentShellCommandTool(value: unknown): boolean {
   return normalizeProjectAgentToolName(value) === "shell_command";
 }
 
+export function projectAgentToolCallForModel(name: unknown, argumentsValue: unknown) {
+  const rawName = typeof name === "string" ? name : "";
+  if (isLegacyModelHiddenToolName(rawName)) return null;
+  const normalizedName = normalizeProjectAgentToolName(rawName);
+  if (!normalizedName) return null;
+  return {
+    name: normalizedName,
+    arguments: normalizeLegacyToolArguments(normalizedName, argumentsValue),
+  };
+}
+
 export function projectProjectAgentToolResultsForModel(events: ProjectAgentEvent[]) {
-  return events.map((event) => {
-    const toolName = normalizeProjectAgentToolName(event.data?.name);
-    if ((event.type !== "toolCall" && event.type !== "toolResult") || toolName !== "shell_command") {
-      return event;
+  const legacyShellTaskListResultIds = new Set<string>();
+  const legacyShellTaskListCallIds = new Set<string>();
+  for (const event of events) {
+    if (event.type !== "toolResult" || normalizeProjectAgentToolName(event.data?.name) !== "task_list" ||
+        !isLegacyShellTaskListResult(event)) continue;
+    legacyShellTaskListResultIds.add(event.id);
+    if (typeof event.data?.toolCallEventId === "string") legacyShellTaskListCallIds.add(event.data.toolCallEventId);
+  }
+  return events.filter((event) =>
+    !legacyShellTaskListResultIds.has(event.id) && !legacyShellTaskListCallIds.has(event.id) &&
+    !isLegacyModelHiddenToolName(typeof event.data?.name === "string" ? event.data.name : ""),
+  ).map((event) => {
+    const projectedTool = projectAgentToolCallForModel(event.data?.name, event.data?.arguments);
+    const toolName = projectedTool?.name ?? normalizeProjectAgentToolName(event.data?.name);
+    if (event.type !== "toolCall" && event.type !== "toolResult") return event;
+    if (toolName !== "shell_command") {
+      return {
+        ...event,
+        data: {
+          ...event.data,
+          name: toolName,
+          ...(event.type === "toolCall"
+            ? { arguments: projectedTool?.arguments ?? event.data?.arguments }
+            : {}),
+        },
+      };
     }
     const normalizedEvent: ProjectAgentEvent = {
       ...event,
       data: {
         ...event.data,
         name: "shell_command",
+        ...(event.type === "toolCall"
+          ? { arguments: projectedTool?.arguments ?? event.data?.arguments }
+          : {}),
       },
     };
     if (event.type !== "toolResult") return normalizedEvent;
@@ -216,6 +253,38 @@ export function projectProjectAgentToolResultsForModel(events: ProjectAgentEvent
       },
     };
   });
+}
+
+const LEGACY_MODEL_HIDDEN_TOOL_NAMES = new Set([
+  "todo_write",
+  "run_approved_command",
+  "open_preview",
+  "restart_service",
+  "start_dev_server",
+  "scan_ports",
+]);
+
+function isLegacyModelHiddenToolName(value: string) {
+  return LEGACY_MODEL_HIDDEN_TOOL_NAMES.has(value);
+}
+
+function normalizeLegacyToolArguments(toolName: string, value: unknown) {
+  if (!isRecord(value) || toolName !== "shell_command") return value;
+  if (value.run_in_background !== undefined || value.background === undefined) return value;
+  const { background, ...rest } = value;
+  return { ...rest, run_in_background: background };
+}
+
+function isLegacyShellTaskListResult(event: ProjectAgentEvent) {
+  const output = event.data?.output;
+  if (isRecord(output)) {
+    if (typeof output.guidance === "string" && output.guidance.includes("restartCommand")) return true;
+    if (Array.isArray(output.tasks) && output.tasks.some((task) =>
+      isRecord(task) && (typeof task.executable === "string" ||
+        (isRecord(task.restartCommand) && typeof task.restartCommand.executable === "string")))) return true;
+  }
+  const content = event.content ?? "";
+  return content.includes("task_list") && content.includes("restartCommand") && content.includes("executable");
 }
 
 function formatShellResultForModel(output: Record<string, unknown>) {

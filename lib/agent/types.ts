@@ -289,7 +289,7 @@ export type AgentWorkspaceToolArguments = {
   shell_command: {
     cwd?: string;
     rootId?: string;
-    reason: string;
+    reason?: string;
     shell?: "bash" | "powershell";
     timeoutMs?: number;
     run_in_background?: boolean;

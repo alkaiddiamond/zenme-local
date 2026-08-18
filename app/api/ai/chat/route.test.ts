@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createNativeAgentTools } from "@/lib/agent/tool-registry";
 
@@ -11,6 +11,7 @@ import {
   createOpenAiOAuthRequestBody,
   createVolcengineAgentPlanResponsesRequestBody,
   fitChatContextToModel,
+  retryOpenAiOAuthRequestAfterTokenInvalidation,
   shouldAllowAutomaticWebSearch,
 } from "./route";
 import { readModelStream } from "@/lib/agent/project-agent-model";
@@ -67,6 +68,37 @@ describe("model-aware chat context", () => {
 });
 
 describe("ChatGPT OAuth chat request", () => {
+  it("refreshes an invalidated ChatGPT token once and retries the same request", async () => {
+    const requests: string[] = [];
+    const request = vi.fn(async (token: string) => {
+      requests.push(token);
+      return token === "expired"
+        ? new Response(JSON.stringify({ error: { code: "token_invalidated" } }), { status: 401 })
+        : new Response("ok", { status: 200 });
+    });
+    const refresh = vi.fn(async () => "fresh");
+
+    const response = await retryOpenAiOAuthRequestAfterTokenInvalidation("expired", request, refresh);
+
+    expect(response.status).toBe(200);
+    expect(requests).toEqual(["expired", "fresh"]);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not refresh for an ordinary quota error", async () => {
+    const request = vi.fn(async () => new Response(
+      JSON.stringify({ error: { code: "usage_limit_reached" } }),
+      { status: 429 },
+    ));
+    const refresh = vi.fn(async () => "fresh");
+
+    const response = await retryOpenAiOAuthRequestAfterTokenInvalidation("current", request, refresh);
+
+    expect(response.status).toBe(429);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
   it("uses the official Responses Lite shape for GPT-5.6 models", () => {
     expect(createOpenAiOAuthRequestBody({
       messages: [

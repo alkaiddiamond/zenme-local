@@ -295,7 +295,7 @@ export async function runApprovedAgentCommand(input: {
       await fs.writeFile(command.outputFilePath, "", "utf8");
     }
 
-    const invocation = await commandInvocation(command.executable, command.args);
+    const invocation = await commandInvocation(command.executable, command.args, cwdPath);
     // Match cc-haha's native Windows behavior: PowerShell commands are not
     // wrapped in a second, product-specific process sandbox. Workspace roots,
     // command validation and the session approval policy remain the security
@@ -308,10 +308,22 @@ export async function runApprovedAgentCommand(input: {
       current.sandboxBackend = sandboxBackend;
       current.updatedAt = new Date().toISOString();
     }, dataDir);
+    const commandEnvironment = buildCommandEnvironment(invocation.executable);
+    const packageManagerBridge = await prepareWindowsPackageManagerBridge(
+      cwdPath,
+      dataDir,
+      commandEnvironment.Path ?? commandEnvironment.PATH ?? "",
+    );
+    if (packageManagerBridge) {
+      commandEnvironment.Path = [packageManagerBridge, commandEnvironment.Path ?? commandEnvironment.PATH ?? ""]
+        .filter(Boolean)
+        .join(path.win32.delimiter);
+      delete commandEnvironment.PATH;
+    }
     child = spawn(invocation.executable, invocation.args, {
       cwd: cwdPath,
       env: {
-        ...buildCommandEnvironment(invocation.executable),
+        ...commandEnvironment,
         ...sanitizeCommandEnvironment(input.environment),
       },
       shell: false,
@@ -1210,7 +1222,7 @@ function normalizeForegroundBudget(value?: number) {
   return value;
 }
 
-async function commandInvocation(executable: string, args: string[]) {
+async function commandInvocation(executable: string, args: string[], cwdPath: string) {
   if (process.platform !== "win32") return { executable, args };
   if (executable === "powershell") {
     const powershell = await resolvePowerShellExecutable();
@@ -1241,6 +1253,10 @@ async function commandInvocation(executable: string, args: string[]) {
   if (["pnpm", "yarn", "bun"].includes(executable)) {
     const invocation = await resolveWindowsPackageManagerShim(executable, args);
     if (invocation) return invocation;
+    if (executable === "pnpm" || executable === "yarn") {
+      const corepackInvocation = await resolveWindowsCorepackInvocation(executable, args, cwdPath);
+      if (corepackInvocation) return corepackInvocation;
+    }
     throw new AgentCommandError(`无法定位受信任的 ${executable} CLI`, "command_not_found");
   }
   return { executable, args };
@@ -1289,6 +1305,83 @@ async function resolveWindowsPackageManagerShim(executable: string, args: string
       } catch {
         // Try the next command-shim branch or PATH entry.
       }
+    }
+  }
+  return null;
+}
+
+async function resolveWindowsCorepackInvocation(executable: "pnpm" | "yarn", args: string[], cwdPath: string) {
+  const corepack = await resolveTrustedWindowsCorepack(process.env.PATH ?? process.env.Path ?? "", cwdPath);
+  if (!corepack) return null;
+  const directory = path.dirname(corepack);
+  const nodePath = path.join(directory, "node.exe");
+  const cliPath = path.join(directory, "node_modules", "corepack", "dist", "corepack.js");
+  try {
+    await Promise.all([fs.access(nodePath), fs.access(cliPath)]);
+    return { executable: nodePath, args: [cliPath, executable, ...args] };
+  } catch {
+    return null;
+  }
+}
+
+async function prepareWindowsPackageManagerBridge(cwdPath: string, dataDir: string, pathValue: string) {
+  if (process.platform !== "win32") return null;
+  const manager = await declaredCorepackPackageManager(cwdPath);
+  if (!manager) return null;
+  if (await findWindowsCommandOnPath(`${manager}.cmd`, pathValue, cwdPath)) return null;
+  const corepack = await resolveTrustedWindowsCorepack(pathValue, cwdPath);
+  if (!corepack) return null;
+  const bridgeDirectory = path.join(dataDir, "agent-command-shims", "corepack");
+  const shimPath = path.join(bridgeDirectory, `${manager}.cmd`);
+  const source = `@echo off\r\n"${corepack.replaceAll('"', '""')}" ${manager} %*\r\n`;
+  await fs.mkdir(bridgeDirectory, { recursive: true });
+  const current = await fs.readFile(shimPath, "utf8").catch(() => "");
+  if (current !== source) await fs.writeFile(shimPath, source, "utf8");
+  return bridgeDirectory;
+}
+
+async function declaredCorepackPackageManager(cwdPath: string): Promise<"pnpm" | "yarn" | null> {
+  try {
+    const parsed = JSON.parse(await fs.readFile(path.join(cwdPath, "package.json"), "utf8")) as { packageManager?: unknown };
+    if (typeof parsed.packageManager !== "string") return null;
+    const manager = parsed.packageManager.trim().match(/^(pnpm|yarn)@/i)?.[1]?.toLowerCase();
+    return manager === "pnpm" || manager === "yarn" ? manager : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveTrustedWindowsCorepack(pathValue: string, cwdPath: string) {
+  const candidates = [
+    process.env.ProgramFiles ? path.join(process.env.ProgramFiles, "nodejs", "corepack.cmd") : undefined,
+    ...pathValue.split(path.win32.delimiter).filter((entry) => path.win32.isAbsolute(entry)).map((entry) => path.join(entry, "corepack.cmd")),
+  ].filter((candidate): candidate is string => Boolean(candidate));
+  const workspace = path.resolve(cwdPath).toLowerCase();
+  for (const candidate of candidates) {
+    const resolved = path.resolve(candidate);
+    const lower = resolved.toLowerCase();
+    if (lower === workspace || lower.startsWith(`${workspace}${path.sep}`)) continue;
+    try {
+      await fs.access(resolved);
+      return resolved;
+    } catch {
+      // Try the next trusted installation path.
+    }
+  }
+  return null;
+}
+
+async function findWindowsCommandOnPath(filename: string, pathValue: string, cwdPath: string) {
+  const workspace = path.resolve(cwdPath).toLowerCase();
+  for (const entry of pathValue.split(path.win32.delimiter).filter((value) => path.win32.isAbsolute(value))) {
+    const candidate = path.resolve(entry, filename);
+    const lower = candidate.toLowerCase();
+    if (lower === workspace || lower.startsWith(`${workspace}${path.sep}`)) continue;
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // Try the next PATH entry.
     }
   }
   return null;

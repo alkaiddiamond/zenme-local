@@ -1,22 +1,21 @@
 # cc-haha Agent Turn 对齐矩阵
 
-本文以本地 `../cc-haha/src` 的 `main@d52bbec707246f807416c2bc6b1cd67445cfe622` 为行为基线，记录 Zenme Project Agent 的真实覆盖情况。目标不是复制终端 UI，而是在保留节点画布入口和 Project Session 持久化的前提下，对齐同一套 Agent Turn 能力。
+本文以本地 `../cc-haha/src` 的 `main@d52bbec707246f807416c2bc6b1cd67445cfe622` 为行为基线，记录 Zenme Project Agent 的源码级行为覆盖情况。Agent Runtime 的权威能力定义、模型自治权和 Runtime 硬边界见 [`agent-runtime-capabilities.md`](agent-runtime-capabilities.md)。工具/Hook 名称对齐本身不构成“Agent 会自主解决问题”的完成证明。
 
-## 完成结论（2026-08-18）
+## 当前结论（2026-08-18）
 
-当前审计结论：**Zenme 已完成 cc-haha 当前外部默认、模型可达的 Agent Turn 能力对齐，同时保留节点 + 无限画布的交互模型。** cc-haha 的 Session/Thread 语义落在 Zenme Project Session 下，一次 Agent Turn 始终对应同一个 AI Reply Node；工具、审批、Sub-agent、后台任务、压缩与恢复在运行中投影到节点内部，Turn 结束后只保留最终回答、结果动作和可展开执行证据，不把执行日志扩散成永久画布节点。
+当前源码级审计与行为验证表明：**Zenme 已完成 cc-haha 当前外部默认、模型可达 Agent Turn 能力的迁移，并通过 Agent Autonomy 行为契约验证，同时保持节点 + 无限画布的交互模型。** 这里的“完成”不再仅依据工具/Hook 名称或生命周期覆盖，而要求 Runtime 不用固定流程、关键词路由、强制诊断、旧 Session guidance 或重复结果停止规则替模型做问题求解决策；该要求已经由自动化契约和真实 `gpt-5.3-codex-spark` Live Autonomy 轨迹共同证明。
 
 本结论只覆盖当前外部默认、实际可达的 Agent Turn 语义。`USER_TYPE=ant`、compile-time feature gate（例如 KAIROS、AGENT_TRIGGERS、CONTEXT_COLLAPSE、SKILL_IMPROVEMENT）或当前源码仅有 dormant 类型/检查但没有 parser/schema 入口的能力，不作为外部默认基线。真实第三方 MCP/LSP、特定云服务商、macOS Keychain、远程 MDM/企业下发属于后续平台/集成认证；下表保留这些认证备注，但它们不代表当前 Agent Turn Runtime 缺少对应语义。
 
-完成证据：
+既有 parity 证据：
 
 - cc-haha `HOOK_EVENTS` 27 项与 Zenme `PROJECT_AGENT_HOOK_EVENTS` 逐项一致；command/prompt/agent/http Hook 及 once/async/asyncRewake 均有生产触发边界，其中 `agent` Hook 已是最多 50 轮、可调用受限 Workspace 工具的隐藏 Agent，而不是一次性 prompt。
 - 默认工具池、ToolSearch/deferred tools、Task/Plan、Workflow、Skills/Commands、MCP Resources、Worktree、Image、Web、Shell、Team/SendMessage 均完成源码级可达性审计；Brief/Cron/Sleep/Monitor/KAIROS 等非默认工具按其真实 gate 排除。
 - `AgentTool` 的外部可达参数已对齐：普通 Agent 可省略 `name`、默认同步；显式后台/Agent `background:true`/Team 成员异步；Team 成员要求稳定名称；`mode=plan`、`isolation=worktree`、模型继承与同 Execution resume 已接通；`SendMessage` 可按名称或 raw agentId 恢复普通后台 Agent。
 - sampling/context 默认语义已接通：context overflow 响应式压缩、microcompact、手动 `/compact`、`max_output_tokens` 64K 提升与同 Turn 有界 continuation；PostSampling 的当前外部消费者均受 ant/默认关闭 gate 约束，因此不构成默认缺口。
-- `npm run check`：251/251 Vitest 文件、1428/1428 测试通过，另有 23/23 desktop node tests 通过。
-- `npm run build` 通过；`.next/standalone` 经 clean build 明确得到 `standalone-trace-clean`，不会递归携带旧 `dist-desktop`。
-- Windows `npm run desktop:pack` 通过；`npm run desktop:smoke` 通过。packaged smoke 使用临时 `userData` / `ZENME_DATA_DIR` / Workspace，并强制完成“检查 → ChangeSet 编辑 → 测试 → 后台启动预览 → Browser 验证 → 继续修改 → 再验证 → TaskStop”，任一步失败都会以非零退出。
+- 新增自治行为回归覆盖：无效工具参数自修正、重复 observation 不强停、主/子 Agent completion 不被强制 diagnostics 改写、模型主动选择 diagnostics、历史工具协议迁移与退休策略工具隐藏。当前 `npm run check` 已通过：251/252 个 Vitest 文件、1440/1441 项测试通过，唯一跳过项是默认不消耗在线额度的 Live Autonomy；Desktop Node tests 23/23。真实 `gpt-5.3-codex-spark` Live Autonomy 已显式执行 1/1、exit 0。
+- 当前自治清理工作树的 `npm run verify` 已完整 exit 0；clean standalone 输出 `standalone-trace-clean`；Windows `npm run desktop:pack` exit 0；`npm run desktop:smoke` exit 0。因而此前“需要重新确认本轮门禁”的保留项已经闭环。
 
 ## 默认工具池审计
 
@@ -103,6 +102,6 @@
 1. 默认外部、实际可达的表格能力均有生产实现和回归测试；ant-only、compile-time gated 与 dormant-only 路径已通过源码审计明确排除，而不是用 Zenme 的空壳功能冒充。
 2. 普通对话、文件修改、测试失败恢复、后台开发服务、用户追加指令、审批、上下文压缩、Sub-agent 与工具搜索均通过 Project Agent 单入口完成。
 3. 运行中画布只突出当前活动；Turn 结束后只保留最终回答、结果动作和可展开证据，不暴露内部通知或重复状态。
-4. 当前工作树的 `npm run check`、`npm run build`、Windows `npm run desktop:pack`、`npm run desktop:smoke` 全部通过；packaged smoke 已在临时真实 Workspace 完成“检查—编辑—测试—启动预览—继续修改”的端到端验收。
+4. 当前工作树的 `npm run check` 与真实 Spark Autonomy 验收已通过；`npm run verify`、Windows packaged smoke 需要在本轮自治清理后重新取得最终证据，不能沿用自治清理前的旧绿灯。
 
 表格中仍保留的“真实第三方服务/真机/MDM/macOS”文字是**集成认证清单**，不再作为当前外部默认 Agent Turn Runtime 的未完成项；若未来把这些平台能力纳入 Zenme 产品发布范围，应分别建立对应环境的认证门禁。

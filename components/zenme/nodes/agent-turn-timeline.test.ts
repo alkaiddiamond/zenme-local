@@ -1,10 +1,20 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import type { ProjectAgentEvent } from "@/lib/agent/project-session-types";
 import { agentEventContentForDisplay, extractAssistantOutputTargets, projectAgentTurnAnswer, projectAgentTurnAnswerDraft, projectTurnCanRetry, projectTurnChangeSetIds, projectTurnCommandForDisplay, projectTurnCompletedStepCount, projectTurnEvidenceEvents, projectTurnEventsForDisplay, projectTurnIsTerminal, projectTurnRunningBackgroundTasks, projectTurnSettledState, projectTurnTerminalError } from "@/components/zenme/nodes/agent-turn-timeline";
 import { serializeMcpElicitationFormValues } from "@/components/zenme/mcp-elicitation-form";
 
+const timelineSource = readFileSync(new URL("./agent-turn-timeline.tsx", import.meta.url), "utf8");
+
 describe("AI reply node Agent Turn timeline", () => {
+  it("keeps retry and execution evidence actions visually distinct", () => {
+    expect(timelineSource).toContain("border-red-200 bg-white");
+    expect(timelineSource).toContain("text-red-700");
+    expect(timelineSource).toContain("border-zinc-200/80 bg-zinc-50/70");
+    expect(timelineSource).toContain("aria-expanded={showEvidence}");
+  });
+
   it("does not resume a form elicitation until every required field is valid", () => {
     const schema = { required: ["format", "includeMetadata"] };
     expect(serializeMcpElicitationFormValues(schema, { includeMetadata: false })).toBe("");

@@ -5,7 +5,9 @@ import {
 } from "@/lib/agent/command-runtime";
 import {
   completeAgentExecution,
+  finishAgentToolCall,
   getAgentExecution,
+  startAgentToolCall,
   stopAgentExecution,
 } from "@/lib/agent/execution-store";
 import { executeAgentToolPipeline } from "@/lib/agent/tool-execution-pipeline";
@@ -15,6 +17,7 @@ import {
 } from "@/lib/agent/project-agent-model";
 import {
   DEFERRED_MODEL_AGENT_TOOL_NAMES,
+  describeAgentToolCallValidationError,
   formatAgentToolProtocol,
   MODEL_AGENT_TOOL_DEFINITIONS,
   getAgentToolDefinition,
@@ -59,11 +62,11 @@ import {
   type McpToolName,
   type ProjectMcpTool,
 } from "@/lib/agent/mcp-runtime";
-import { applyPatchPaths } from "@/lib/agent/apply-patch";
 import { persistAgentToolResultForModel } from "@/lib/agent/tool-result-storage";
 import { enqueueProjectAgentMessage } from "@/lib/agent/project-message-queue";
 import { runProjectAgentLifecycleHooks } from "@/lib/agent/project-agent-hook-runtime";
 import { parseWorkflowStructuredResult } from "@/lib/agent/workflow-result-schema";
+import { projectAgentToolCallForModel } from "@/lib/agent/project-context-policy";
 
 const MAX_SUBAGENT_TURNS = 32;
 const MAX_ORCHESTRATION_BATCHES = 32;
@@ -85,6 +88,7 @@ if (!existingDelegatedRuntime) Reflect.set(globalThis, delegatedRuntimeKey, dele
 
 type SubagentDecision =
   | { type: "tool"; name: AgentWorkspaceToolName | McpToolName; arguments: Record<string, unknown> }
+  | { type: "invalidTool"; name: string; arguments: unknown; error: string }
   | {
       type: "message";
       to: string;
@@ -560,15 +564,26 @@ async function runDelegatedSubagentCore(input: {
       }
     }
     const responseDecisions = response ? delegatedDecisions(response, activeMcpTools) : [];
-    let decision = pendingDecisions.shift() ?? responseDecisions.shift() ?? null;
+    const decision = pendingDecisions.shift() ?? responseDecisions.shift() ?? null;
     if (responseDecisions.length) pendingDecisions.push(...responseDecisions);
-    const pendingDiagnosticPaths = delegatedPendingDiagnosticPaths(detail);
-    if ((!decision || decision.type === "complete") && allowedTools.includes("code_diagnostics") && pendingDiagnosticPaths.length) {
-      decision = {
-        type: "tool",
-        name: "code_diagnostics",
-        arguments: { relativePaths: pendingDiagnosticPaths.slice(0, 100), maxProblems: 100 },
-      };
+    if (decision?.type === "invalidTool") {
+      const definition = getAgentToolDefinition(decision.name);
+      if (definition && !definition.internal && decision.arguments && typeof decision.arguments === "object" && !Array.isArray(decision.arguments)) {
+        const call = await startAgentToolCall({
+          projectId: input.projectId,
+          executionId: input.executionId,
+          name: definition.name,
+          arguments: decision.arguments as Record<string, unknown>,
+        }, dataDir);
+        await finishAgentToolCall({
+          projectId: input.projectId,
+          executionId: input.executionId,
+          toolCallId: call.id,
+          error: decision.error,
+        }, dataDir);
+      }
+      queuedParentMessages.push(hookFeedbackMessage(decision.error, "工具调用校验失败"));
+      continue;
     }
     const completionSummary = !decision
       ? response?.text ?? "Sub-agent 已完成任务。"
@@ -919,31 +934,34 @@ export function buildDelegatedSubagentContext(
       : "",
     formatProjectAgentInstructions(projectInstructions),
     availableSkills.length
-      ? `当前可用技能（匹配任务时先调用 skill 加载完整指令）：\n${formatProjectSkillListing([...availableSkills])}`
+      ? `当前可用技能（需要其专门指令时调用 skill 加载）：\n${formatProjectSkillListing([...availableSkills])}`
       : "",
     formatAgentToolProtocol({ exclude: excludedTools }),
     isTeamTeammate
       ? "Team 协作工具 send_message 与 cc-haha 一致：to=team-lead 向负责人报告，to=具名成员直接协作，to='*' 只广播纯文本；纯文本必须带 5–10 词 summary。关闭请求和响应必须使用结构化 shutdown_request/shutdown_response，不能广播；不要用它发送高频流水账。"
       : "",
     isTeamTeammate
-      ? "项目共享任务协作：开始前用 task_list 查看可领取工作，需要完整详情时用 task_get；领取或推进任务时用 task_update 原子更新 owner/status，发现新的独立工作可用 task_create。不要把后台进程当作项目任务列表。"
+      ? "项目共享任务协作：task_list/task_get/task_update/task_create 用于读取和维护共享工作项；它们不是后台进程工具。根据当前协作需要自行决定何时使用。"
       : "",
     formatDelegatedMcpContext(availableMcpTools, activeMcpTools, mcpFailures),
     allowedToolSet.has("code_intelligence")
-      ? "理解 TypeScript/JavaScript 的定义、引用、实现、类型或调用关系时优先使用 code_intelligence，不要用重复全文搜索替代语义导航；位置使用从 1 开始的行列号。"
+      ? "code_intelligence 可提供 TypeScript/JavaScript 的定义、引用、实现、类型和调用关系等语义 observation；位置使用从 1 开始的行列号。根据问题选择语义导航或文本搜索。"
       : "",
     allowedToolSet.has("browser")
       ? "验证本地 Web 界面时使用 browser：仅在用户输入或 shell_command 输出已经提供明确 loopback URL 后 navigate，再根据 snapshot 返回的元素 ref 执行 click/type/press；需要视觉判断时请求 screenshot。不要猜测 selector、扫描端口或重启服务。"
       : "",
     allowedToolSet.has("code_diagnostics")
-      ? "修改 TypeScript/JavaScript 后、宣称完成前调用 code_diagnostics；仍需按任务风险运行相关测试。诊断不可用不等于验证通过。"
+      ? "code_diagnostics 可提供 TypeScript/JavaScript 的结构化诊断；测试、构建、诊断、预览等验证方式由你根据任务风险和当前证据选择。不要把任何单一工具当作固定完成门槛。"
       : "完成前按允许工具进行与修改风险相称的验证，不要把未运行的检查写成已通过。",
     "Shell 与 cc-haha 保持同一语义：只启动一次命令；短命令前台完成，长命令在 15 秒后由同一进程自动转为后台，并返回稳定 taskId 和 outputFilePath。后台任务终止时运行时会发送通知，不要枚举任务、轮询输出、扫描端口或为了获得 URL 重启服务。需要页面验证时，只能使用 shell_command 输出或用户提供的明确 loopback URL。",
     '任务完成时返回普通文本，或返回 {"type":"complete","summary":"..."}。',
     `画布上下文：${detail.context.canvasContext || "无"}`,
     `已确认 Project Memory：${JSON.stringify(detail.context.projectMemories ?? [])}`,
     `Project Knowledge：${JSON.stringify(detail.context.knowledgeContext ?? [])}`,
-    `工具历史：${JSON.stringify(detail.toolCalls.map((call) => ({ name: call.name, arguments: call.arguments, status: call.status, output: call.output, error: call.error })))}`,
+    `工具历史：${JSON.stringify(detail.toolCalls.flatMap((call) => {
+      const projected = projectAgentToolCallForModel(call.name, call.arguments);
+      return projected ? [{ ...projected, status: call.status, output: call.output, error: call.error }] : [];
+    }))}`,
     `命令历史：${JSON.stringify(detail.commandRequests.map((command) => ({ executable: command.executable, args: command.args, cwd: command.cwd, status: command.status, stdout: command.stdout, stderr: command.stderr })))}`,
   ].filter(Boolean).join("\n\n");
 }
@@ -1010,39 +1028,6 @@ export function restoreDelegatedBuiltInToolNames(detail: AgentExecutionDetail) {
   return activeNames;
 }
 
-function delegatedPendingDiagnosticPaths(detail: AgentExecutionDetail) {
-  const latestDiagnostic = [...detail.toolCalls]
-    .reverse()
-    .find((call) => call.name === "code_diagnostics" && call.status === "succeeded");
-  const latestDiagnosticAt = latestDiagnostic?.completedAt ?? latestDiagnostic?.startedAt ?? "";
-  const paths = new Set<string>();
-  for (const call of detail.toolCalls) {
-    if (call.status !== "succeeded" || (call.completedAt ?? call.startedAt) <= latestDiagnosticAt) continue;
-    if ((call.name === "write_file" || call.name === "edit_file") && typeof call.arguments.relativePath === "string" && /\.[cm]?[jt]sx?$/i.test(call.arguments.relativePath)) {
-      paths.add(call.arguments.relativePath);
-    }
-    if (call.name === "apply_patch" && typeof call.arguments.patch === "string") {
-      try {
-        for (const candidate of applyPatchPaths(call.arguments.patch)) {
-          if (/\.[cm]?[jt]sx?$/i.test(candidate)) paths.add(candidate);
-        }
-      } catch {
-        // Successful apply_patch calls have already been structurally validated.
-      }
-    }
-    if (call.name === "propose_patch" && Array.isArray(call.arguments.operations)) {
-      for (const operation of call.arguments.operations) {
-        if (!operation || typeof operation !== "object" || Array.isArray(operation)) continue;
-        const value = operation as Record<string, unknown>;
-        for (const candidate of [value.relativePath, value.targetRelativePath]) {
-          if (typeof candidate === "string" && /\.[cm]?[jt]sx?$/i.test(candidate)) paths.add(candidate);
-        }
-      }
-    }
-  }
-  return [...paths];
-}
-
 function delegatedDecisions(
   response: ProjectAgentModelResponse,
   activeMcpTools: readonly ProjectMcpTool[] = [],
@@ -1054,7 +1039,12 @@ function delegatedDecisions(
     const mcpCall = parseProjectMcpToolCall(activeMcpTools, nativeCall.name, nativeCall.arguments);
     if (mcpCall) return { type: "tool", name: mcpCall.name, arguments: mcpCall.arguments };
     const call = parseAgentToolCall(nativeCall.name, nativeCall.arguments);
-    if (!call) throw new Error(`Sub-agent 请求了无效工具：${nativeCall.name}`);
+    if (!call) return {
+      type: "invalidTool" as const,
+      name: nativeCall.name,
+      arguments: nativeCall.arguments,
+      error: describeAgentToolCallValidationError(nativeCall.name, nativeCall.arguments),
+    };
     return { type: "tool", name: call.name, arguments: call.arguments };
   });
   const candidate = response.text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
@@ -1070,7 +1060,12 @@ function delegatedDecisions(
   const mcpCall = parseProjectMcpToolCall(activeMcpTools, value.name, value.arguments);
   if (mcpCall) return [{ type: "tool", name: mcpCall.name, arguments: mcpCall.arguments }];
   const call = parseAgentToolCall(value.name, value.arguments);
-  if (!call) throw new Error("Sub-agent 返回了无效工具调用");
+  if (!call) return [{
+    type: "invalidTool",
+    name: typeof value.name === "string" ? value.name : "",
+    arguments: value.arguments,
+    error: describeAgentToolCallValidationError(value.name, value.arguments),
+  }];
   return [{ type: "tool", name: call.name, arguments: call.arguments }];
 }
 

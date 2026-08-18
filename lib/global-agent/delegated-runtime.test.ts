@@ -420,7 +420,8 @@ describe("delegated Sub-agent runtime", { timeout: 15_000 }, () => {
     }, dataDir);
     const semanticContext = buildDelegatedSubagentContext(semanticDetail, "neverAsk", [], []);
     expect(semanticContext).toContain("code_intelligence");
-    expect(semanticContext).toContain("定义、引用、实现、类型或调用关系");
+    expect(semanticContext).toContain("定义、引用、实现、类型和调用关系等语义 observation");
+    expect(semanticContext).toContain("根据问题选择语义导航或文本搜索");
   });
 
   it("runs independent scoped Sub-agents concurrently and collects their results", async () => {
@@ -1045,7 +1046,7 @@ describe("delegated Sub-agent runtime", { timeout: 15_000 }, () => {
     expect(result.toolCalls).toHaveLength(3);
   });
 
-  it("diagnoses a Sub-agent ChangeSet overlay before accepting completion", async () => {
+  it("does not replace a Sub-agent completion decision with forced diagnostics", async () => {
     await fs.writeFile(path.join(workspaceRoot, "src", "a", "index.ts"), "export const a: number = 1;\n");
     await fs.writeFile(path.join(workspaceRoot, "tsconfig.json"), JSON.stringify({
       compilerOptions: { strict: true, skipLibCheck: true },
@@ -1074,20 +1075,46 @@ describe("delegated Sub-agent runtime", { timeout: 15_000 }, () => {
           toolCall: { name: "edit_file", arguments: { relativePath: "src/a/index.ts", oldText: "= 1", newText: "= 'broken'" } },
           usage: null,
         };
-        if (modelCalls === 2) return { text: "修改完成", usage: null };
-        expect(modelInput.context).toContain("code_diagnostics");
-        expect(modelInput.context).toContain("2322");
-        return { text: "发现类型错误，尚未完成", usage: null };
+        expect(modelInput.allowedAgentTools).toContain("code_diagnostics");
+        return { text: "修改完成，但未运行诊断", usage: null };
       },
     });
 
-    expect(result).toMatchObject({ status: "succeeded", resultSummary: "发现类型错误，尚未完成" });
-    expect(modelCalls).toBe(3);
-    expect(result.toolCalls.find((call) => call.name === "code_diagnostics")?.output)
-      .toMatchObject({ available: true, errorCount: 1 });
+    expect(result).toMatchObject({ status: "succeeded", resultSummary: "修改完成，但未运行诊断" });
+    expect(modelCalls).toBe(2);
+    expect(result.toolCalls.some((call) => call.name === "code_diagnostics")).toBe(false);
     await expect(fs.readFile(path.join(workspaceRoot, "src", "a", "index.ts"), "utf8"))
       .resolves.toContain("= 1");
   }, 30_000);
+
+  it("returns an invalid tool call to the Sub-agent as actionable observation instead of terminating it", async () => {
+    const { detail } = await createAgentExecution({
+      projectId,
+      resultNodeId: "invalid-tool-agent",
+      triggerNodeId: "invalid-tool-source",
+      instruction: "检查模块 A",
+      allowedPathPrefixes: ["src/a"],
+      allowedTools: ["read_file"],
+    }, dataDir);
+    let modelCalls = 0;
+
+    const result = await runDelegatedSubagent({ projectId, executionId: detail.id, model: "test:model" }, {
+      dataDir,
+      callModel: async (modelInput) => {
+        modelCalls += 1;
+        if (modelCalls === 1) {
+          return { text: "", toolCall: { name: "read_file", arguments: { invented: true } }, usage: null };
+        }
+        expect(modelInput.context).toContain("read_file");
+        expect(modelInput.context).toContain("不支持的字段");
+        return { text: "已根据工具校验反馈调整策略。", usage: null };
+      },
+    });
+
+    expect(result).toMatchObject({ status: "succeeded", resultSummary: "已根据工具校验反馈调整策略。" });
+    expect(modelCalls).toBe(2);
+    expect(result.toolCalls[0]).toMatchObject({ name: "read_file", status: "failed" });
+  });
 
   it("auto-runs a declared sandboxed test command without creating a hidden approval", async () => {
     const orchestration = await createGlobalOrchestration({
