@@ -417,7 +417,7 @@ export function AgentTurnTimeline({
       {terminalError ? <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{agentEventContentForDisplay(terminalError)}</p> : null}
       {projectTurnCanRetry(events) && onRetry ? (
         <button
-          className="inline-flex h-8 w-fit items-center rounded-lg border border-red-200 bg-white px-3 text-xs font-medium text-red-700 shadow-sm transition-colors hover:border-red-300 hover:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-8 w-fit items-center rounded-lg border border-zinc-200 bg-white px-3 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={retrying}
           onClick={() => void retryTurn()}
           type="button"

@@ -1,9 +1,84 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fitProjectAgentTools, ProjectAgentModelStreamError, readModelStream } from "@/lib/agent/project-agent-model";
+const postAiChatMock = vi.hoisted(() => vi.fn());
+vi.mock("@/app/api/ai/chat/route", () => ({ POST: postAiChatMock }));
+
+import { callProjectAgentModel, fitProjectAgentTools, ProjectAgentModelStreamError, readModelStream } from "@/lib/agent/project-agent-model";
 import { MAX_AGENT_TOOLS } from "@/lib/ai/request-policy";
 
 describe("project agent model stream", () => {
+  beforeEach(() => {
+    postAiChatMock.mockReset();
+  });
+
+  it("retries a transient HTTP model failure before any model output", async () => {
+    postAiChatMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "模型调用失败（503），服务商暂时不可用。" }), {
+        status: 503,
+        headers: { "content-type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response([
+        'data: {"choices":[{"delta":{"content":"恢复成功"}}]}',
+        "data: [DONE]",
+        "",
+      ].join("\n\n"), { status: 200 }));
+    const retries: number[] = [];
+
+    await expect(callProjectAgentModel({
+      context: "",
+      model: "test:model",
+      prompt: "继续",
+      transientRetryDelaysMs: [0],
+      onTransientRetry: ({ attempt }) => { retries.push(attempt); },
+    })).resolves.toMatchObject({ text: "恢复成功" });
+
+    expect(postAiChatMock).toHaveBeenCalledTimes(2);
+    expect(retries).toEqual([1]);
+  });
+
+  it("retries an overloaded SSE failure only when the failed sample emitted nothing", async () => {
+    postAiChatMock
+      .mockResolvedValueOnce(new Response([
+        'data: {"error":"Our servers are currently overloaded. Please try again later."}',
+        "data: [DONE]",
+        "",
+      ].join("\n\n"), { status: 200 }))
+      .mockResolvedValueOnce(new Response([
+        'data: {"choices":[{"delta":{"content":"第二次采样成功"}}]}',
+        "data: [DONE]",
+        "",
+      ].join("\n\n"), { status: 200 }));
+
+    await expect(callProjectAgentModel({
+      context: "",
+      model: "test:model",
+      prompt: "继续",
+      transientRetryDelaysMs: [0],
+    })).resolves.toMatchObject({ text: "第二次采样成功" });
+    expect(postAiChatMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a transient stream error after user-visible output has started", async () => {
+    postAiChatMock.mockResolvedValueOnce(new Response([
+      'data: {"choices":[{"delta":{"content":"已经输出"}}]}',
+      'data: {"error":"Our servers are currently overloaded. Please try again later."}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n"), { status: 200 }));
+    const deltas: string[] = [];
+
+    await expect(callProjectAgentModel({
+      context: "",
+      model: "test:model",
+      prompt: "继续",
+      transientRetryDelaysMs: [0, 0, 0],
+      onTextDelta: (delta) => { deltas.push(delta); },
+    })).rejects.toThrow("overloaded");
+
+    expect(postAiChatMock).toHaveBeenCalledTimes(1);
+    expect(deltas).toEqual(["已经输出"]);
+  });
+
   it("keeps built-in tools and bounds lazily activated tools to the provider limit", () => {
     const builtIns = [{ name: "read_file", description: "read", parameters: { type: "object" } }];
     const additional = Array.from({ length: MAX_AGENT_TOOLS + 10 }, (_, index) => ({

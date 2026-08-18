@@ -1083,7 +1083,10 @@ async function createSafeProviderError(
   }
 
   if (status === 429) {
-    return `${provider.name} 调用 ${provider.model} 失败（429），请求过于频繁或额度不足。`;
+    if (upstreamCode && /(usage[_-]?limit|insufficient[_-]?quota|billing|credit)/i.test(upstreamCode)) {
+      return `${provider.name} 调用 ${provider.model} 失败（429），账号额度或使用上限不足。`;
+    }
+    return `${provider.name} 调用 ${provider.model} 失败（429），请求过于频繁，请稍后重试。`;
   }
 
   if (status >= 400 && status < 500) {

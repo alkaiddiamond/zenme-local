@@ -96,7 +96,7 @@ type RenderedCanvasNodeInput = {
   onUpdateProjectTag?: NonNullable<CanvasNodeData["onUpdateProjectTag"]>;
   onSubmitTextGenerationNode: (
     nodeId: string,
-    input?: { imageDataUrls?: string[]; model?: string; prompt?: string },
+    input?: { imageDataUrls?: string[]; model?: string; retryExistingTurn?: boolean; prompt?: string },
   ) => Promise<void> | void;
   onSteerTextGenerationNode?: NonNullable<CanvasNodeData["onSteerTextGenerationNode"]>;
   onStopTextGenerationNode?: NonNullable<CanvasNodeData["onStopTextGenerationNode"]>;

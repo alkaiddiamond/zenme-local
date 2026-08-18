@@ -105,15 +105,23 @@ describe("text generation request boundary", () => {
     expect(source).toContain("permissionMode,");
   });
 
-  it("retries a failed AI reply as a new downstream Project Agent Turn", () => {
+  it("retries a failed AI reply in the same node and Project Agent Turn", () => {
     const source = readProjectFile("components/zenme/nodes/text-node.tsx");
+    const canvasSource = readProjectFile("components/zenme/canvas-client.tsx");
     const timeline = readProjectFile("components/zenme/nodes/agent-turn-timeline.tsx");
 
     expect(source).toContain("onRetry={() => nodeData.onSubmitTextGenerationNode?.(id,");
     expect(source).toContain("prompt: nodeData.aiPrompt");
     expect(source).toContain("model: nodeData.aiModel || nodeData.textGenerationModel");
+    expect(source).toContain("retryExistingTurn: true");
+    expect(canvasSource).toContain("const retryExistingTurn = input?.retryExistingTurn === true");
+    expect(canvasSource).toContain("const turnId = retryExistingTurn ? sourceNode.data.agentTurnId! : crypto.randomUUID()");
+    expect(canvasSource).toContain("const resultNodeId = retryExistingTurn ? nodeId : crypto.randomUUID()");
+    expect(canvasSource).toContain("resume: retryExistingTurn");
     expect(timeline).toContain("projectTurnCanRetry(events) && onRetry");
     expect(timeline).toContain("重试");
+    expect(timeline).toContain("border-zinc-200");
+    expect(timeline).not.toContain("border-red-200 bg-white px-3 text-xs font-medium text-red-700");
   });
 
   it("carries image context and an abort signal through the unified Project Agent", () => {

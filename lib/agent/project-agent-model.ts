@@ -27,6 +27,18 @@ export class ProjectAgentModelStreamError extends Error {
   }
 }
 
+class ProjectAgentModelRequestError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ProjectAgentModelRequestError";
+  }
+}
+
+const DEFAULT_TRANSIENT_MODEL_RETRY_DELAYS_MS = [1_000, 2_000, 4_000] as const;
+
 export async function callProjectAgentModel(input: {
   context: string;
   imageDataUrls?: string[];
@@ -44,6 +56,14 @@ export async function callProjectAgentModel(input: {
   allowedAgentTools?: AgentWorkspaceToolName[];
   additionalAgentTools?: NativeAgentTool[];
   signal?: AbortSignal;
+  /** Runtime/test tuning only; does not change model-visible behavior. */
+  transientRetryDelaysMs?: readonly number[];
+  onTransientRetry?: (event: {
+    attempt: number;
+    maxAttempts: number;
+    delayMs: number;
+    message: string;
+  }) => void | Promise<void>;
 }): Promise<ProjectAgentModelResponse> {
   const agentTools = input.mode && input.mode !== "project_agent"
     ? undefined
@@ -51,43 +71,106 @@ export async function callProjectAgentModel(input: {
         createNativeAgentTools({ include: input.allowedAgentTools }),
         input.additionalAgentTools ?? [],
       );
-  const request = new Request("http://127.0.0.1/api/ai/chat", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      context: input.context,
-      imageDataUrls: input.imageDataUrls,
-      messages: input.messages?.length
-        ? input.messages
-        : [{ role: "user", content: input.prompt }],
-      model: input.model,
-      mode: input.mode ?? "project_agent",
-      agentTools,
-      thinkingEnabled: input.thinkingEnabled,
-      reasoningEffort: input.reasoningEffort,
-      modelSpeed: input.modelSpeed,
-      maxOutputTokens: input.maxOutputTokens,
-    }),
-    signal: input.signal,
-  });
-  const response = await postAiChat(request);
-  if (!response.ok || !response.body) {
-    const payload = await response.json().catch(() => null) as { error?: string } | null;
-    throw new Error(payload?.error ?? "模型调用失败");
+  const retryDelays = input.transientRetryDelaysMs ?? DEFAULT_TRANSIENT_MODEL_RETRY_DELAYS_MS;
+  for (let attempt = 0; ; attempt += 1) {
+    let emittedObservableOutput = false;
+    try {
+      const request = new Request("http://127.0.0.1/api/ai/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          context: input.context,
+          imageDataUrls: input.imageDataUrls,
+          messages: input.messages?.length
+            ? input.messages
+            : [{ role: "user", content: input.prompt }],
+          model: input.model,
+          mode: input.mode ?? "project_agent",
+          agentTools,
+          thinkingEnabled: input.thinkingEnabled,
+          reasoningEffort: input.reasoningEffort,
+          modelSpeed: input.modelSpeed,
+          maxOutputTokens: input.maxOutputTokens,
+        }),
+        signal: input.signal,
+      });
+      const response = await postAiChat(request);
+      if (!response.ok || !response.body) {
+        const payload = await response.json().catch(() => null) as { error?: string } | null;
+        throw new ProjectAgentModelRequestError(payload?.error ?? "模型调用失败", response.status);
+      }
+      const headerUsage = normalizeHeaderUsage(response.headers.get("x-zenme-token-usage"));
+      const result = await readModelStream(response.body, {
+        onThinkingDelta: async (delta) => {
+          emittedObservableOutput = true;
+          await input.onThinkingDelta?.(delta);
+        },
+        onTextDelta: async (delta) => {
+          emittedObservableOutput = true;
+          await input.onTextDelta?.(delta);
+        },
+        onToolCallComplete: (toolCall, index) => {
+          emittedObservableOutput = true;
+          input.onToolCallComplete?.(toolCall, index);
+        },
+      });
+      return {
+        text: result.text.trim(),
+        thinkingSummary: result.thinkingSummary || undefined,
+        toolCall: result.toolCall,
+        toolCalls: result.toolCalls,
+        usage: result.usage ?? headerUsage,
+      };
+    } catch (error) {
+      const retrySafeStreamFailure = error instanceof ProjectAgentModelStreamError &&
+        !error.partialText && !error.thinkingSummary;
+      const canRetry = attempt < retryDelays.length &&
+        !input.signal?.aborted &&
+        !emittedObservableOutput &&
+        (error instanceof ProjectAgentModelRequestError || retrySafeStreamFailure) &&
+        isTransientProjectAgentModelFailure(error);
+      if (!canRetry) throw error;
+      const delayMs = Math.max(0, retryDelays[attempt] ?? 0);
+      await input.onTransientRetry?.({
+        attempt: attempt + 1,
+        maxAttempts: retryDelays.length + 1,
+        delayMs,
+        message: error instanceof Error ? error.message : "模型服务暂时不可用",
+      });
+      await waitForTransientModelRetry(delayMs, input.signal);
+    }
   }
-  const headerUsage = normalizeHeaderUsage(response.headers.get("x-zenme-token-usage"));
-  const result = await readModelStream(response.body, {
-    onThinkingDelta: input.onThinkingDelta,
-    onTextDelta: input.onTextDelta,
-    onToolCallComplete: input.onToolCallComplete,
+}
+
+export function isTransientProjectAgentModelFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (error instanceof ProjectAgentModelRequestError) {
+    if (error.status >= 500 && error.status <= 599) return true;
+    if (error.status === 429) {
+      return !/(额度不足|usage[_ -]?limit|insufficient[_ -]?quota|billing|credit)/i.test(message);
+    }
+  }
+  if (error instanceof ProjectAgentModelStreamError && error.code !== "stream_error") return false;
+  return /(overloaded|at capacity|server(?:s)? (?:are )?busy|temporar(?:ily|y) unavailable|service unavailable|try again later|rate limit|too many requests|服务(?:商)?暂时不可用|请求过于频繁)/i.test(message);
+}
+
+function waitForTransientModelRetry(delayMs: number, signal?: AbortSignal) {
+  if (delayMs <= 0) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
-  return {
-    text: result.text.trim(),
-    thinkingSummary: result.thinkingSummary || undefined,
-    toolCall: result.toolCall,
-    toolCalls: result.toolCalls,
-    usage: result.usage ?? headerUsage,
-  };
 }
 
 export function fitProjectAgentTools(

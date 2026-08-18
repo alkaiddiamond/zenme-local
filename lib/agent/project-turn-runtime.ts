@@ -1600,6 +1600,14 @@ export async function runProjectAgentTurn(input: {
             maxOutputTokens: maxOutputTokensOverride,
             onThinkingDelta: thinkingReporter.push,
             onTextDelta: answerDraftReporter.push,
+            onTransientRetry: async ({ attempt, maxAttempts, delayMs }) => {
+              await appendProjectAgentEvent({
+                projectId: input.projectId,
+                turnId,
+                type: "thinking",
+                content: `模型服务暂时繁忙，正在自动重试（${attempt}/${maxAttempts - 1}）${delayMs ? `，等待 ${Math.max(1, Math.ceil(delayMs / 1_000))} 秒` : ""}。`,
+              }, dataDir);
+            },
             onToolCallComplete: (toolCall, index) => {
               const decision = projectTurnDecisionFromNativeToolCall(toolCall, activeMcpTools);
               if (decision?.type !== "tool") return;

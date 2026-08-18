@@ -1109,6 +1109,7 @@ export function TextNode({ data, id, selected }: NodeProps) {
                     onRetry={() => nodeData.onSubmitTextGenerationNode?.(id, {
                       model: nodeData.aiModel || nodeData.textGenerationModel,
                       prompt: nodeData.aiPrompt,
+                      retryExistingTurn: true,
                     })}
                     onTurnSettled={(state) => nodeData.onSyncAgentTurnState?.(id, state)}
                     projectId={nodeData.projectId}

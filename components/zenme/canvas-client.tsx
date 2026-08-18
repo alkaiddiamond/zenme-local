@@ -2628,11 +2628,18 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   }, [setNodes]);
 
   const submitNodeToProjectAgent = useCallback(
-    async (nodeId: string, input?: { imageDataUrls?: string[]; model?: string; modelSpeed?: ZenmeModelSpeed; permissionMode?: ZenmeSessionPermissionMode; prompt?: string; reasoningEffort?: ZenmeReasoningEffort }) => {
+    async (nodeId: string, input?: { imageDataUrls?: string[]; model?: string; retryExistingTurn?: boolean; modelSpeed?: ZenmeModelSpeed; permissionMode?: ZenmeSessionPermissionMode; prompt?: string; reasoningEffort?: ZenmeReasoningEffort }) => {
       const currentNodes = reactFlow?.getNodes() ?? nodesRef.current;
       const currentEdges = reactFlow?.getEdges() ?? edgesRef.current;
       const sourceNode = currentNodes.find((node) => node.id === nodeId);
       if (!sourceNode || agentIsSubmitting) return;
+      const retryExistingTurn = input?.retryExistingTurn === true &&
+        sourceNode.data.kind === "agent" &&
+        typeof sourceNode.data.agentTurnId === "string";
+      const originalSourceNode = retryExistingTurn
+        ? currentNodes.find((node) => node.id === currentEdges.find((edge) => edge.target === nodeId)?.source)
+        : sourceNode;
+      if (!originalSourceNode) throw new Error("无法重试当前 Agent Turn：原始上游节点不存在");
       const model = input?.model || sourceNode.data.textGenerationModel || defaultTextModel;
       const prompt = input?.prompt?.trim() || "请基于这个节点继续处理。";
       const contextTokenBudget = getCanvasContextTokenBudget({
@@ -2640,57 +2647,72 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         prompt,
       });
       const context = limitTextGenerationContext([
-        getCanvasNodeContextText(sourceNode),
+        getCanvasNodeContextText(originalSourceNode),
         collectTextGenerationContext({
           edges: currentEdges,
           maxTokens: contextTokenBudget,
-          nodeId,
+          nodeId: originalSourceNode.id,
           nodes: currentNodes,
         }),
       ], contextTokenBudget);
       const references = collectAgentTurnReferences({
         edges: currentEdges,
-        nodeId,
+        nodeId: originalSourceNode.id,
         nodes: currentNodes,
       });
       const upstreamImageUrls = collectTextGenerationImageUrls({
         edges: currentEdges,
-        nodeId,
+        nodeId: originalSourceNode.id,
         nodes: currentNodes,
       });
-      const turnId = crypto.randomUUID();
-      const resultNodeId = crypto.randomUUID();
+      const turnId = retryExistingTurn ? sourceNode.data.agentTurnId! : crypto.randomUUID();
+      const resultNodeId = retryExistingTurn ? nodeId : crypto.randomUUID();
       const taskStartedAt = Date.now();
-      const position = getNextConnectedChildNodePosition({
-        childFallbackSize: { height: 420, width: 620 },
-        edges: currentEdges,
-        nodes: currentNodes,
-        sourceFallbackSize: { height: 180, width: 560 },
-        sourceNode,
-        yOffsetWithoutChild: 0,
-      });
-      const { edge: resultEdge, node: resultNode } = createAiResponseChildCanvasNode({
-        agentTurnId: turnId,
-        id: resultNodeId,
-        model,
-        position,
-        prompt,
-        startedAt: new Date(taskStartedAt).toISOString(),
-        sourceNode,
-      });
-      resultNode.style = { height: 420, width: 620 };
-      appendCanvasItems({
-        currentEdges,
-        currentNodes,
-        edges: [resultEdge],
-        nodes: [resultNode],
-      });
+      if (retryExistingTurn) {
+        const nextNodes = currentNodes.map((node) => node.id === resultNodeId ? {
+          ...node,
+          data: {
+            ...node.data,
+            aiError: undefined,
+            aiStatus: "generating" as const,
+            aiTaskDurationMs: undefined,
+            aiTaskStartedAt: new Date(taskStartedAt).toISOString(),
+          },
+        } : node);
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
+      } else {
+        const position = getNextConnectedChildNodePosition({
+          childFallbackSize: { height: 420, width: 620 },
+          edges: currentEdges,
+          nodes: currentNodes,
+          sourceFallbackSize: { height: 180, width: 560 },
+          sourceNode,
+          yOffsetWithoutChild: 0,
+        });
+        const { edge: resultEdge, node: resultNode } = createAiResponseChildCanvasNode({
+          agentTurnId: turnId,
+          id: resultNodeId,
+          model,
+          position,
+          prompt,
+          startedAt: new Date(taskStartedAt).toISOString(),
+          sourceNode,
+        });
+        resultNode.style = { height: 420, width: 620 };
+        appendCanvasItems({
+          currentEdges,
+          currentNodes,
+          edges: [resultEdge],
+          nodes: [resultNode],
+        });
+      }
       setAgentIsSubmitting(true);
       const controller = new AbortController();
       nodeAgentControllerRef.current = {
         controller,
         resultNodeId,
-        sourceNodeId: nodeId,
+        sourceNodeId: originalSourceNode.id,
         turnId,
       };
       try {
@@ -2713,6 +2735,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           projectId,
           prompt,
           reasoningEffort: input?.reasoningEffort,
+          resume: retryExistingTurn,
           selectedNodeIds: references.selectedNodeIds,
           signal: controller.signal,
           turnId,
@@ -2722,6 +2745,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           ...node,
           data: {
             ...node.data,
+            aiError: undefined,
             aiResponse: reply,
             aiStatus: result.status === "waitingApproval"
               ? "waitingApproval" as const

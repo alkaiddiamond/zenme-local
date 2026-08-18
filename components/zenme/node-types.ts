@@ -420,6 +420,7 @@ export type CanvasNodeData = {
     input?: {
       imageDataUrls?: string[];
       model?: string;
+      retryExistingTurn?: boolean;
       modelSpeed?: import("@/lib/local/settings").ZenmeModelSpeed;
       permissionMode?: import("@/lib/local/settings").ZenmeSessionPermissionMode;
       prompt?: string;

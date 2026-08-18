@@ -9,8 +9,9 @@ const timelineSource = readFileSync(new URL("./agent-turn-timeline.tsx", import.
 
 describe("AI reply node Agent Turn timeline", () => {
   it("keeps retry and execution evidence actions visually distinct", () => {
-    expect(timelineSource).toContain("border-red-200 bg-white");
-    expect(timelineSource).toContain("text-red-700");
+    expect(timelineSource).toContain("border-zinc-200 bg-white");
+    expect(timelineSource).toContain("text-zinc-700");
+    expect(timelineSource).toContain("bg-red-50 px-3 py-2 text-xs text-red-700");
     expect(timelineSource).toContain("border-zinc-200/80 bg-zinc-50/70");
     expect(timelineSource).toContain("aria-expanded={showEvidence}");
   });
