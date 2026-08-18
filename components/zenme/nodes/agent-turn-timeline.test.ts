@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ProjectAgentEvent } from "@/lib/agent/project-session-types";
-import { agentEventContentForDisplay, extractAssistantOutputTargets, projectAgentTurnAnswer, projectAgentTurnAnswerDraft, projectTurnCanRetry, projectTurnChangeSetIds, projectTurnCommandForDisplay, projectTurnCompletedStepCount, projectTurnEventsForDisplay, projectTurnIsTerminal, projectTurnRunningBackgroundTasks, projectTurnSettledState, projectTurnTerminalError } from "@/components/zenme/nodes/agent-turn-timeline";
+import { agentEventContentForDisplay, extractAssistantOutputTargets, projectAgentTurnAnswer, projectAgentTurnAnswerDraft, projectTurnCanRetry, projectTurnChangeSetIds, projectTurnCommandForDisplay, projectTurnCompletedStepCount, projectTurnEvidenceEvents, projectTurnEventsForDisplay, projectTurnIsTerminal, projectTurnRunningBackgroundTasks, projectTurnSettledState, projectTurnTerminalError } from "@/components/zenme/nodes/agent-turn-timeline";
 import { serializeMcpElicitationFormValues } from "@/components/zenme/mcp-elicitation-form";
 
 describe("AI reply node Agent Turn timeline", () => {
@@ -263,7 +263,7 @@ describe("AI reply node Agent Turn timeline", () => {
     expect(projectTurnEventsForDisplay(events).map((item) => item.id)).toEqual(["event-3"]);
   });
 
-  it("shows context compaction while running and keeps its result after completion", () => {
+  it("shows context compaction while running and moves its result into terminal evidence", () => {
     const runningEvents = [
       event(1, "status", { stage: "thinking" }),
       event(2, "status", { stage: "compacting", sourceTokenEstimate: 80_000 }),
@@ -277,10 +277,11 @@ describe("AI reply node Agent Turn timeline", () => {
       event(5, "assistant", {}, "最终回答"),
       event(6, "status", { stage: "completed" }),
     ];
-    expect(projectTurnEventsForDisplay(completedEvents).map((item) => item.id)).toEqual(["event-3"]);
+    expect(projectTurnEventsForDisplay(completedEvents)).toEqual([]);
+    expect(projectTurnEvidenceEvents(completedEvents).map((item) => item.id)).toEqual(["event-3"]);
   });
 
-  it("keeps Project Memory changes visible after the turn completes", () => {
+  it("moves Project Memory changes into terminal evidence", () => {
     const events = [
       event(1, "assistant", {}, "最终回答"),
       event(2, "status", { stage: "completed" }),
@@ -288,10 +289,11 @@ describe("AI reply node Agent Turn timeline", () => {
       event(4, "memory", { source: "autoDream", status: "candidate", memoryId: "memory-1" }, "自动做梦生成候选记忆：架构决策"),
     ];
 
-    expect(projectTurnEventsForDisplay(events).map((item) => item.id)).toEqual(["event-4"]);
+    expect(projectTurnEventsForDisplay(events)).toEqual([]);
+    expect(projectTurnEvidenceEvents(events).map((item) => item.id)).toEqual(["event-3", "event-4"]);
   });
 
-  it("keeps the latest task plan visible after the turn completes", () => {
+  it("moves task plans into terminal evidence", () => {
     const events = [
       event(1, "todo", { items: [{ id: "inspect", content: "检查实现", status: "in_progress" }] }),
       event(2, "todo", { items: [{ id: "inspect", content: "检查实现", status: "completed" }] }),
@@ -299,10 +301,11 @@ describe("AI reply node Agent Turn timeline", () => {
       event(4, "status", { stage: "completed" }),
     ];
 
-    expect(projectTurnEventsForDisplay(events).map((item) => item.id)).toEqual(["event-2"]);
+    expect(projectTurnEventsForDisplay(events)).toEqual([]);
+    expect(projectTurnEvidenceEvents(events).map((item) => item.id)).toEqual(["event-1", "event-2"]);
   });
 
-  it("collapses resolved approvals and keeps only the latest failure after a failed turn", () => {
+  it("keeps failed-turn execution details out of the answer body and in evidence", () => {
     const events = [
       event(1, "approval", { status: "rejected" }),
       event(2, "toolResult", { name: "web_fetch", status: "failed" }),
@@ -310,7 +313,22 @@ describe("AI reply node Agent Turn timeline", () => {
       event(4, "status", { stage: "failed" }),
     ];
 
-    expect(projectTurnEventsForDisplay(events).map((item) => item.id)).toEqual(["event-3"]);
+    expect(projectTurnEventsForDisplay(events)).toEqual([]);
+    expect(projectTurnEvidenceEvents(events).map((item) => item.id)).toEqual(["event-1", "event-2", "event-3"]);
+  });
+
+  it("filters internal notifications and hook feedback from terminal evidence", () => {
+    const events = [
+      event(1, "toolCall", { name: "read_file", status: "running" }),
+      event(2, "toolResult", { name: "read_file", status: "succeeded", toolCallEventId: "event-1" }, "read result"),
+      event(3, "toolResult", { name: "task_output", backgroundTaskNotification: true }, "background complete"),
+      event(4, "toolResult", { name: "agent_hook", hookLifecycle: true }, "hook feedback"),
+      event(5, "toolResult", { name: "queue", queueMessageId: "queue-1" }, "queued message"),
+      event(6, "assistant", {}, "最终回答"),
+      event(7, "status", { stage: "completed" }),
+    ];
+
+    expect(projectTurnEvidenceEvents(events).map((item) => item.id)).toEqual(["event-1", "event-2"]);
   });
 
   it("uses the latest status when a resumed turn starts running again", () => {

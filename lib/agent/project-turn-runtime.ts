@@ -1355,7 +1355,7 @@ export async function runProjectAgentTurn(input: {
         if (decision.name === "exit_plan_mode" && isObject(output) && typeof output.plan === "string") {
           await updateProjectAgentContext({ projectId: input.projectId, activePlan: output.plan }, dataDir);
         }
-        if (decision.name === "agent_spawn" && isObject(output) &&
+        if (decision.name === "agent_spawn" && isObject(output) && output.background === true &&
           typeof output.teamId === "string" && typeof output.agentId === "string" && executionId) {
           scheduleSubagentSettlement({
             projectId: input.projectId,
@@ -2910,7 +2910,7 @@ export async function runProjectAgentTurn(input: {
             callModel,
           });
         }
-        if (decision.name === "agent_spawn" && isObject(output) &&
+        if (decision.name === "agent_spawn" && isObject(output) && output.background === true &&
           typeof output.teamId === "string" && typeof output.agentId === "string") {
           scheduleSubagentSettlement({
             projectId: input.projectId,
@@ -4845,7 +4845,10 @@ async function appendProjectAgentQuestionAnswer(input: {
     ["ask_user_question", "exit_plan_mode"].includes(String(event.data?.name)) &&
     event.data?.status === "waitingInput",
   );
-  if (latestStage !== "waitingInput" || !questionEvent) {
+  const livePending = runtime.pendingElicitations.has(
+    pendingElicitationKey(dataDir, input.projectId, input.turnId, input.eventId),
+  );
+  if ((!livePending && latestStage !== "waitingInput") || !questionEvent) {
     throw new ProjectAgentTurnError("当前 Turn 没有等待回答的问题", "invalid_input");
   }
   const questionOutput = isObject(questionEvent.data?.output) ? questionEvent.data.output : {};

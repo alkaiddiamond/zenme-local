@@ -8,10 +8,39 @@ const commandRuntime = vi.hoisted(() => ({
   run: vi.fn(async () => ({ status: "completed", exitCode: 2, stdout: "", stderr: "blocked by hook" })),
 }));
 
+const hookAgentRuntime = vi.hoisted(() => ({
+  complete: vi.fn(async () => undefined),
+  create: vi.fn(async () => ({ detail: { id: "hook-child" } })),
+  executeTool: vi.fn(async () => ({ content: "real file contents" })),
+  get: vi.fn(async () => ({
+    id: "execution",
+    resultNodeId: "result-node",
+    triggerNodeId: "trigger-node",
+    context: {
+      allowedTools: ["read_file", "agent_spawn"],
+      selectedNodeIds: [],
+      fileDocumentIds: [],
+      canvasContext: "",
+      workspaceRootId: "root",
+      allowedPathPrefixes: ["src"],
+    },
+  })),
+}));
+
 vi.mock("@/lib/agent/command-runtime", () => ({
   approveAgentCommand: commandRuntime.approve,
   proposeAgentCommand: commandRuntime.propose,
   runApprovedAgentCommand: commandRuntime.run,
+}));
+
+vi.mock("@/lib/agent/execution-store", () => ({
+  completeAgentExecution: hookAgentRuntime.complete,
+  createAgentExecution: hookAgentRuntime.create,
+  getAgentExecution: hookAgentRuntime.get,
+}));
+
+vi.mock("@/lib/agent/workspace-tools", () => ({
+  executeAgentWorkspaceTool: hookAgentRuntime.executeTool,
 }));
 
 describe("project agent hook runtime", () => {
@@ -105,6 +134,56 @@ describe("project agent hook runtime", () => {
       reason: "Tests are missing",
     });
     expect(callModel).toHaveBeenCalledWith(expect.objectContaining({ model: "parent:model", mode: "agent_planning" }));
+  });
+
+  it("runs agent hooks as bounded multi-turn tool-using verifiers", async () => {
+    hookAgentRuntime.complete.mockClear();
+    hookAgentRuntime.create.mockClear();
+    hookAgentRuntime.executeTool.mockClear();
+    hookAgentRuntime.get.mockClear();
+    let calls = 0;
+    const callModel = vi.fn(async () => {
+      calls += 1;
+      return calls === 1
+        ? { text: "", toolCall: { name: "read_file", arguments: { relativePath: "src/a.ts" } }, usage: null }
+        : { text: "", toolCall: { name: "hook_result", arguments: { ok: false, reason: "Verification failed" } }, usage: null };
+    });
+    const lifecycle = createProjectAgentToolHooks({
+      projectId: "project",
+      executionId: "execution",
+      name: "write_file",
+      hooks: {
+        PreToolUse: [{ matcher: "Write", hooks: [{ type: "agent", prompt: "Inspect $ARGUMENTS before allowing the write." }] }],
+      },
+      model: "parent:model",
+      callModel,
+      rootId: "root",
+      dataDir: "data",
+    });
+
+    await expect(lifecycle.preHooks[0]({ arguments: { relativePath: "src/a.ts", content: "new" } })).resolves.toMatchObject({
+      permission: "deny",
+      reason: "Verification failed",
+    });
+    expect(callModel).toHaveBeenCalledTimes(2);
+    expect(callModel.mock.calls[0]?.[0]).toMatchObject({
+      allowedAgentTools: ["read_file"],
+      additionalAgentTools: [expect.objectContaining({ name: "hook_result" })],
+    });
+    expect(hookAgentRuntime.executeTool).toHaveBeenCalledWith(expect.objectContaining({
+      executionId: "hook-child",
+      name: "read_file",
+      arguments: { relativePath: "src/a.ts" },
+    }), "data");
+    expect(hookAgentRuntime.create).toHaveBeenCalledWith(expect.objectContaining({
+      agentId: expect.stringMatching(/^hook-agent:PreToolUse:/),
+      allowedTools: ["read_file"],
+      permissionMode: "neverAsk",
+    }), "data");
+    expect(hookAgentRuntime.complete).toHaveBeenCalledWith(expect.objectContaining({
+      executionId: "hook-child",
+      status: "succeeded",
+    }), "data");
   });
 
   it("keeps sensitive plugin options out of prompt hooks but exposes them to command hooks", async () => {

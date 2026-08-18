@@ -109,9 +109,9 @@ const definitions = [
   define("team_create", "创建一个可持续协调的 Agent Team。一个 Project Session 同时只能领导一个开放团队；创建后用 agent_spawn 添加具名成员。对应 cc-haha 的 TeamCreate。", "execute", true,
     { teamName: "implementation-team", description: "并行实现和复核功能", maxMembers: 4 },
     (value) => isObject(value) && requiredString(value.teamName) && optionalString(value.description) && optionalInteger(value.maxMembers)),
-  define("agent_spawn", "启动一个具名 Sub-agent。可用 agentType 选择项目或用户在 .zenme/agents、.claude/agents 中定义的 Agent，并继承其系统提示、工具边界与模型配置；mode=plan 时成员必须先提交计划并等待负责人通过 send_message 返回 plan_approval_response，批准前不能写文件或执行命令；isolation=worktree 会创建临时 Git worktree，无改动自动清理、有改动则保留。存在开放 Team 时加入该 Team，并可由 send_message 按名称继续协调；没有 Team 时创建普通后台 Sub-agent。对应 cc-haha 的 Agent。", "execute", true,
-    { name: "reviewer", agentType: "code-reviewer", instruction: "检查实现与相关测试", title: "复核实现", allowedPathPrefixes: ["src"], isolation: "worktree", mode: "plan" },
-    (value) => isObject(value) && requiredString(value.name) && requiredString(value.instruction) && optionalString(value.agentType) && optionalString(value.teamId) && optionalString(value.title) && optionalString(value.rootId) && optionalStringArray(value.allowedPathPrefixes) && optionalStringArray(value.allowedTools) && optionalString(value.model) && (value.isolation === undefined || value.isolation === "worktree") && (value.mode === undefined || value.mode === "plan")),
+  define("agent_spawn", "启动一个具名 Sub-agent。普通 Agent 默认同步等待并把结果直接返回给当前 Turn；仅当 run_in_background=true、Agent 定义 background=true，或作为 Team 成员运行时才后台执行并在完成后主动通知。可用 agentType 选择内建、项目或用户 Agent，并继承其系统提示、工具边界与模型配置；mode=plan 时 Team 成员必须先提交计划并等待负责人审批；isolation=worktree 会创建临时 Git worktree。对应 cc-haha 的 Agent。", "execute", true,
+    { name: "reviewer", agentType: "verification", instruction: "检查实现与相关测试", title: "复核实现", run_in_background: false },
+    (value) => isObject(value) && optionalString(value.name) && requiredString(value.instruction) && optionalString(value.agentType) && optionalString(value.teamId) && optionalString(value.title) && optionalString(value.rootId) && optionalStringArray(value.allowedPathPrefixes) && optionalStringArray(value.allowedTools) && optionalString(value.model) && optionalBoolean(value.run_in_background) && (value.isolation === undefined || value.isolation === "worktree") && (value.mode === undefined || value.mode === "plan")),
   define("send_message", "向开放 Team 中的具名 Agent 发送协调消息；to 使用成员名称，或用 * 广播纯文本。纯文本应提供简短 summary；关闭请求使用 shutdown_request；mode=plan 的成员提交计划后，负责人必须向该成员发送携带原 request_id 的 plan_approval_response。结构化消息不能广播。对应 cc-haha 的 SendMessage。", "interact", false,
     { to: "reviewer", summary: "补充检查项", message: "请同时检查失败路径和中断恢复" },
     (value) => isObject(value) && requiredString(value.to) && isTeamLeadMessage(value.message) && optionalString(value.summary) && optionalString(value.teamId) &&
@@ -371,7 +371,8 @@ const AGENT_TOOL_PARAMETER_SCHEMAS = {
     model: stringSchema,
     isolation: { type: "string", enum: ["worktree"] },
     mode: { type: "string", enum: ["plan"] },
-  }, ["name", "instruction"]),
+    run_in_background: booleanSchema,
+  }, ["instruction"]),
   send_message: objectSchema({
     teamId: stringSchema,
     to: stringSchema,

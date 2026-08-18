@@ -487,6 +487,7 @@ export async function sendGlobalSubtaskMessage(input: {
   subtaskIds?: string[];
   recipientNames?: string[];
   reactivateTerminalTeamMembers?: boolean;
+  reactivateTerminalAgents?: boolean;
   kind?: GlobalSubtaskMessage["kind"];
   summary?: string;
 }, dataDir = getZenmeDataDir()) {
@@ -507,7 +508,8 @@ export async function sendGlobalSubtaskMessage(input: {
       if (selected && !selected.has(task.id)) continue;
       if (selectedNames && !selectedNames.has((task.name ?? task.title).toLocaleLowerCase())) continue;
       const active = ["queued", "dispatching", "running", "waitingApproval", "waitingInput"].includes(task.status);
-      const canReactivate = input.reactivateTerminalTeamMembers === true && orchestration.kind === "team" &&
+      const canReactivate = (input.reactivateTerminalAgents === true ||
+        (input.reactivateTerminalTeamMembers === true && orchestration.kind === "team")) &&
         ["succeeded", "failed", "timedOut", "stopped", "interrupted"].includes(task.status) && Boolean(task.agentExecutionId);
       if (!active && !canReactivate) continue;
       task.messages ??= [];

@@ -112,7 +112,7 @@ describe("agent tool registry", () => {
       additionalProperties: false,
     });
     expect(tools.find((tool) => tool.name === "agent_spawn")?.parameters).toMatchObject({
-      required: ["name", "instruction"],
+      required: ["instruction"],
       additionalProperties: false,
     });
     expect(tools.find((tool) => tool.name === "send_message")?.parameters).toMatchObject({
@@ -240,6 +240,8 @@ describe("agent tool registry", () => {
       .toMatchObject({ name: "team_create" });
     expect(parseAgentToolCall("agent_spawn", { name: "tester", instruction: "运行回归测试" }))
       .toMatchObject({ name: "agent_spawn" });
+    expect(parseAgentToolCall("agent_spawn", { instruction: "运行一次普通子 Agent" }))
+      .toMatchObject({ name: "agent_spawn", arguments: { instruction: "运行一次普通子 Agent" } });
     expect(parseAgentToolCall("agent_spawn", { name: "planner", instruction: "先提交计划", mode: "plan" }))
       .toMatchObject({ name: "agent_spawn", arguments: { mode: "plan" } });
     expect(parseAgentToolCall("agent_spawn", { name: "planner", instruction: "无效模式", mode: "bypassPermissions" }))

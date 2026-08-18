@@ -52,6 +52,7 @@ export function AgentTurnTimeline({
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState("");
   const [showChangeSets, setShowChangeSets] = useState(false);
+  const [showEvidence, setShowEvidence] = useState(false);
   const [stoppingTaskId, setStoppingTaskId] = useState("");
   const settledKeyRef = useRef("");
   const terminal = projectTurnIsTerminal(events);
@@ -87,7 +88,10 @@ export function AgentTurnTimeline({
   const displayedAnswer = finalAnswer || liveAnswerDraft;
   const outputTargets = useMemo(() => extractAssistantOutputTargets(finalAnswer), [finalAnswer]);
   const terminalError = projectTurnTerminalError(events, failure, finalAnswer);
-  const visibleEvents = useMemo(() => projectTurnEventsForDisplay(events), [events]);
+  const evidenceEvents = useMemo(() => projectTurnEvidenceEvents(events), [events]);
+  const visibleEvents = useMemo(() =>
+    terminal && showEvidence ? evidenceEvents : projectTurnEventsForDisplay(events),
+  [evidenceEvents, events, showEvidence, terminal]);
   const completedStepCount = useMemo(() => projectTurnCompletedStepCount(events), [events]);
   const changeSetIds = useMemo(() => projectTurnChangeSetIds(events), [events]);
   const backgroundTasks = useMemo(() => projectTurnRunningBackgroundTasks(events), [events]);
@@ -409,6 +413,7 @@ export function AgentTurnTimeline({
       {terminalError ? <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{agentEventContentForDisplay(terminalError)}</p> : null}
       {projectTurnCanRetry(events) && onRetry ? <Button className="h-8 w-fit border border-zinc-200 bg-white px-3 text-xs text-zinc-700 hover:bg-zinc-50" disabled={retrying} onClick={() => void retryTurn()} type="button">{retrying ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : <RotateCcw className="mr-1.5 size-3.5" />}重试</Button> : null}
       {displayedAnswer ? <div className="zenme-agent-response-text text-sm leading-6 text-zinc-800">{renderMarkdown(agentEventContentForDisplay(displayedAnswer))}{liveAnswerDraft && !finalAnswer ? <span aria-label="正在生成" className="ml-1 inline-block h-4 w-0.5 animate-pulse bg-zinc-400 align-middle" /> : null}</div> : terminal ? null : events.length ? <div className="flex items-center gap-2 py-2 text-xs text-zinc-500"><Loader2 className="size-3.5 animate-spin" />Agent 正在处理…</div> : null}
+      {terminal && evidenceEvents.length ? <Button className="h-8 w-fit border border-zinc-200 bg-white px-3 text-xs text-zinc-700 hover:bg-zinc-50" onClick={() => setShowEvidence((value) => !value)} type="button"><Wrench className="mr-1.5 size-3.5" />{showEvidence ? "收起执行证据" : `查看执行证据 (${evidenceEvents.length})`}</Button> : null}
       {outputTargets.map((target) => (
         <button
           className="flex w-fit max-w-full items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-left text-xs text-zinc-700 hover:bg-zinc-50"
@@ -524,18 +529,7 @@ export function projectTurnEventsForDisplay(events: ProjectAgentEvent[]) {
   ));
 
   if (finished) {
-    const compactions = events.filter((event) => event.type === "compact");
-    const latestAutoDream = events.findLast((event) => event.type === "memory" && event.data?.source === "autoDream");
-    const memoryChanges = events.filter((event) =>
-      event.type === "memory" && (event.data?.source !== "autoDream" || event.id === latestAutoDream?.id),
-    );
-    const latestTodo = events.findLast((event) => event.type === "todo");
-    const retained = [...compactions, ...memoryChanges, ...(latestTodo ? [latestTodo] : [])];
-    if (terminalStage !== "failed") return retained.sort((left, right) => left.sequence - right.sequence);
-    const latestFailure = [...events].reverse().find((event) =>
-      event.type === "toolResult" && event.data?.status === "failed",
-    );
-    return latestFailure ? [...retained, latestFailure].sort((left, right) => left.sequence - right.sequence) : retained;
+    return [];
   }
 
   const pendingApproval = unresolvedProjectTurnApprovals(events)[0];
@@ -557,6 +551,21 @@ export function projectTurnEventsForDisplay(events: ProjectAgentEvent[]) {
     event.type === "toolResult" || event.type === "status" || event.type === "thinking" || event.type === "compact" || event.type === "memory" || event.type === "todo",
   );
   return latestActivity ? [latestActivity] : [];
+}
+
+export function projectTurnEvidenceEvents(events: ProjectAgentEvent[]) {
+  const terminalStage = [...events].reverse().find((event) => event.type === "status")?.data?.stage;
+  if (!["completed", "failed", "stopped"].includes(String(terminalStage))) return [];
+  return events.filter((event) => {
+    if (event.type === "user" || event.type === "assistant" || event.type === "thinking") return false;
+    if (event.type === "status") return false;
+    if (event.type === "toolResult" && (
+      event.data?.backgroundTaskNotification === true ||
+      event.data?.queueMessageId ||
+      event.data?.hookLifecycle === true
+    )) return false;
+    return ["toolCall", "toolResult", "approval", "compact", "memory", "todo"].includes(event.type);
+  }).sort((left, right) => left.sequence - right.sequence);
 }
 
 export function unresolvedProjectTurnApprovals(events: ProjectAgentEvent[]) {

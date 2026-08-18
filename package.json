@@ -28,7 +28,7 @@
     "desktop:prepare:mac": "bash desktop/scripts/prepare-macos-icon.sh",
     "desktop:pack:mac:intel": "npm run desktop:prepare:mac && node desktop/scripts/verify-standalone-runtime.cjs && electron-builder --mac dir --x64 --publish never",
     "desktop:dist:mac:intel": "npm run desktop:prepare:mac && node desktop/scripts/verify-standalone-runtime.cjs && electron-builder --mac dmg zip --x64 --publish never",
-    "build": "next build",
+    "build": "node desktop/scripts/prepare-standalone-build.cjs && next build",
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run && node --test desktop/*.node-test.cjs",

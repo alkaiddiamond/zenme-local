@@ -1078,7 +1078,7 @@ async function runForkedProjectSkill(input: {
       permissionMode: prepared.definition?.permissionMode ?? parent.context.permissionMode,
       hooks: mergeProjectAgentHooks(prepared.delegatedHooks, input.loaded.hooks),
       mcpServers: prepared.definition?.mcpServers,
-      customizationSource: prepared.definition?.source,
+      customizationSource: prepared.definition?.source === "built-in" ? undefined : prepared.definition?.source,
     }],
   }, input.dataDir);
   const completed = await runDelegatedOrchestration({
@@ -1366,15 +1366,22 @@ async function spawnAgent(
   const { definition, effectiveRootId, effectiveInstruction, allowedTools, delegatedModel, delegatedEffort, delegatedHooks } = prepared;
   const store = await import("@/lib/global-agent/orchestration-store");
   const runtime = await import("@/lib/global-agent/delegated-runtime");
+  const requestedName = args.name?.trim() || "";
+  const ordinaryName = requestedName || definition?.agentType || args.title?.trim() || "general-purpose";
+  if (args.teamId && !requestedName) {
+    throw new AgentWorkspaceToolError("Team Agent 必须提供 name", "invalid_arguments");
+  }
   let team = args.teamId
     ? await store.getGlobalOrchestration(projectId, args.teamId, dataDir)
-    : await store.getOpenGlobalTeam(projectId, dataDir);
+    : requestedName
+      ? await store.getOpenGlobalTeam(projectId, dataDir)
+      : null;
   let task: import("@/lib/global-agent/types").GlobalSubtask;
   if (team?.kind === "team" && !team.deletedAt) {
     task = await store.addGlobalTeamMember({
       projectId,
       teamId: team.id,
-      name: args.name,
+      name: requestedName,
       agentType: definition?.agentType,
       instruction: effectiveInstruction,
       title: args.title,
@@ -1409,9 +1416,9 @@ async function spawnAgent(
       selectedNodeIds: parent.context.selectedNodeIds,
       fileDocumentIds: parent.context.fileDocumentIds,
       tasks: [{
-        name: args.name,
+        name: ordinaryName,
         agentType: definition?.agentType,
-        title: args.title?.trim() || args.name,
+        title: args.title?.trim() || ordinaryName,
         instruction: effectiveInstruction,
         rootId: effectiveRootId,
         allowedPathPrefixes: args.allowedPathPrefixes,
@@ -1433,21 +1440,44 @@ async function spawnAgent(
     task = team.tasks[0];
   }
   if (!team) throw new AgentWorkspaceToolError("Team 创建失败", "invalid_arguments");
-  await runtime.startDelegatedOrchestrationRun({
-    projectId,
-    orchestrationId: team.id,
-    model: delegatedModel,
-    reasoningEffort: delegatedEffort,
-    modelSpeed: delegatedModelSpeed,
-  }, { callModel: delegatedCallModel, dataDir });
+  const background = team.kind === "team" || args.run_in_background === true || definition?.background === true;
+  if (background) {
+    await runtime.startDelegatedOrchestrationRun({
+      projectId,
+      orchestrationId: team.id,
+      model: delegatedModel,
+      reasoningEffort: delegatedEffort,
+      modelSpeed: delegatedModelSpeed,
+    }, { callModel: delegatedCallModel, dataDir });
+  } else {
+    team = await runtime.runDelegatedOrchestration({
+      projectId,
+      orchestrationId: team.id,
+      model: delegatedModel,
+      reasoningEffort: delegatedEffort,
+      modelSpeed: delegatedModelSpeed,
+    }, {
+      callModel: delegatedCallModel,
+      dataDir,
+      onProgress: turnId ? createDelegatedProgressProjector(projectId, turnId, dataDir) : undefined,
+    });
+    task = team.tasks.find((candidate) => candidate.id === task.id) ?? task;
+  }
+  const detail = task.agentExecutionId
+    ? await getAgentExecution(projectId, task.agentExecutionId, dataDir)
+    : null;
   return {
     teamId: team.id,
     agentId: task.id,
     taskId: task.id,
     taskType: "local_agent",
-    name: task.name ?? args.name,
+    name: task.name ?? ordinaryName,
     status: task.status,
-    background: true,
+    background,
+    ...(!background ? {
+      result: task.resultSummary || task.error || team.resultSummary || team.error || "Sub-agent completed",
+      pendingCommand: [...(detail?.commandRequests ?? [])].reverse().find((command) => command.status === "proposed"),
+    } : {}),
   };
 }
 
@@ -1470,14 +1500,37 @@ async function sendTeamMessage(
   delegatedModelSpeed?: ZenmeModelSpeed,
 ): Promise<AgentWorkspaceToolResult["send_message"]> {
   const store = await import("@/lib/global-agent/orchestration-store");
-  const team = args.teamId
+  let directRecipientTaskId: string | undefined;
+  let team = args.teamId
     ? await store.getGlobalOrchestration(projectId, args.teamId, dataDir)
-    : await store.getOpenGlobalTeam(projectId, dataDir);
-  if (!team || team.deletedAt || ["completed", "failed", "stopped", "interrupted"].includes(team.status)) {
-    throw new AgentWorkspaceToolError("没有可发送消息的开放 Team", "invalid_arguments");
+    : null;
+  if (!team && typeof args.message === "string" && args.to !== "*") {
+    const candidates = (await store.listGlobalOrchestrations(projectId, dataDir))
+      .flatMap((item) => item.deletedAt ? [] : item.tasks
+        .filter((task) => Boolean(task.agentExecutionId) && (
+          task.id === args.to ||
+          task.agentExecutionId === args.to ||
+          (task.name ?? task.title).toLocaleLowerCase() === args.to.toLocaleLowerCase()
+        ))
+        .map((task) => ({ item, task })))
+      .sort((left, right) => right.item.updatedAt.localeCompare(left.item.updatedAt));
+    const direct = candidates[0];
+    if (direct) {
+      team = direct.item;
+      directRecipientTaskId = direct.task.id;
+    }
+  }
+  team ??= await store.getOpenGlobalTeam(projectId, dataDir);
+  if (!team || team.deletedAt) {
+    throw new AgentWorkspaceToolError("没有找到可接收消息的 Agent", "invalid_arguments");
+  }
+  const isPersistentTeam = team.kind === "team";
+  if (!isPersistentTeam && args.to === "*") {
+    throw new AgentWorkspaceToolError("普通 Sub-agent 不支持广播消息", "invalid_arguments");
   }
   const structured = typeof args.message === "string" ? null : args.message;
   if (structured?.type === "plan_approval_response") {
+    if (!isPersistentTeam) throw new AgentWorkspaceToolError("普通 Sub-agent 不支持计划审批消息", "invalid_arguments");
     if (args.to === "*") throw new AgentWorkspaceToolError("结构化计划审批响应不能广播", "invalid_arguments");
     const response = await store.respondGlobalTeamPlanApproval({
       projectId,
@@ -1529,12 +1582,15 @@ async function sendTeamMessage(
     orchestrationId: team.id,
     text: messageText,
     summary: args.summary,
-    ...(args.to === "*" ? {} : { recipientNames: [args.to] }),
-    reactivateTerminalTeamMembers: true,
+    ...(directRecipientTaskId
+      ? { subtaskIds: [directRecipientTaskId] }
+      : args.to === "*" ? {} : { recipientNames: [args.to] }),
+    reactivateTerminalTeamMembers: isPersistentTeam,
+    reactivateTerminalAgents: !isPersistentTeam,
     kind: messageKind,
   }, dataDir);
   if (delivery.reactivatedAgentIds.length) {
-    if (!args.model?.trim()) throw new AgentWorkspaceToolError("重新激活 Team Agent 时缺少模型配置", "invalid_arguments");
+    if (!args.model?.trim()) throw new AgentWorkspaceToolError("重新激活 Agent 时缺少模型配置", "invalid_arguments");
     const runtime = await import("@/lib/global-agent/delegated-runtime");
     await runtime.startDelegatedOrchestrationRun({
       projectId,

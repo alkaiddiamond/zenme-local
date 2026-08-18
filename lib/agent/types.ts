@@ -339,7 +339,7 @@ export type AgentWorkspaceToolArguments = {
   team_create: { teamName: string; description?: string; maxMembers?: number };
   agent_spawn: {
     teamId?: string;
-    name: string;
+    name?: string;
     instruction: string;
     agentType?: string;
     title?: string;
@@ -349,6 +349,7 @@ export type AgentWorkspaceToolArguments = {
     model?: string;
     isolation?: "worktree";
     mode?: "plan";
+    run_in_background?: boolean;
     /** Internal Workflow-only contract; not advertised as a general Agent argument. */
     structuredResultSchema?: unknown;
   };
@@ -544,7 +545,9 @@ export type AgentWorkspaceToolResult = {
     taskType: "local_agent";
     name: string;
     status: import("@/lib/global-agent/types").GlobalSubtaskStatus;
-    background: true;
+    background: boolean;
+    result?: string;
+    pendingCommand?: Pick<AgentCommandRequest, "id" | "executable" | "args" | "cwd" | "rootId" | "reason" | "externalRoot" | "sandboxMode">;
   };
   send_message: {
     teamId: string;

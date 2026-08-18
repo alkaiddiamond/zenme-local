@@ -278,7 +278,8 @@ describe("agent workspace tools", { timeout: 15_000 }, () => {
       agentId: expect.any(String),
       taskId: expect.any(String),
       taskType: "local_agent",
-      background: true,
+      background: false,
+      result: "Review complete",
     });
     expect(spawned.taskId).toBe(spawned.agentId);
     await waitForDelegatedOrchestrationRun(projectId, spawned.teamId, dataDir);
@@ -350,6 +351,116 @@ describe("agent workspace tools", { timeout: 15_000 }, () => {
     expect(generalOrchestration?.tasks[0]).toMatchObject({ agentType: "general-purpose" });
     expect(generalOrchestration?.tasks[0].customizationSource).toBeUndefined();
   }, 20_000);
+
+  it("matches cc-haha Agent foreground/background semantics for ordinary subagents", async () => {
+    const foreground = await executeAgentWorkspaceTool({
+      projectId,
+      executionId,
+      name: "agent_spawn",
+      arguments: {
+        name: "foreground-worker",
+        agentType: "general-purpose",
+        instruction: "Return a foreground result",
+        model: "parent:model",
+      },
+      delegatedCallModel: async () => ({ text: "foreground-result", usage: null }),
+      turnId: "foreground-parent",
+    }, dataDir);
+
+    expect(foreground).toMatchObject({
+      background: false,
+      status: "succeeded",
+      result: "foreground-result",
+    });
+    const foregroundOrchestration = await getGlobalOrchestration(projectId, foreground.teamId, dataDir);
+    expect(foregroundOrchestration?.tasks[0]).toMatchObject({ status: "succeeded", resultSummary: "foreground-result" });
+
+    let releaseBackground!: () => void;
+    const backgroundGate = new Promise<void>((resolve) => { releaseBackground = resolve; });
+    const background = await executeAgentWorkspaceTool({
+      projectId,
+      executionId,
+      name: "agent_spawn",
+      arguments: {
+        name: "background-worker",
+        agentType: "general-purpose",
+        instruction: "Run in the background",
+        model: "parent:model",
+        run_in_background: true,
+      },
+      delegatedCallModel: async () => {
+        await backgroundGate;
+        return { text: "background-result", usage: null };
+      },
+      turnId: "background-parent",
+    }, dataDir);
+
+    expect(background).toMatchObject({ background: true, status: expect.stringMatching(/queued|dispatching|running/) });
+    expect(background.result).toBeUndefined();
+    releaseBackground();
+    await waitForDelegatedOrchestrationRun(projectId, background.teamId, dataDir);
+    await expect(getGlobalOrchestration(projectId, background.teamId, dataDir)).resolves.toMatchObject({
+      tasks: [expect.objectContaining({ status: "succeeded", resultSummary: "background-result" })],
+    });
+  }, 20_000);
+
+  it("allows unnamed ordinary Agents without implicitly joining an open Team", async () => {
+    const team = await executeAgentWorkspaceTool({
+      projectId,
+      executionId,
+      name: "team_create",
+      arguments: { teamName: "named-only", maxMembers: 2 },
+      turnId: "unnamed-parent",
+    }, dataDir);
+
+    const spawned = await executeAgentWorkspaceTool({
+      projectId,
+      executionId,
+      name: "agent_spawn",
+      arguments: {
+        agentType: "general-purpose",
+        instruction: "Inspect without joining the open Team",
+        model: "parent:model",
+      },
+      delegatedCallModel: async () => ({ text: "unnamed-result", usage: null }),
+      turnId: "unnamed-parent",
+    }, dataDir);
+
+    expect(spawned).toMatchObject({
+      background: false,
+      name: "general-purpose",
+      result: "unnamed-result",
+      status: "succeeded",
+    });
+    expect(spawned.teamId).not.toBe(team.teamId);
+    await expect(getGlobalOrchestration(projectId, team.teamId, dataDir)).resolves.toMatchObject({
+      kind: "team",
+      tasks: [],
+    });
+  }, 20_000);
+
+  it("requires a name only when agent_spawn explicitly targets a Team", async () => {
+    const team = await executeAgentWorkspaceTool({
+      projectId,
+      executionId,
+      name: "team_create",
+      arguments: { teamName: "explicit-team", maxMembers: 2 },
+      turnId: "explicit-team-parent",
+    }, dataDir);
+
+    await expect(executeAgentWorkspaceTool({
+      projectId,
+      executionId,
+      name: "agent_spawn",
+      arguments: {
+        teamId: team.teamId,
+        instruction: "This teammate is missing its required addressable name",
+        model: "parent:model",
+      },
+      delegatedCallModel: async () => ({ text: "should-not-run", usage: null }),
+      turnId: "explicit-team-parent",
+    }, dataDir)).rejects.toThrow("Team Agent 必须提供 name");
+  });
 
   it("runs an explicitly isolated Agent in a temporary git worktree and cleans it when unchanged", async () => {
     await execFileAsync("git", ["-C", workspaceRoot, "init", "-b", "main"], { encoding: "utf8", windowsHide: true });
@@ -549,6 +660,104 @@ describe("agent workspace tools", { timeout: 15_000 }, () => {
       name: "team_delete",
       arguments: { teamId: team.teamId },
     }, dataDir)).resolves.toMatchObject({ success: true, teamName: "reviewers" });
+  }, 15_000);
+
+  it("resumes an ordinary background Agent by name on the same persisted execution", async () => {
+    let calls = 0;
+    const spawned = await executeAgentWorkspaceTool({
+      projectId,
+      executionId,
+      name: "agent_spawn",
+      arguments: {
+        name: "background-reviewer",
+        instruction: "Inspect the first concern",
+        model: "test:model",
+        run_in_background: true,
+      },
+      delegatedCallModel: async () => {
+        calls += 1;
+        return { text: calls === 1 ? "first-pass" : "second-pass", usage: null };
+      },
+      turnId: "ordinary-background-parent",
+    }, dataDir);
+    await waitForDelegatedOrchestrationRun(projectId, spawned.teamId, dataDir);
+    const first = await getGlobalOrchestration(projectId, spawned.teamId, dataDir);
+    const originalExecutionId = first?.tasks[0].agentExecutionId;
+    expect(originalExecutionId).toBeTruthy();
+    expect(first?.tasks[0]).toMatchObject({ status: "succeeded", resultSummary: "first-pass" });
+
+    await expect(executeAgentWorkspaceTool({
+      projectId,
+      executionId,
+      name: "send_message",
+      arguments: { to: "background-reviewer", message: "Inspect the follow-up concern", model: "test:model" },
+      delegatedCallModel: async (input) => {
+        calls += 1;
+        expect(input.context).toContain("Inspect the follow-up concern");
+        return { text: "second-pass", usage: null };
+      },
+    }, dataDir)).resolves.toMatchObject({
+      delivered: true,
+      reactivatedAgentIds: [spawned.agentId],
+    });
+
+    await waitForDelegatedOrchestrationRun(projectId, spawned.teamId, dataDir);
+    const resumed = await getGlobalOrchestration(projectId, spawned.teamId, dataDir);
+    expect(resumed?.tasks[0]).toMatchObject({
+      status: "succeeded",
+      resultSummary: "second-pass",
+      agentExecutionId: originalExecutionId,
+    });
+    expect(calls).toBe(2);
+  }, 15_000);
+
+  it("resumes an ordinary background Agent by raw agentId on the same persisted execution", async () => {
+    let calls = 0;
+    const spawned = await executeAgentWorkspaceTool({
+      projectId,
+      executionId,
+      name: "agent_spawn",
+      arguments: {
+        name: "raw-id-reviewer",
+        instruction: "Inspect the initial raw-id concern",
+        model: "test:model",
+        run_in_background: true,
+      },
+      delegatedCallModel: async () => {
+        calls += 1;
+        return { text: calls === 1 ? "raw-first-pass" : "raw-second-pass", usage: null };
+      },
+      turnId: "raw-id-background-parent",
+    }, dataDir);
+    await waitForDelegatedOrchestrationRun(projectId, spawned.teamId, dataDir);
+    const first = await getGlobalOrchestration(projectId, spawned.teamId, dataDir);
+    const originalExecutionId = first?.tasks[0].agentExecutionId;
+    expect(originalExecutionId).toBeTruthy();
+
+    await expect(executeAgentWorkspaceTool({
+      projectId,
+      executionId,
+      name: "send_message",
+      arguments: { to: spawned.agentId, message: "Inspect the raw-id follow-up concern", model: "test:model" },
+      delegatedCallModel: async (input) => {
+        calls += 1;
+        expect(input.context).toContain("Inspect the raw-id follow-up concern");
+        return { text: "raw-second-pass", usage: null };
+      },
+    }, dataDir)).resolves.toMatchObject({
+      delivered: true,
+      reactivatedAgentIds: [spawned.agentId],
+    });
+
+    await waitForDelegatedOrchestrationRun(projectId, spawned.teamId, dataDir);
+    await expect(getGlobalOrchestration(projectId, spawned.teamId, dataDir)).resolves.toMatchObject({
+      tasks: [expect.objectContaining({
+        status: "succeeded",
+        resultSummary: "raw-second-pass",
+        agentExecutionId: originalExecutionId,
+      })],
+    });
+    expect(calls).toBe(2);
   }, 15_000);
 
   it("runs the cc-haha mode=plan teammate approval handshake through the main Agent tool entry", async () => {
@@ -1637,6 +1846,7 @@ describe("agent workspace tools", { timeout: 15_000 }, () => {
         name: "slow-inspector",
         instruction: "Wait for the test to release the model response",
         model: "test:model",
+        run_in_background: true,
       },
       delegatedCallModel: async (input) => {
         markModelStarted();

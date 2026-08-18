@@ -1,12 +1,15 @@
 import path from "node:path";
+import crypto from "node:crypto";
 
 import { substitutePluginUserConfigInContent, substitutePluginUserConfigRuntime } from "@/lib/agent/project-plugin-options";
 
 import { approveAgentCommand, proposeAgentCommand, runApprovedAgentCommand } from "@/lib/agent/command-runtime";
 import type { ProjectAgentHook, ProjectAgentHookEvent, ProjectAgentHookMatcher, ProjectAgentHooks } from "@/lib/agent/project-agent-hooks";
 import type { ProjectAgentModelResponse, callProjectAgentModel } from "@/lib/agent/project-agent-model";
+import { MODEL_AGENT_TOOL_DEFINITIONS, type NativeAgentTool } from "@/lib/agent/tool-registry";
 import type { AgentToolFailureHookResult, AgentToolPermissionHookResult, AgentToolPostHookResult, AgentToolPreHookResult } from "@/lib/agent/tool-execution-pipeline";
-import type { AgentCallableToolName } from "@/lib/agent/types";
+import type { AgentCallableToolName, AgentWorkspaceToolName } from "@/lib/agent/types";
+import type { ChatMessage } from "@/lib/ai/chat-message";
 import type { ZenmeModelSpeed, ZenmeReasoningEffort } from "@/lib/local/settings";
 
 type HookModelCaller = typeof callProjectAgentModel;
@@ -176,6 +179,9 @@ async function executeHook(
     return parseHookOutput(body, input.event);
   }
   if (!input.callModel) throw new Error(`${hook.type} Hook 缺少模型运行时`);
+  if (hook.type === "agent") {
+    return executeAgentHook(input, hook, matcher);
+  }
   const elicitationInstruction = input.event === "Elicitation" || input.event === "ElicitationResult"
     ? `，也可返回 "action": "accept" | "decline" | "cancel" 以及可选的对象 "content"`
     : "";
@@ -189,6 +195,169 @@ async function executeHook(
     signal: input.signal,
   });
   return parseModelHookOutput(response, input.event);
+}
+
+const AGENT_HOOK_MAX_TURNS = 50;
+const AGENT_HOOK_DISALLOWED_TOOLS = new Set<AgentWorkspaceToolName>([
+  "agent_spawn",
+  "delegate_tasks",
+  "task_output",
+  "task_stop",
+  "ask_user_question",
+  "enter_plan_mode",
+  "exit_plan_mode",
+  "workflow",
+]);
+const HOOK_RESULT_TOOL: NativeAgentTool = {
+  name: "hook_result",
+  description: "Finish this hook-agent run with the structured hook decision.",
+  parameters: {
+    type: "object",
+    properties: {
+      ok: { type: "boolean" },
+      reason: { type: "string" },
+      additionalContext: { type: "string" },
+      action: { type: "string", enum: ["accept", "decline", "cancel"] },
+      content: { type: "object", additionalProperties: true },
+    },
+    required: ["ok"],
+    additionalProperties: false,
+  },
+};
+
+async function executeAgentHook(
+  input: ProjectAgentHookRuntimeInput,
+  hook: ProjectAgentHook,
+  matcher: ProjectAgentHookMatcher,
+): Promise<ProjectAgentHookRuntimeResult> {
+  if (hook.type !== "agent") throw new Error("Agent Hook 类型无效");
+  const [{ createAgentExecution, completeAgentExecution, getAgentExecution }, { executeAgentWorkspaceTool }] = await Promise.all([
+    import("@/lib/agent/execution-store"),
+    import("@/lib/agent/workspace-tools"),
+  ]);
+  const parent = await getAgentExecution(input.projectId, input.executionId, input.dataDir);
+  if (!parent) throw new Error(`${input.event} Agent Hook 的父 Execution 不存在`);
+  const inheritedTools = parent.context.allowedTools ?? MODEL_AGENT_TOOL_DEFINITIONS.map((definition) => definition.name);
+  const allowedTools = inheritedTools.filter((name) => !AGENT_HOOK_DISALLOWED_TOOLS.has(name));
+  const processedPrompt = substitutePluginHookContent(hook.prompt, matcher)
+    .replace(/\$ARGUMENTS/g, JSON.stringify(hookPayload(input)));
+  const child = await createAgentExecution({
+    projectId: input.projectId,
+    agentId: `hook-agent:${input.event}:${crypto.randomUUID()}`,
+    instruction: processedPrompt,
+    resultNodeId: parent.resultNodeId ?? input.executionId,
+    triggerNodeId: parent.triggerNodeId ?? parent.resultNodeId ?? input.executionId,
+    selectedNodeIds: parent.context.selectedNodeIds,
+    fileDocumentIds: parent.context.fileDocumentIds,
+    canvasContext: parent.context.canvasContext,
+    workspaceRootId: parent.context.workspaceRootId,
+    allowedPathPrefixes: parent.context.allowedPathPrefixes,
+    allowedTools,
+    permissionMode: "neverAsk",
+    allowWithoutWorkspace: !parent.context.workspaceRootId,
+  }, input.dataDir);
+  const messages: ChatMessage[] = [{ role: "user", content: processedPrompt }];
+  const context = [
+    `You are running a ${input.event} hook as a bounded verification agent.`,
+    "Use the available tools to inspect real state. Do not spawn other agents or enter plan mode.",
+    "When you have a decision, call hook_result exactly once. ok=false means the hook condition is not satisfied.",
+  ].join("\n");
+  const hookModel = hook.model?.trim() || input.model;
+  try {
+    for (let turn = 0; turn < AGENT_HOOK_MAX_TURNS; turn += 1) {
+      const response = await input.callModel!({
+        model: hookModel,
+        context,
+        prompt: processedPrompt,
+        messages,
+        allowedAgentTools: allowedTools,
+        additionalAgentTools: [HOOK_RESULT_TOOL],
+        reasoningEffort: input.reasoningEffort,
+        modelSpeed: input.modelSpeed,
+        signal: input.signal,
+      });
+      const calls = response.toolCalls?.length ? response.toolCalls : response.toolCall ? [response.toolCall] : [];
+      if (!calls.length) {
+        messages.push({ role: "assistant", content: response.text });
+        messages.push({ role: "user", content: "Finish by calling hook_result with the structured decision." });
+        continue;
+      }
+      const toolCalls = calls.map((call, index) => ({
+        id: `hook-${turn}-${index}-${crypto.randomUUID()}`,
+        name: call.name,
+        arguments: call.arguments,
+      }));
+      messages.push({ role: "assistant", content: response.text, toolCalls });
+      for (const call of toolCalls) {
+        if (call.name === HOOK_RESULT_TOOL.name) {
+          const result = hookAgentResult(call.arguments, input.event);
+          await completeAgentExecution({
+            projectId: input.projectId,
+            executionId: child.detail.id,
+            status: "succeeded",
+            resultSummary: result.permission === "deny" || result.preventContinuation ? result.reason ?? "Hook blocked" : "Hook completed",
+          }, input.dataDir);
+          return result;
+        }
+        if (!allowedTools.includes(call.name as AgentWorkspaceToolName)) {
+          messages.push({ role: "tool", toolCallId: call.id, name: call.name, content: `Tool ${call.name} is not available to hook agents.` });
+          continue;
+        }
+        try {
+          const output = await executeAgentWorkspaceTool({
+            projectId: input.projectId,
+            executionId: child.detail.id,
+            name: call.name as AgentWorkspaceToolName,
+            arguments: (isRecord(call.arguments) ? call.arguments : {}) as never,
+            delegatedModel: hookModel,
+            delegatedCallModel: input.callModel,
+            delegatedReasoningEffort: input.reasoningEffort,
+            delegatedModelSpeed: input.modelSpeed,
+            signal: input.signal,
+          }, input.dataDir);
+          messages.push({ role: "tool", toolCallId: call.id, name: call.name, content: safeJson(output) });
+        } catch (error) {
+          messages.push({ role: "tool", toolCallId: call.id, name: call.name, content: error instanceof Error ? error.message : String(error) });
+        }
+      }
+    }
+    await completeAgentExecution({
+      projectId: input.projectId,
+      executionId: child.detail.id,
+      status: "succeeded",
+      resultSummary: "Hook agent reached its bounded turn limit without a structured decision",
+    }, input.dataDir);
+    return {};
+  } catch (error) {
+    await completeAgentExecution({
+      projectId: input.projectId,
+      executionId: child.detail.id,
+      status: "failed",
+      error: error instanceof Error ? error.message : String(error),
+    }, input.dataDir).catch(() => undefined);
+    return {};
+  }
+}
+
+function hookAgentResult(value: unknown, event: ProjectAgentHookEvent): ProjectAgentHookRuntimeResult {
+  if (!isRecord(value) || typeof value.ok !== "boolean") return {};
+  const parsed = value;
+  const ok = parsed.ok;
+  const reason = stringValue(parsed.reason);
+  return {
+    ...(elicitationValue(parsed) ? { elicitation: elicitationValue(parsed) } : {}),
+    ...(stringValue(parsed.additionalContext) ? { additionalContext: stringValue(parsed.additionalContext) } : {}),
+    ...(!ok && (event === "PreToolUse" || event === "PermissionRequest")
+      ? { permission: "deny" as const, reason: reason || "Hook 已阻止操作" }
+      : {}),
+    ...(!ok && event !== "PreToolUse" && event !== "PermissionRequest"
+      ? { preventContinuation: true, ...(reason ? { reason } : {}) }
+      : {}),
+  };
+}
+
+function safeJson(value: unknown) {
+  try { return JSON.stringify(value); } catch { return String(value); }
 }
 
 function substitutePluginHookPaths(command: string, matcher: ProjectAgentHookMatcher) {

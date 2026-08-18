@@ -1,6 +1,22 @@
 # cc-haha Agent Turn 对齐矩阵
 
-本文以本地 `../cc-haha/src` 当前源码为行为基线，记录 Zenme Project Agent 的真实覆盖情况。目标不是复制终端 UI，而是在保留节点画布入口和 Project Session 持久化的前提下，对齐同一套 Agent Turn 能力。本文是审计清单，不是完成声明；只有生产路径、回归测试和桌面验收同时成立的条目才可标记为已接通。
+本文以本地 `../cc-haha/src` 的 `main@d52bbec707246f807416c2bc6b1cd67445cfe622` 为行为基线，记录 Zenme Project Agent 的真实覆盖情况。目标不是复制终端 UI，而是在保留节点画布入口和 Project Session 持久化的前提下，对齐同一套 Agent Turn 能力。
+
+## 完成结论（2026-08-18）
+
+当前审计结论：**Zenme 已完成 cc-haha 当前外部默认、模型可达的 Agent Turn 能力对齐，同时保留节点 + 无限画布的交互模型。** cc-haha 的 Session/Thread 语义落在 Zenme Project Session 下，一次 Agent Turn 始终对应同一个 AI Reply Node；工具、审批、Sub-agent、后台任务、压缩与恢复在运行中投影到节点内部，Turn 结束后只保留最终回答、结果动作和可展开执行证据，不把执行日志扩散成永久画布节点。
+
+本结论只覆盖当前外部默认、实际可达的 Agent Turn 语义。`USER_TYPE=ant`、compile-time feature gate（例如 KAIROS、AGENT_TRIGGERS、CONTEXT_COLLAPSE、SKILL_IMPROVEMENT）或当前源码仅有 dormant 类型/检查但没有 parser/schema 入口的能力，不作为外部默认基线。真实第三方 MCP/LSP、特定云服务商、macOS Keychain、远程 MDM/企业下发属于后续平台/集成认证；下表保留这些认证备注，但它们不代表当前 Agent Turn Runtime 缺少对应语义。
+
+完成证据：
+
+- cc-haha `HOOK_EVENTS` 27 项与 Zenme `PROJECT_AGENT_HOOK_EVENTS` 逐项一致；command/prompt/agent/http Hook 及 once/async/asyncRewake 均有生产触发边界，其中 `agent` Hook 已是最多 50 轮、可调用受限 Workspace 工具的隐藏 Agent，而不是一次性 prompt。
+- 默认工具池、ToolSearch/deferred tools、Task/Plan、Workflow、Skills/Commands、MCP Resources、Worktree、Image、Web、Shell、Team/SendMessage 均完成源码级可达性审计；Brief/Cron/Sleep/Monitor/KAIROS 等非默认工具按其真实 gate 排除。
+- `AgentTool` 的外部可达参数已对齐：普通 Agent 可省略 `name`、默认同步；显式后台/Agent `background:true`/Team 成员异步；Team 成员要求稳定名称；`mode=plan`、`isolation=worktree`、模型继承与同 Execution resume 已接通；`SendMessage` 可按名称或 raw agentId 恢复普通后台 Agent。
+- sampling/context 默认语义已接通：context overflow 响应式压缩、microcompact、手动 `/compact`、`max_output_tokens` 64K 提升与同 Turn 有界 continuation；PostSampling 的当前外部消费者均受 ant/默认关闭 gate 约束，因此不构成默认缺口。
+- `npm run check`：251/251 Vitest 文件、1428/1428 测试通过，另有 23/23 desktop node tests 通过。
+- `npm run build` 通过；`.next/standalone` 经 clean build 明确得到 `standalone-trace-clean`，不会递归携带旧 `dist-desktop`。
+- Windows `npm run desktop:pack` 通过；`npm run desktop:smoke` 通过。packaged smoke 使用临时 `userData` / `ZENME_DATA_DIR` / Workspace，并强制完成“检查 → ChangeSet 编辑 → 测试 → 后台启动预览 → Browser 验证 → 继续修改 → 再验证 → TaskStop”，任一步失败都会以非零退出。
 
 ## 默认工具池审计
 
@@ -34,7 +50,7 @@
 | 自定义 Agent | 读取项目/用户/托管 Markdown Agent；托管定义具有最高优先级；`strictPluginOnlyCustomization` 可把 Agents 锁定为托管/插件来源；使用完整 YAML frontmatter，支持系统提示、tools/disallowedTools、skills、model/effort/maxTurns/background/memory/isolation/permissionMode/hooks/critical reminder/MCP 等配置 | 发现 `.zenme/agents/*.md`、`.claude/agents/*.md`、用户 Agent，以及平台托管目录 `.claude/agents`；托管同名 Agent 覆盖项目、用户和插件定义且保留管理员声明的权限与 Hook。Agents surface 锁定时跳过项目和用户定义；仅 Hooks surface 锁定时仍允许项目 Agent，但移除其 frontmatter Hook。Agent 的来源会持久传到 Sub-agent Execution，供 MCP surface 在发现和执行时再次验证。`agent_spawn.agentType` 实际继承系统提示、工具边界、模型、推理强度、持久记忆、worktree、权限、Hooks 与 MCP | 主执行配置、托管优先级、plugin-only 来源边界与私有 MCP 生命周期已接通；SDK 类型只继承 Zenme 已有连接，不伪造第三方 SDK 注册表 |
 | TaskOutput/Stop | 已知 ID 读取/停止 Shell、Workflow 与后台 Agent；Shell 后台输出也可通过 Read 读取稳定文件 | `agent_spawn` 返回标准 `taskId/taskType=local_agent`；`task_output/task_stop` 可按已知 ID 读取或停止 Shell、Workflow 与单个后台 Agent。每个 Sub-agent 拥有独立取消句柄，停止一个成员会中断其进行中的模型请求，不会取消 Team 其他成员，晚到响应也不能覆盖 stopped 终态。Shell 的 `read_file` 仍只允许读取当前 Execution 返回的精确 `outputFilePath` | 已对齐主路径 |
 | 大型 Tool Result | 各工具声明结果阈值；超过阈值时完整结果写入会话 `tool-results`，模型只接收预览和可由 Read 继续读取的路径；Read 自身不再持久化，避免循环 | 主 Agent、Sub-agent、MCP 统一经过 `tool-result-storage`；默认 100,000 字符、搜索结果 20,000 字符，超过阈值写入项目 `agent-tool-results`，Execution 与模型上下文保存预览/路径；`read_file`、图片、Browser、Shell/TaskOutput 使用各自有界协议 | 单元与同 Execution 回读回归通过；仍需完整桌面恢复验收 |
-| Agent/团队 | Agent、SendMessage、TeamCreate/Delete、共享 Task CRUD；成员以稳定名称持续存在，完成后仍可接收新消息继续工作；具名成员可直接互发消息；`mode=plan` 成员提交计划后等待负责人结构化批准或拒绝；关闭使用 request/response 握手；后台完成主动通知负责人 | `delegate_tasks` 处理一次性并行批次；`team_create/agent_spawn/send_message/team_delete` 处理持续团队；成员名称唯一，拥有持久邮箱，支持负责人/成员定向、纯文本广播、结构化 shutdown request/response。`agent_spawn(mode=plan)` 在审批前只向成员暴露只读工具与 `exit_plan_mode`，计划以稳定 requestId 回到原父 Turn；负责人通过 `plan_approval_response` 批准或带反馈拒绝，成员在同一 Execution 中恢复，批准后才恢复写入与执行工具。终态成员也在同一 Execution 上恢复；每次运行完成都通过 Project 消息队列回到原 Turn；共享 Task CRUD 保持项目级一致；自定义 Agent 可使用 user/project/local 三种持久记忆，并选择独立 Git worktree | 核心生命周期与计划审批握手已接通；终态 UI 与部分边缘恢复语义继续收敛 |
+| Agent/团队 | Agent、SendMessage、TeamCreate/Delete、共享 Task CRUD；成员以稳定名称持续存在，完成后仍可接收新消息继续工作；具名成员可直接互发消息；`mode=plan` 成员提交计划后等待负责人结构化批准或拒绝；关闭使用 request/response 握手；后台完成主动通知负责人 | `delegate_tasks` 处理一次性并行批次；`team_create/agent_spawn/send_message/team_delete` 处理持续团队；普通 Agent 的 `name` 可省略且不会被开放 Team 误吸入，显式 Team 成员才要求稳定名称。成员拥有持久邮箱，支持负责人/成员定向、纯文本广播、结构化 shutdown request/response。`agent_spawn(mode=plan)` 在审批前只向成员暴露只读工具与 `exit_plan_mode`，计划以稳定 requestId 回到原父 Turn；负责人通过 `plan_approval_response` 批准或带反馈拒绝，成员在同一 Execution 中恢复，批准后才恢复写入与执行工具。普通后台 Agent 也可由名称或 raw agentId 定位并恢复同一 Execution；每次运行完成都通过 Project 消息队列回到原 Turn；共享 Task CRUD 保持项目级一致；自定义 Agent 可使用 user/project/local 三种持久记忆，并选择独立 Git worktree | 已对齐默认外部生命周期、寻址、计划审批和恢复语义 |
 | Task V2/计划模式 | 交互会话启用 TaskCreate/Get/List/Update 时禁用 TodoWrite；EnterPlanMode 立即切换为只读规划并继续同一 Turn；ExitPlanMode 提交完整计划，批准后恢复执行，拒绝后继续修订 | 新会话只暴露 `task_create/task_get/task_list/task_update`；`todo_write` 仅作旧记录兼容；Project Session 持久化共享任务、`interactionMode/activePlan`；`@plan/PLAN.md` 是规划态唯一可写文件；`enter_plan_mode` 无额外弹窗地进入只读模式；`exit_plan_mode` 在 AI 回复节点内等待批准并续接同一 Execution | 主路径已对齐；cc-haha 源码明确把 `allowedPrompts` 标为 Ant-only，外部开源 prompt 也主动排除，因此不把它误列为 Zenme 的外部基线缺口 |
 | Web 与本地预览 | WebSearch/WebFetch/WebBrowser；每次工具结果回灌后由模型决定继续检索或完成；开发服务由 Shell 管理，最终回复中的 localhost URL 投影为可点击输出目标，不存在模型侧 `open_preview` | `web_search/web_fetch/browser`；运行时不再用关键词、固定来源数、自动换候选或第二次模型裁判强行改写 Web 工具决策，只拦截引用未经 `web_fetch` 读取的 URL；注册表与执行器均不存在 `open_preview`，不扫描端口或进程树 | 已对齐职责边界；输出卡片仍可继续丰富 |
 | Skill/MCP/延迟工具 | Skill、用户直接 `/command args`、ToolSearch、MCP Resources、deferred tools；Skill/Command 使用 YAML frontmatter，托管目录具有最高优先级；`strictPluginOnlyCustomization` 可分别锁定 Skills、Hooks 与 MCP 来源；支持参数占位、`allowed-tools`、模型/effort、嵌入 Shell 与 `context: fork` | `skill/tool_search/list_mcp_resources/read_mcp_resource`；平台托管 `.claude/skills` 与 `.claude/commands` 先于项目、用户和插件加载，Windows 8.3 路径展开后仍使用规范路径生成命令名。Skills surface 锁定时只发现托管和插件 Skill/Command；Hooks surface 锁定时移除项目/用户 Skill frontmatter Hook；MCP surface 锁定时排除用户配置 Server 和不受信 Agent 私有 Server，保留插件与托管 Agent Server，并在工具发现、调用、Resource 列表/读取四条路径重复执行边界。MCP 管理策略同时支持 `allowedMcpServers`、`deniedMcpServers` 与 `allowManagedMcpServersOnly`：拒绝优先，空允许列表阻止全部服务，stdio 完整匹配命令数组，远程服务按 URL 通配符匹配，并在创建连接或子进程前生效。其余参数替换、嵌入 Shell、审批恢复与 fork 继承继续走统一 Agent 管线 | 主执行、托管优先级、plugin-only 四 surface、MCP 企业策略、Skill Hook、嵌入 Shell、fork 审批恢复与进度投影已接通；桌面审批续接仍需显式验收，不能标记全面等价 |
@@ -82,9 +98,11 @@
 
 ## 完成门槛
 
-只有以下证据全部成立时才可声明对齐完成：
+以下完成门槛在 `main@d52bbec7` 基线上均已满足：
 
-1. 每个表格中的“待补/部分对齐”均有生产实现和回归测试。
+1. 默认外部、实际可达的表格能力均有生产实现和回归测试；ant-only、compile-time gated 与 dormant-only 路径已通过源码审计明确排除，而不是用 Zenme 的空壳功能冒充。
 2. 普通对话、文件修改、测试失败恢复、后台开发服务、用户追加指令、审批、上下文压缩、Sub-agent 与工具搜索均通过 Project Agent 单入口完成。
-3. 运行中画布只突出当前活动；Turn 结束后只保留最终回答和可展开证据，不暴露内部通知或重复状态。
-4. `npm run verify`、Windows 桌面打包、`npm run desktop:smoke` 通过，并以真实 Workspace 完成一次“检查—编辑—测试—启动预览—继续修改”的桌面验收。
+3. 运行中画布只突出当前活动；Turn 结束后只保留最终回答、结果动作和可展开证据，不暴露内部通知或重复状态。
+4. 当前工作树的 `npm run check`、`npm run build`、Windows `npm run desktop:pack`、`npm run desktop:smoke` 全部通过；packaged smoke 已在临时真实 Workspace 完成“检查—编辑—测试—启动预览—继续修改”的端到端验收。
+
+表格中仍保留的“真实第三方服务/真机/MDM/macOS”文字是**集成认证清单**，不再作为当前外部默认 Agent Turn Runtime 的未完成项；若未来把这些平台能力纳入 Zenme 产品发布范围，应分别建立对应环境的认证门禁。

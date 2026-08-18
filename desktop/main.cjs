@@ -385,6 +385,13 @@ async function createWindow() {
 
   if (IS_SMOKE_TEST) {
     await verifyPackagedBrowserController(nextServerUrl);
+    if (process.env.ZENME_SMOKE_WORKSPACE && process.env.ZENME_SMOKE_PREVIEW_URL) {
+      await verifyPackagedWorkspaceFlow(
+        nextServerUrl,
+        process.env.ZENME_SMOKE_WORKSPACE,
+        process.env.ZENME_SMOKE_PREVIEW_URL,
+      );
+    }
     setTimeout(() => app.quit(), 250);
   }
 }
@@ -414,6 +421,164 @@ async function verifyPackagedBrowserController(targetUrl) {
   }
   await request({ operation: "close" });
   console.log(`[zenme-browser] smoke verified ${snapshot.url}`);
+}
+
+async function verifyPackagedWorkspaceFlow(baseUrl, workspaceRoot, previewUrl) {
+  const api = async (pathname, { body, method = "GET" } = {}) => {
+    const response = await fetch(`${baseUrl}${pathname}`, {
+      method,
+      headers: {
+        "content-type": "application/json",
+        "x-zenme-desktop-token": DESKTOP_API_TOKEN,
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    const text = await response.text();
+    let payload = {};
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = { raw: text };
+    }
+    if (!response.ok) {
+      throw new Error(`Workspace smoke API failed (${response.status} ${pathname}): ${JSON.stringify(payload)}`);
+    }
+    return payload;
+  };
+
+  const project = await api("/api/projects", {
+    method: "POST",
+    body: { name: "Packaged Workspace Smoke", model: "", prompt: "" },
+  });
+  if (!project.id) throw new Error("Workspace smoke project creation returned no id");
+  const projectPath = encodeURIComponent(project.id);
+  const binding = await api(`/api/projects/${projectPath}/workspace`, {
+    method: "POST",
+    body: { rootPath: workspaceRoot },
+  });
+  if (!binding.id) throw new Error("Workspace smoke binding returned no root id");
+  await api(`/api/projects/${projectPath}/workspace`, {
+    method: "PATCH",
+    body: { execute: true, write: true },
+  });
+
+  const created = await api(`/api/projects/${projectPath}/agent-executions`, {
+    method: "POST",
+    body: {
+      allowedTools: ["workspace_status", "read_file", "edit_file", "shell_command", "task_stop"],
+      instruction: "Packaged Workspace smoke verification",
+      resultNodeId: "packaged-smoke-result",
+      triggerNodeId: "packaged-smoke-trigger",
+      workspaceRootId: binding.id,
+    },
+  });
+  const executionId = created.detail?.id;
+  if (!executionId) throw new Error("Workspace smoke Agent Execution returned no id");
+  const executionPath = `/api/projects/${projectPath}/agent-executions/${encodeURIComponent(executionId)}`;
+  const tool = (name, args) => api(executionPath, {
+    method: "PATCH",
+    body: { action: "tool", arguments: args, name },
+  });
+  const applyChangeSet = async (changeSetId) => {
+    const changeSetPath = `/api/projects/${projectPath}/workspace/change-sets/${encodeURIComponent(changeSetId)}`;
+    await api(changeSetPath, { method: "PATCH", body: { action: "approve" } });
+    await api(changeSetPath, { method: "PATCH", body: { action: "apply" } });
+  };
+
+  await tool("workspace_status", {});
+  const initial = await tool("read_file", { relativePath: "src/value.txt" });
+  if (String(initial.content ?? "").trim() !== "alpha") {
+    throw new Error("Workspace smoke initial inspection did not read the expected file");
+  }
+
+  const firstEdit = await tool("edit_file", {
+    relativePath: "src/value.txt",
+    oldText: "alpha",
+    newText: "beta",
+  });
+  if (!firstEdit.changeSetId) throw new Error("Workspace smoke edit returned no ChangeSet");
+  await applyChangeSet(firstEdit.changeSetId);
+
+  const testResult = await tool("shell_command", {
+    command: "npm test",
+    reason: "Run the packaged Workspace smoke test",
+  });
+  if (testResult.status !== "succeeded" || !String(testResult.stdout ?? "").includes("workspace-test-ok")) {
+    throw new Error(`Workspace smoke test command failed: ${JSON.stringify(testResult)}`);
+  }
+
+  const previewTask = await tool("shell_command", {
+    command: "npm run preview",
+    reason: "Start the packaged Workspace smoke preview",
+    run_in_background: true,
+  });
+  if (previewTask.status !== "running" || !previewTask.id) {
+    throw new Error(`Workspace smoke preview did not start in background: ${JSON.stringify(previewTask)}`);
+  }
+  await waitForSmokePreview(previewUrl, "beta");
+  await verifyBrowserText(previewUrl, "beta");
+
+  const secondEdit = await tool("edit_file", {
+    relativePath: "src/value.txt",
+    oldText: "beta",
+    newText: "gamma",
+  });
+  if (!secondEdit.changeSetId) throw new Error("Workspace smoke follow-up edit returned no ChangeSet");
+  await applyChangeSet(secondEdit.changeSetId);
+  await waitForSmokePreview(previewUrl, "gamma");
+  await verifyBrowserText(previewUrl, "gamma");
+  await tool("task_stop", { task_id: previewTask.id });
+  await api(executionPath, {
+    method: "PATCH",
+    body: { action: "complete", resultSummary: "Packaged Workspace smoke passed" },
+  });
+
+  if (fs.readFileSync(path.join(workspaceRoot, "src", "value.txt"), "utf8").trim() !== "gamma") {
+    throw new Error("Workspace smoke follow-up edit was not persisted to disk");
+  }
+  console.log(`[zenme-workspace] packaged smoke verified ${workspaceRoot}`);
+}
+
+async function waitForSmokePreview(url, expectedText) {
+  const deadline = Date.now() + 15_000;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url);
+      const text = await response.text();
+      if (response.ok && text.trim() === expectedText) return;
+      lastError = new Error(`Unexpected preview response ${response.status}: ${text}`);
+    } catch (error) {
+      lastError = error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw lastError ?? new Error(`Workspace smoke preview did not become ready: ${url}`);
+}
+
+async function verifyBrowserText(url, expectedText) {
+  if (!browserControlServer) throw new Error("Browser control server is unavailable");
+  const sessionId = `workspace-smoke:${crypto.randomUUID()}`;
+  const response = await fetch(browserControlServer.url, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${DESKTOP_API_TOKEN}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ sessionId, operation: "navigate", url, includeScreenshot: false }),
+  });
+  const payload = await response.json();
+  if (!response.ok || !String(payload.text ?? "").includes(expectedText)) {
+    throw new Error(`Workspace Browser smoke failed for ${url}: ${JSON.stringify(payload)}`);
+  }
+  await fetch(browserControlServer.url, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${DESKTOP_API_TOKEN}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ sessionId, operation: "close" }),
+  });
 }
 
 function registerIpcHandlers() {
@@ -772,6 +937,11 @@ app.whenReady().then(async () => {
     registerIpcHandlers();
     await createWindow();
   } catch (error) {
+    if (IS_SMOKE_TEST) {
+      console.error(`[zenme-smoke] failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      app.exit(1);
+      return;
+    }
     dialog.showErrorBox(
       "Zenme 启动失败",
       error instanceof Error ? error.message : String(error),
