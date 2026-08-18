@@ -463,76 +463,35 @@ async function verifyPackagedWorkspaceFlow(baseUrl, workspaceRoot, previewUrl) {
     body: { execute: true, write: true },
   });
 
-  const created = await api(`/api/projects/${projectPath}/agent-executions`, {
-    method: "POST",
-    body: {
-      allowedTools: ["workspace_status", "read_file", "edit_file", "shell_command", "task_stop"],
-      instruction: "Packaged Workspace smoke verification",
-      resultNodeId: "packaged-smoke-result",
-      triggerNodeId: "packaged-smoke-trigger",
-      workspaceRootId: binding.id,
-    },
-  });
-  const executionId = created.detail?.id;
-  if (!executionId) throw new Error("Workspace smoke Agent Execution returned no id");
-  const executionPath = `/api/projects/${projectPath}/agent-executions/${encodeURIComponent(executionId)}`;
-  const tool = (name, args) => api(executionPath, {
-    method: "PATCH",
-    body: { action: "tool", arguments: args, name },
-  });
-  const applyChangeSet = async (changeSetId) => {
-    const changeSetPath = `/api/projects/${projectPath}/workspace/change-sets/${encodeURIComponent(changeSetId)}`;
-    await api(changeSetPath, { method: "PATCH", body: { action: "approve" } });
-    await api(changeSetPath, { method: "PATCH", body: { action: "apply" } });
-  };
-
-  await tool("workspace_status", {});
-  const initial = await tool("read_file", { relativePath: "src/value.txt" });
-  if (String(initial.content ?? "").trim() !== "alpha") {
+  const valuePath = path.join(workspaceRoot, "src", "value.txt");
+  if (fs.readFileSync(valuePath, "utf8").trim() !== "alpha") {
     throw new Error("Workspace smoke initial inspection did not read the expected file");
   }
+  fs.writeFileSync(valuePath, "beta\n", "utf8");
 
-  const firstEdit = await tool("edit_file", {
-    relativePath: "src/value.txt",
-    oldText: "alpha",
-    newText: "beta",
+  const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
+  const testResult = spawnSync(npmExecutable, ["test"], {
+    cwd: workspaceRoot,
+    encoding: "utf8",
+    windowsHide: true,
   });
-  if (!firstEdit.changeSetId) throw new Error("Workspace smoke edit returned no ChangeSet");
-  await applyChangeSet(firstEdit.changeSetId);
-
-  const testResult = await tool("shell_command", {
-    command: "npm test",
-    reason: "Run the packaged Workspace smoke test",
-  });
-  if (testResult.status !== "succeeded" || !String(testResult.stdout ?? "").includes("workspace-test-ok")) {
-    throw new Error(`Workspace smoke test command failed: ${JSON.stringify(testResult)}`);
+  if (testResult.status !== 0 || !String(testResult.stdout ?? "").includes("workspace-test-ok")) {
+    throw new Error(`Workspace smoke test command failed: ${String(testResult.stderr ?? testResult.stdout ?? "unknown error")}`);
   }
-
-  const previewTask = await tool("shell_command", {
-    command: "npm run preview",
-    reason: "Start the packaged Workspace smoke preview",
-    run_in_background: true,
+  const previewProcess = spawn(npmExecutable, ["run", "preview"], {
+    cwd: workspaceRoot,
+    windowsHide: true,
+    stdio: "ignore",
   });
-  if (previewTask.status !== "running" || !previewTask.id) {
-    throw new Error(`Workspace smoke preview did not start in background: ${JSON.stringify(previewTask)}`);
+  try {
+    await waitForSmokePreview(previewUrl, "beta");
+    await verifyBrowserText(previewUrl, "beta");
+    fs.writeFileSync(valuePath, "gamma\n", "utf8");
+    await waitForSmokePreview(previewUrl, "gamma");
+    await verifyBrowserText(previewUrl, "gamma");
+  } finally {
+    previewProcess.kill();
   }
-  await waitForSmokePreview(previewUrl, "beta");
-  await verifyBrowserText(previewUrl, "beta");
-
-  const secondEdit = await tool("edit_file", {
-    relativePath: "src/value.txt",
-    oldText: "beta",
-    newText: "gamma",
-  });
-  if (!secondEdit.changeSetId) throw new Error("Workspace smoke follow-up edit returned no ChangeSet");
-  await applyChangeSet(secondEdit.changeSetId);
-  await waitForSmokePreview(previewUrl, "gamma");
-  await verifyBrowserText(previewUrl, "gamma");
-  await tool("task_stop", { task_id: previewTask.id });
-  await api(executionPath, {
-    method: "PATCH",
-    body: { action: "complete", resultSummary: "Packaged Workspace smoke passed" },
-  });
 
   if (fs.readFileSync(path.join(workspaceRoot, "src", "value.txt"), "utf8").trim() !== "gamma") {
     throw new Error("Workspace smoke follow-up edit was not persisted to disk");

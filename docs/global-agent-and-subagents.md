@@ -32,7 +32,7 @@ Sub-agent 不获得 `ask_user_question`。它获得仅在受调度 Execution 内
 
 与 cc-haha 的队友消息箱语义一致，统一 Project Agent 的运行中补充指令会持久化投递给该父 Turn 下仍活跃或排队的 Sub-agent。父消息由每个子任务原子认领一次，并在下一次模型决策上下文中注入；若消息恰好在模型调用期间到达，运行时丢弃尚未执行的旧决策，再用补充指令继续同一个 Execution。子报告与父指令使用同一持久消息流但按方向隔离，不会被子任务认领回自己。等待审批、刷新或服务重启不会丢失尚未认领的消息或未汇总的报告。当前 UI 不暴露任意 Agent 间广播；只允许父 Turn 向自己的子任务投递、子任务向所属父 Turn 报告，避免绕过任务、路径和权限边界。
 
-历史画布 Global Agent 规划请求仍由服务端隔离的 `agent_planning` 模式恢复和执行：禁用工具与自动联网，读取已确认 Project Memory、Project Knowledge 和当前画布上下文，输出 1–8 个经过路径、依赖和工具白名单校验的任务。新任务不再暴露该独立规划入口，而由统一 Project Agent 直接调用 `delegate_tasks`；服务端调度器仍以项目级后台作业运行 orchestration，关闭或刷新渲染窗口不会中断执行。重复启动请求按 orchestration/execution ID 去重，停止操作会取消运行时并清理子任务进程。
+历史画布 Global Agent 节点只用于读取既有 Orchestration、结果和审计证据；独立 planner/create/run API 已退役，不再恢复或重新执行旧规划入口。新任务统一由 Project Agent 调用 `delegate_tasks` 或 Team 工具创建 Orchestration；服务端调度器仍以项目级后台作业运行当前 Orchestration，关闭或刷新渲染窗口不会中断执行。当前运行时按 orchestration/execution ID 去重，停止操作会取消运行时并清理子任务进程。
 
 ## 隔离与权限
 

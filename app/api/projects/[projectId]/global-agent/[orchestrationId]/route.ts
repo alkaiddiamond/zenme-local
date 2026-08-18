@@ -1,14 +1,12 @@
 import { NextResponse } from "next/server";
 
 import {
-  dispatchGlobalSubtasks,
   getGlobalOrchestration,
   GlobalOrchestrationError,
   refreshGlobalOrchestration,
-  retryGlobalSubtask,
   stopGlobalOrchestration,
 } from "@/lib/global-agent/orchestration-store";
-import { startDelegatedOrchestrationRun, stopDelegatedOrchestrationRun } from "@/lib/global-agent/delegated-runtime";
+import { stopDelegatedOrchestrationRun } from "@/lib/global-agent/delegated-runtime";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ projectId: string; orchestrationId: string }> }) {
   try {
@@ -22,21 +20,11 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
   const { projectId, orchestrationId } = await params;
   try {
     const body = await request.json() as Record<string, unknown>;
-    if (body.action === "run" && typeof body.model === "string" && body.model.trim()) {
-      const run = await startDelegatedOrchestrationRun({
-        projectId,
-        orchestrationId,
-        model: body.model.trim(),
-      });
-      return NextResponse.json(run.orchestration, { status: run.started ? 202 : 200 });
-    }
-    if (body.action === "dispatch") return NextResponse.json(await dispatchGlobalSubtasks(projectId, orchestrationId));
     if (body.action === "refresh") return NextResponse.json(await refreshGlobalOrchestration(projectId, orchestrationId));
     if (body.action === "stop") {
       stopDelegatedOrchestrationRun(projectId, orchestrationId);
       return NextResponse.json(await stopGlobalOrchestration(projectId, orchestrationId));
     }
-    if (body.action === "retry" && typeof body.subtaskId === "string") return NextResponse.json(await retryGlobalSubtask(projectId, orchestrationId, body.subtaskId));
     return NextResponse.json({ error: "Global Agent 操作参数无效" }, { status: 400 });
   } catch (error) { return response(error, "Global Agent 操作失败"); }
 }

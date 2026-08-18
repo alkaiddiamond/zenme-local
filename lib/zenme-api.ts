@@ -24,11 +24,9 @@ import type {
   AgentWorkspaceToolResult,
 } from "@/lib/agent/types";
 import type {
-  GlobalContextEvidence,
   GlobalOrchestration,
-  GlobalTaskPlanInput,
 } from "@/lib/global-agent/types";
-import type { ContinuousAgentSuggestion, ContinuousGlobalAgentMode, ContinuousGlobalAgentState } from "@/lib/global-agent/continuous-types";
+import type { ContinuousGlobalAgentState } from "@/lib/global-agent/continuous-types";
 import type {
   ProjectMemory,
   ProjectMemoryContextItem,
@@ -506,52 +504,10 @@ export async function updateWorkspaceChangeSetFromApi(
   ));
 }
 
-export async function createAgentExecutionFromApi(input: {
-  agentId?: string;
-  allowedPathPrefixes?: string[];
-  allowedTools?: AgentWorkspaceToolName[];
-  canvasContext?: string;
-  fileDocumentIds?: string[];
-  instruction: string;
-  orchestrationId?: string;
-  projectId: string;
-  resultNodeId: string;
-  selectedNodeIds?: string[];
-  subtaskId?: string;
-  triggerNodeId: string;
-  workspaceRootId?: string;
-}) {
-  return readJson<{ detail: AgentExecutionDetail; execution: Execution }>(await fetch(
-    `/api/projects/${encodeURIComponent(input.projectId)}/agent-executions`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(input),
-    },
-  ));
-}
-
 export async function getAgentExecutionFromApi(projectId: string, executionId: string) {
   return readJson<AgentExecutionDetail>(await fetch(
     `/api/projects/${encodeURIComponent(projectId)}/agent-executions/${encodeURIComponent(executionId)}`,
     { cache: "no-store" },
-  ));
-}
-
-export async function runAgentExecutionFromApi(input: {
-  executionId: string;
-  model: string;
-  projectId: string;
-  signal?: AbortSignal;
-}) {
-  return readJson<AgentExecutionDetail>(await fetch(
-    `/api/projects/${encodeURIComponent(input.projectId)}/agent-executions/${encodeURIComponent(input.executionId)}`,
-    {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "run", model: input.model }),
-      signal: input.signal,
-    },
   ));
 }
 
@@ -578,12 +534,9 @@ export async function executeAgentWorkspaceToolFromApi<Name extends AgentWorkspa
 }
 
 export async function updateAgentExecutionFromApi(input: {
-  action: "complete" | "fail" | "retry" | "stop";
-  error?: string;
+  action: "stop";
   executionId: string;
   projectId: string;
-  resultSummary?: string;
-  timedOut?: boolean;
 }) {
   return readJson<AgentExecutionDetail | { detail: AgentExecutionDetail; execution: Execution }>(await fetch(
     `/api/projects/${encodeURIComponent(input.projectId)}/agent-executions/${encodeURIComponent(input.executionId)}`,
@@ -591,25 +544,6 @@ export async function updateAgentExecutionFromApi(input: {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
-    },
-  ));
-}
-
-export async function proposeAgentCommandFromApi(input: {
-  args: string[];
-  cwd?: string;
-  executable: string;
-  executionId: string;
-  projectId: string;
-  reason: string;
-  timeoutMs?: number;
-}) {
-  return readJson<AgentCommandRequest>(await fetch(
-    `/api/projects/${encodeURIComponent(input.projectId)}/agent-executions/${encodeURIComponent(input.executionId)}`,
-    {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...input, action: "proposeCommand" }),
     },
   ));
 }
@@ -636,65 +570,6 @@ export async function rejectAgentCommandFromApi(projectId: string, executionId: 
   ));
 }
 
-export async function createGlobalOrchestrationFromApi(input: {
-  canvasContext?: string;
-  concurrencyLimit?: number;
-  contextEvidence?: GlobalContextEvidence[];
-  fileDocumentIds?: string[];
-  goal: string;
-  maxSubagents?: number;
-  projectId: string;
-  resultNodeId: string;
-  selectedNodeIds?: string[];
-  tasks: GlobalTaskPlanInput[];
-  triggerNodeId: string;
-}) {
-  return readJson<GlobalOrchestration>(await fetch(
-    `/api/projects/${encodeURIComponent(input.projectId)}/global-agent`,
-    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
-  ));
-}
-
-export async function planGlobalAgentTasksFromApi(input: {
-  canvasContext?: string;
-  goal: string;
-  model: string;
-  projectId: string;
-  signal?: AbortSignal;
-}) {
-  return readJson<{ tasks: GlobalTaskPlanInput[] }>(await fetch(
-    `/api/projects/${encodeURIComponent(input.projectId)}/global-agent`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        action: "plan",
-        canvasContext: input.canvasContext,
-        goal: input.goal,
-        model: input.model,
-      }),
-      signal: input.signal,
-    },
-  ));
-}
-
-export async function runGlobalOrchestrationFromApi(input: {
-  model: string;
-  orchestrationId: string;
-  projectId: string;
-  signal?: AbortSignal;
-}) {
-  return readJson<GlobalOrchestration>(await fetch(
-    `/api/projects/${encodeURIComponent(input.projectId)}/global-agent/${encodeURIComponent(input.orchestrationId)}`,
-    {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "run", model: input.model }),
-      signal: input.signal,
-    },
-  ));
-}
-
 export async function getGlobalOrchestrationFromApi(projectId: string, orchestrationId: string) {
   return readJson<GlobalOrchestration>(await fetch(
     `/api/projects/${encodeURIComponent(projectId)}/global-agent/${encodeURIComponent(orchestrationId)}`,
@@ -703,21 +578,13 @@ export async function getGlobalOrchestrationFromApi(projectId: string, orchestra
 }
 
 export async function updateGlobalOrchestrationFromApi(input: {
-  action: "dispatch" | "refresh" | "retry" | "stop";
+  action: "refresh" | "stop";
   orchestrationId: string;
   projectId: string;
-  subtaskId?: string;
 }) {
   return readJson<GlobalOrchestration | { orchestration: GlobalOrchestration; dispatched: GlobalOrchestration["tasks"] }>(await fetch(
     `/api/projects/${encodeURIComponent(input.projectId)}/global-agent/${encodeURIComponent(input.orchestrationId)}`,
     { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(input) },
-  ));
-}
-
-export async function getContinuousGlobalAgentFromApi(projectId: string) {
-  return readJson<ContinuousGlobalAgentState>(await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/global-agent/continuous`,
-    { cache: "no-store" },
   ));
 }
 
@@ -732,33 +599,10 @@ export async function getContinuousGlobalAgentSupervisorStatesFromApi(projectIds
   ));
 }
 
-export async function configureContinuousGlobalAgentFromApi(input: {
-  projectId: string;
-  mode?: ContinuousGlobalAgentMode;
-  modelId?: string | null;
-  budget?: Partial<ContinuousGlobalAgentState["budget"]>;
-}) {
-  return readJson<ContinuousGlobalAgentState>(await fetch(
-    `/api/projects/${encodeURIComponent(input.projectId)}/global-agent/continuous`,
-    { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...input, action: "configure" }) },
-  ));
-}
-
 export async function runContinuousGlobalAgentFromApi(projectId: string, signal?: AbortSignal) {
   return readJson<{ ran: boolean; runId?: string; state: ContinuousGlobalAgentState }>(await fetch(
     `/api/projects/${encodeURIComponent(projectId)}/global-agent/continuous`,
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "runOnce" }), signal },
-  ));
-}
-
-export async function updateContinuousGlobalAgentSuggestionFromApi(input: {
-  projectId: string;
-  suggestionId: string;
-  status: ContinuousAgentSuggestion["status"];
-}) {
-  return readJson<ContinuousGlobalAgentState>(await fetch(
-    `/api/projects/${encodeURIComponent(input.projectId)}/global-agent/continuous`,
-    { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...input, action: "suggestion" }) },
   ));
 }
 

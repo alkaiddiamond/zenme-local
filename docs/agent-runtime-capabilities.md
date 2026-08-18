@@ -353,7 +353,7 @@ Live test 使用生产 repository 创建一次性 Project/Workspace，结束后�
 
 1. 当前 cc-haha 默认外部、实际可达 Agent Turn 能力没有已知生产缺口。
 2. 主 Agent 与 Sub-agent 的问题求解控制权符合本文自治边界。
-3. 历史兼容只存在于持久化/投影迁移层，不进入当前模型世界模型。
+3. 历史兼容不会进入当前模型世界模型；旧 Canvas Agent 节点仅保留只读审计、结果回看和停止仍在运行任务的 UI 兼容面，不能创建、批准、重试或续跑旧入口。
 4. 所有失败都是真实、具体、可行动的 observation。
 5. 安全、权限、资源和协议硬边界仍然 fail-closed。
 6. Autonomy 验收场景有行为测试，不以源码存在性替代。

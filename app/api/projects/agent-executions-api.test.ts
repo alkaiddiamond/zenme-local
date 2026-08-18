@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { POST as createExecution } from "@/app/api/projects/[projectId]/agent-executions/route";
 import { GET as getExecution, PATCH as patchExecution } from "@/app/api/projects/[projectId]/agent-executions/[executionId]/route";
+import { createAgentExecution } from "@/lib/agent/execution-store";
 import { createLocalProject } from "@/lib/local/project-repository";
 import { bindLocalWorkspace } from "@/lib/local/workspace-repository";
 
@@ -27,19 +27,15 @@ afterEach(async () => {
   await fs.rm(workspaceRoot, { force: true, maxRetries: 5, recursive: true, retryDelay: 50 });
 });
 
-describe("Agent execution API", () => {
-  it("creates a durable execution and invokes a bounded read tool", async () => {
-    const createdResponse = await createExecution(new Request("http://localhost/agent", {
-      method: "POST",
-      body: JSON.stringify({
-        instruction: "读取项目说明",
-        resultNodeId: "agent-node-1",
-        triggerNodeId: "source-node-1",
-        selectedNodeIds: ["source-node-1"],
-      }),
-    }), { params: Promise.resolve({ projectId }) });
-    expect(createdResponse.status).toBe(201);
-    const created = await createdResponse.json() as { detail: { id: string } };
+describe("Agent execution compatibility API", () => {
+  it("reads an internally created execution and invokes a bounded read tool", async () => {
+    const created = await createAgentExecution({
+      instruction: "读取项目说明",
+      projectId,
+      resultNodeId: "agent-node-1",
+      selectedNodeIds: ["source-node-1"],
+      triggerNodeId: "source-node-1",
+    }, dataDir);
 
     const toolResponse = await patchExecution(new Request("http://localhost/agent", {
       method: "PATCH",
@@ -58,25 +54,27 @@ describe("Agent execution API", () => {
     });
   });
 
-  it("rejects direct terminal stage writes", async () => {
-    const createdResponse = await createExecution(new Request("http://localhost/agent", {
-      method: "POST",
-      body: JSON.stringify({ instruction: "检查", resultNodeId: "agent-node-2", triggerNodeId: "source-node-2" }),
-    }), { params: Promise.resolve({ projectId }) });
-    const created = await createdResponse.json() as { detail: { id: string } };
+  it("rejects retired standalone execution mutations", async () => {
+    const created = await createAgentExecution({
+      instruction: "检查",
+      projectId,
+      resultNodeId: "agent-node-2",
+      triggerNodeId: "source-node-2",
+    }, dataDir);
     const response = await patchExecution(new Request("http://localhost/agent", {
       method: "PATCH",
-      body: JSON.stringify({ action: "stage", stage: "completed" }),
+      body: JSON.stringify({ action: "complete", resultSummary: "retired" }),
     }), { params: Promise.resolve({ projectId, executionId: created.detail.id }) });
     expect(response.status).toBe(400);
   });
 
-  it("rejects starting the unified runtime without a model", async () => {
-    const createdResponse = await createExecution(new Request("http://localhost/agent", {
-      method: "POST",
-      body: JSON.stringify({ instruction: "检查", resultNodeId: "agent-node-3", triggerNodeId: "source-node-3" }),
-    }), { params: Promise.resolve({ projectId }) });
-    const created = await createdResponse.json() as { detail: { id: string } };
+  it("rejects starting the retired standalone runtime without a model", async () => {
+    const created = await createAgentExecution({
+      instruction: "检查",
+      projectId,
+      resultNodeId: "agent-node-3",
+      triggerNodeId: "source-node-3",
+    }, dataDir);
     const response = await patchExecution(new Request("http://localhost/agent", {
       method: "PATCH",
       body: JSON.stringify({ action: "run", model: "" }),

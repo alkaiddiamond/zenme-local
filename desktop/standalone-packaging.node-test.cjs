@@ -100,11 +100,11 @@ test("packaged desktop starts standalone server while development keeps next dev
   assert.match(desktopMain, /LOCAL_MODEL_OCR_CACHE_PATH/);
   assert.match(desktopMain, /LOCAL_MODEL_OCR_LANG_PATH/);
   assert.match(desktopMain, /verifyPackagedWorkspaceFlow/);
-  assert.match(desktopMain, /workspace_status/);
-  assert.match(desktopMain, /edit_file/);
-  assert.match(desktopMain, /npm test/);
-  assert.match(desktopMain, /npm run preview/);
-  assert.match(desktopMain, /task_stop/);
+  assert.match(desktopMain, /body: \{ rootPath: workspaceRoot \}/);
+  assert.match(desktopMain, /spawnSync\(npmExecutable, \["test"\]/);
+  assert.match(desktopMain, /spawn\(npmExecutable, \["run", "preview"\]/);
+  assert.match(desktopMain, /verifyBrowserText\(previewUrl, "beta"\)/);
+  assert.match(desktopMain, /verifyBrowserText\(previewUrl, "gamma"\)/);
   assert.match(desktopMain, /\[zenme-smoke\] failed/);
   assert.match(desktopMain, /app\.exit\(1\)/);
 });

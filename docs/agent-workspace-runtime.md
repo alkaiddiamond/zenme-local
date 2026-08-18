@@ -8,11 +8,11 @@
 - 普通问题直接形成 assistant 事件；需要读取、搜索、提案或命令时，同一个 Turn 在服务端进入工具循环，不再由前端分别判断“聊天”或“执行”。
 - Session 保存完整瀑布事件；发给模型的是独立投影，可清理旧工具正文并在阈值处压缩，不改写用户可见历史。
 - 画布只提供一种面向用户的 Agent 入口：创建 `textGeneration` 输入节点，并在其下游创建带 Turn 瀑布流的 AI 回复节点。浮动按钮、单节点动作和多选工具栏都只是在创建同一种输入节点；用户不需要预先区分聊天、Workspace Agent 或 Global Agent，统一 Project Agent 根据任务自主决定是否调用工具或 `delegate_tasks`。运行中只展开当前阶段并显示已完成步数，完成后收起工具、思考、状态与压缩事件为“执行记录”。旧 Agent Execution 与 Global Orchestration 节点继续兼容读取和渲染，但不再作为新任务入口。
-- 失败或主动停止的 AI 回复节点提供显式“重试”。节点式重试不会覆盖或复活原 Turn，而是以原始提示和模型创建新的下游 Turn；旧回复节点继续保留失败原因、工具证据和审批记录，符合画布分支语义。
+- 失败或主动停止的 AI 回复节点提供显式“重试”。重试复用原 `turnId/resultNodeId` 并在原 AI 回复节点中恢复运行，读取原 user event 持久化的提示、模型、`canvasContext`、`selectedNodeIds` 与 `fileDocumentIds` 快照；失败状态和旧工具证据在同一 Turn 审计历史中保留，不再创建新的下游 AI 回复节点。
 - 同一项目同一时刻只运行一个 Turn。不同项目可独立运行。
 - GPT-5.6/OpenAI-compatible Chat Completions 与 Responses 服务商使用原生 function/tool calling；Responses 事件会转换为统一工具调用流，再进入同一 Session、权限和执行循环。一次响应中的多个原生工具调用按 provider index 完整保留，主 Agent 和 Sub-agent 会处理完整批次后才再次请求模型，不再静默丢弃第二个及后续调用。模型只被允许批量发出相互独立的读取工具；写入、命令和交互动作仍逐次经过原有权限与顺序边界。不支持原生工具的服务商保留严格 JSON 决策协议作为兼容层，该协议不是第二个用户入口。
-- 历史 Workspace Agent 节点、Global Agent 派生任务和主 Project Agent 都通过服务端统一运行时执行。新任务只从 Project Agent Turn 创建；画布客户端只负责启动、恢复、轮询与展示，不解析模型决策，也不维护第二套权限、聊天消息或命令状态。
-- Project Agent Turn 以及历史兼容的独立 Agent Execution、Global Orchestration 启动请求都只负责注册项目级服务端作业并立即返回 `202`；实际模型循环不绑定渲染器请求信号。AI 回复节点轮询持久化事件，切换项目或刷新后会恢复瀑布流。相同 ID 的重复启动会复用活动作业，显式停止会取消作业并清理运行中的命令进程。
+- 历史 Workspace Agent / Global Agent 画布节点只保留既有记录读取、审计和必要停止操作，不再重新进入模型运行时。新任务只从 Project Agent Turn 创建；画布客户端只负责启动、恢复、轮询与展示当前 Turn，不解析模型决策，也不维护第二套权限、聊天消息或命令状态。
+- Project Agent Turn 的启动请求只负责注册项目级服务端作业并立即返回 `202`；实际模型循环不绑定渲染器请求信号。AI 回复节点轮询持久化事件，切换项目或刷新后会恢复瀑布流。旧 `agentExecution/globalAgent` 画布节点只保留查询、审计、ChangeSet 回看与停止仍在运行的历史任务，不再提供独立创建、规划、批准、重试或续跑入口。
 - 模型正文不再等完整响应结束才显示。Provider 的文本 delta 会合并到当前 Turn 唯一的 `assistantDraft` Item，并以 250ms 级活动轮询更新 AI 回复节点；最终答复原子替换草稿，进入工具调用、审批、失败或停止时草稿被清理。兼容层的 JSON 工具协议不会作为正文闪现，草稿也不进入模型上下文、Memory 或压缩摘要。
 - 后台命令是 `shell_command` 的执行模式，不是模型需要枚举或轮询的第二套工作流。Shell 默认前台执行，2 秒后在同一工具事件节流更新进度，15 秒仍未退出时将同一进程转为后台；显式 `run_in_background=true` 则立即返回。结果包含稳定 `taskId`、有界预览和保存完整输出的 `outputFilePath`，后续可按已知 ID 调用 `task_output/task_stop`，也可用 `read_file` 按行读取该精确输出文件。任务进入终态时，运行时向原 Agent 注入一次内部通知；`task_list` 只列出共享开发任务，不枚举后台进程，最终答复中的明确 loopback URL 由界面投影为用户可点击的预览入口。
 - 前台 Turn 完成后，仍在运行的后台命令作为运行时投影显示独立的“后台任务运行中”项目、命令和停止按钮；停止请求由服务端按 `projectId + taskId` 校验并终止进程树。任务终态后活动项消失，内部通知不会作为普通聊天正文长期铺开，完整记录仍保留在执行证据中。
@@ -29,7 +29,7 @@
 - 主 Turn 最多允许 200 次工具决策作为异常服务商的最终保险，不再用较小轮数截断正常的复杂开发任务。普通工具成功或失败都像 cc-haha 一样作为结果返回下一轮模型，由 Agent 诊断、改道或完成；Runtime 不再用“三次相同结果”生成伪回答，也不在主循环中识别或复用所谓“相同服务启动命令”。Sub-agent 同样遵循这一规则，并只受自身最大轮数、权限边界和进程安全上限约束。
 - 长 Turn 的完整工具事件始终保存在 Session 和可追溯执行记录中。提交模型前的 microcompact 投影对齐 cc-haha 的工具边界：只处理 `read_file`、Shell、Glob/Grep、WebSearch/WebFetch、Edit/Write/ApplyPatch/NotebookEdit 等可重建结果；审批、任务、记忆、浏览器、MCP 和其他持久状态永不因“太旧”而被清掉。策略至少保留最近五个可压缩工具结果，并按原始事件与占位符的实际 token 估算差值判断，新增释放不足 4,000 tokens 时不触发。触发后 Session 追加一次 `compact/kind=microcompact` 边界，画布显示释放量；完整原始事件不改写，后续模型投影复用已记录 ID，不重复压缩或刷屏。正在运行、待审批和等待输入的事件同样受保护，因此提升循环容量不会牺牲恢复与审计能力。
 - 主 Agent 和并行 Sub-agent 自动加载每个可读 Workspace Root 中的 `AGENTS.md`、`CLAUDE.md`、`CLAUDE.local.md`、`.claude/CLAUDE.md` 与 `.claude/rules/*.md`。根目录规则从第一次模型调用起生效；Agent 的工具参数触及某个 Root 的子目录后，下次模型调用只按该 `rootId` 从根到子目录加入更具体规则，不会把主根同名目录的规则误用于附加根。这些项目指令在上下文中带稳定 Root 标识，属于 system context 的受控组成部分，但不能扩大 Workspace 能力、改变会话权限或绕过 ChangeSet/命令审批。
-- TypeScript/JavaScript 修改进入完成阶段前，Runtime 会强制插入一次 `code_diagnostics`，而不是只靠模型自觉声明“已验证”。诊断器读取 Workspace 内的 `tsconfig.json`/`jsconfig.json`，返回结构化文件、行列、错误码与严重级别；对尚未应用的 Agent/Sub-agent ChangeSet 使用内存覆盖层分析提案后的代码，不会为了诊断提前写盘。没有支持的配置时明确返回 `available=false`，该结果不等同于测试通过，Agent 仍需按风险运行相关项目检查。
+- `code_diagnostics` 是模型可自主选择的结构化 observation，不由 Runtime 在完成前强制插入。诊断器读取 Workspace 内的 `tsconfig.json`/`jsconfig.json`，返回结构化文件、行列、错误码与严重级别；对尚未应用的 Agent/Sub-agent ChangeSet 使用内存覆盖层分析提案后的代码，不会为了诊断提前写盘。没有支持的配置时明确返回 `available=false`，该结果不等同于测试通过，Agent 仍需按风险运行相关项目检查。
 
 ## 通用 Agent 默认设置
 
@@ -104,7 +104,7 @@ run_approved_command
 
 Plan Mode 对齐 cc-haha 的会话状态机，而不是额外建立“只生成计划”的对话入口。普通模式仅在实现路径存在重大歧义或高影响重构时向模型暴露 `enter_plan_mode`；调用后无需用户先确认，Project Session 立即切换为 `interactionMode=plan` 并继续同一 Turn。规划模式只向模型暴露读取、搜索、观察、提问、Todo、只读 MCP 与 `exit_plan_mode`，文件写入、Shell、Sub-agent 和有外部副作用的 MCP 同时在工具暴露层与运行时边界拒绝。`exit_plan_mode` 必须携带完整计划，AI 回复节点在原时间线内展示计划并等待用户批准；批准后恢复普通工具集并继续原 Execution，拒绝或补充反馈则保留规划模式和待修订计划。计划状态随项目 Session 持久化，重启或等待输入后不会丢失。
 
-确定性网页路由只处理明确的搜索/联网请求，或“时间词 + 易变领域”（例如最新版本、近期新闻、当前价格）。单独出现“当前”“现在”不会触发联网，因此“解释当前项目”“检查现在的代码结构”等开发请求仍由 Workspace Agent 处理；模型在确有需要时仍可通过统一工具池自主调用网页工具。
+确定性网页路由只处理明确的搜索/联网请求，或“时间词 + 易变领域”（例如最新版本、近期新闻、当前价格）。单独出现“当前”“现在”不会触发联网，因此“解释当前项目”“检查现在的代码结构”等开发请求仍由统一 Project Agent 处理；模型在确有需要时仍可通过统一工具池自主调用网页工具。
 
 ## MCP 工具扩展
 

@@ -40,6 +40,5 @@ describe("Continuous Global Agent canvas driver", () => {
     const source = readFileSync(new URL("./continuous-global-agent-driver.tsx", import.meta.url), "utf8");
     expect(source).toContain("getContinuousGlobalAgentSupervisorStatesFromApi(normalizedProjectIds)");
     expect(source).not.toContain("<ContinuousGlobalAgentDriver");
-    expect(source).not.toContain("getContinuousGlobalAgentFromApi(projectId)");
   });
 });

@@ -1,21 +1,15 @@
 "use client";
 
 import type { NodeProps } from "@xyflow/react";
-import { AlertTriangle, Archive, Bot, Check, ChevronsDownUp, ChevronsUpDown, FileDiff, Loader2, Pin, Play, RotateCcw, Sparkles, Square } from "lucide-react";
+import { AlertTriangle, Archive, Bot, ChevronsDownUp, ChevronsUpDown, FileDiff, Loader2, Pin, Sparkles, Square } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { ChangeSetDialog } from "@/components/zenme/change-set-dialog";
-import { runWorkspaceAgent } from "@/components/zenme/canvas/workspace-agent-runner";
 import type { CanvasNodeData } from "@/components/zenme/node-types";
 import { NodeFrame } from "@/components/zenme/nodes/node-frame";
 import { NodeActionHandle, NodeContextHandle, NodeEdgeSourceHandle, NodeTargetHandle } from "@/components/zenme/node-ui";
 import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
-import {
-  approveAgentCommandFromApi,
-  executeAgentWorkspaceToolFromApi,
-  getAgentExecutionFromApi,
-  updateAgentExecutionFromApi,
-} from "@/lib/zenme-api";
+import { getAgentExecutionFromApi, updateAgentExecutionFromApi } from "@/lib/zenme-api";
 import type { AgentExecutionDetail } from "@/lib/agent/types";
 
 export function AgentExecutionNode({ data, id, selected }: NodeProps) {
@@ -43,34 +37,10 @@ export function AgentExecutionNode({ data, id, selected }: NodeProps) {
     return () => window.clearInterval(timer);
   }, [detail?.status, refresh]);
 
-  async function approveAndRun(commandId: string) {
-    if (busy) return;
-    setBusy(commandId);
+  async function stopLegacyExecution() {
+    setBusy("stop");
     try {
-      await approveAgentCommandFromApi(projectId, executionId, commandId);
-      await executeAgentWorkspaceToolFromApi({
-        arguments: { commandRequestId: commandId },
-        executionId,
-        name: "run_approved_command",
-        projectId,
-      });
-      await runWorkspaceAgent({ executionId, model: nodeData.agentModel ?? "", projectId });
-      await refresh();
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "命令执行失败");
-      await refresh();
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function mutate(action: "retry" | "stop") {
-    setBusy(action);
-    try {
-      await updateAgentExecutionFromApi({ action, executionId, projectId });
-      if (action === "retry") {
-        await runWorkspaceAgent({ executionId, model: nodeData.agentModel ?? "", projectId });
-      }
+      await updateAgentExecutionFromApi({ action: "stop", executionId, projectId });
       await refresh();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "执行操作失败");
@@ -80,7 +50,6 @@ export function AgentExecutionNode({ data, id, selected }: NodeProps) {
   }
 
   const pendingCommand = detail?.commandRequests.find((command) => command.status === "proposed");
-  const canRetry = detail && ["failed", "timedOut", "stopped", "interrupted"].includes(detail.status);
   const folded = Boolean(nodeData.agentDetailsFolded);
   const terminal = detail && ["succeeded", "failed", "timedOut", "stopped", "interrupted"].includes(detail.status);
 
@@ -111,7 +80,7 @@ export function AgentExecutionNode({ data, id, selected }: NodeProps) {
                 <code className="mt-2 block whitespace-pre-wrap break-all">{pendingCommand.command ?? `${pendingCommand.executable} ${pendingCommand.args.join(" ")}`}</code>
                 <p className="mt-1 text-[11px]">权限边界：{pendingCommand.sandboxMode === "workspace-write" ? "Workspace 范围" : "单次完全访问"}</p>
                 <p className="mt-1 text-[11px]">{pendingCommand.reason}</p>
-                <button className="mt-3 flex items-center gap-1 rounded bg-zinc-900 px-3 py-1.5 text-white disabled:opacity-50" disabled={Boolean(busy)} onClick={() => void approveAndRun(pendingCommand.id)} type="button"><Check className="size-3.5" />批准并运行一次</button>
+                <p className="mt-3 text-[11px] text-amber-800">这是旧版 Workspace Agent 记录；当前版本仅保留查看与停止能力，不再续跑或批准旧执行。</p>
               </div>
             ) : null}
             {detail?.resultSummary ? <div className="rounded-lg bg-emerald-50 p-3 text-emerald-900"><p className="font-medium">执行结果</p><p className="mt-1 whitespace-pre-wrap">{detail.resultSummary}</p></div> : null}
@@ -125,8 +94,7 @@ export function AgentExecutionNode({ data, id, selected }: NodeProps) {
           {terminal ? <button className="rounded p-1.5 hover:bg-zinc-100" onClick={() => nodeData.onUpdateNodeLifecycle?.(id, "pinned")} title="固定在主画布" type="button"><Pin className="size-3.5" /></button> : null}
           {terminal ? <button className="rounded p-1.5 hover:bg-zinc-100" onClick={() => nodeData.onUpdateNodeLifecycle?.(id, "archived")} title="归档（不删除执行记录）" type="button"><Archive className="size-3.5" /></button> : null}
           <span className="rounded bg-zinc-100 px-2 py-1 text-[10px] text-zinc-500">{nodeData.nodeLifecycle ?? "working"}</span>
-          {detail?.status === "running" && detail.stage !== "waitingApproval" ? <button aria-label="停止执行" className="rounded p-1.5 hover:bg-zinc-100" disabled={Boolean(busy)} onClick={() => void mutate("stop")} type="button"><Square className="size-3.5" /></button> : null}
-          {canRetry ? <button className="flex items-center gap-1 rounded px-2 py-1 hover:bg-zinc-100" disabled={Boolean(busy)} onClick={() => void mutate("retry")} type="button">{busy === "retry" ? <Play className="size-3.5" /> : <RotateCcw className="size-3.5" />}重试</button> : null}
+          {detail?.status === "running" ? <button aria-label="停止旧版执行" className="rounded p-1.5 hover:bg-zinc-100" disabled={Boolean(busy)} onClick={() => void stopLegacyExecution()} type="button"><Square className="size-3.5" /></button> : null}
         </footer>
       </NodeFrame>
       {showChangeSets ? <ChangeSetDialog onClose={() => setShowChangeSets(false)} projectId={projectId} /> : null}

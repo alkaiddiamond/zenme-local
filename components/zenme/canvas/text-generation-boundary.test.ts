@@ -44,8 +44,6 @@ describe("text generation request boundary", () => {
     expect(canvasSource).toContain("createUnifiedAgentPrompt");
     expect(menuSource).toContain('onCreateConnectedPlaceholder("textGeneration")');
     expect(canvasSource).not.toContain("<AgentPanel");
-    expect(canvasSource).not.toContain("<GlobalAgentDialog");
-    expect(canvasSource).not.toContain("<WorkspaceAgentTaskDialog");
     expect(menuSource).toContain("继续对话或执行任务");
     expect(menuSource).not.toContain("作为 Workspace Agent 任务运行");
     expect(menuSource).not.toContain("作为 Agent 任务运行");
