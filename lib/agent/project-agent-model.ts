@@ -37,7 +37,7 @@ export async function callProjectAgentModel(input: {
   modelSpeed?: ZenmeModelSpeed;
   maxOutputTokens?: number;
   messages?: ChatMessage[];
-  mode?: "project_agent" | "agent_planning" | "research_evaluation" | "web_extraction";
+  mode?: "project_agent" | "agent_planning" | "web_extraction";
   onThinkingDelta?: (delta: string) => void | Promise<void>;
   onTextDelta?: (delta: string) => void | Promise<void>;
   onToolCallComplete?: (toolCall: { name: string; arguments: unknown }, index: number) => void;

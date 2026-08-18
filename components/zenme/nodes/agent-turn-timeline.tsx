@@ -15,7 +15,7 @@ import {
   stopProjectAgentBackgroundTaskFromApi,
 } from "@/lib/zenme-api";
 import type { ProjectAgentEvent } from "@/lib/agent/project-session-types";
-import { isProjectAgentShellCommandTool } from "@/lib/agent/project-context-policy";
+import { isProjectAgentShellCommandTool, normalizeProjectAgentToolName } from "@/lib/agent/project-context-policy";
 import { openPreviewUrl } from "@/lib/open-preview";
 import { ChangeSetDialog } from "@/components/zenme/change-set-dialog";
 import { hasPendingProjectAgentBackgroundTask, hasPendingProjectAgentMemoryTask } from "@/components/zenme/agent-message-state";
@@ -25,6 +25,7 @@ import { McpElicitationForm, projectMcpElicitationFromEvent } from "@/components
 import { AgentQuestionForm, agentQuestionsFromOutput, type AgentQuestionSubmission } from "@/components/zenme/agent-question-form";
 
 const ACTIVE_TURN_REFRESH_MS = 250;
+const SETTLED_BACKGROUND_REFRESH_MS = 2_000;
 
 export function AgentTurnTimeline({
   failure,
@@ -71,7 +72,8 @@ export function AgentTurnTimeline({
       if (!cancelled) setError(nextError instanceof Error ? nextError.message : "Turn 记录加载失败");
     });
     if (terminal && !busyQuestionId && !hasPendingBackgroundTask && !hasPendingMemoryTask) return () => { cancelled = true; };
-    const timer = window.setInterval(() => void refresh().catch(() => undefined), ACTIVE_TURN_REFRESH_MS);
+    const refreshMs = terminal ? SETTLED_BACKGROUND_REFRESH_MS : ACTIVE_TURN_REFRESH_MS;
+    const timer = window.setInterval(() => void refresh().catch(() => undefined), refreshMs);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -350,12 +352,14 @@ export function AgentTurnTimeline({
           !question;
         if (compactActivity) {
           const failed = event.type === "toolResult" && event.data?.status === "failed";
-          const running = event.type === "toolCall";
+          const running = event.type === "toolCall" && !terminal;
+          const interrupted = event.type === "toolCall" && terminal;
           return (
             <div className={`flex items-start gap-2 text-xs ${failed ? "text-red-600" : "text-zinc-500"}`} key={event.id}>
-              {running ? <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin" /> : failed ? <CircleStop className="mt-0.5 size-3.5 shrink-0" /> : <Check className="mt-0.5 size-3.5 shrink-0" />}
+              {running ? <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin" /> : failed || interrupted ? <CircleStop className="mt-0.5 size-3.5 shrink-0" /> : <Check className="mt-0.5 size-3.5 shrink-0" />}
               <div className="min-w-0">
                 <p className="font-medium">{running ? getActiveAgentToolLabel(String(event.data?.name ?? "")) : toolName}</p>
+                {interrupted ? <p className="mt-0.5 text-zinc-400">未收到对应结果，已随 Turn 结束</p> : null}
                 {event.content ? <p className="mt-0.5 line-clamp-2 text-zinc-400">{agentEventContentForDisplay(event.content)}</p> : null}
               </div>
             </div>
@@ -576,7 +580,7 @@ export function projectTurnEventsForDisplay(events: ProjectAgentEvent[]) {
 export function projectTurnEvidenceEvents(events: ProjectAgentEvent[]) {
   const terminalStage = [...events].reverse().find((event) => event.type === "status")?.data?.stage;
   if (!["completed", "failed", "stopped"].includes(String(terminalStage))) return [];
-  return events.filter((event) => {
+  const evidence = events.filter((event) => {
     if (event.type === "user" || event.type === "assistant" || event.type === "thinking") return false;
     if (event.type === "status") return false;
     if (event.type === "toolResult" && (
@@ -586,6 +590,30 @@ export function projectTurnEvidenceEvents(events: ProjectAgentEvent[]) {
     )) return false;
     return ["toolCall", "toolResult", "approval", "compact", "memory", "todo"].includes(event.type);
   }).sort((left, right) => left.sequence - right.sequence);
+
+  const matchedToolCallIds = new Set<string>();
+  const unmatchedCallsByName = new Map<string, ProjectAgentEvent[]>();
+  for (const event of evidence) {
+    if (event.type === "toolCall") {
+      const name = normalizeProjectAgentToolName(event.data?.name);
+      if (!name) continue;
+      const calls = unmatchedCallsByName.get(name) ?? [];
+      calls.push(event);
+      unmatchedCallsByName.set(name, calls);
+      continue;
+    }
+    if (event.type !== "toolResult") continue;
+    const explicitCallId = typeof event.data?.toolCallEventId === "string" ? event.data.toolCallEventId : "";
+    if (explicitCallId) {
+      matchedToolCallIds.add(explicitCallId);
+      continue;
+    }
+    const name = normalizeProjectAgentToolName(event.data?.name);
+    const calls = name ? unmatchedCallsByName.get(name) : undefined;
+    const legacyMatch = calls?.findLast((call) => call.sequence < event.sequence && !matchedToolCallIds.has(call.id));
+    if (legacyMatch) matchedToolCallIds.add(legacyMatch.id);
+  }
+  return evidence.filter((event) => event.type !== "toolCall" || !matchedToolCallIds.has(event.id));
 }
 
 export function unresolvedProjectTurnApprovals(events: ProjectAgentEvent[]) {

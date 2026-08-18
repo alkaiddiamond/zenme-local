@@ -364,7 +364,7 @@ describe("delegated Sub-agent runtime", { timeout: 15_000 }, () => {
       triggerNodeId: "preview-source",
       instruction: "打开开发页面",
       allowedPathPrefixes: ["."],
-      allowedTools: ["shell_command", "task_output"],
+      allowedTools: ["shell_command", "task_output", "todo_write", "project_task_list"],
     }, dataDir);
     const context = buildDelegatedSubagentContext(detail, "neverAsk", [{
       id: "task-1",
@@ -383,6 +383,8 @@ describe("delegated Sub-agent runtime", { timeout: 15_000 }, () => {
     }], [{ relativePath: "src/AGENTS.md", content: "Only edit src." }]);
 
     expect(context).not.toContain("open_preview");
+    expect(context).not.toContain("todo_write");
+    expect(context).not.toContain("project_task_list");
     expect(context).not.toContain("- task_list [");
     expect(context).not.toContain('允许工具：["shell_command","task_list"');
     expect(context).not.toContain('"taskId":"task-1"');

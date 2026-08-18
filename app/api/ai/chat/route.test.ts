@@ -31,9 +31,8 @@ describe("project agent system prompt", () => {
 describe("isolated web extraction", () => {
   it("disables recursive automatic web search only for page extraction", () => {
     expect(shouldAllowAutomaticWebSearch("web_extraction")).toBe(false);
-    expect(shouldAllowAutomaticWebSearch("research_evaluation")).toBe(false);
     expect(shouldAllowAutomaticWebSearch("agent_planning")).toBe(false);
-    expect(shouldAllowAutomaticWebSearch("project_agent")).toBe(true);
+    expect(shouldAllowAutomaticWebSearch("project_agent")).toBe(false);
     expect(shouldAllowAutomaticWebSearch("chat")).toBe(true);
   });
 
@@ -231,6 +230,7 @@ describe("ChatGPT OAuth chat request", () => {
 
   it("keeps the standard Responses shape for older models", () => {
     expect(createOpenAiOAuthRequestBody({
+      allowWebSearch: true,
       messages: [{ role: "user", content: "继续" }],
       provider: { model: "gpt-5.5" },
       systemContent: "系统提示",
@@ -242,6 +242,15 @@ describe("ChatGPT OAuth chat request", () => {
       store: false,
       tools: [{ type: "web_search" }],
     });
+  });
+
+  it("does not attach provider web search when the caller owns tool choice", () => {
+    expect(createOpenAiOAuthRequestBody({
+      allowWebSearch: false,
+      messages: [{ role: "user", content: "查询最新信息" }],
+      provider: { model: "gpt-5.5" },
+      systemContent: "系统提示",
+    })).not.toHaveProperty("tools");
   });
 });
 

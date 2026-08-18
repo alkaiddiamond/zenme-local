@@ -338,7 +338,33 @@ describe("AI reply node Agent Turn timeline", () => {
       event(7, "status", { stage: "completed" }),
     ];
 
-    expect(projectTurnEvidenceEvents(events).map((item) => item.id)).toEqual(["event-1", "event-2"]);
+    expect(projectTurnEvidenceEvents(events).map((item) => item.id)).toEqual(["event-2"]);
+  });
+
+  it("collapses legacy terminal tool calls into their later result without toolCallEventId", () => {
+    const events = [
+      event(1, "toolCall", { name: "task_list", status: "running" }),
+      event(2, "toolResult", { name: "task_list", status: "failed" }, "参数无效"),
+      event(3, "status", { stage: "failed" }),
+    ];
+
+    expect(projectTurnEvidenceEvents(events).map((item) => item.id)).toEqual(["event-2"]);
+  });
+
+  it("keeps a truly orphaned terminal tool call as interrupted evidence without a running spinner", () => {
+    const events = [
+      event(1, "toolCall", { name: "task_list", status: "running" }),
+      event(2, "status", { stage: "failed" }),
+    ];
+
+    expect(projectTurnEvidenceEvents(events).map((item) => item.id)).toEqual(["event-1"]);
+    expect(timelineSource).toContain('const running = event.type === "toolCall" && !terminal;');
+    expect(timelineSource).toContain("未收到对应结果，已随 Turn 结束");
+  });
+
+  it("uses a slower refresh cadence for settled turns that still own background work", () => {
+    expect(timelineSource).toContain("const SETTLED_BACKGROUND_REFRESH_MS = 2_000;");
+    expect(timelineSource).toContain("const refreshMs = terminal ? SETTLED_BACKGROUND_REFRESH_MS : ACTIVE_TURN_REFRESH_MS;");
   });
 
   it("uses the latest status when a resumed turn starts running again", () => {

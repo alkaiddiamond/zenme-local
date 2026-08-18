@@ -31,7 +31,6 @@ import {
   shouldCompactProjectAgentContext,
   updateProjectAgentContext,
   updateProjectAgentEvent,
-  updateProjectAgentTaskPlan,
   upsertProjectAgentAnswerDraft,
 } from "@/lib/agent/project-session-store";
 import { isProjectAgentShellCommandTool, planProjectAgentCompaction } from "@/lib/agent/project-context-policy";
@@ -132,13 +131,13 @@ const PLAN_MODE_ALLOWED_TOOLS = new Set<AgentWorkspaceToolName>([
   "code_intelligence", "view_image", "read_file", "search_knowledge", "list_mcp_resources",
   "read_mcp_resource", "web_search", "web_fetch", "browser", "ask_user_question",
   "exit_plan_mode", "task_output", "task_get", "task_list", "skill", "tool_search",
-  "git_diff", "todo_write", "write_file", "edit_file",
+  "git_diff", "write_file", "edit_file",
 ]);
 const STREAMABLE_EXCLUSIVE_TOOLS = new Set<AgentWorkspaceToolName>([
   "view_image", "web_search", "web_fetch", "task_output", "task_stop", "skill", "tool_search",
   "image_gen", "image_edit", "propose_memory",
   "write_file", "edit_file", "apply_patch", "notebook_edit", "propose_patch",
-  "todo_write", "task_create", "task_update", "enter_plan_mode", "ask_user_question", "exit_plan_mode", "browser",
+  "task_create", "task_update", "enter_plan_mode", "ask_user_question", "exit_plan_mode", "browser",
   "enter_worktree", "exit_worktree",
   "delegate_tasks", "team_create", "agent_spawn", "send_message", "team_delete",
 ]);
@@ -1318,16 +1317,6 @@ export async function runProjectAgentTurn(input: {
     const recordStreamedToolEffects = async (finalized: FinalizedStreamedToolOutcome[]) => {
       for (const { outcome, output } of finalized) {
         const { decision } = outcome;
-        if (decision.name === "todo_write" && isObject(output) && Array.isArray(output.items)) {
-          const items = output.items as Array<{ id: string; content: string; status: "pending" | "in_progress" | "completed" }>;
-          await updateProjectAgentTaskPlan({ projectId: input.projectId, items }, dataDir);
-          await appendProjectAgentEvent({
-            projectId: input.projectId,
-            turnId,
-            type: "todo",
-            data: { items },
-          }, dataDir);
-        }
         if (decision.name === "tool_search" && isObject(output) && Array.isArray(output.tools)) {
           const availableMcpNames = new Set(mcpDiscovery.tools.map((tool) => tool.name));
           for (const tool of output.tools) {
@@ -1603,7 +1592,6 @@ export async function runProjectAgentTurn(input: {
             prompt: buildTurnInstruction(
               input.prompt,
               research,
-              modelInfo.providerManagedWebResearch,
             ),
             signal: modelStep.signal,
             thinkingEnabled: modelInfo.thinkingEnabled,
@@ -2956,16 +2944,6 @@ export async function runProjectAgentTurn(input: {
             };
           }
         }
-        if (decision.name === "todo_write" && isObject(output) && Array.isArray(output.items)) {
-          const items = output.items as Array<{ id: string; content: string; status: "pending" | "in_progress" | "completed" }>;
-          await updateProjectAgentTaskPlan({ projectId: input.projectId, items }, dataDir);
-          await appendProjectAgentEvent({
-            projectId: input.projectId,
-            turnId,
-            type: "todo",
-            data: { items },
-          }, dataDir);
-        }
         if (!isMcpToolName(decision.name)) updateTurnResearchState(research, decision.name, toolArguments, output);
         if (decision.name === "skill") {
           mergeSkillAllowedTools(turnAdditionalAllowedTools, output);
@@ -3573,10 +3551,10 @@ export async function reconcileProjectAgentBackgroundNotifications(
     listAgentExecutions(projectId, dataDir),
     getProjectAgentSession(projectId, dataDir),
   ]);
-  const notifiedTaskIds = new Set(initialSession.events.flatMap((event) => {
+  const notifiedTaskKeys = new Set(initialSession.events.flatMap((event) => {
     if (event.data?.backgroundTaskNotification !== true || !event.data.output || typeof event.data.output !== "object") return [];
     const id = (event.data.output as { id?: unknown }).id;
-    return typeof id === "string" ? [id] : [];
+    return typeof id === "string" ? [`${event.turnId}:${id}`] : [];
   }));
   const notifiedSubagentRuns = new Set(initialSession.events.flatMap((event) => {
     if (event.data?.backgroundTaskNotification !== true || event.data.name !== "agent_spawn" ||
@@ -3592,6 +3570,17 @@ export async function reconcileProjectAgentBackgroundNotifications(
     if (typeof output.runId !== "string") return [];
     return [`${output.runId}:${typeof output.completedAt === "string" ? output.completedAt : "legacy"}`];
   }));
+  const backgroundTurnsByCommandId = new Map<string, Set<string>>();
+  for (const event of initialSession.events) {
+    if (event.type !== "toolResult" || !isProjectAgentShellCommandTool(event.data?.name) ||
+      !event.data?.output || typeof event.data.output !== "object") continue;
+    const output = event.data.output as { id?: unknown; status?: unknown };
+    if (typeof output.id === "string" && output.status === "running") {
+      const turnIds = backgroundTurnsByCommandId.get(output.id) ?? new Set<string>();
+      turnIds.add(event.turnId);
+      backgroundTurnsByCommandId.set(output.id, turnIds);
+    }
+  }
   const { listAgentWorkflowRuns } = await import("@/lib/agent/workflow-run-store");
   for (const run of await listAgentWorkflowRuns(projectId, dataDir)) {
     if (!run.turnId || !initialSession.events.some((event) => event.turnId === run.turnId)) continue;
@@ -3661,20 +3650,23 @@ export async function reconcileProjectAgentBackgroundNotifications(
     }
   }
   for (const detail of details) {
-    const turnId = detail.resultNodeId;
-    if (!turnId || !initialSession.events.some((event) => event.turnId === turnId)) continue;
     for (const command of detail.commandRequests) {
-      if (command.background !== true || command.status === "approved" || command.status === "proposed" ||
-        notifiedTaskIds.has(command.id) || runtime.backgroundMonitors.has(backgroundMonitorKey(dataDir, projectId, command.id))) continue;
-      const hasStartedEvent = initialSession.events.some((event) => {
-        const eventData = event.data;
-        if (event.turnId !== turnId || event.type !== "toolResult" ||
-          !isProjectAgentShellCommandTool(eventData?.name) ||
-          !eventData?.output || typeof eventData.output !== "object") return false;
-        return (eventData.output as { id?: unknown }).id === command.id;
-      });
-      if (!hasStartedEvent) continue;
+      if (command.status === "approved" || command.status === "proposed") continue;
+      const observedTurnIds = [...(backgroundTurnsByCommandId.get(command.id) ?? [])];
+      if (!observedTurnIds.length && detail.resultNodeId) observedTurnIds.push(detail.resultNodeId);
+      const validTurnIds = observedTurnIds.filter((turnId) =>
+        initialSession.events.some((event) => event.turnId === turnId));
+      if (!validTurnIds.length) continue;
+      const hasStartedBackgroundEvent = backgroundTurnsByCommandId.has(command.id);
+      // A foreground command can be converted in place to a background task
+      // after the interaction budget expires. Older persisted records did not
+      // always flip command.background to true or persist resultNodeId on the
+      // owning Execution, so the durable Session result is the authority for
+      // both background lifecycle and Turn ownership.
+      if (!hasStartedBackgroundEvent) continue;
       if (command.status === "running") {
+        if (runtime.backgroundMonitors.has(backgroundMonitorKey(dataDir, projectId, command.id))) continue;
+        const turnId = validTurnIds.at(-1)!;
         scheduleBackgroundTaskSettlement({
           projectId,
           turnId,
@@ -3699,41 +3691,45 @@ export async function reconcileProjectAgentBackgroundNotifications(
         outputFilePath: command.outputFilePath,
       };
       const notificationContent = `后台任务${backgroundSettlementLabel(command.status)}：${summarizeCommandResult(command.executable, command.args, output, command.command)}${command.outputFilePath ? `\n完整输出：${command.outputFilePath}` : ""}`;
-      await enqueueProjectAgentMessage({
-        projectId,
-        turnId,
-        kind: "task-notification",
-        priority: "later",
-        dedupeKey: `background:${command.id}`,
-        content: notificationContent,
-        data: {
-          status: command.status === "succeeded" ? "succeeded" : "failed",
+      for (const turnId of validTurnIds) {
+        const taskKey = `${turnId}:${command.id}`;
+        if (notifiedTaskKeys.has(taskKey)) continue;
+        await enqueueProjectAgentMessage({
+          projectId,
+          turnId,
+          kind: "task-notification",
+          priority: "later",
+          dedupeKey: `background:${turnId}:${command.id}`,
+          content: notificationContent,
+          data: {
+            status: command.status === "succeeded" ? "succeeded" : "failed",
+            executionId: detail.id,
+            name: "shell_command",
+            output,
+            reconciled: true,
+          },
+        }, dataDir);
+        await dispatchProjectAgentNotificationHook({
+          projectId,
+          turnId,
           executionId: detail.id,
-          name: "shell_command",
-          output,
-          reconciled: true,
-        },
-      }, dataDir);
-      await dispatchProjectAgentNotificationHook({
-        projectId,
-        turnId,
-        executionId: detail.id,
-        notificationType: "background_task",
-        title: "后台任务已结束",
-        message: notificationContent,
-        dataDir,
-        callModel: _options.callModel,
-      }).catch(() => undefined);
-      await drainProjectAgentQueuedMessages(projectId, turnId, dataDir);
-      const refreshedSession = await getProjectAgentSession(projectId, dataDir);
-      const notification = [...refreshedSession.events].reverse().find((event) =>
-        event.turnId === turnId && event.data?.backgroundTaskNotification === true &&
-        isObject(event.data.output) && event.data.output.id === command.id);
-      const latestStatus = [...initialSession.events].reverse().find((event) => event.turnId === turnId && event.type === "status");
-      if (notification && (latestStatus?.sequence ?? 0) < notification.sequence && latestStatus) {
-        await appendProjectAgentEvent({ projectId, turnId, type: "status", data: { ...latestStatus.data } }, dataDir);
+          notificationType: "background_task",
+          title: "后台任务已结束",
+          message: notificationContent,
+          dataDir,
+          callModel: _options.callModel,
+        }).catch(() => undefined);
+        await drainProjectAgentQueuedMessages(projectId, turnId, dataDir);
+        const refreshedSession = await getProjectAgentSession(projectId, dataDir);
+        const notification = [...refreshedSession.events].reverse().find((event) =>
+          event.turnId === turnId && event.data?.backgroundTaskNotification === true &&
+          isObject(event.data.output) && event.data.output.id === command.id);
+        const latestStatus = [...initialSession.events].reverse().find((event) => event.turnId === turnId && event.type === "status");
+        if (notification && (latestStatus?.sequence ?? 0) < notification.sequence && latestStatus) {
+          await appendProjectAgentEvent({ projectId, turnId, type: "status", data: { ...latestStatus.data } }, dataDir);
+        }
+        notifiedTaskKeys.add(taskKey);
       }
-      notifiedTaskIds.add(command.id);
     }
   }
 }
@@ -4230,7 +4226,6 @@ async function resolveTurnModel(
   return {
     contextWindow: config?.contextWindow || selection.provider.contextWindows[selection.modelId] || DEFAULT_CONTEXT_WINDOW,
     permissionMode: permissionMode ?? session.context.permissionMode ?? settings.defaultSessionPermissionMode,
-    providerManagedWebResearch: selection.provider.apiFormat === "openai_oauth",
     thinkingEnabled: settings.thinkingEnabled,
     reasoningEffort: settings.defaultReasoningEffort,
     modelSpeed: settings.defaultModelSpeed,
@@ -4340,31 +4335,11 @@ function formatRelevantProjectKnowledge(results: readonly KnowledgeSearchResult[
 function buildTurnInstruction(
   prompt: string,
   research: TurnResearchState,
-  providerManagedWebResearch = false,
 ) {
   const backgroundInstruction = "Shell 默认前台执行；run_in_background=true 会立即返回 taskId 与 outputFilePath，前台长命令也可能由运行时把同一进程转为后台。后台终态会主动通知；task_list 是项目工作项列表，不是 Shell 进程列表。";
   const teamInstruction = "team_create + agent_spawn 可建立持续存在、可寻址的具名成员；delegate_tasks 提供一次性并行 Sub-agent。根据当前协作目标自行选择。agent_spawn mode='plan' 会让成员先进入只读计划协议：成员返回 teammateName、requestId 与 plan 后，负责人必须用 send_message 的 plan_approval_response 明确批准或拒绝；拒绝时 feedback 必填，批准后成员才获得写入和执行工具。后台成员完成时会主动通知。send_message 可按成员名称定向，to='*' 只广播纯文本；结构化消息不能广播；存在活跃、待审批或等待输入的成员时不得 team_delete。";
   const browserInstruction = "Browser 只操作用户提供或工具输出中真实出现的 URL；不得扫描端口、猜测 localhost 地址或用 Browser 代替 Shell 管理开发服务。";
   const workflowInstruction = "只有用户明确要求运行 Workflow、多 Agent 编排，或已加载的 Skill 明确要求时，才可调用 workflow；普通开发、启动服务、检查状态和单次委派不得自行升级为 Workflow。Workflow 启动前只批准一次，运行期间不要轮询，结束后会主动通知。";
-  if (providerManagedWebResearch) {
-    return [
-      `当前用户请求：${prompt}`,
-      "如果可以直接回答，返回普通文本，或返回 {\"type\":\"complete\",\"summary\":\"...\"}。",
-      "当前服务商会在请求需要最新网页信息时自动提供托管网页检索结果。直接基于服务商返回的网页证据完成回答，并保留可验证的来源链接；不要调用 Zenme 本地的 web_search 或 web_fetch。",
-      "不要向用户暴露搜索命令、内部引用编号、原始工具载荷或中间抓取状态。若托管检索没有提供足够证据，应明确说明限制，不要编造，也不要用本地网页抓取器重复检索。",
-      "workspace_status 提供 Workspace/Git 状态摘要；git_diff 读取 Git 变更正文。根据当前问题选择需要的观察工具，不要把其中一个当成另一个的固定前置步骤。",
-      "仅当缺少的信息会显著改变结果且不能通过现有上下文或工具发现时，调用 ask_user_question；当前 Turn 会暂停，用户回答后会作为工具结果写回并继续同一 Turn。",
-      "需要真实执行命令时调用 shell_command；Workspace 外绝对 cwd 会触发目录授权。",
-      backgroundInstruction,
-      browserInstruction,
-      teamInstruction,
-      workflowInstruction,
-      "当独立并行工作能显著帮助完成目标时可调用 delegate_tasks；给每个 Sub-agent 清晰目标和最小必要范围。Sub-agent 不得递归委派。",
-      "task_create/task_list/task_get/task_update 管理共享项目工作项；它们不查询后台进程，也不代替实际执行。是否需要任务结构由你根据当前目标决定。",
-      "上下文中若存在已采纳的 Continuous Global Agent 建议，只在它与当前请求相关且需要结构化协作时才创建项目任务，并把它视为待验证的工作提示；不得把建议描述当作已完成事实，也不得绕过工具、权限或审批直接执行。",
-      "工具通过服务商原生 function/tool calling 提供；必须使用原生工具调用，不要输出工具 JSON、伪造工具结果或把命令写成教程。",
-    ].join("\n");
-  }
   return [
     `当前用户请求：${prompt}`,
     "如果可以直接回答，返回普通文本，或返回 {\"type\":\"complete\",\"summary\":\"...\"}。",

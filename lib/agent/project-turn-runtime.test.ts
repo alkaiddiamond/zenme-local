@@ -27,6 +27,7 @@ import {
   restoreActiveMcpToolNames,
 } from "@/lib/agent/project-turn-runtime";
 import { createLocalProject } from "@/lib/local/project-repository";
+import { getProjectDir } from "@/lib/local/data-dir";
 import { getLocalSettings, updateLocalSettings } from "@/lib/local/settings";
 import { addLocalWorkspaceRoot, bindLocalWorkspace, setLocalWorkspacePermissions } from "@/lib/local/workspace-repository";
 import { approveAgentCommand, getAgentBackgroundTask, proposeAgentCommand, rejectAgentCommand, runApprovedAgentCommand, stopAgentBackgroundTask } from "@/lib/agent/command-runtime";
@@ -3272,7 +3273,7 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
     expect(execution?.commandRequests.map((command) => command.status)).toEqual(["succeeded", "failed"]);
   }, 15_000);
 
-  it("lets the ChatGPT provider handle current web research in one model turn", async () => {
+  it("lets the ChatGPT Project Agent choose local web tools instead of runtime keyword routing", async () => {
     const chatGptProvider = createChatGptProvider();
     chatGptProvider.modelMapping.main = "gpt-5.6-sol";
     chatGptProvider.models = [{
@@ -3283,7 +3284,9 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
     await updateLocalSettings({ modelProviders: [chatGptProvider] }, dataDir);
     const managedModel = getProviderModelSelections([chatGptProvider], "text")[0]!.id;
     const prompts: string[] = [];
-    let toolCalls = 0;
+    const candidate = "https://weather.example.org/shanghai";
+    const toolCalls: string[] = [];
+    let modelCalls = 0;
 
     const result = await runProjectAgentTurn({
       projectId,
@@ -3292,24 +3295,39 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
     }, {
       dataDir,
       callModel: async (input) => {
+        modelCalls += 1;
         prompts.push(input.prompt);
-        return { text: "这是托管检索后生成的最终回答。", usage: null };
+        expect(input.allowedAgentTools).toEqual(expect.arrayContaining(["web_search", "web_fetch"]));
+        if (modelCalls === 1) {
+          return { text: "", toolCall: { name: "web_search", arguments: { query: "上海 台风 近期影响" } }, usage: null };
+        }
+        if (modelCalls === 2) {
+          return { text: "", toolCall: { name: "web_fetch", arguments: { url: candidate, prompt: "提取近期影响" } }, usage: null };
+        }
+        return { text: "根据已读取页面，上海近期受到台风外围影响。", usage: null };
       },
-      executeTool: async () => {
-        toolCalls += 1;
-        throw new Error("不应调用本地网页工具");
+      executeTool: async (toolInput) => {
+        toolCalls.push(toolInput.name);
+        if (toolInput.name === "web_search") return { query: "上海 台风 近期影响", sources: [candidate] } as never;
+        if (toolInput.name === "web_fetch") return {
+          summary: "上海近期受到台风外围影响。",
+          claims: [{ claim: "上海近期受到台风外围影响。" }],
+          contentType: "text/html",
+          finalUrl: candidate,
+          truncated: false,
+        } as never;
+        throw new Error("unexpected tool");
       },
     });
 
     expect(result).toMatchObject({
       status: "completed",
-      answer: "这是托管检索后生成的最终回答。",
+      answer: "根据已读取页面，上海近期受到台风外围影响。",
     });
-    expect(prompts).toHaveLength(1);
-    expect(prompts[0]).toContain("服务商会在请求需要最新网页信息时自动提供托管网页检索结果");
-    expect(prompts[0]).not.toContain("- web_search [read]");
-    expect(prompts[0]).not.toContain("- web_fetch [read]");
-    expect(toolCalls).toBe(0);
+    expect(prompts).toHaveLength(3);
+    expect(prompts[0]).not.toContain("服务商会在请求需要最新网页信息时自动提供托管网页检索结果");
+    expect(prompts[0]).toContain("web_search 用于发现未知候选 URL");
+    expect(toolCalls).toEqual(["web_search", "web_fetch"]);
   });
 
   it("treats search results as private candidates and lets evidence sufficiency drive source count", async () => {
@@ -4406,7 +4424,7 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
     expect(session.events.filter((event) => event.data?.interactivePromptDetected === true)).toHaveLength(1);
   });
 
-  it("reconciles a previous server instance background task into the project session", async () => {
+  it("reconciles a previous server instance task that was exposed as background even if its legacy background flag is false", async () => {
     await fs.writeFile(path.join(workspaceRoot, "package.json"), JSON.stringify({ scripts: { dev: "node server.js" } }));
     await bindLocalWorkspace({ projectId, rootPath: workspaceRoot }, dataDir);
     await setLocalWorkspacePermissions({ projectId, permissions: { execute: true } }, dataDir);
@@ -4424,7 +4442,7 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
       executable: "npm",
       args: ["run", "dev"],
       reason: "启动开发服务",
-      background: true,
+      background: false,
     }, dataDir);
     await updateAgentCommandRequest(projectId, created.detail.id, command.id, (current) => {
       current.status = "running";
@@ -4439,6 +4457,12 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
       data: { name: "run_command", status: "succeeded", output: { id: command.id, status: "running" } },
     }, dataDir);
     await appendProjectAgentEvent({ projectId, turnId, type: "status", data: { stage: "completed" } }, dataDir);
+
+    const legacyDetailPath = path.join(getProjectDir(projectId, dataDir), "executions", "agent", `${created.detail.id}.json`);
+    const legacyDetail = JSON.parse(await fs.readFile(legacyDetailPath, "utf8")) as Record<string, unknown>;
+    delete legacyDetail.resultNodeId;
+    delete legacyDetail.triggerNodeId;
+    await fs.writeFile(legacyDetailPath, JSON.stringify(legacyDetail, null, 2), "utf8");
 
     await expect(getAgentBackgroundTask(projectId, command.id, dataDir)).resolves.toMatchObject({ status: "stopped" });
     await reconcileProjectAgentBackgroundNotifications(projectId, dataDir);
@@ -4455,6 +4479,68 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
       },
     });
     expect(session.events.at(-1)).toMatchObject({ type: "status", data: { stage: "completed" } });
+  });
+
+  it("reconciles the same terminal background task into every Turn that observed it running", async () => {
+    await fs.writeFile(path.join(workspaceRoot, "package.json"), JSON.stringify({ scripts: { dev: "node server.js" } }));
+    await bindLocalWorkspace({ projectId, rootPath: workspaceRoot }, dataDir);
+    await setLocalWorkspacePermissions({ projectId, permissions: { execute: true } }, dataDir);
+    const firstTurnId = "shared-background-first-turn";
+    const secondTurnId = "shared-background-second-turn";
+    for (const turnId of [firstTurnId, secondTurnId]) {
+      await appendProjectAgentEvent({ projectId, turnId, type: "user", content: "观察开发服务" }, dataDir);
+    }
+    const created = await createAgentExecution({
+      projectId,
+      instruction: "启动开发服务",
+      resultNodeId: firstTurnId,
+      triggerNodeId: firstTurnId,
+    }, dataDir);
+    const command = await proposeAgentCommand({
+      projectId,
+      executionId: created.detail.id,
+      executable: "npm",
+      args: ["run", "dev"],
+      reason: "启动开发服务",
+      background: true,
+    }, dataDir);
+    await updateAgentCommandRequest(projectId, created.detail.id, command.id, (current) => {
+      current.status = "failed";
+      current.error = "开发服务启动失败";
+      current.completedAt = new Date().toISOString();
+      current.updatedAt = current.completedAt;
+    }, dataDir);
+    for (const turnId of [firstTurnId, secondTurnId]) {
+      await appendProjectAgentEvent({
+        projectId,
+        turnId,
+        type: "toolResult",
+        data: { name: "run_command", status: "succeeded", output: { id: command.id, status: "running" } },
+      }, dataDir);
+      await appendProjectAgentEvent({ projectId, turnId, type: "status", data: { stage: "failed" } }, dataDir);
+    }
+    await appendProjectAgentEvent({
+      projectId,
+      turnId: firstTurnId,
+      type: "toolResult",
+      content: "后台任务失败：开发服务启动失败",
+      data: {
+        name: "shell_command",
+        status: "failed",
+        backgroundTaskNotification: true,
+        output: { id: command.id, status: "failed" },
+      },
+    }, dataDir);
+
+    await reconcileProjectAgentBackgroundNotifications(projectId, dataDir);
+
+    const session = await getProjectAgentSession(projectId, dataDir);
+    const notifications = session.events.filter((event) =>
+      event.data?.backgroundTaskNotification === true &&
+      event.data?.output && typeof event.data.output === "object" &&
+      (event.data.output as { id?: unknown }).id === command.id);
+    expect(notifications.filter((event) => event.turnId === firstTurnId)).toHaveLength(1);
+    expect(notifications.filter((event) => event.turnId === secondTurnId)).toHaveLength(1);
   });
 
   it("reconciles an undelivered terminal Sub-agent run exactly once", async () => {

@@ -968,7 +968,10 @@ export function buildDelegatedSubagentContext(
 
 function delegatedAllowedTools(detail: AgentExecutionDetail): AgentWorkspaceToolName[] {
   return (detail.context.allowedTools ?? []).filter((name) =>
-    name !== "ask_user_question" && name !== "delegate_tasks" && name !== "run_approved_command");
+    name !== "ask_user_question" &&
+    name !== "delegate_tasks" &&
+    name !== "run_approved_command" &&
+    getAgentToolDefinition(name)?.internal !== true);
 }
 
 function formatDelegatedMcpContext(

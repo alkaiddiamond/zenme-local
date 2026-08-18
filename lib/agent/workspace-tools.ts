@@ -171,6 +171,9 @@ export async function executeAgentWorkspaceTool<Name extends AgentWorkspaceToolN
   }
   const definition = getAgentToolDefinition(input.name);
   if (!definition) throw new AgentWorkspaceToolError("Agent 工具不存在", "invalid_arguments");
+  if (definition.internal && input.name !== "run_approved_command") {
+    throw new AgentWorkspaceToolError("该历史兼容工具不再允许通过当前 Agent Runtime 执行", "invalid_arguments");
+  }
   const execution = await getAgentExecution(input.projectId, input.executionId, dataDir);
   if (!execution) throw new AgentWorkspaceToolError("Agent Execution 不存在", "invalid_arguments");
   const configuredHooks = execution.context.agentHooks && input.delegatedModel
@@ -730,8 +733,6 @@ async function runTool<Name extends AgentWorkspaceToolName>(
       return sendTeamMessage(input.projectId, input.arguments as AgentWorkspaceToolArguments["send_message"], dataDir, input.delegatedCallModel, input.delegatedReasoningEffort, input.delegatedModelSpeed) as Promise<AgentWorkspaceToolResult[Name]>;
     case "team_delete":
       return deleteTeam(input.projectId, input.arguments as AgentWorkspaceToolArguments["team_delete"], dataDir) as Promise<AgentWorkspaceToolResult[Name]>;
-    case "todo_write":
-      return Promise.resolve({ items: (input.arguments as AgentWorkspaceToolArguments["todo_write"]).items }) as Promise<AgentWorkspaceToolResult[Name]>;
     case "task_create": {
       const task = await createProjectAgentTask({
         projectId: input.projectId,
@@ -750,7 +751,6 @@ async function runTool<Name extends AgentWorkspaceToolName>(
         ),
       } as AgentWorkspaceToolResult[Name];
     case "task_list":
-    case "project_task_list":
       return { tasks: await listProjectAgentTasks(input.projectId, dataDir) } as AgentWorkspaceToolResult[Name];
     case "task_update": {
       const task = await updateProjectAgentTask({
@@ -789,6 +789,8 @@ async function runTool<Name extends AgentWorkspaceToolName>(
         signal: input.signal,
         onProgress: input.onCommandProgress,
       }, dataDir) as Promise<AgentWorkspaceToolResult[Name]>;
+    default:
+      throw new AgentWorkspaceToolError("该工具仅用于历史兼容，当前 Agent Runtime 不再执行", "invalid_arguments");
   }
 }
 
@@ -1835,7 +1837,7 @@ function toolPaths(name: AgentWorkspaceToolName, args: AgentWorkspaceToolArgumen
   }
   if (name === "apply_patch") return applyPatchPaths((args as AgentWorkspaceToolArguments["apply_patch"]).patch);
   if (name === "notebook_edit") return [(args as AgentWorkspaceToolArguments["notebook_edit"]).relativePath];
-  if (name === "shell_command" || name === "task_output" || name === "task_stop" || name === "todo_write" || name === "skill" || name === "tool_search") return [];
+  if (name === "shell_command" || name === "task_output" || name === "task_stop" || name === "skill" || name === "tool_search") return [];
   if (name === "git_diff") return (args as AgentWorkspaceToolArguments["git_diff"]).relativePaths ?? ["."];
   if (name === "propose_patch") {
     return (args as AgentWorkspaceToolArguments["propose_patch"]).operations.flatMap((operation) =>

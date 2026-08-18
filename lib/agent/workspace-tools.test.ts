@@ -1609,21 +1609,21 @@ describe("agent workspace tools", { timeout: 15_000 }, () => {
     await expect(listWorkspaceChangeSets(projectId, dataDir)).resolves.toEqual([]);
   });
 
-  it("persists Todo state in tool history and discovers real tools", async () => {
-    const todo = await executeAgentWorkspaceTool({
+  it("rejects retired internal task tools from the generic runtime and still discovers current tools", async () => {
+    await expect(executeAgentWorkspaceTool({
       projectId, executionId, name: "todo_write",
       arguments: { items: [{ id: "inspect", content: "检查实现", status: "in_progress" }] },
-    }, dataDir);
+    }, dataDir)).rejects.toThrow("历史兼容工具不再允许");
+    await expect(executeAgentWorkspaceTool({
+      projectId, executionId, name: "project_task_list",
+      arguments: {},
+    }, dataDir)).rejects.toThrow("历史兼容工具不再允许");
     const discovered = await executeAgentWorkspaceTool({
       projectId, executionId, name: "tool_search",
       arguments: { query: "Glob", maxResults: 5 },
     }, dataDir);
 
-    expect(todo.items).toEqual([{ id: "inspect", content: "检查实现", status: "in_progress" }]);
     expect(discovered.tools).toEqual(expect.arrayContaining([expect.objectContaining({ name: "glob_files" })]));
-    await expect(getAgentExecution(projectId, executionId, dataDir)).resolves.toMatchObject({
-      toolCalls: expect.arrayContaining([expect.objectContaining({ name: "todo_write", status: "succeeded" })]),
-    });
   });
 
   it("does not return blanket-denied built-in or MCP tools from ToolSearch", async () => {

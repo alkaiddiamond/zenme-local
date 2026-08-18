@@ -325,7 +325,7 @@ cc-haha 中 Ant/KAIROS/实验 feature gate 的 PostSampling 消费者不自动�
 
 2026-08-18 Windows 使用真实 ChatGPT OAuth 与 `provider-model:chatgpt-official:gpt-5.3-codex-spark` 验证通过，Vitest **1/1，exit 0**。临时 Workspace 的修复 token 不存在于可读 Workspace 文件中，只会由第一次真实失败命令输出暴露，因此 Agent 必须消费真实失败 observation 才能继续。
 
-同一工作树的常规 `npm run check` 也已通过：**251/252 个 Vitest 文件通过，1 个 live 文件按设计跳过；1440/1441 项测试通过，1 项 live 测试按设计跳过；Desktop Node tests 23/23 通过；ESLint 通过。** Live test 已由上面的显式真实模型命令单独执行并 1/1 通过，因此常规门禁不会偷偷消耗在线模型额度。
+同一工作树的常规 `npm run check` 也已通过：**251/252 个 Vitest 文件通过，1 个 live 文件按设计跳过；1444/1445 项测试通过，1 项 live 测试按设计跳过；Desktop Node tests 23/23 通过；ESLint 通过。** Live test 已由上面的显式真实模型命令单独执行并 1/1 通过，因此常规门禁不会偷偷消耗在线模型额度。
 
 同一工作树随后执行 `npm run verify`，完整重复 lint/test 并完成 Next.js production build，**exit 0**。clean build 后 `.next/standalone` 通过污染检查，明确输出 `standalone-trace-clean`；Windows `npm run desktop:pack` **exit 0**；`npm run desktop:smoke` **exit 0**，启动最新 `dist-desktop/win-unpacked/Zenme.exe` 并完成 packaged Electron/standalone/Browser/临时 Workspace 冒烟链路。
 

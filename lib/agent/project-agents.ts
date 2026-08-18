@@ -4,6 +4,7 @@ import type { Dirent } from "node:fs";
 import { load as parseYaml } from "js-yaml";
 
 import type { AgentWorkspaceToolName } from "@/lib/agent/types";
+import { getAgentToolDefinition } from "@/lib/agent/tool-registry";
 import { BUILT_IN_PROJECT_AGENTS } from "@/lib/agent/built-in-agents";
 import {
   normalizeProjectAgentMcpServers,
@@ -68,7 +69,7 @@ const TOOL_ALIASES: Record<string, AgentWorkspaceToolName[]> = {
   taskget: ["task_get"],
   tasklist: ["task_list"],
   taskupdate: ["task_update"],
-  todowrite: ["todo_write"],
+  todowrite: [],
   webfetch: ["web_fetch"],
   websearch: ["web_search"],
   write: ["write_file"],
@@ -319,7 +320,9 @@ function normalizeAgentPermissionMode(value: unknown): ZenmeSessionPermissionMod
 }
 function mapTools(values: string[]) {
   if (!values.length) return undefined;
-  const tools = values.flatMap((value) => TOOL_ALIASES[value.replace(/[^A-Za-z]/g, "").toLowerCase()] ?? [value as AgentWorkspaceToolName]);
+  const tools = values
+    .flatMap((value) => TOOL_ALIASES[value.replace(/[^A-Za-z]/g, "").toLowerCase()] ?? [value as AgentWorkspaceToolName])
+    .filter((tool) => getAgentToolDefinition(tool)?.internal !== true);
   return [...new Set(tools)];
 }
 function assertAgentName(value: string) {

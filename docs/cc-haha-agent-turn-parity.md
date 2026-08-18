@@ -14,7 +14,7 @@
 - 默认工具池、ToolSearch/deferred tools、Task/Plan、Workflow、Skills/Commands、MCP Resources、Worktree、Image、Web、Shell、Team/SendMessage 均完成源码级可达性审计；Brief/Cron/Sleep/Monitor/KAIROS 等非默认工具按其真实 gate 排除。
 - `AgentTool` 的外部可达参数已对齐：普通 Agent 可省略 `name`、默认同步；显式后台/Agent `background:true`/Team 成员异步；Team 成员要求稳定名称；`mode=plan`、`isolation=worktree`、模型继承与同 Execution resume 已接通；`SendMessage` 可按名称或 raw agentId 恢复普通后台 Agent。
 - sampling/context 默认语义已接通：context overflow 响应式压缩、microcompact、手动 `/compact`、`max_output_tokens` 64K 提升与同 Turn 有界 continuation；PostSampling 的当前外部消费者均受 ant/默认关闭 gate 约束，因此不构成默认缺口。
-- 新增自治行为回归覆盖：无效工具参数自修正、重复 observation 不强停、主/子 Agent completion 不被强制 diagnostics 改写、模型主动选择 diagnostics、历史工具协议迁移与退休策略工具隐藏。当前 `npm run check` 已通过：251/252 个 Vitest 文件、1440/1441 项测试通过，唯一跳过项是默认不消耗在线额度的 Live Autonomy；Desktop Node tests 23/23。真实 `gpt-5.3-codex-spark` Live Autonomy 已显式执行 1/1、exit 0。
+- 新增自治行为回归覆盖：无效工具参数自修正、重复 observation 不强停、主/子 Agent completion 不被强制 diagnostics 改写、模型主动选择 diagnostics、历史工具协议迁移与退休策略工具隐藏，以及历史后台任务跨 Turn 收束。当前 `npm run check` 已通过：251/252 个 Vitest 文件、1444/1445 项测试通过，唯一跳过项是默认不消耗在线额度的 Live Autonomy；Desktop Node tests 23/23。真实 `gpt-5.3-codex-spark` Live Autonomy 已再次显式执行 1/1、exit 0。
 - 当前自治清理工作树的 `npm run verify` 已完整 exit 0；clean standalone 输出 `standalone-trace-clean`；Windows `npm run desktop:pack` exit 0；`npm run desktop:smoke` exit 0。因而此前“需要重新确认本轮门禁”的保留项已经闭环。
 
 ## 默认工具池审计
@@ -102,6 +102,6 @@
 1. 默认外部、实际可达的表格能力均有生产实现和回归测试；ant-only、compile-time gated 与 dormant-only 路径已通过源码审计明确排除，而不是用 Zenme 的空壳功能冒充。
 2. 普通对话、文件修改、测试失败恢复、后台开发服务、用户追加指令、审批、上下文压缩、Sub-agent 与工具搜索均通过 Project Agent 单入口完成。
 3. 运行中画布只突出当前活动；Turn 结束后只保留最终回答、结果动作和可展开证据，不暴露内部通知或重复状态。
-4. 当前工作树的 `npm run check` 与真实 Spark Autonomy 验收已通过；`npm run verify`、Windows packaged smoke 需要在本轮自治清理后重新取得最终证据，不能沿用自治清理前的旧绿灯。
+4. 当前工作树的 `npm run check`、`npm run verify`、standalone runtime、Windows `desktop:pack`、packaged `desktop:smoke` 与真实 Spark Autonomy 验收均已重新执行并通过，不依赖自治清理前的旧绿灯。
 
 表格中仍保留的“真实第三方服务/真机/MDM/macOS”文字是**集成认证清单**，不再作为当前外部默认 Agent Turn Runtime 的未完成项；若未来把这些平台能力纳入 Zenme 产品发布范围，应分别建立对应环境的认证门禁。

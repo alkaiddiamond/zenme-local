@@ -81,7 +81,7 @@
 | 重启恢复与待审阅结果 | 复用 Agent 恢复，Orchestration 从持久记录同步 | `lib/agent/execution-store.test.ts`、`lib/global-agent/orchestration-store.test.ts` | 通过 |
 | Windows 并行调度、停止和审阅交互 | 2026-08-12 Electron 开发版：两个不重叠任务同时运行并各自产生 Proposed ChangeSet；失败任务可单独重试，停止后结果仍保留 | 本文件“Windows Electron 最终回归记录” | 通过 |
 | 统一 Project Agent 入口并行委派 | `delegate_tasks` 复用 Global Orchestration，服务端 Sub-agent 使用统一原生工具协议、路径/工具范围和命令权限边界；主 Turn 等待结果后汇总 | `lib/global-agent/delegated-runtime.test.ts`、`lib/agent/project-turn-runtime.test.ts` | 通过 |
-| 历史个人任务计划兼容 | `todo_write` 仅用于恢复旧 Turn/旧 UI 记录；当前模型默认使用 Task V2，不再把旧个人任务协议作为新 Agent 的计划语义 | `lib/agent/project-session-store.test.ts`、`lib/agent/project-context-policy.test.ts`、`components/zenme/nodes/agent-turn-timeline.test.ts` | 通过 |
+| 历史个人任务计划兼容 | `todo_write/project_task_list` 只保留历史记录、类型与模型投影迁移；当前 Tool Registry 不向模型暴露，自定义 Agent frontmatter 与历史 Sub-agent `allowedTools` 会过滤这些 internal 工具，通用 Agent Tool API 也拒绝执行；新 Agent 统一使用 Task V2 | `lib/agent/project-agents.test.ts`、`lib/agent/workspace-tools.test.ts`、`lib/global-agent/delegated-runtime.test.ts`、`lib/agent/project-context-policy.test.ts`、`components/zenme/nodes/agent-turn-timeline.test.ts` | 通过 |
 | 主/子 Agent 共享任务列表 | `task_create/task_get/task_list/task_update` 使用稳定 ID 原子维护描述、负责人、状态和依赖；主 Agent、独立 Execution 与真实 Orchestration Sub-agent 共享，循环依赖在写入前拒绝，且不与后台进程任务混用 | `lib/agent/project-session-store.test.ts`、`lib/agent/workspace-tools.test.ts`、`lib/global-agent/delegated-runtime.test.ts` | 通过 |
 | Codex/cc-haha 项目指令继承 | 主 Agent 首轮自动加载每个可读 Root 的根目录 `AGENTS.md`/`CLAUDE.md`，触及子目录后按稳定 Root ID 懒加载更具体指令；并行 Sub-agent 只继承分配 Root 与允许路径的规则且不能借此扩大权限 | `lib/agent/project-instructions.test.ts`、`lib/agent/project-turn-runtime.test.ts`、`lib/global-agent/delegated-runtime.test.ts` | 通过 |
 | 多 Root Sub-agent 隔离 | Global 任务显式绑定稳定 Root ID；文件、诊断、补丁、Git 与命令工具自动注入并强制校验该 Root，不同 Root 的同名路径不产生冲突，基线与 ChangeSet 不串根 | `lib/agent/workspace-tools.test.ts`、`lib/global-agent/orchestration-store.test.ts` | 通过 |
@@ -97,8 +97,9 @@
 | 审批瀑布流归并 | 同一命令的后续批准/拒绝事件消除历史 pending 卡片；多个并行命令只保留真正未决的审批 | `components/zenme/nodes/agent-turn-timeline.test.ts` | 通过 |
 | Sub-agent 实时活动投影 | 调度中持续读取子 Execution，把最新工具/命令活动幂等投影到父 AI 回复节点；投影不重复进入模型上下文，Turn 结束后自动折叠 | `lib/global-agent/delegated-runtime.test.ts`、`lib/agent/workspace-tools.test.ts`、`lib/agent/project-session-store.test.ts`、`components/zenme/nodes/agent-turn-timeline.test.ts` | 通过 |
 | 后台任务跨 Turn 可见与可停止 | 前台 Turn 完成后仍显示运行中的项目级任务；节点可直接停止对应进程树，终态通知到达后活动项消失 | `components/zenme/nodes/agent-turn-timeline.test.ts`、`app/api/projects/project-agent-session-api.test.ts`、`lib/agent/workspace-tools.test.ts` | 通过 |
-| 后台任务终态通知 | Shell 返回稳定 taskId/outputFilePath；模型不枚举后台任务。终态通知按 taskId 去重进入统一队列，并在 Agent 空闲时自动恢复原 Turn | `lib/agent/project-turn-runtime.test.ts`、`lib/agent/workspace-tools.test.ts`、`lib/global-agent/orchestration-store.test.ts` | 通过 |
-| Continuous Agent 建议采纳闭环 | 未采纳候选保持隔离；用户明确采纳后，有界建议进入后续 Project Agent 上下文并可按相关性纳入 `todo_write`，但不会被标记为已执行，也不绕过工具、权限、审批和 Workspace 范围校验 | `lib/global-agent/continuous-store.test.ts`、`lib/agent/project-turn-runtime.test.ts` | 通过 |
+| 历史后台任务收束与终态证据归并 | Session 中曾返回 `running` 的 Shell 任务即使来自旧 Execution（缺少 `resultNodeId`、`background` 标记不可靠，或同一 taskId 被多个 Turn 观察）也会按 `turnId + taskId` 补齐终态通知；终态执行证据把 toolCall/toolResult 归并为一次工具执行，孤立 call 显示为已随 Turn 结束而不是持续 spinner；终态后台跟踪降为 2 秒刷新 | `lib/agent/project-turn-runtime.test.ts`、`components/zenme/nodes/agent-turn-timeline.test.ts`；2026-08-18 在真实 `music_workbench` Session 验证 `no-stale-running-background-tasks` | 通过 |
+| 后台任务终态通知 | Shell 返回稳定 taskId/outputFilePath；模型不枚举后台任务。终态通知按 `turnId + taskId` 对每个曾观察到该后台任务的 Turn 独立去重并收束，再在 Agent 空闲时恢复对应 Turn；同一 taskId 不会因另一个 Turn 已收到通知而被错误吞掉 | `lib/agent/project-turn-runtime.test.ts`、`lib/agent/workspace-tools.test.ts`、`lib/global-agent/orchestration-store.test.ts` | 通过 |
+| Continuous Agent 建议采纳闭环 | 未采纳候选保持隔离；用户明确采纳后，有界建议进入后续 Project Agent 上下文，并可由模型按相关性通过 Task V2 建立/更新共享工作项；建议不会被标记为已执行，也不绕过工具、权限、审批和 Workspace 范围校验 | `lib/global-agent/continuous-store.test.ts`、`lib/agent/project-turn-runtime.test.ts` | 通过 |
 | Continuous Agent 服务重启恢复 | active run 持久化本地服务运行实例；新实例会归档旧 `running`、保持 checkpoint 不变并重新领取同批未处理事件，不会永久卡住或丢事件 | `lib/global-agent/continuous-store.test.ts`、`app/api/projects/continuous-global-agent-api.test.ts` | 通过 |
 | Workspace 图片观察 | `view_image` 在真实路径与 Sub-agent 范围内读取、旋转和有界缩放图片；下一模型轮次收到原生图片输入，Session/Execution 不持久化 base64，链接逃逸被拒绝 | `lib/agent/workspace-tools.test.ts`、`lib/agent/project-turn-runtime.test.ts`、`lib/global-agent/delegated-runtime.test.ts` | 通过 |
 | Project Knowledge 自动召回 | 已就绪的图/向量索引在 Turn 首次模型调用前按当前请求执行有限召回；上下文只有来源元数据和匹配片段，不要求模型先调用工具，索引不可用时可降级 | `lib/agent/project-turn-runtime.test.ts`、`lib/knowledge/index-store.test.ts` | 通过 |
@@ -156,8 +157,8 @@
 | 父 Turn 停止级联与后台任务续接 | 停止父 Turn 后 Global Orchestration、Sub-agent Execution 和命令进程统一收束；后台终态只产生一次内部通知，不启动第二个命令，并通过恢复原 Turn 继续处理 | `lib/agent/project-turn-runtime.test.ts`、`lib/global-agent/orchestration-store.test.ts` | 通过 |
 | Agent 所属命令退出语义 | Agent 结束或父级停止清理后台命令时持久化为 `stopped`，不被进程关闭回调误报为普通失败 | `lib/agent/workspace-tools.test.ts` | 通过 |
 | 网页工具自治边界 | Runtime 不再按“最新/新闻/影响”等关键词替模型分类研究任务或规定来源数量；`web_search` 只发现候选，`web_fetch` 读取正文，是否继续检索由模型依据当前证据决定 | `lib/agent/project-turn-runtime.test.ts` | 通过 |
-| `npm run check` | 2026-08-18 当前自治清理工作树：251/252 个 Vitest 文件通过，1 个真实模型 Live Autonomy 文件按设计跳过；1440/1441 项测试通过，1 项 live 测试按设计跳过；23/23 desktop node tests 与 ESLint 全部通过。真实 `gpt-5.3-codex-spark` Live Autonomy 已另行显式执行 1/1 通过 | 通过 |
-| `npm run verify` | 2026-08-18 当前自治清理工作树：常规 Vitest 251/252 文件、1440/1441 项测试通过，唯一跳过项为默认不调用在线模型的 Live Autonomy；Desktop Node tests 23/23；ESLint 与 Next production build 全部通过，命令 exit 0。真实 `gpt-5.3-codex-spark` Live Autonomy 已另行显式 1/1、exit 0 | 通过 |
+| `npm run check` | 2026-08-18 当前旧协议/heuristic 清理工作树：251/252 个 Vitest 文件通过，1 个真实模型 Live Autonomy 文件按设计跳过；1444/1445 项测试通过，1 项 live 测试按设计跳过；23/23 desktop node tests 与 ESLint 全部通过，命令 exit 0。真实 `gpt-5.3-codex-spark` Live Autonomy 已另行显式执行 1/1 通过 | 通过 |
+| `npm run verify` 等价两阶段 | 2026-08-18 当前旧协议/heuristic 清理工作树已分别执行 `npm run check` 与 `npm run build`：Vitest 251/252 文件、1444/1445 项测试通过，唯一跳过项为默认不调用在线模型的 Live Autonomy；Desktop Node 23/23、ESLint、Next production build 与 TypeScript 全部通过，两个阶段均 exit 0。未重复调用仅负责串联这两阶段的 `npm run verify` wrapper | 通过 |
 | 独立运行时追踪 | `node desktop/scripts/verify-standalone-runtime.cjs` 通过；Workspace 动态目录不会把源码树打进 NFT | 通过 |
 | Windows 目录包与启动冒烟 | 2026-08-18 当前自治清理工作树：clean standalone 明确 `standalone-trace-clean`；`npm run desktop:pack` exit 0 生成最新 `win-unpacked`；`npm run desktop:smoke` exit 0，使用临时数据目录启动打包应用并完成 packaged Workspace/Browser 冒烟 | 通过 |
 | `git diff --check`、完整 Diff 与仓库状态 | 2026-08-18 当前自治清理审计：`git diff --check` exit 0；分支 `codex/ai-project-workspace`、基线 `6f8b793`；状态仅含本轮源码/测试/文档修改和新增自治文档/live test，`dist-desktop/.next` 等生成物未进入 Git；敏感 fixture/真实 token 扫描通过 | 通过 |
@@ -182,13 +183,10 @@
 
 本轮桌面回归发现并修复三项真实集成缺陷：项目切换后 Canvas 会话可能继续使用旧 `projectId`；读取短文件时合理的超 EOF `endLine` 被误判非法；Next.js 不同 Route Bundle 没有共享 Agent 活跃状态，导致重试立即被识别为重启中断。三项均有自动化回归证据。
 
-## 最终桌面回归清单
+## Agent Turn 可用性边界
 
-本轮结束后仍需在 Windows Electron 开发版补充以下 UI 行为，才能把剩余“待真机”改为“通过”：
+本目标中的“可用”指基本、常见的 Agent Turn 能力可以在真实 Workspace 与桌面运行链路中完成，而不是要求通过 500+ 节点大画布容量门禁，也不是要求把所有低频管理 UI 逐个人工点击一遍。2026-08-18 当前工作树已经验证：普通读取/搜索、文件修改、Shell 执行与失败恢复、审批暂停/同 Turn 恢复、Ask User Question、Plan Mode、Task V2、后台任务终态续接、Skill、一次性及并行 Sub-agent 均通过定向回归；真实 `gpt-5.3-codex-spark` Live Autonomy 1/1、exit 0；当前源码重新打包后的 `npm run desktop:smoke` exit 0。
 
-1. Agent 节点展示 Planning → Reading/Editing → Waiting Approval → Testing → Completed；停止、恢复控制和下游重试已有自动化证据，仍需在 Electron 中复验完整点击链路。
-2. Memory 修订后重新候选、删除以及来源变化后的待验证状态。
-3. Knowledge 索引清除后的空状态与再次重建（清除是破坏性操作，需单独确认）。
-4. Global Agent 确认 Fold/Promote/Archive，以及从归档面板恢复。
+以下内容属于独立的扩展 UI / 管理 / 容量验收，不作为“常见 Agent Turn 当前可用”的阻塞项：Memory 的完整人工管理点击链路；Knowledge 清除与重建等破坏性管理操作；Global Agent Fold/Promote/Archive 的完整人工点击链路；500/1000 节点等大画布容量与性能门禁；真实第三方 MCP/LSP/MDM/macOS 等平台集成认证。它们需要单独声明和单独验收，不能与 Agent Runtime 基本可用性混为一谈。
 
-桌面发布不在本目标声明范围；若要声明可发布，还必须另行执行平台打包与 `npm run desktop:smoke`。
+若要声明桌面发布就绪，仍应单独执行对应平台 release gate；本轮 Windows packaged Workspace/Browser smoke 已通过，但不等同于所有平台发布认证。
