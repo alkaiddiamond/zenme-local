@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -33,5 +34,12 @@ describe("Continuous Global Agent canvas driver", () => {
       "project-1",
       "",
     ])).toEqual(["project-1", "project-2"]);
+  });
+
+  it("uses one app-wide supervisor request instead of one polling driver per project", () => {
+    const source = readFileSync(new URL("./continuous-global-agent-driver.tsx", import.meta.url), "utf8");
+    expect(source).toContain("getContinuousGlobalAgentSupervisorStatesFromApi(normalizedProjectIds)");
+    expect(source).not.toContain("<ContinuousGlobalAgentDriver");
+    expect(source).not.toContain("getContinuousGlobalAgentFromApi(projectId)");
   });
 });

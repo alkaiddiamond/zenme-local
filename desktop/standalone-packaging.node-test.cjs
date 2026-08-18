@@ -31,6 +31,8 @@ const packagedVerifier = fs.readFileSync(
 
 test("desktop packages the traced Next standalone runtime", () => {
   assert.match(nextConfig, /output: "standalone"/);
+  assert.match(nextConfig, /distDir: nextDistDir/);
+  assert.match(nextConfig, /NODE_ENV === "development" \? "\.next-dev" : "\.next"/);
   assert.match(packageJson.scripts.build, /prepare-standalone-build\.cjs/);
   assert.match(standalonePreparer, /\.next["'],\s*["']standalone/);
   assert.match(standalonePreparer, /rmSync\(standaloneDir, \{ force: true, recursive: true \}\)/);
@@ -92,6 +94,7 @@ test("packaged desktop starts standalone server while development keeps next dev
   );
   assert.match(desktopMain, /path\.join\(root, "server\.js"\)/);
   assert.match(desktopMain, /require\.resolve\("next\/dist\/bin\/next"\)/);
+  assert.match(desktopMain, /ZENME_NEXT_DIST_DIR = "\.next-dev"/);
   assert.match(desktopMain, /"dev",[\s\S]*?"--hostname"/);
   assert.match(desktopMain, /ELECTRON_RUN_AS_NODE/);
   assert.match(desktopMain, /LOCAL_MODEL_OCR_CACHE_PATH/);

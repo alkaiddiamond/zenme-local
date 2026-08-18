@@ -45,6 +45,26 @@ export async function getContinuousGlobalAgentState(projectId: string, dataDir =
   return mutate(projectId, dataDir, (state) => state);
 }
 
+export async function listConfiguredContinuousGlobalAgentStates(
+  projectIds: readonly string[],
+  dataDir = getZenmeDataDir(),
+) {
+  const uniqueProjectIds = [...new Set(projectIds.map((projectId) => projectId.trim()).filter(Boolean))].slice(0, 1_000);
+  const states = await Promise.all(uniqueProjectIds.map(async (projectId) => {
+    try {
+      assertSafePathSegment(projectId, "projectId");
+      const state = await readJsonFile<ContinuousGlobalAgentState | null>(storePath(projectId, dataDir), {
+        defaultValue: null,
+        normalize: normalizeState,
+      });
+      return state?.mode === "enabled" ? state : null;
+    } catch {
+      return null;
+    }
+  }));
+  return states.filter((state): state is ContinuousGlobalAgentState => Boolean(state));
+}
+
 export async function getAcceptedContinuousAgentSuggestions(projectId: string, dataDir = getZenmeDataDir()) {
   const state = await getContinuousGlobalAgentState(projectId, dataDir);
   return state.suggestions

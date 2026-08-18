@@ -124,10 +124,11 @@ export async function callProjectAgentModel(input: {
     } catch (error) {
       const retrySafeStreamFailure = error instanceof ProjectAgentModelStreamError &&
         !error.partialText && !error.thinkingSummary;
+      const retrySafeTransportFailure = isTransientProjectAgentTransportFailure(error);
       const canRetry = attempt < retryDelays.length &&
         !input.signal?.aborted &&
         !emittedObservableOutput &&
-        (error instanceof ProjectAgentModelRequestError || retrySafeStreamFailure) &&
+        (error instanceof ProjectAgentModelRequestError || retrySafeStreamFailure || retrySafeTransportFailure) &&
         isTransientProjectAgentModelFailure(error);
       if (!canRetry) throw error;
       const delayMs = Math.max(0, retryDelays[attempt] ?? 0);
@@ -151,7 +152,29 @@ export function isTransientProjectAgentModelFailure(error: unknown) {
     }
   }
   if (error instanceof ProjectAgentModelStreamError && error.code !== "stream_error") return false;
+  if (isTransientProjectAgentTransportFailure(error)) return true;
   return /(overloaded|at capacity|server(?:s)? (?:are )?busy|temporar(?:ily|y) unavailable|service unavailable|try again later|rate limit|too many requests|服务(?:商)?暂时不可用|请求过于频繁)/i.test(message);
+}
+
+function isTransientProjectAgentTransportFailure(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  if (error.name === "AbortError") return false;
+  const code = transientErrorCode(error);
+  if (["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN", "ECONNREFUSED", "ENETUNREACH", "EHOSTUNREACH"].includes(code)) {
+    return true;
+  }
+  return /(?:fetch failed|network error|network request failed|socket hang up|connection reset|connection timed out|temporary failure in name resolution)/i.test(error.message);
+}
+
+function transientErrorCode(error: Error) {
+  const direct = (error as Error & { code?: unknown }).code;
+  if (typeof direct === "string") return direct.toUpperCase();
+  const cause = (error as Error & { cause?: unknown }).cause;
+  if (cause && typeof cause === "object" && "code" in cause) {
+    const nested = (cause as { code?: unknown }).code;
+    if (typeof nested === "string") return nested.toUpperCase();
+  }
+  return "";
 }
 
 function waitForTransientModelRetry(delayMs: number, signal?: AbortSignal) {

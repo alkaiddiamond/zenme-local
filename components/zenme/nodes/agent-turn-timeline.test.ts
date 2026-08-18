@@ -12,6 +12,7 @@ describe("AI reply node Agent Turn timeline", () => {
     expect(timelineSource).toContain("border-zinc-200 bg-white");
     expect(timelineSource).toContain("text-zinc-700");
     expect(timelineSource).toContain("bg-red-50 px-3 py-2 text-xs text-red-700");
+    expect(timelineSource).toContain("text-amber-600");
     expect(timelineSource).toContain("border-zinc-200/80 bg-zinc-50/70");
     expect(timelineSource).toContain("aria-expanded={showEvidence}");
   });
@@ -402,6 +403,17 @@ describe("AI reply node Agent Turn timeline", () => {
 
     expect(projectTurnTerminalError(events)).toBe("研究未能形成最终回答");
     expect(projectTurnSettledState(events)).toEqual({ status: "failed", error: "研究未能形成最终回答" });
+  });
+
+  it("prefers the terminal runtime failure over an earlier recoverable tool error", () => {
+    const events = [
+      event(1, "toolResult", { name: "web_fetch", status: "failed" }, "网页读取失败（404）"),
+      event(2, "status", { stage: "thinking" }),
+      event(3, "status", { stage: "failed", error: "模型服务暂时不可用" }),
+    ];
+
+    expect(projectTurnTerminalError(events)).toBe("模型服务暂时不可用");
+    expect(projectTurnSettledState(events)).toEqual({ status: "failed", error: "模型服务暂时不可用" });
   });
 
   it("offers a fresh downstream retry only for failed or stopped Turns", () => {

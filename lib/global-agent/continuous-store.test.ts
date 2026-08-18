@@ -11,6 +11,7 @@ import {
   failContinuousAgentRun,
   getAcceptedContinuousAgentSuggestions,
   getContinuousGlobalAgentState,
+  listConfiguredContinuousGlobalAgentStates,
   reconcileContinuousAgentRuntime,
   updateContinuousAgentSuggestion,
 } from "@/lib/global-agent/continuous-store";
@@ -42,6 +43,21 @@ describe("Continuous Global Agent checkpoint", () => {
     expect(duplicate.id).toBe(first.id);
     expect((await getContinuousGlobalAgentState(projectId, dataDir)).events).toHaveLength(1);
     await expect(claimContinuousAgentRun(projectId, dataDir)).resolves.toBeNull();
+  });
+
+  it("lists only configured enabled projects for the app-wide supervisor", async () => {
+    const disabledProjectId = (await createLocalProject({ name: "Disabled", prompt: "", model: "" }, dataDir)).id;
+    await getContinuousGlobalAgentState(disabledProjectId, dataDir);
+    await configureContinuousGlobalAgent({ projectId, mode: "enabled", modelId: "provider:model" }, dataDir);
+
+    await expect(listConfiguredContinuousGlobalAgentStates([
+      projectId,
+      disabledProjectId,
+      "missing-project",
+      projectId,
+    ], dataDir)).resolves.toEqual([
+      expect.objectContaining({ projectId, mode: "enabled" }),
+    ]);
   });
 
   it("claims pending events once and resumes from a durable checkpoint", async () => {

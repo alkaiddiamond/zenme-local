@@ -1939,6 +1939,18 @@ describe("approved agent commands", { timeout: 15_000 }, () => {
     ).Path).toBe("C:\\Program Files\\nodejs;C:\\Windows\\System32");
   });
 
+  it("hydrates and expands Windows system variables for child tools", () => {
+    const env = buildCommandEnvironment(
+      "powershell",
+      { Path: "C:\\Windows\\System32", PROGRAMDATA: "%SystemDrive%\\ProgramData" },
+      "win32",
+      "C:\\Program Files\\nodejs\\node.exe",
+    );
+
+    expect(env.SystemDrive).toBe("C:");
+    expect(env.PROGRAMDATA).toBe("C:\\ProgramData");
+  });
+
   it("keeps declared development scripts in the foreground until the runtime budget expires", async () => {
     const command = await proposeAgentCommand({
       projectId,

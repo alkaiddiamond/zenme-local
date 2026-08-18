@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { spawn } = require("node:child_process");
 const path = require("node:path");
+const { ensureWindowsEnvironment } = require("./windows-environment.cjs");
+
+ensureWindowsEnvironment();
 
 const prepareDevElectronApp = path.resolve(
   __dirname,

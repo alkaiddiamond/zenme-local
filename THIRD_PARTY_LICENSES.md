@@ -174,7 +174,7 @@ Original license files remain bundled with their packages. Electron distribution
 | eventsource-parser | 3.1.1 | MIT | [source](ssh://git@github.com/rexxars/eventsource-parser) |
 | external-editor | 3.1.0 | MIT | [source](https://github.com/mrkmg/node-external-editor) |
 | fast-deep-equal | 3.1.3 | MIT | [source](https://github.com/epoberezkin/fast-deep-equal) |
-| fast-uri | 3.1.4 | BSD-3-Clause | [source](https://github.com/fastify/fast-uri) |
+| fast-uri | 3.1.5 | BSD-3-Clause | [source](https://github.com/fastify/fast-uri) |
 | fflate | 0.8.3 | MIT | [source](https://github.com/101arrowz/fflate) |
 | file-type | 21.3.4 | MIT | [source](https://github.com/sindresorhus/file-type) |
 | fill-range | 7.1.1 | MIT | [source](https://github.com/jonschlinkert/fill-range) |
@@ -198,7 +198,7 @@ Original license files remain bundled with their packages. Electron distribution
 | is-url | 1.2.4 | MIT | [source](https://github.com/segmentio/is-url) |
 | isexe | 2.0.0 | ISC | [source](https://github.com/isaacs/isexe) |
 | jose | 6.2.8 | MIT | [source](https://github.com/panva/jose) |
-| js-yaml | 4.1.1 | MIT | [source](https://github.com/nodeca/js-yaml) |
+| js-yaml | 4.3.1 | MIT | [source](https://github.com/nodeca/js-yaml) |
 | json-schema-traverse | 1.0.0 | MIT | [source](https://github.com/epoberezkin/json-schema-traverse) |
 | jsonfile | 6.2.1 | MIT | [source](https://github.com/jprichardson/node-jsonfile) |
 | katex | 0.16.47 | MIT | [source](https://github.com/KaTeX/KaTeX) |
@@ -207,19 +207,18 @@ Original license files remain bundled with their packages. Electron distribution
 | ms | 2.1.3 | MIT | [source](https://github.com/vercel/ms) |
 | music-metadata | 11.14.0 | MIT | [source](https://github.com/Borewit/music-metadata) |
 | mute-stream | 1.0.0 | ISC | [source](https://github.com/npm/mute-stream) |
-| nanoid | 3.3.16 | MIT | [source](https://github.com/ai/nanoid) |
+| nanoid | 3.3.18 | MIT | [source](https://github.com/ai/nanoid) |
 | next | 16.2.11 | MIT | [source](https://github.com/vercel/next.js) |
 | node-fetch | 2.7.0 | MIT | [source](https://github.com/bitinn/node-fetch) |
 | node-forge | 1.4.0 | (BSD-3-Clause OR GPL-2.0) | [source](https://github.com/digitalbazaar/forge) |
 | normalize-path | 3.0.0 | MIT | [source](https://github.com/jonschlinkert/normalize-path) |
 | opencollective-postinstall | 2.0.3 | MIT | [source](https://github.com/opencollective/opencollective-postinstall) |
-| os-tmpdir | 1.0.2 | MIT | [source](https://github.com/sindresorhus/os-tmpdir) |
 | path-key | 3.1.1 | MIT | [source](https://github.com/sindresorhus/path-key) |
-| pdfjs-dist | 6.0.227 | Apache-2.0 | [source](https://github.com/mozilla/pdf.js) |
+| pdfjs-dist | 6.2.108 | Apache-2.0 | [source](https://github.com/mozilla/pdf.js) |
 | picocolors | 1.1.1 | ISC | [source](https://github.com/alexeyraspopov/picocolors) |
 | picomatch | 2.3.2 | MIT | [source](https://github.com/micromatch/picomatch) |
 | pkce-challenge | 5.0.1 | MIT | [source](https://github.com/crouchcd/pkce-challenge) |
-| postcss | 8.5.22 | MIT | [source](https://github.com/postcss/postcss) |
+| postcss | 8.5.26 | MIT | [source](https://github.com/postcss/postcss) |
 | pretty-bytes | 5.6.0 | MIT | [source](https://github.com/sindresorhus/pretty-bytes) |
 | react | 19.2.7 | MIT | [source](https://github.com/facebook/react) |
 | react-dom | 19.2.7 | MIT | [source](https://github.com/facebook/react) |
@@ -244,7 +243,6 @@ Original license files remain bundled with their packages. Electron distribution
 | tailwind-merge | 3.6.0 | MIT | [source](https://github.com/dcastil/tailwind-merge) |
 | tesseract.js | 7.0.0 | Apache-2.0 | [source](https://github.com/naptha/tesseract.js) |
 | tesseract.js-core | 7.0.0 | Apache-2.0 | [source](https://github.com/naptha/tesseract.js-core) |
-| tmp | 0.0.33 | MIT | [source](https://github.com/raszi/node-tmp) |
 | to-regex-range | 5.0.1 | MIT | [source](https://github.com/micromatch/to-regex-range) |
 | token-types | 6.1.2 | MIT | [source](https://github.com/Borewit/token-types) |
 | tr46 | 0.0.3 | MIT | [source](https://github.com/Sebmaster/tr46.js) |

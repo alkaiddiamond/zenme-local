@@ -64,6 +64,7 @@ import {
   createExecutionInApi,
   downloadVideoTask,
   generateOrEditImage,
+  getProjectAgentSessionFromApi,
   getVideoTaskStatus,
   listExecutionsFromApi,
   saveProjectThumbnailToApi,
@@ -2639,32 +2640,54 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       const originalSourceNode = retryExistingTurn
         ? currentNodes.find((node) => node.id === currentEdges.find((edge) => edge.target === nodeId)?.source)
         : sourceNode;
-      if (!originalSourceNode) throw new Error("无法重试当前 Agent Turn：原始上游节点不存在");
-      const model = input?.model || sourceNode.data.textGenerationModel || defaultTextModel;
-      const prompt = input?.prompt?.trim() || "请基于这个节点继续处理。";
+      const retrySession = retryExistingTurn ? await getProjectAgentSessionFromApi(projectId) : undefined;
+      const retryUserEvent = retryExistingTurn
+        ? retrySession?.events.find((event) => event.turnId === sourceNode.data.agentTurnId && event.type === "user")
+        : undefined;
+      if (retryExistingTurn && !retryUserEvent) throw new Error("无法重试当前 Agent Turn：原始请求快照不存在");
+      const persistedModel = typeof retryUserEvent?.data?.model === "string" ? retryUserEvent.data.model : undefined;
+      const model = persistedModel || input?.model || sourceNode.data.textGenerationModel || defaultTextModel;
+      const persistedPrompt = retryUserEvent?.content?.trim() || undefined;
+      const prompt = persistedPrompt || input?.prompt?.trim() || "请基于这个节点继续处理。";
       const contextTokenBudget = getCanvasContextTokenBudget({
         contextWindow: configuredModelOptions.find((option) => option.id === model)?.contextWindow,
         prompt,
       });
-      const context = limitTextGenerationContext([
-        getCanvasNodeContextText(originalSourceNode),
-        collectTextGenerationContext({
-          edges: currentEdges,
-          maxTokens: contextTokenBudget,
-          nodeId: originalSourceNode.id,
-          nodes: currentNodes,
-        }),
-      ], contextTokenBudget);
-      const references = collectAgentTurnReferences({
-        edges: currentEdges,
-        nodeId: originalSourceNode.id,
-        nodes: currentNodes,
-      });
-      const upstreamImageUrls = collectTextGenerationImageUrls({
-        edges: currentEdges,
-        nodeId: originalSourceNode.id,
-        nodes: currentNodes,
-      });
+      const persistedCanvasContext = typeof retryUserEvent?.data?.canvasContext === "string"
+        ? retryUserEvent.data.canvasContext
+        : undefined;
+      const context = retryExistingTurn
+        ? persistedCanvasContext
+        : limitTextGenerationContext([
+            getCanvasNodeContextText(sourceNode),
+            collectTextGenerationContext({
+              edges: currentEdges,
+              maxTokens: contextTokenBudget,
+              nodeId,
+              nodes: currentNodes,
+            }),
+          ], contextTokenBudget);
+      const references = retryExistingTurn
+        ? {
+            fileDocumentIds: Array.isArray(retryUserEvent?.data?.fileDocumentIds)
+              ? retryUserEvent.data.fileDocumentIds.filter((value): value is string => typeof value === "string")
+              : [],
+            selectedNodeIds: Array.isArray(retryUserEvent?.data?.selectedNodeIds)
+              ? retryUserEvent.data.selectedNodeIds.filter((value): value is string => typeof value === "string")
+              : [],
+          }
+        : collectAgentTurnReferences({
+            edges: currentEdges,
+            nodeId,
+            nodes: currentNodes,
+          });
+      const upstreamImageUrls = originalSourceNode
+        ? collectTextGenerationImageUrls({
+            edges: currentEdges,
+            nodeId: originalSourceNode.id,
+            nodes: currentNodes,
+          })
+        : [];
       const turnId = retryExistingTurn ? sourceNode.data.agentTurnId! : crypto.randomUUID();
       const resultNodeId = retryExistingTurn ? nodeId : crypto.randomUUID();
       const taskStartedAt = Date.now();
@@ -2712,7 +2735,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       nodeAgentControllerRef.current = {
         controller,
         resultNodeId,
-        sourceNodeId: originalSourceNode.id,
+        sourceNodeId: originalSourceNode?.id ?? nodeId,
         turnId,
       };
       try {

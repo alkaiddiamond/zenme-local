@@ -58,6 +58,36 @@ describe("project agent model stream", () => {
     expect(postAiChatMock).toHaveBeenCalledTimes(2);
   });
 
+  it("retries a transient transport failure before any model output", async () => {
+    postAiChatMock
+      .mockRejectedValueOnce(Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } }))
+      .mockResolvedValueOnce(new Response([
+        'data: {"choices":[{"delta":{"content":"网络恢复成功"}}]}',
+        "data: [DONE]",
+        "",
+      ].join("\n\n"), { status: 200 }));
+
+    await expect(callProjectAgentModel({
+      context: "",
+      model: "test:model",
+      prompt: "继续",
+      transientRetryDelaysMs: [0],
+    })).resolves.toMatchObject({ text: "网络恢复成功" });
+    expect(postAiChatMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry an aborted transport request", async () => {
+    postAiChatMock.mockRejectedValueOnce(new DOMException("Aborted", "AbortError"));
+
+    await expect(callProjectAgentModel({
+      context: "",
+      model: "test:model",
+      prompt: "继续",
+      transientRetryDelaysMs: [0, 0],
+    })).rejects.toMatchObject({ name: "AbortError" });
+    expect(postAiChatMock).toHaveBeenCalledTimes(1);
+  });
+
   it("does not retry a transient stream error after user-visible output has started", async () => {
     postAiChatMock.mockResolvedValueOnce(new Response([
       'data: {"choices":[{"delta":{"content":"已经输出"}}]}',

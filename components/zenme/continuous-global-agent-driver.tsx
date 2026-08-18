@@ -3,23 +3,27 @@
 import { useEffect } from "react";
 
 import type { ContinuousGlobalAgentState } from "@/lib/global-agent/continuous-types";
-import { getContinuousGlobalAgentFromApi, runContinuousGlobalAgentFromApi } from "@/lib/zenme-api";
+import { getContinuousGlobalAgentSupervisorStatesFromApi, runContinuousGlobalAgentFromApi } from "@/lib/zenme-api";
 
 const POLL_INTERVAL_MS = 30_000;
 
-export function ContinuousGlobalAgentDriver({ projectId }: { projectId: string }) {
+export function ContinuousGlobalAgentSupervisor({ projectIds }: { projectIds: string[] }) {
+  const projectIdsKey = normalizeContinuousGlobalAgentProjectIds(projectIds).join("\u0000");
   useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let controller: AbortController | undefined;
+    const normalizedProjectIds = projectIdsKey ? projectIdsKey.split("\u0000") : [];
 
     async function tick() {
       controller = new AbortController();
       try {
-        const state = await getContinuousGlobalAgentFromApi(projectId);
-        if (!disposed && shouldRunContinuousGlobalAgent(state, Date.now())) {
-          await runContinuousGlobalAgentFromApi(projectId, controller.signal);
-        }
+        const { states } = await getContinuousGlobalAgentSupervisorStatesFromApi(normalizedProjectIds);
+        if (disposed) return;
+        const now = Date.now();
+        await Promise.allSettled(states
+          .filter((state) => shouldRunContinuousGlobalAgent(state, now))
+          .map((state) => runContinuousGlobalAgentFromApi(state.projectId, controller?.signal)));
       } catch {
         // The durable runtime owns backoff and recovery; this invisible driver
         // must never surface transient provider failures as canvas errors.
@@ -34,15 +38,9 @@ export function ContinuousGlobalAgentDriver({ projectId }: { projectId: string }
       if (timer) clearTimeout(timer);
       controller?.abort();
     };
-  }, [projectId]);
+  }, [projectIdsKey]);
 
   return null;
-}
-
-export function ContinuousGlobalAgentSupervisor({ projectIds }: { projectIds: string[] }) {
-  return normalizeContinuousGlobalAgentProjectIds(projectIds).map((projectId) => (
-    <ContinuousGlobalAgentDriver key={projectId} projectId={projectId} />
-  ));
 }
 
 export function normalizeContinuousGlobalAgentProjectIds(projectIds: string[]) {

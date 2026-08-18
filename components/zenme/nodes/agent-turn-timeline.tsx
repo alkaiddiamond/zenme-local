@@ -354,9 +354,10 @@ export function AgentTurnTimeline({
           const failed = event.type === "toolResult" && event.data?.status === "failed";
           const running = event.type === "toolCall" && !terminal;
           const interrupted = event.type === "toolCall" && terminal;
+          const recoverableFailure = failed && !terminal;
           return (
-            <div className={`flex items-start gap-2 text-xs ${failed ? "text-red-600" : "text-zinc-500"}`} key={event.id}>
-              {running ? <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin" /> : failed || interrupted ? <CircleStop className="mt-0.5 size-3.5 shrink-0" /> : <Check className="mt-0.5 size-3.5 shrink-0" />}
+            <div className={`flex items-start gap-2 text-xs ${failed && terminal ? "text-red-600" : recoverableFailure ? "text-amber-600" : "text-zinc-500"}`} key={event.id}>
+              {running ? <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin" /> : interrupted || (failed && terminal) ? <CircleStop className="mt-0.5 size-3.5 shrink-0" /> : recoverableFailure ? <Wrench className="mt-0.5 size-3.5 shrink-0" /> : <Check className="mt-0.5 size-3.5 shrink-0" />}
               <div className="min-w-0">
                 <p className="font-medium">{running ? getActiveAgentToolLabel(String(event.data?.name ?? "")) : toolName}</p>
                 {interrupted ? <p className="mt-0.5 text-zinc-400">未收到对应结果，已随 Turn 结束</p> : null}
@@ -532,7 +533,7 @@ export function projectTurnTerminalError(
   );
   const failedStatus = [...events].reverse().find((event) => event.type === "status" && event.data?.stage === "failed");
   const storedFailure = typeof failedStatus?.data?.error === "string" ? failedStatus.data.error.trim() : "";
-  return failedTool?.content?.trim() || storedFailure || failure?.trim() || "Agent 执行失败，请重试";
+  return storedFailure || failure?.trim() || failedTool?.content?.trim() || "Agent 执行失败，请重试";
 }
 
 export function projectTurnEventsForDisplay(events: ProjectAgentEvent[]) {

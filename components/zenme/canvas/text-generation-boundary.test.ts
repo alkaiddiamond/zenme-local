@@ -118,6 +118,13 @@ describe("text generation request boundary", () => {
     expect(canvasSource).toContain("const turnId = retryExistingTurn ? sourceNode.data.agentTurnId! : crypto.randomUUID()");
     expect(canvasSource).toContain("const resultNodeId = retryExistingTurn ? nodeId : crypto.randomUUID()");
     expect(canvasSource).toContain("resume: retryExistingTurn");
+    expect(canvasSource).toContain("getProjectAgentSessionFromApi(projectId)");
+    expect(canvasSource).toContain("retryUserEvent.data.canvasContext");
+    expect(canvasSource).toContain("retryUserEvent.data.fileDocumentIds");
+    expect(canvasSource).toContain("retryUserEvent.data.selectedNodeIds");
+    expect(canvasSource).toContain("const persistedPrompt = retryUserEvent?.content?.trim() || undefined");
+    expect(canvasSource).toContain("originalSourceNode?.id ?? nodeId");
+    expect(canvasSource).not.toContain("无法重试当前 Agent Turn：原始上游节点不存在");
     expect(timeline).toContain("projectTurnCanRetry(events) && onRetry");
     expect(timeline).toContain("重试");
     expect(timeline).toContain("border-zinc-200");

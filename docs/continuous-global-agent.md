@@ -14,7 +14,7 @@ Continuous Global Agent 是画布项目的低频观察循环。它消费项目�
 
 ## 用户控制
 
-Global Agent 面板提供启用、暂停、继续、禁用和“立即整理”。用户可以采纳或忽略候选建议。候选建议不会进入 Project Agent；用户明确采纳后，最近的有界已采纳建议会进入后续 Project Agent 上下文，并在与当前请求相关时成为 `todo_write` 的待验证工作提示。采纳不会直接执行命令、写文件或写入正式 Memory，所有后续动作仍经过统一工具、会话权限、ChangeSet 审批和 Workspace 范围校验。
+Global Agent 面板提供启用、暂停、继续、禁用和“立即整理”。用户可以采纳或忽略候选建议。候选建议不会进入 Project Agent；用户明确采纳后，最近的有界已采纳建议会进入后续 Project Agent 上下文，并在与当前请求相关且确实需要结构化协作时由模型纳入 Task V2 共享项目任务。采纳不会直接创建任务、执行命令、写文件或写入正式 Memory，所有后续动作仍经过统一工具、会话权限、ChangeSet 审批和 Workspace 范围校验。
 
 ## 持久化
 

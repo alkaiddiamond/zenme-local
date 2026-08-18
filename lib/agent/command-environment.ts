@@ -11,6 +11,7 @@ export function buildCommandEnvironment(
 ): CommandEnvironment {
   const allowed = [
     "SYSTEMROOT", "SystemRoot", "COMSPEC", "ComSpec", "PATHEXT", "PSModulePath",
+    "SYSTEMDRIVE", "SystemDrive", "WINDIR", "windir",
     "TEMP", "TMP", "TMPDIR", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "USERNAME",
     "APPDATA", "LOCALAPPDATA", "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)",
     "LANG", "LC_ALL", "TERM", "COLORTERM", "CI", "NO_COLOR", "FORCE_COLOR",
@@ -34,12 +35,45 @@ export function buildCommandEnvironment(
     }
   }
   const executablePath = pathEntries.join(pathApi.delimiter);
-  const inherited = Object.fromEntries(allowed.flatMap((key) => source[key] === undefined ? [] : [[key, source[key]!]])) as Record<string, string>;
+  const inferredSystemDrive = windowsSystemDrive(source, hostRuntimeExecutable, platform);
+  const expandedSource: Record<string, string | undefined> = { ...source };
+  if (platform === "win32" && inferredSystemDrive) {
+    expandedSource.SystemDrive ??= inferredSystemDrive;
+    expandedSource.SYSTEMDRIVE ??= inferredSystemDrive;
+    expandedSource.PROGRAMDATA ??= path.win32.join(inferredSystemDrive, "ProgramData");
+  }
+  const inherited = Object.fromEntries(allowed.flatMap((key) => expandedSource[key] === undefined ? [] : [
+    [key, platform === "win32" ? expandWindowsEnvironmentValue(expandedSource[key]!, expandedSource) : expandedSource[key]!],
+  ])) as Record<string, string>;
   return {
     NODE_ENV: normalizeNodeEnvironment(source.NODE_ENV),
     ...inherited,
     [platform === "win32" ? "Path" : "PATH"]: executablePath,
   };
+}
+
+function windowsSystemDrive(
+  source: Readonly<Record<string, string | undefined>>,
+  hostRuntimeExecutable: string,
+  platform: NodeJS.Platform,
+) {
+  if (platform !== "win32") return "";
+  const direct = source.SystemDrive ?? source.SYSTEMDRIVE;
+  if (direct && /^[a-z]:$/i.test(direct)) return direct;
+  for (const candidate of [source.SystemRoot, source.SYSTEMROOT, source.WINDIR, source.windir, hostRuntimeExecutable]) {
+    if (!candidate) continue;
+    const root = path.win32.parse(candidate).root;
+    if (/^[a-z]:\\$/i.test(root)) return root.slice(0, 2);
+  }
+  return "";
+}
+
+function expandWindowsEnvironmentValue(value: string, source: Readonly<Record<string, string | undefined>>) {
+  return value.replace(/%([^%]+)%/g, (match, name: string) => {
+    const wanted = name.toLocaleLowerCase();
+    const key = Object.keys(source).find((candidate) => candidate.toLocaleLowerCase() === wanted);
+    return key && typeof source[key] === "string" ? source[key]! : match;
+  });
 }
 
 function normalizeNodeEnvironment(value: string | undefined): NodeEnvironment {

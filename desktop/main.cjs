@@ -224,6 +224,7 @@ function spawnNextServer(port, dataDir, browserControlUrl) {
     env.NODE_ENV = "production";
     serverArguments = [path.join(root, "server.js")];
   } else {
+    env.ZENME_NEXT_DIST_DIR = ".next-dev";
     serverArguments = [
       require.resolve("next/dist/bin/next"),
       "dev",

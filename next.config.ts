@@ -12,8 +12,12 @@ const dynamicWorkspaceTracingExcludes = [
   "./*.{md,ts,mts}",
 ];
 
+const nextDistDir = process.env.ZENME_NEXT_DIST_DIR?.trim() ||
+  (process.env.NODE_ENV === "development" ? ".next-dev" : ".next");
+
 const nextConfig: NextConfig = {
   cacheComponents: true,
+  distDir: nextDistDir,
   output: "standalone",
   outputFileTracingExcludes: {
     "/*": [

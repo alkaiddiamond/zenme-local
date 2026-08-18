@@ -721,6 +721,17 @@ export async function getContinuousGlobalAgentFromApi(projectId: string) {
   ));
 }
 
+export async function getContinuousGlobalAgentSupervisorStatesFromApi(projectIds: string[]) {
+  return readJson<{ states: ContinuousGlobalAgentState[] }>(await fetch(
+    "/api/global-agent/continuous-supervisor",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectIds }),
+    },
+  ));
+}
+
 export async function configureContinuousGlobalAgentFromApi(input: {
   projectId: string;
   mode?: ContinuousGlobalAgentMode;
