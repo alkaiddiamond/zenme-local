@@ -30,8 +30,6 @@ const TASK_NODE_DEFAULT_EXPANDED_HEIGHT = 460;
 const CODE_NODE_DEFAULT_SIZE = { height: 420, width: 720 };
 const MARKDOWN_NODE_DEFAULT_SIZE = { height: 320, width: 560 };
 const WORKSPACE_FILE_NODE_DEFAULT_SIZE = { height: 420, width: 720 };
-const AGENT_EXECUTION_NODE_DEFAULT_SIZE = { height: 440, width: 620 };
-const GLOBAL_AGENT_NODE_DEFAULT_SIZE = { height: 520, width: 680 };
 export const NANO_BANANA_2_IMAGE_MODEL =
   "google/gemini-3.1-flash-image-preview";
 export const IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
@@ -97,69 +95,6 @@ export function createWorkspaceFileCanvasNode(input: {
       workspaceFileDocumentId: input.documentId,
       ...(input.rootId ? { workspaceRootId: input.rootId } : {}),
       workspaceRelativePath: input.relativePath,
-    },
-  };
-}
-
-export function createAgentExecutionCanvasNode(input: {
-  attemptId: string;
-  executionId: string;
-  id: string;
-  instruction: string;
-  model: string;
-  nodeRunId: string;
-  position: { x: number; y: number };
-  projectId: string;
-  sourceNode?: CanvasNode;
-}): { edge: Edge | null; node: CanvasNode } {
-  const node: CanvasNode = {
-    id: input.id,
-    type: "agentExecution",
-    position: input.position,
-    style: AGENT_EXECUTION_NODE_DEFAULT_SIZE,
-    data: {
-      kind: "agentExecution",
-      title: "Workspace Agent",
-      projectId: input.projectId,
-      executionId: input.executionId,
-      nodeRunId: input.nodeRunId,
-      attemptId: input.attemptId,
-      agentInstruction: input.instruction,
-      agentModel: input.model,
-      nodeLifecycle: "working",
-      ownerExecutionId: input.executionId,
-    },
-  };
-  return {
-    edge: input.sourceNode
-      ? createConnectedEdge(input.sourceNode.id, input.id)
-      : null,
-    node,
-  };
-}
-
-export function createGlobalAgentCanvasNode(input: {
-  goal: string;
-  id: string;
-  model: string;
-  orchestrationId: string;
-  position: { x: number; y: number };
-  projectId: string;
-}): CanvasNode {
-  return {
-    id: input.id,
-    type: "globalAgent",
-    position: input.position,
-    style: GLOBAL_AGENT_NODE_DEFAULT_SIZE,
-    data: {
-      kind: "globalAgent",
-      title: "Global Agent",
-      projectId: input.projectId,
-      globalOrchestrationId: input.orchestrationId,
-      globalGoal: input.goal,
-      globalModel: input.model,
-      nodeLifecycle: "working",
-      ownerExecutionId: input.orchestrationId,
     },
   };
 }

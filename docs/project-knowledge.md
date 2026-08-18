@@ -19,7 +19,7 @@ Project Knowledge 是 `derived/knowledge/index.json` 中的可删除派生索引
 
 搜索时会重新确认全部 Workspace 根的身份、状态和读取权限，过滤已删除或内容哈希不一致的文件，并重新验证 Memory 状态。任一根新增、移除、重新关联或读取授权变化时旧索引不可用；文件变更或删除不会产生可进入上下文的幽灵结果，增量重建后新增与重命名结果才会出现。
 
-Global Agent 规划和 Workspace Agent Execution 会保存实际采用的检索结果及其证据。Agent 也可以通过受控 `search_knowledge` 工具继续检索；结果不直接创建 Canvas 节点。
+Project Agent 与其 Sub-agent/Team Execution 会保存实际采用的检索结果及其证据。Agent 也可以通过受控 `search_knowledge` 工具继续检索；结果不直接创建 Canvas 节点。
 
 ## Embedding Provider
 

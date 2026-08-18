@@ -5,7 +5,7 @@ Project Memory 是 Project 级派生知识，不替代 Workspace 文件、Canvas
 ## 状态与确认
 
 - `candidate`：用户或 Agent 提出的候选；Agent 创建时强制进入该状态，即使请求声称已确认。
-- `confirmed`：用户明确确认，可进入 Global Agent 和 Workspace Agent 上下文。
+- `confirmed`：用户明确确认，可进入 Project Agent 及其 Sub-agent/Team 上下文。
 - `needsReview`：此前已确认，但来源文件已经变化、消失或无法验证；立即退出模型上下文。
 - `stale`：未确认候选的来源已经失效。
 - `rejected`：用户拒绝，不进入上下文。
