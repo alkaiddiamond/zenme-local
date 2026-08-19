@@ -269,6 +269,8 @@ export type ProjectAgentTurnApiResult = {
 
 export async function runProjectAgentTurnFromApi(input: {
   canvasContext?: string;
+  currentNodeContext?: string;
+  connectedGraphContext?: string;
   conversationId?: string;
   fileDocumentIds?: string[];
   imageDataUrls?: string[];
@@ -299,6 +301,8 @@ export async function runProjectAgentTurnFromApi(input: {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         canvasContext: input.canvasContext,
+        currentNodeContext: input.currentNodeContext,
+        connectedGraphContext: input.connectedGraphContext,
         conversationId: input.conversationId,
         fileDocumentIds: input.fileDocumentIds,
         imageDataUrls: input.imageDataUrls,

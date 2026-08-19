@@ -2673,16 +2673,28 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       const persistedCanvasContext = typeof retryUserEvent?.data?.canvasContext === "string"
         ? retryUserEvent.data.canvasContext
         : undefined;
+      const persistedCurrentNodeContext = typeof retryUserEvent?.data?.currentNodeContext === "string"
+        ? retryUserEvent.data.currentNodeContext
+        : undefined;
+      const persistedConnectedGraphContext = typeof retryUserEvent?.data?.connectedGraphContext === "string"
+        ? retryUserEvent.data.connectedGraphContext
+        : undefined;
+      const currentNodeContext = retryExistingTurn
+        ? persistedCurrentNodeContext
+        : getCanvasNodeContextText(sourceNode);
+      const connectedGraphContext = retryExistingTurn
+        ? persistedConnectedGraphContext
+        : collectTextGenerationContext({
+            edges: currentEdges,
+            maxTokens: contextTokenBudget,
+            nodeId,
+            nodes: currentNodes,
+          });
       const context = retryExistingTurn
         ? persistedCanvasContext
         : limitTextGenerationContext([
-            getCanvasNodeContextText(sourceNode),
-            collectTextGenerationContext({
-              edges: currentEdges,
-              maxTokens: contextTokenBudget,
-              nodeId,
-              nodes: currentNodes,
-            }),
+            currentNodeContext,
+            connectedGraphContext,
           ], contextTokenBudget);
       const references = retryExistingTurn
         ? {
@@ -2767,6 +2779,8 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         ])].slice(0, 4);
         const result = await runProjectAgentTurnFromApi({
           canvasContext: context,
+          currentNodeContext,
+          connectedGraphContext,
           conversationId,
           fileDocumentIds: references.fileDocumentIds,
           imageDataUrls: mergedImageDataUrls,

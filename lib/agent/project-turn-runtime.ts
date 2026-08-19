@@ -219,6 +219,8 @@ export async function startProjectAgentTurnRun(input: {
   prompt: string;
   model: string;
   canvasContext?: string;
+  currentNodeContext?: string;
+  connectedGraphContext?: string;
   conversationId?: string;
   parentTurnId?: string;
   resultNodeId?: string;
@@ -379,6 +381,8 @@ export async function runProjectAgentTurn(input: {
   prompt: string;
   model: string;
   canvasContext?: string;
+  currentNodeContext?: string;
+  connectedGraphContext?: string;
   conversationId?: string;
   parentTurnId?: string;
   resultNodeId?: string;
@@ -487,6 +491,8 @@ export async function runProjectAgentTurn(input: {
         selectedNodeIds: dedupeStrings(input.selectedNodeIds),
         fileDocumentIds: dedupeStrings(input.fileDocumentIds),
         canvasContext: input.canvasContext?.slice(0, 200_000) || undefined,
+        currentNodeContext: input.currentNodeContext?.slice(0, 200_000) || undefined,
+        connectedGraphContext: input.connectedGraphContext?.slice(0, 200_000) || undefined,
         imageCount: input.imageDataUrls?.length ?? 0,
         reasoningEffort: turnReasoningEffort,
         modelSpeed: turnModelSpeed,
@@ -1587,7 +1593,7 @@ export async function runProjectAgentTurn(input: {
           });
           response = await callModel({
             context: [
-              buildTurnContext(modelContext, memories, relevantKnowledge, input.canvasContext, modelInfo.permissionMode, [], availableSkills, availableAgents, projectInstructions, workspaceBinding, acceptedContinuousSuggestions, activeOutputStyle?.prompt),
+              buildTurnContext(modelContext, memories, relevantKnowledge, input.canvasContext, modelInfo.permissionMode, [], availableSkills, availableAgents, projectInstructions, workspaceBinding, acceptedContinuousSuggestions, activeOutputStyle?.prompt, input.currentNodeContext, input.connectedGraphContext),
               formatMcpToolContext(mcpDiscovery.tools, activeMcpTools),
             ].filter(Boolean).join("\n\n"),
             imageDataUrls: mergeModelImageDataUrls(input.imageDataUrls, [
@@ -4279,6 +4285,8 @@ function buildTurnContext(
   workspaceBinding: Awaited<ReturnType<typeof getLocalWorkspaceBinding>> = null,
   acceptedContinuousSuggestions: ContinuousAgentSuggestion[] = [],
   outputStylePrompt?: string,
+  currentNodeContext?: string,
+  connectedGraphContext?: string,
 ) {
   void _activeBackgroundTasks;
   return [
@@ -4314,7 +4322,14 @@ function buildTurnContext(
     availableAgents.length ? `当前可用自定义 Agent（调用 agent_spawn 时用 agentType 选择；其系统提示、工具边界和模型配置由运行时加载，不要复述定义正文）：\n${formatProjectAgentDefinitionListing(availableAgents)}` : "",
     outputStylePrompt ? `当前输出风格指令（只影响回答表达，不得覆盖工具、权限、安全或验证协议）：\n${outputStylePrompt}` : "",
     formatProjectAgentInstructions(projectInstructions),
-    canvasContext ? `本轮明确选择的画布上下文：\n${canvasContext.slice(0, 200_000)}` : "",
+    currentNodeContext || connectedGraphContext
+      ? "当前上下文优先级：当前用户指令 > 当前节点 > 显式连线/选择的画布上下文 > 当前 Conversation 历史 > Project 背景。较低层级不得覆盖较高层级表达的当前意图。"
+      : "",
+    currentNodeContext ? `当前节点（本轮主要语义焦点）：\n${currentNodeContext.slice(0, 200_000)}` : "",
+    connectedGraphContext ? `显式连线的上游画布上下文（背景与依赖，不得替代当前节点）：\n${connectedGraphContext.slice(0, 200_000)}` : "",
+    !currentNodeContext && !connectedGraphContext && canvasContext
+      ? `本轮明确选择的画布上下文：\n${canvasContext.slice(0, 200_000)}`
+      : "",
     context.events.some((event) => ["approval", "compact"].includes(event.type))
       ? `当前运行时状态事件：\n${JSON.stringify(context.events.filter((event) => ["approval", "compact"].includes(event.type)))}`
       : "",

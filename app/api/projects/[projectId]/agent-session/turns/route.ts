@@ -34,6 +34,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       prompt: body.prompt,
       model: body.model,
       canvasContext: optionalString(body.canvasContext),
+      currentNodeContext: optionalString(body.currentNodeContext),
+      connectedGraphContext: optionalString(body.connectedGraphContext),
       conversationId: optionalString(body.conversationId),
       parentTurnId: optionalString(body.parentTurnId),
       resultNodeId: optionalString(body.resultNodeId),
