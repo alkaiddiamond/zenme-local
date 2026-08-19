@@ -46,6 +46,40 @@ afterEach(async () => {
 });
 
 describe("delegated Sub-agent runtime", { timeout: 15_000 }, () => {
+  it("preserves layered node and graph context inside a delegated execution", async () => {
+    const { detail } = await createAgentExecution({
+      projectId,
+      resultNodeId: "layered-agent",
+      triggerNodeId: "layered-source",
+      instruction: "回答当前节点",
+      canvasContext: "LEGACY_FLAT_CONTEXT",
+      currentNodeContext: "CURRENT_NODE_LAYER：ChatGPT 网页版是不是不计算用量？",
+      connectedGraphContext: "CONNECTED_GRAPH_LAYER：上游 MCP 配置背景",
+      conversationId: "conversation-a",
+      allowedPathPrefixes: ["src/a"],
+      allowedTools: [],
+    }, dataDir);
+
+    const callModel = vi.fn(async (input: { context: string }) => {
+      expect(input.context).toContain("当前节点（本轮主要语义焦点）");
+      expect(input.context).toContain("CURRENT_NODE_LAYER");
+      expect(input.context).toContain("显式连线的上游画布上下文");
+      expect(input.context).toContain("CONNECTED_GRAPH_LAYER");
+      expect(input.context).not.toContain("本轮明确选择的画布上下文：\nLEGACY_FLAT_CONTEXT");
+      return { text: "done", usage: null };
+    });
+
+    await expect(runDelegatedSubagent({
+      projectId,
+      executionId: detail.id,
+      model: "test:model",
+    }, { dataDir, callModel: callModel as never })).resolves.toMatchObject({
+      status: "succeeded",
+      resultSummary: "done",
+    });
+    expect(callModel).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the same Workflow Sub-agent alive to correct an invalid structured result", async () => {
     const { detail } = await createAgentExecution({
       projectId,

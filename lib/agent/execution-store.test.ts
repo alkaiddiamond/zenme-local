@@ -43,6 +43,9 @@ describe("agent execution store", () => {
       selectedNodeIds: ["node-a", "node-a", "node-b"],
       fileDocumentIds: ["file-a"],
       canvasContext: "selected context",
+      currentNodeContext: "CURRENT_NODE_LAYER",
+      connectedGraphContext: "CONNECTED_GRAPH_LAYER",
+      conversationId: "conversation-a",
     }, dataDir);
 
     expect(created.execution).toMatchObject({
@@ -56,6 +59,9 @@ describe("agent execution store", () => {
         selectedNodeIds: ["node-a", "node-b"],
         fileDocumentIds: ["file-a"],
         canvasContext: "selected context",
+        currentNodeContext: "CURRENT_NODE_LAYER",
+        connectedGraphContext: "CONNECTED_GRAPH_LAYER",
+        conversationId: "conversation-a",
       },
       stage: "planning",
     });

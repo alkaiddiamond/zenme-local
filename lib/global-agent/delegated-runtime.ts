@@ -10,6 +10,7 @@ import {
   startAgentToolCall,
   stopAgentExecution,
 } from "@/lib/agent/execution-store";
+import { formatAgentCanvasContext } from "@/lib/agent/context-router";
 import { executeAgentToolPipeline } from "@/lib/agent/tool-execution-pipeline";
 import {
   callProjectAgentModel,
@@ -955,7 +956,11 @@ export function buildDelegatedSubagentContext(
       : "完成前按允许工具进行与修改风险相称的验证，不要把未运行的检查写成已通过。",
     "Shell 与 cc-haha 保持同一语义：只启动一次命令；短命令前台完成，长命令在 15 秒后由同一进程自动转为后台，并返回稳定 taskId 和 outputFilePath。后台任务终止时运行时会发送通知，不要枚举任务、轮询输出、扫描端口或为了获得 URL 重启服务。需要页面验证时，只能使用 shell_command 输出或用户提供的明确 loopback URL。",
     '任务完成时返回普通文本，或返回 {"type":"complete","summary":"..."}。',
-    `画布上下文：${detail.context.canvasContext || "无"}`,
+    formatAgentCanvasContext({
+      currentNodeContext: detail.context.currentNodeContext,
+      connectedGraphContext: detail.context.connectedGraphContext,
+      legacyCanvasContext: detail.context.canvasContext,
+    }) || "画布上下文：无",
     `已确认 Project Memory：${JSON.stringify(detail.context.projectMemories ?? [])}`,
     `Project Knowledge：${JSON.stringify(detail.context.knowledgeContext ?? [])}`,
     `工具历史：${JSON.stringify(detail.toolCalls.flatMap((call) => {

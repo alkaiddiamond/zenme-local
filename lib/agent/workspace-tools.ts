@@ -1062,6 +1062,9 @@ async function runForkedProjectSkill(input: {
     concurrencyLimit: 1,
     maxSubagents: 1,
     canvasContext: parent.context.canvasContext,
+    currentNodeContext: parent.context.currentNodeContext,
+    connectedGraphContext: parent.context.connectedGraphContext,
+    conversationId: parent.context.conversationId,
     selectedNodeIds: parent.context.selectedNodeIds,
     fileDocumentIds: parent.context.fileDocumentIds,
     tasks: [{
@@ -1141,6 +1144,9 @@ async function delegateTasks(
     concurrencyLimit: args.concurrencyLimit,
     maxSubagents: args.tasks.length,
     canvasContext: parent.context.canvasContext,
+    currentNodeContext: parent.context.currentNodeContext,
+    connectedGraphContext: parent.context.connectedGraphContext,
+    conversationId: parent.context.conversationId,
     selectedNodeIds: parent.context.selectedNodeIds,
     fileDocumentIds: parent.context.fileDocumentIds,
     tasks: args.tasks.map((task) => ({
@@ -1267,6 +1273,9 @@ async function createTeam(
     triggerNodeId: parent.context.subtaskId ?? executionId,
     parentTurnId: turnId,
     canvasContext: parent.context.canvasContext,
+    currentNodeContext: parent.context.currentNodeContext,
+    connectedGraphContext: parent.context.connectedGraphContext,
+    conversationId: parent.context.conversationId,
     selectedNodeIds: parent.context.selectedNodeIds,
     fileDocumentIds: parent.context.fileDocumentIds,
   }, dataDir);
@@ -1417,6 +1426,9 @@ async function spawnAgent(
       parentTurnId: turnId,
       maxSubagents: 1,
       canvasContext: parent.context.canvasContext,
+      currentNodeContext: parent.context.currentNodeContext,
+      connectedGraphContext: parent.context.connectedGraphContext,
+      conversationId: parent.context.conversationId,
       selectedNodeIds: parent.context.selectedNodeIds,
       fileDocumentIds: parent.context.fileDocumentIds,
       tasks: [{

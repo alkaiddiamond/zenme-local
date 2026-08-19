@@ -135,6 +135,9 @@ export type GlobalOrchestration = {
   selectedNodeIds: string[];
   fileDocumentIds: string[];
   canvasContext: string;
+  currentNodeContext?: string;
+  connectedGraphContext?: string;
+  conversationId?: string;
   tasks: GlobalSubtask[];
   conflicts: GlobalConflictEdge[];
   applicationOrder: string[];

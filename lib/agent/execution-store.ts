@@ -78,6 +78,9 @@ export async function createAgentExecution(input: {
   allowedTools?: AgentWorkspaceToolName[];
   additionalAllowedTools?: string[];
   canvasContext?: string;
+  currentNodeContext?: string;
+  connectedGraphContext?: string;
+  conversationId?: string;
   fileDocumentIds?: string[];
   instruction: string;
   orchestrationId?: string;
@@ -122,6 +125,9 @@ export async function createAgentExecution(input: {
       selectedNodeIds: dedupeStrings(input.selectedNodeIds),
       fileDocumentIds: dedupeStrings(input.fileDocumentIds),
       canvasContext: (input.canvasContext ?? "").slice(0, 2_000_000),
+      currentNodeContext: input.currentNodeContext?.slice(0, 2_000_000) || undefined,
+      connectedGraphContext: input.connectedGraphContext?.slice(0, 2_000_000) || undefined,
+      conversationId: input.conversationId?.trim() || undefined,
       projectMemories,
       knowledgeContext,
       allowedPathPrefixes: dedupeStrings(input.allowedPathPrefixes),
@@ -582,6 +588,9 @@ function normalizeDetail(value: unknown): AgentExecutionDetail | null {
     selectedNodeIds: stringArray(value.context.selectedNodeIds),
     fileDocumentIds: stringArray(value.context.fileDocumentIds),
     canvasContext: typeof value.context.canvasContext === "string" ? value.context.canvasContext : "",
+    currentNodeContext: typeof value.context.currentNodeContext === "string" ? value.context.currentNodeContext : undefined,
+    connectedGraphContext: typeof value.context.connectedGraphContext === "string" ? value.context.connectedGraphContext : undefined,
+    conversationId: typeof value.context.conversationId === "string" ? value.context.conversationId : undefined,
     projectMemories: Array.isArray(value.context.projectMemories)
       ? value.context.projectMemories.filter(isProjectMemoryContextItem).slice(0, 100)
       : [],

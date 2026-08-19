@@ -163,6 +163,9 @@ export type AgentContextSelection = {
   selectedNodeIds: string[];
   fileDocumentIds: string[];
   canvasContext: string;
+  currentNodeContext?: string;
+  connectedGraphContext?: string;
+  conversationId?: string;
   projectMemories?: ProjectMemoryContextItem[];
   knowledgeContext?: KnowledgeSearchResult[];
   /** Stable Workspace root assigned to this execution. Missing means no single-root restriction. */

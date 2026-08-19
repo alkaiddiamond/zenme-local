@@ -67,6 +67,9 @@ export class GlobalOrchestrationError extends Error {
 export async function createGlobalOrchestration(input: {
   allowEmptyTeam?: boolean;
   canvasContext?: string;
+  currentNodeContext?: string;
+  connectedGraphContext?: string;
+  conversationId?: string;
   concurrencyLimit?: number;
   contextEvidence?: GlobalContextEvidence[];
   fileDocumentIds?: string[];
@@ -173,6 +176,9 @@ export async function createGlobalOrchestration(input: {
     selectedNodeIds: dedupe(input.selectedNodeIds),
     fileDocumentIds: dedupe(input.fileDocumentIds),
     canvasContext: (input.canvasContext ?? "").slice(0, 2_000_000),
+    currentNodeContext: input.currentNodeContext?.slice(0, 2_000_000) || undefined,
+    connectedGraphContext: input.connectedGraphContext?.slice(0, 2_000_000) || undefined,
+    conversationId: input.conversationId?.trim() || undefined,
     tasks,
     conflicts: plannedConflicts(tasks),
     applicationOrder: topologicalOrder(tasks),
@@ -185,6 +191,9 @@ export async function createGlobalOrchestration(input: {
 
 export async function createGlobalTeam(input: {
   canvasContext?: string;
+  currentNodeContext?: string;
+  connectedGraphContext?: string;
+  conversationId?: string;
   description?: string;
   fileDocumentIds?: string[];
   maxSubagents?: number;
@@ -390,6 +399,9 @@ export async function dispatchGlobalSubtasks(projectId: string, orchestrationId:
         agentId: `sub-agent:${preparedTask.id}`,
         instruction: delegatedInstruction(current, preparedTask),
         canvasContext: current.canvasContext,
+        currentNodeContext: current.currentNodeContext,
+        connectedGraphContext: current.connectedGraphContext,
+        conversationId: current.conversationId,
         selectedNodeIds: current.selectedNodeIds,
         fileDocumentIds: current.fileDocumentIds,
         allowedPathPrefixes: preparedTask.allowedPathPrefixes,
