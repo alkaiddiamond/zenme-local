@@ -98,6 +98,28 @@ describe("project agent context policy", () => {
     expect(plan?.eventsToSummarize.some((item) => item.turnId === "turn-b1")).toBe(false);
   });
 
+  it("keeps conversation-scoped turns out of project-level compaction", () => {
+    const projectTurnA = turn("project-a", 1, "project first");
+    const conversationTurn = turn("conversation-a", 3, "node conversation");
+    const projectTurnB = turn("project-b", 5, "project second");
+    conversationTurn[0]!.conversationId = "conv-a";
+    const session = makeSession([
+      ...projectTurnA,
+      ...conversationTurn,
+      ...projectTurnB,
+    ]);
+
+    const plan = planProjectAgentCompaction(session, {
+      minTokens: 1,
+      minTextMessages: 1,
+      maxTokens: 1,
+    });
+
+    expect(plan?.eventsToSummarize.map((item) => item.turnId)).toEqual(["project-a", "project-a"]);
+    expect(plan?.eventsToKeep.map((item) => item.turnId)).toEqual(["project-b", "project-b"]);
+    expect([...plan!.eventsToSummarize, ...plan!.eventsToKeep].some((item) => item.turnId === "conversation-a")).toBe(false);
+  });
+
   it("clears only old tool payloads in the model projection and leaves source events unchanged", () => {
     const events = [
       event(1, "turn-1", "toolResult", "large old output", { name: "read_file", toolCallId: "tool-1", output: "x".repeat(20_000) }),

@@ -343,6 +343,50 @@ describe("project agent session store", () => {
     });
   });
 
+  it("keeps conversation history recoverable when a project compact boundary crosses it", async () => {
+    const appendTurn = async (turnId: string, content: string, conversationId?: string) => {
+      await appendProjectAgentEvent({
+        projectId,
+        turnId,
+        conversationId,
+        sourceNodeId: conversationId ? `${turnId}-node` : undefined,
+        type: "user",
+        content: `${content} user`,
+      }, dataDir);
+      await appendProjectAgentEvent({
+        projectId,
+        turnId,
+        type: "assistant",
+        content: `${content} assistant`,
+      }, dataDir);
+    };
+
+    await appendTurn("project-old", "PROJECT_OLD");
+    await appendTurn("conversation-turn", "CONVERSATION_KEEP", "conv-a");
+    await appendTurn("project-middle", "PROJECT_MIDDLE");
+    await appendTurn("project-recent", "PROJECT_RECENT");
+
+    await createProjectAgentCompactCheckpoint({
+      projectId,
+      summary: "project summary",
+      compactedThroughSequence: 6,
+      sourceTokenEstimate: 100,
+    }, dataDir);
+
+    const projectContext = await getProjectAgentModelContext(projectId, dataDir);
+    expect(projectContext.events.map((event) => event.content).filter(Boolean)).toEqual([
+      "PROJECT_RECENT user",
+      "PROJECT_RECENT assistant",
+    ]);
+
+    const conversationContext = await getProjectAgentModelContext(projectId, dataDir, "conv-a");
+    expect(conversationContext.events.map((event) => event.content).filter(Boolean)).toEqual([
+      "CONVERSATION_KEEP user",
+      "CONVERSATION_KEEP assistant",
+    ]);
+    expect(conversationContext.summary).toBe("project summary");
+  });
+
   it("preserves unknown session, context and event fields when loading and writing", async () => {
     const session = await getProjectAgentSession(projectId, dataDir);
     const filePath = path.join(dataDir, "projects", projectId, "agent", "session.json");

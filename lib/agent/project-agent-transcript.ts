@@ -14,6 +14,15 @@ export function projectConversationEvents(
     : projected;
 }
 
+export function projectUnscopedConversationEvents(events: readonly ProjectAgentEvent[]) {
+  const scopedTurnIds = new Set(
+    events
+      .filter((event) => Boolean(event.conversationId))
+      .map((event) => event.turnId),
+  );
+  return events.filter((event) => !scopedTurnIds.has(event.turnId));
+}
+
 function collectConversationLineageEvents(
   events: readonly ProjectAgentEvent[],
   conversationId: string,

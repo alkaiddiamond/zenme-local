@@ -3,7 +3,7 @@ import type {
   ProjectAgentEvent,
   ProjectAgentSession,
 } from "@/lib/agent/project-session-types";
-import { projectConversationEvents } from "@/lib/agent/project-agent-transcript";
+import { projectConversationEvents, projectUnscopedConversationEvents } from "@/lib/agent/project-agent-transcript";
 
 export const PROJECT_AGENT_COMPACT_PRESERVE = {
   minTokens: 10_000,
@@ -49,7 +49,7 @@ export function planProjectAgentCompaction(
     maxTokens?: number;
   } = {},
 ): ProjectAgentCompactionPlan | null {
-  const activeEvents = session.events.filter(
+  const activeEvents = projectUnscopedConversationEvents(session.events).filter(
     (event) => event.sequence > session.context.compactedThroughSequence && event.type !== "compact",
   );
   return planAgentCompaction(activeEvents, session.context.activeSummary, config);

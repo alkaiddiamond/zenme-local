@@ -22,7 +22,7 @@ import {
   thinProjectAgentToolResults,
 } from "@/lib/agent/project-context-policy";
 import { normalizeProjectAgentHooks, type ProjectAgentHooks } from "@/lib/agent/project-agent-hooks";
-import { projectConversationEvents } from "@/lib/agent/project-agent-transcript";
+import { projectConversationEvents, projectUnscopedConversationEvents } from "@/lib/agent/project-agent-transcript";
 
 const mutationLocks = new Map<string, Promise<unknown>>();
 const MAX_EVENT_CONTENT_LENGTH = 500_000;
@@ -530,20 +530,27 @@ export async function getProjectAgentModelContext(
       ? event.data.clearedToolResultEventIds.filter((id): id is string => typeof id === "string")
       : [],
   );
+  const projectionSourceEvents = conversationId
+    ? projectConversationEvents(
+        session.events.filter((event) =>
+          event.type !== "compact" && event.type !== "assistantDraft" &&
+          event.data?.uiProjection !== true && event.data?.modelProjectionExcluded !== true,
+        ),
+        conversationId,
+        { compactedThroughSequence: conversation?.compactedThroughSequence },
+      )
+    : projectUnscopedConversationEvents(
+        context.events.filter((event) => event.data?.modelProjectionExcluded !== true),
+      );
   // The persisted event stream remains complete. For the model projection, old
   // completed tool payloads from the active turn may be thinned as well; otherwise
   // one long Agent loop grows without bound because the latest user turn is active.
   const projection = thinProjectAgentToolResults(
-    context.events.filter((event) => event.data?.modelProjectionExcluded !== true), {
+    projectionSourceEvents, {
     clearedEventIds: previouslyClearedEventIds,
     protectLatestUserTurn: false,
   });
   const modelEvents = projectProjectAgentToolResultsForModel(projection.events);
-  const conversationEvents = conversationId
-    ? projectConversationEvents(modelEvents, conversationId, {
-        compactedThroughSequence: conversation?.compactedThroughSequence,
-      })
-    : modelEvents;
   return {
     ...context,
     conversationSummary: conversation?.summary ?? "",
@@ -558,7 +565,7 @@ export async function getProjectAgentModelContext(
     newMicrocompactTokensSaved: projection.newlyEstimatedTokensSaved,
     estimatedConversationTokens: estimateProjectAgentTextTokens(context.summary) +
       estimateProjectAgentTextTokens(conversation?.summary ?? "") +
-      estimateProjectAgentTextTokens(JSON.stringify(session.taskPlan)) + conversationEvents.reduce(
+      estimateProjectAgentTextTokens(JSON.stringify(session.taskPlan)) + modelEvents.reduce(
       (total, event) => total + estimateProjectAgentEventTokens(event),
       0,
     ),

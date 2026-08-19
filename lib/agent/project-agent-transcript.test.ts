@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { projectAgentTranscript, projectConversationEvents } from "@/lib/agent/project-agent-transcript";
+import { projectAgentTranscript, projectConversationEvents, projectUnscopedConversationEvents } from "@/lib/agent/project-agent-transcript";
 import type { ProjectAgentEvent } from "@/lib/agent/project-session-types";
 
 function event(input: Partial<ProjectAgentEvent> & Pick<ProjectAgentEvent, "id" | "sequence" | "type">): ProjectAgentEvent {
@@ -28,6 +28,20 @@ describe("project agent transcript", () => {
       "a-assistant",
       "b-user",
       "b-assistant",
+    ]);
+  });
+
+  it("keeps project-level transcript separate from conversation-scoped turns", () => {
+    const events = [
+      event({ id: "project-user", sequence: 1, turnId: "project-turn", type: "user", content: "Project" }),
+      event({ id: "project-assistant", sequence: 2, turnId: "project-turn", type: "assistant", content: "Project reply" }),
+      event({ id: "node-user", sequence: 3, turnId: "node-turn", conversationId: "conv-a", type: "user", content: "Node" }),
+      event({ id: "node-assistant", sequence: 4, turnId: "node-turn", type: "assistant", content: "Node reply" }),
+    ];
+
+    expect(projectUnscopedConversationEvents(events).map((item) => item.id)).toEqual([
+      "project-user",
+      "project-assistant",
     ]);
   });
 
