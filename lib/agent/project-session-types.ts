@@ -32,10 +32,24 @@ export type ProjectAgentEvent = {
   id: string;
   sequence: number;
   turnId: string;
+  conversationId?: string;
+  parentTurnId?: string;
+  sourceNodeId?: string;
+  resultNodeId?: string;
   type: ProjectAgentEventType;
   createdAt: string;
   content?: string;
   data?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+
+export type ProjectAgentConversation = {
+  id: string;
+  rootNodeId?: string;
+  parentConversationIds?: string[];
+  forkedFromTurnId?: string;
+  createdAt: string;
+  updatedAt: string;
   [key: string]: unknown;
 };
 
@@ -74,6 +88,7 @@ export type ProjectAgentSession = {
   version: typeof PROJECT_AGENT_SESSION_VERSION;
   id: string;
   projectId: string;
+  conversations?: ProjectAgentConversation[];
   events: ProjectAgentEvent[];
   compactCheckpoints: ProjectAgentCompactCheckpoint[];
   taskPlan: ProjectAgentTaskItem[];

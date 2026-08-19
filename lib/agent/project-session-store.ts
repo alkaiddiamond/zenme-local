@@ -7,6 +7,7 @@ import { assertSafePathSegment, resolveInside } from "@/lib/local/path-safety";
 import {
   PROJECT_AGENT_SESSION_VERSION,
   type ProjectAgentCompactCheckpoint,
+  type ProjectAgentConversation,
   type ProjectAgentContextBudget,
   type ProjectAgentContextState,
   type ProjectAgentEvent,
@@ -570,6 +571,7 @@ function createEmptySession(projectId: string): ProjectAgentSession {
     version: PROJECT_AGENT_SESSION_VERSION,
     id: crypto.randomUUID(),
     projectId,
+    conversations: [],
     events: [],
     compactCheckpoints: [],
     taskPlan: [],
@@ -602,11 +604,15 @@ function normalizeSession(value: unknown): ProjectAgentSession | null {
   ) return null;
   const events = value.events.filter(isEvent).slice(0, MAX_EVENTS);
   const compactCheckpoints = value.compactCheckpoints.filter(isCheckpoint).slice(0, MAX_CHECKPOINTS);
+  const conversations = Array.isArray(value.conversations)
+    ? value.conversations.filter(isConversation)
+    : [];
   return {
     ...value,
     version: PROJECT_AGENT_SESSION_VERSION,
     id: value.id,
     projectId: value.projectId,
+    conversations,
     events,
     compactCheckpoints,
     taskPlan: normalizeTaskPlan(value.taskPlan),
@@ -614,6 +620,13 @@ function normalizeSession(value: unknown): ProjectAgentSession | null {
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
   } as ProjectAgentSession;
+}
+
+function isConversation(value: unknown): value is ProjectAgentConversation {
+  return isObject(value) &&
+    typeof value.id === "string" &&
+    typeof value.createdAt === "string" &&
+    typeof value.updatedAt === "string";
 }
 
 function normalizeContext(value: Record<string, unknown>, events: ProjectAgentEvent[]): ProjectAgentContextState {
