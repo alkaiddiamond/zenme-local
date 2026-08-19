@@ -2648,15 +2648,19 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       if (retryExistingTurn && !retryUserEvent) throw new Error("无法重试当前 Agent Turn：原始请求快照不存在");
       const conversationSession = retrySession ?? await getProjectAgentSessionFromApi(projectId);
       const lineage = resolveConversationLineage({ edges: currentEdges, nodeId });
-      const lineageTurnIds = [nodeId, ...lineage.ancestorNodeIds].flatMap((lineageNodeId) => {
-        const lineageNode = currentNodes.find((node) => node.id === lineageNodeId);
-        return typeof lineageNode?.data.agentTurnId === "string" ? [lineageNode.data.agentTurnId] : [];
-      });
+      const turnIdByNodeId = new Map(
+        [nodeId, ...lineage.ancestorNodeIds].flatMap((lineageNodeId) => {
+          const lineageNode = currentNodes.find((node) => node.id === lineageNodeId);
+          return typeof lineageNode?.data.agentTurnId === "string"
+            ? [[lineageNodeId, lineageNode.data.agentTurnId] as const]
+            : [];
+        }),
+      );
       const conversationRoute = resolveConversationRoute({
         edges: currentEdges,
         events: conversationSession.events,
         nodeId,
-        turnIds: lineageTurnIds,
+        turnIdByNodeId,
         createConversationId: () => crypto.randomUUID(),
       });
       const conversationId = retryExistingTurn

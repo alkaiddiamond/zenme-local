@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatAgentCanvasContext } from "@/lib/agent/context-router";
+import { buildAgentRetrievalQuery, formatAgentCanvasContext } from "@/lib/agent/context-router";
 
 describe("formatAgentCanvasContext", () => {
   it("places the current node before connected graph context", () => {
@@ -27,5 +27,14 @@ describe("formatAgentCanvasContext", () => {
     expect(formatAgentCanvasContext({ legacyCanvasContext: "旧上下文" })).toBe(
       "本轮明确选择的画布上下文：\n旧上下文",
     );
+  });
+});
+
+describe("buildAgentRetrievalQuery", () => {
+  it("uses the current node together with the instruction for project retrieval", () => {
+    expect(buildAgentRetrievalQuery({
+      instruction: "请直接处理当前节点表达的请求",
+      currentNodeContext: "文本节点\nChatGPT 网页版是不是不计算用量？",
+    })).toContain("ChatGPT 网页版是不是不计算用量？");
   });
 });

@@ -19,7 +19,7 @@ import {
 } from "@/lib/agent/command-runtime";
 import { callProjectAgentModel, ProjectAgentModelStreamError, type ProjectAgentModelResponse } from "@/lib/agent/project-agent-model";
 import { projectAgentTranscript, projectConversationEvents } from "@/lib/agent/project-agent-transcript";
-import { formatAgentCanvasContext } from "@/lib/agent/context-router";
+import { buildAgentRetrievalQuery, formatAgentCanvasContext } from "@/lib/agent/context-router";
 import {
   appendProjectAgentEvent,
   calculateProjectAgentContextBudget,
@@ -1299,15 +1299,19 @@ export async function runProjectAgentTurn(input: {
       }
     }
 
+    const retrievalQuery = buildAgentRetrievalQuery({
+      instruction: input.prompt,
+      currentNodeContext: input.currentNodeContext,
+    });
     const memories = await getRelevantConfirmedMemoryContext({
       projectId: input.projectId,
-      query: input.prompt,
+      query: retrievalQuery,
       limit: 5,
       budgetCharacters: 20_000,
     }, dataDir).catch(() => []);
     const relevantKnowledge = await searchProjectKnowledge({
       projectId: input.projectId,
-      query: input.prompt,
+      query: retrievalQuery,
       limit: 8,
       budgetCharacters: 16_000,
     }, dataDir).then((response) => response.results).catch(() => []);

@@ -34,3 +34,15 @@ export function formatAgentCanvasContext(input: {
       : "",
   ].filter(Boolean).join("\n\n");
 }
+
+export function buildAgentRetrievalQuery(input: {
+  instruction: string;
+  currentNodeContext?: string;
+}) {
+  const instruction = input.instruction.trim();
+  const currentNodeContext = input.currentNodeContext?.trim();
+  return [
+    instruction ? `当前指令：\n${instruction.slice(0, 20_000)}` : "",
+    currentNodeContext ? `当前节点：\n${currentNodeContext.slice(0, 40_000)}` : "",
+  ].filter(Boolean).join("\n\n");
+}

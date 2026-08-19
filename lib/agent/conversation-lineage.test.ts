@@ -4,7 +4,6 @@ import {
   resolveConversationLineage,
   resolveConversationRoute,
   resolveInheritedConversation,
-  shouldForkConversation,
 } from "@/lib/agent/conversation-lineage";
 
 describe("resolveConversationLineage", () => {
@@ -61,34 +60,6 @@ describe("resolveConversationLineage", () => {
     });
   });
 
-  it("keeps a linear path in the same conversation", () => {
-    expect(shouldForkConversation({
-      edges: [
-        { source: "A", target: "B" },
-        { source: "B", target: "C" },
-      ],
-      nodeId: "C",
-    })).toBe(false);
-  });
-
-  it("forks when the current path crosses a graph branch", () => {
-    expect(shouldForkConversation({
-      edges: [
-        { source: "A", target: "B" },
-        { source: "A", target: "D" },
-        { source: "B", target: "C" },
-      ],
-      nodeId: "C",
-    })).toBe(true);
-  });
-
-  it("forks a second child run from the same source node", () => {
-    expect(shouldForkConversation({
-      edges: [{ source: "source", target: "existing-child" }],
-      nodeId: "source",
-    })).toBe(true);
-  });
-
   it("creates a new conversation for a fork while retaining the parent conversation", () => {
     const events = [
       { id: "e1", sequence: 1, turnId: "turn-a", conversationId: "conv-a", type: "user" as const, createdAt: "now" },
@@ -100,12 +71,94 @@ describe("resolveConversationLineage", () => {
       ],
       events,
       nodeId: "B",
-      turnIds: ["turn-a"],
+      turnIdByNodeId: new Map([["A", "turn-a"]]),
       createConversationId: () => "conv-b",
     })).toEqual({
       conversationId: "conv-b",
       parentTurnId: "turn-a",
       parentConversationIds: ["conv-a"],
+      forked: true,
+    });
+  });
+
+  it("keeps later nodes on the forked branch in the same conversation", () => {
+    const events = [
+      { id: "e1", sequence: 1, turnId: "turn-a", conversationId: "conv-a", type: "user" as const, createdAt: "now" },
+      {
+        id: "e2",
+        sequence: 2,
+        turnId: "turn-b",
+        conversationId: "conv-b",
+        parentTurnId: "turn-a",
+        type: "user" as const,
+        createdAt: "now",
+        data: { parentConversationIds: ["conv-a"] },
+      },
+    ];
+    expect(resolveConversationRoute({
+      edges: [
+        { source: "A", target: "B" },
+        { source: "A", target: "X" },
+        { source: "B", target: "C" },
+        { source: "C", target: "D" },
+      ],
+      events,
+      nodeId: "D",
+      turnIdByNodeId: new Map([
+        ["A", "turn-a"],
+        ["B", "turn-b"],
+      ]),
+      createConversationId: () => "must-not-fork",
+    })).toEqual({
+      conversationId: "conv-b",
+      parentTurnId: "turn-b",
+      parentConversationIds: ["conv-b"],
+      forked: false,
+    });
+  });
+
+  it("forks a second child from the current conversation anchor", () => {
+    const events = [
+      { id: "e1", sequence: 1, turnId: "turn-b", conversationId: "conv-b", type: "user" as const, createdAt: "now" },
+    ];
+    expect(resolveConversationRoute({
+      edges: [{ source: "B", target: "existing-child" }],
+      events,
+      nodeId: "B",
+      turnIdByNodeId: new Map([["B", "turn-b"]]),
+      createConversationId: () => "conv-c",
+    })).toEqual({
+      conversationId: "conv-c",
+      parentTurnId: "turn-b",
+      parentConversationIds: ["conv-b"],
+      forked: true,
+    });
+  });
+
+  it("treats only nearest conversations on direct incoming paths as merge parents", () => {
+    const events = [
+      { id: "e1", sequence: 1, turnId: "turn-a", conversationId: "conv-a", type: "user" as const, createdAt: "now" },
+      { id: "e2", sequence: 2, turnId: "turn-b", conversationId: "conv-b", type: "user" as const, createdAt: "now" },
+      { id: "e3", sequence: 3, turnId: "turn-x", conversationId: "conv-x", type: "user" as const, createdAt: "now" },
+    ];
+    expect(resolveConversationRoute({
+      edges: [
+        { source: "A", target: "B" },
+        { source: "B", target: "C" },
+        { source: "X", target: "C" },
+      ],
+      events,
+      nodeId: "C",
+      turnIdByNodeId: new Map([
+        ["A", "turn-a"],
+        ["B", "turn-b"],
+        ["X", "turn-x"],
+      ]),
+      createConversationId: () => "conv-c",
+    })).toEqual({
+      conversationId: "conv-c",
+      parentTurnId: "turn-b",
+      parentConversationIds: ["conv-b", "conv-x"],
       forked: true,
     });
   });
