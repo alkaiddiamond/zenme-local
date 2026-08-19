@@ -94,6 +94,51 @@ afterEach(async () => {
 });
 
 describe("project agent turn runtime", { timeout: 15_000 }, () => {
+  it("keeps unrelated project conversations out of the current node turn while preserving connected graph background", async () => {
+    await appendProjectAgentEvent({
+      projectId,
+      turnId: "old-mcp-turn",
+      conversationId: "old-conversation",
+      sourceNodeId: "old-node",
+      type: "user",
+      content: "OLD_SESSION_TRANSCRIPT_ONLY user asked about MCP configuration",
+    }, dataDir);
+    await appendProjectAgentEvent({
+      projectId,
+      turnId: "old-mcp-turn",
+      type: "assistant",
+      content: "OLD_SESSION_TRANSCRIPT_ONLY assistant continued MCP configuration",
+    }, dataDir);
+
+    const callModel = vi.fn(async (request: Parameters<typeof modelInputText>[0] & { prompt: string }) => {
+      const transcriptText = (request.messages ?? []).map((message) => message.content).join("\n");
+      expect(transcriptText).not.toContain("OLD_SESSION_TRANSCRIPT_ONLY");
+      expect(request.context).toContain("当前节点（本轮主要语义焦点）");
+      expect(request.context).toContain("ChatGPT 网页版是不是不计算用量");
+      expect(request.context).toContain("显式连线的上游画布上下文");
+      expect(request.context).toContain("CONNECTED_GRAPH_MCP_BACKGROUND");
+      expect(request.context.indexOf("当前节点（本轮主要语义焦点）"))
+        .toBeLessThan(request.context.indexOf("显式连线的上游画布上下文"));
+      expect(request.prompt).toContain("直接处理当前节点表达的请求");
+      return { text: "当前节点已优先回答", usage: null };
+    });
+
+    const result = await runProjectAgentTurn({
+      projectId,
+      conversationId: "current-conversation",
+      sourceNodeId: "current-node",
+      resultNodeId: "current-result",
+      prompt: "请直接处理当前节点表达的请求；如果当前节点包含问题，优先回答该问题。",
+      currentNodeContext: "文本节点「当前问题」\nChatGPT 网页版是不是不计算用量？",
+      connectedGraphContext: "CONNECTED_GRAPH_MCP_BACKGROUND：上游节点此前讨论过 MCP 配置。",
+      model,
+      turnId: "current-turn",
+    }, { dataDir, callModel: callModel as never });
+
+    expect(result).toMatchObject({ status: "completed", answer: "当前节点已优先回答" });
+    expect(callModel).toHaveBeenCalledTimes(1);
+  });
+
   it("does not expose blanket-denied tools to the model while retaining content-scoped rules", async () => {
     await bindLocalWorkspace({ projectId, rootPath: workspaceRoot }, dataDir);
     await fs.mkdir(path.join(workspaceRoot, ".zenme"), { recursive: true });
