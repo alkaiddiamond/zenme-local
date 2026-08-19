@@ -142,6 +142,50 @@ export async function updateProjectAgentEvent(input: {
   return updated;
 }
 
+export async function updateProjectAgentConversationContext(input: {
+  projectId: string;
+  conversationId: string;
+  summary?: string;
+  compactedThroughSequence?: number;
+}, dataDir = getZenmeDataDir()) {
+  validateProjectId(input.projectId);
+  const conversationId = input.conversationId.trim();
+  if (!conversationId) {
+    throw new ProjectAgentSessionError("Conversation 标识无效", "invalid_input");
+  }
+  if (input.summary !== undefined && input.summary.trim().length > MAX_SUMMARY_LENGTH) {
+    throw new ProjectAgentSessionError("Conversation 摘要无效", "invalid_input");
+  }
+  if (
+    input.compactedThroughSequence !== undefined &&
+    (!Number.isSafeInteger(input.compactedThroughSequence) || input.compactedThroughSequence < 0)
+  ) {
+    throw new ProjectAgentSessionError("Conversation 压缩边界无效", "invalid_input");
+  }
+
+  let updated!: ProjectAgentConversation;
+  await mutateSession(input.projectId, dataDir, (session) => {
+    const conversation = session.conversations?.find((candidate) => candidate.id === conversationId);
+    if (!conversation) {
+      throw new ProjectAgentSessionError("Conversation 不存在", "invalid_input");
+    }
+    const now = new Date().toISOString();
+    if (input.summary !== undefined) {
+      const summary = input.summary.trim();
+      if (summary) conversation.summary = summary;
+      else delete conversation.summary;
+    }
+    if (input.compactedThroughSequence !== undefined) {
+      conversation.compactedThroughSequence = input.compactedThroughSequence;
+    }
+    conversation.updatedAt = now;
+    session.updatedAt = now;
+    updated = { ...conversation };
+    return session;
+  });
+  return updated;
+}
+
 export async function upsertProjectAgentAnswerDraft(input: {
   projectId: string;
   turnId: string;

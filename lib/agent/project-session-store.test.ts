@@ -18,6 +18,7 @@ import {
   getProjectAgentTask,
   listProjectAgentTasks,
   updateProjectAgentContext,
+  updateProjectAgentConversationContext,
   updateProjectAgentEvent,
   updateProjectAgentTask,
   updateProjectAgentTaskPlan,
@@ -125,6 +126,53 @@ describe("project agent session store", () => {
         forkedFromTurnId: "turn-a",
       }),
     ]);
+  });
+
+  it("stores conversation-local summary metadata without changing the project summary", async () => {
+    await appendProjectAgentEvent({
+      projectId,
+      turnId: "turn-a",
+      conversationId: "conv-a",
+      sourceNodeId: "node-a",
+      type: "user",
+      content: "A",
+    }, dataDir);
+    await appendProjectAgentEvent({
+      projectId,
+      turnId: "turn-a",
+      type: "assistant",
+      content: "A reply",
+    }, dataDir);
+    await appendProjectAgentEvent({
+      projectId,
+      turnId: "turn-next",
+      type: "user",
+      content: "next",
+    }, dataDir);
+    await createProjectAgentCompactCheckpoint({
+      projectId,
+      summary: "project summary",
+      compactedThroughSequence: 2,
+      sourceTokenEstimate: 10,
+    }, dataDir);
+
+    await expect(updateProjectAgentConversationContext({
+      projectId,
+      conversationId: "conv-a",
+      summary: "conversation summary",
+      compactedThroughSequence: 1,
+    }, dataDir)).resolves.toMatchObject({
+      id: "conv-a",
+      summary: "conversation summary",
+      compactedThroughSequence: 1,
+    });
+
+    const session = await getProjectAgentSession(projectId, dataDir);
+    expect(session.context.activeSummary).toBe("project summary");
+    expect(session.conversations?.find((conversation) => conversation.id === "conv-a")).toMatchObject({
+      summary: "conversation summary",
+      compactedThroughSequence: 1,
+    });
   });
 
   it("updates one active tool event in place for streamed progress", async () => {

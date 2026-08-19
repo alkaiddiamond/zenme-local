@@ -48,6 +48,8 @@ export type ProjectAgentConversation = {
   rootNodeId?: string;
   parentConversationIds?: string[];
   forkedFromTurnId?: string;
+  summary?: string;
+  compactedThroughSequence?: number;
   createdAt: string;
   updatedAt: string;
   [key: string]: unknown;
