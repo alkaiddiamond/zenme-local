@@ -272,6 +272,7 @@ export async function runProjectAgentTurnFromApi(input: {
   currentNodeContext?: string;
   connectedGraphContext?: string;
   conversationId?: string;
+  parentConversationIds?: string[];
   fileDocumentIds?: string[];
   imageDataUrls?: string[];
   model: string;
@@ -304,6 +305,7 @@ export async function runProjectAgentTurnFromApi(input: {
         currentNodeContext: input.currentNodeContext,
         connectedGraphContext: input.connectedGraphContext,
         conversationId: input.conversationId,
+        parentConversationIds: input.parentConversationIds,
         fileDocumentIds: input.fileDocumentIds,
         imageDataUrls: input.imageDataUrls,
         model: input.model,

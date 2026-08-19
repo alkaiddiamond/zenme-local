@@ -64,6 +64,7 @@ export async function appendProjectAgentEvent(input: {
   projectId: string;
   turnId?: string;
   conversationId?: string;
+  parentConversationIds?: string[];
   parentTurnId?: string;
   sourceNodeId?: string;
   resultNodeId?: string;
@@ -92,6 +93,24 @@ export async function appendProjectAgentEvent(input: {
       content: input.content,
       data: input.data,
     };
+    const conversationId = appended.conversationId;
+    if (conversationId) {
+      const conversations = session.conversations ?? (session.conversations = []);
+      const existingConversation = conversations.find((conversation) => conversation.id === conversationId);
+      if (existingConversation) {
+        existingConversation.updatedAt = now;
+      } else {
+        const parentConversationIds = [...new Set((input.parentConversationIds ?? []).filter(Boolean))];
+        conversations.push({
+          id: conversationId,
+          rootNodeId: appended.sourceNodeId,
+          parentConversationIds: parentConversationIds.length ? parentConversationIds : undefined,
+          forkedFromTurnId: parentConversationIds.length ? appended.parentTurnId : undefined,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
     session.events.push(appended);
     session.updatedAt = now;
     return session;

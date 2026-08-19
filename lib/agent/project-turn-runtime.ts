@@ -222,6 +222,7 @@ export async function startProjectAgentTurnRun(input: {
   currentNodeContext?: string;
   connectedGraphContext?: string;
   conversationId?: string;
+  parentConversationIds?: string[];
   parentTurnId?: string;
   resultNodeId?: string;
   selectedNodeIds?: string[];
@@ -384,6 +385,7 @@ export async function runProjectAgentTurn(input: {
   currentNodeContext?: string;
   connectedGraphContext?: string;
   conversationId?: string;
+  parentConversationIds?: string[];
   parentTurnId?: string;
   resultNodeId?: string;
   selectedNodeIds?: string[];
@@ -481,6 +483,7 @@ export async function runProjectAgentTurn(input: {
       projectId: input.projectId,
       turnId,
       conversationId: input.conversationId,
+      parentConversationIds: input.parentConversationIds,
       parentTurnId: input.parentTurnId,
       resultNodeId: input.resultNodeId,
       sourceNodeId: input.sourceNodeId,
@@ -493,6 +496,7 @@ export async function runProjectAgentTurn(input: {
         canvasContext: input.canvasContext?.slice(0, 200_000) || undefined,
         currentNodeContext: input.currentNodeContext?.slice(0, 200_000) || undefined,
         connectedGraphContext: input.connectedGraphContext?.slice(0, 200_000) || undefined,
+        parentConversationIds: dedupeStrings(input.parentConversationIds),
         imageCount: input.imageDataUrls?.length ?? 0,
         reasoningEffort: turnReasoningEffort,
         modelSpeed: turnModelSpeed,

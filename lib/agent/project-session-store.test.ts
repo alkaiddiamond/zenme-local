@@ -93,6 +93,40 @@ describe("project agent session store", () => {
     expect(reloaded.events.every((event) => event.turnId === turnId)).toBe(true);
   });
 
+  it("persists conversation roots and fork metadata alongside the project event store", async () => {
+    await appendProjectAgentEvent({
+      projectId,
+      turnId: "turn-a",
+      conversationId: "conv-a",
+      sourceNodeId: "node-a",
+      type: "user",
+      content: "A",
+    }, dataDir);
+    await appendProjectAgentEvent({
+      projectId,
+      turnId: "turn-b",
+      conversationId: "conv-b",
+      parentConversationIds: ["conv-a"],
+      parentTurnId: "turn-a",
+      sourceNodeId: "node-b",
+      type: "user",
+      content: "B",
+    }, dataDir);
+
+    expect((await getProjectAgentSession(projectId, dataDir)).conversations).toEqual([
+      expect.objectContaining({
+        id: "conv-a",
+        rootNodeId: "node-a",
+      }),
+      expect.objectContaining({
+        id: "conv-b",
+        rootNodeId: "node-b",
+        parentConversationIds: ["conv-a"],
+        forkedFromTurnId: "turn-a",
+      }),
+    ]);
+  });
+
   it("updates one active tool event in place for streamed progress", async () => {
     const active = await appendProjectAgentEvent({
       projectId,

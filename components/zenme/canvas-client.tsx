@@ -111,7 +111,7 @@ import {
   getSelectionToolbarPosition,
 } from "@/components/zenme/canvas/derived-state";
 import { collectAgentTurnReferences } from "@/components/zenme/canvas/agent-context";
-import { resolveConversationLineage, resolveInheritedConversation } from "@/lib/agent/conversation-lineage";
+import { resolveConversationLineage, resolveConversationRoute } from "@/lib/agent/conversation-lineage";
 import { consumeHomePromptRequest } from "@/components/zenme/canvas/home-prompt";
 import {
   requestTextGenerationResponse,
@@ -2652,16 +2652,24 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         const lineageNode = currentNodes.find((node) => node.id === lineageNodeId);
         return typeof lineageNode?.data.agentTurnId === "string" ? [lineageNode.data.agentTurnId] : [];
       });
-      const inheritedConversation = resolveInheritedConversation({
+      const conversationRoute = resolveConversationRoute({
+        edges: currentEdges,
         events: conversationSession.events,
+        nodeId,
         turnIds: lineageTurnIds,
+        createConversationId: () => crypto.randomUUID(),
       });
       const conversationId = retryExistingTurn
         ? retryUserEvent?.conversationId
-        : inheritedConversation.conversationId ?? crypto.randomUUID();
+        : conversationRoute.conversationId;
       const parentTurnId = retryExistingTurn
         ? retryUserEvent?.parentTurnId
-        : inheritedConversation.parentTurnId;
+        : conversationRoute.parentTurnId;
+      const parentConversationIds = retryExistingTurn
+        ? (Array.isArray(retryUserEvent?.data?.parentConversationIds)
+            ? retryUserEvent.data.parentConversationIds.filter((value): value is string => typeof value === "string")
+            : [])
+        : conversationRoute.parentConversationIds;
       const persistedModel = typeof retryUserEvent?.data?.model === "string" ? retryUserEvent.data.model : undefined;
       const model = persistedModel || input?.model || sourceNode.data.textGenerationModel || defaultTextModel;
       const persistedPrompt = retryUserEvent?.content?.trim() || undefined;
@@ -2787,6 +2795,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           model,
           modelSpeed: input?.modelSpeed,
           permissionMode: input?.permissionMode,
+          parentConversationIds,
           parentTurnId,
           projectId,
           prompt,

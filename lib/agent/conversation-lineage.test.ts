@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveConversationLineage, resolveInheritedConversation } from "@/lib/agent/conversation-lineage";
+import {
+  resolveConversationLineage,
+  resolveConversationRoute,
+  resolveInheritedConversation,
+  shouldForkConversation,
+} from "@/lib/agent/conversation-lineage";
 
 describe("resolveConversationLineage", () => {
   it("treats an unconnected node as a conversation root", () => {
@@ -53,6 +58,55 @@ describe("resolveConversationLineage", () => {
       conversationId: undefined,
       parentTurnId: "turn-a",
       parentConversationIds: ["conv-a", "conv-b"],
+    });
+  });
+
+  it("keeps a linear path in the same conversation", () => {
+    expect(shouldForkConversation({
+      edges: [
+        { source: "A", target: "B" },
+        { source: "B", target: "C" },
+      ],
+      nodeId: "C",
+    })).toBe(false);
+  });
+
+  it("forks when the current path crosses a graph branch", () => {
+    expect(shouldForkConversation({
+      edges: [
+        { source: "A", target: "B" },
+        { source: "A", target: "D" },
+        { source: "B", target: "C" },
+      ],
+      nodeId: "C",
+    })).toBe(true);
+  });
+
+  it("forks a second child run from the same source node", () => {
+    expect(shouldForkConversation({
+      edges: [{ source: "source", target: "existing-child" }],
+      nodeId: "source",
+    })).toBe(true);
+  });
+
+  it("creates a new conversation for a fork while retaining the parent conversation", () => {
+    const events = [
+      { id: "e1", sequence: 1, turnId: "turn-a", conversationId: "conv-a", type: "user" as const, createdAt: "now" },
+    ];
+    expect(resolveConversationRoute({
+      edges: [
+        { source: "A", target: "B" },
+        { source: "A", target: "D" },
+      ],
+      events,
+      nodeId: "B",
+      turnIds: ["turn-a"],
+      createConversationId: () => "conv-b",
+    })).toEqual({
+      conversationId: "conv-b",
+      parentTurnId: "turn-a",
+      parentConversationIds: ["conv-a"],
+      forked: true,
     });
   });
 });

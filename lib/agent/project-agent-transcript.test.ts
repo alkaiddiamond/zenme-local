@@ -31,6 +31,54 @@ describe("project agent transcript", () => {
     ]);
   });
 
+  it("inherits one parent conversation only through the fork turn", () => {
+    const events = [
+      event({ id: "a1-user", sequence: 1, turnId: "turn-a1", conversationId: "conv-a", type: "user", content: "A1" }),
+      event({ id: "a1-assistant", sequence: 2, turnId: "turn-a1", type: "assistant", content: "A1 reply" }),
+      event({ id: "a2-user", sequence: 3, turnId: "turn-a2", conversationId: "conv-a", type: "user", content: "A2" }),
+      event({ id: "a2-assistant", sequence: 4, turnId: "turn-a2", type: "assistant", content: "A2 reply" }),
+      event({
+        id: "b-user",
+        sequence: 5,
+        turnId: "turn-b",
+        conversationId: "conv-b",
+        parentTurnId: "turn-a1",
+        type: "user",
+        content: "B",
+        data: { parentConversationIds: ["conv-a"] },
+      }),
+      event({ id: "b-assistant", sequence: 6, turnId: "turn-b", type: "assistant", content: "B reply" }),
+    ];
+
+    expect(projectConversationEvents(events, "conv-b").map((item) => item.id)).toEqual([
+      "a1-user",
+      "a1-assistant",
+      "b-user",
+      "b-assistant",
+    ]);
+  });
+
+  it("does not merge parent transcripts for a multi-parent conversation", () => {
+    const events = [
+      event({ id: "a-user", sequence: 1, turnId: "turn-a", conversationId: "conv-a", type: "user", content: "A" }),
+      event({ id: "b-user", sequence: 2, turnId: "turn-b", conversationId: "conv-b", type: "user", content: "B" }),
+      event({
+        id: "c-user",
+        sequence: 3,
+        turnId: "turn-c",
+        conversationId: "conv-c",
+        parentTurnId: "turn-a",
+        type: "user",
+        content: "C",
+        data: { parentConversationIds: ["conv-a", "conv-b"] },
+      }),
+    ];
+
+    expect(projectConversationEvents(events, "conv-c").map((item) => item.id)).toEqual([
+      "c-user",
+    ]);
+  });
+
   it("preserves cc-haha-style tool use and tool result relationships", () => {
     expect(projectAgentTranscript([
       event({ id: "user-1", sequence: 1, type: "user", content: "检查项目状态" }),

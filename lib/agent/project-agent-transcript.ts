@@ -6,12 +6,49 @@ export function projectConversationEvents(
   conversationId?: string,
 ) {
   if (!conversationId) return [...events];
-  const turnIds = new Set(
-    events
-      .filter((event) => event.conversationId === conversationId)
-      .map((event) => event.turnId),
+  return collectConversationLineageEvents(events, conversationId, Number.POSITIVE_INFINITY, new Set());
+}
+
+function collectConversationLineageEvents(
+  events: readonly ProjectAgentEvent[],
+  conversationId: string,
+  maxSequence: number,
+  visitedConversationIds: Set<string>,
+): ProjectAgentEvent[] {
+  if (visitedConversationIds.has(conversationId)) return [];
+  visitedConversationIds.add(conversationId);
+
+  const taggedEvents = events.filter((event) =>
+    event.conversationId === conversationId && event.sequence <= maxSequence
   );
-  return events.filter((event) => turnIds.has(event.turnId));
+  const turnIds = new Set(taggedEvents.map((event) => event.turnId));
+  const ownEvents = events.filter((event) =>
+    turnIds.has(event.turnId) && event.sequence <= maxSequence
+  );
+  const firstUserEvent = taggedEvents.find((event) => event.type === "user");
+  const parentConversationIds = Array.isArray(firstUserEvent?.data?.parentConversationIds)
+    ? firstUserEvent.data.parentConversationIds.filter((value): value is string => typeof value === "string")
+    : [];
+  const parentTurnId = firstUserEvent?.parentTurnId;
+
+  let inheritedEvents: ProjectAgentEvent[] = [];
+  if (parentConversationIds.length === 1 && parentTurnId) {
+    const parentTurnSequence = events.reduce((maximum, event) =>
+      event.turnId === parentTurnId ? Math.max(maximum, event.sequence) : maximum
+    , 0);
+    if (parentTurnSequence > 0) {
+      inheritedEvents = collectConversationLineageEvents(
+        events,
+        parentConversationIds[0],
+        parentTurnSequence,
+        visitedConversationIds,
+      );
+    }
+  }
+
+  const byId = new Map<string, ProjectAgentEvent>();
+  for (const event of [...inheritedEvents, ...ownEvents]) byId.set(event.id, event);
+  return [...byId.values()].sort((left, right) => left.sequence - right.sequence);
 }
 
 export function projectAgentTranscript(events: readonly ProjectAgentEvent[]): ChatMessage[] {

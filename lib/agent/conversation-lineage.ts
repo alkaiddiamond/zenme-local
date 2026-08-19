@@ -57,3 +57,44 @@ export function resolveInheritedConversation(input: {
     parentConversationIds: conversationIds,
   };
 }
+
+export function shouldForkConversation(input: {
+  edges: Pick<Edge, "source" | "target">[];
+  nodeId: string;
+}) {
+  const lineage = resolveConversationLineage(input);
+  const outboundCounts = new Map<string, number>();
+  for (const edge of input.edges) {
+    outboundCounts.set(edge.source, (outboundCounts.get(edge.source) ?? 0) + 1);
+  }
+
+  if (lineage.directParentNodeIds.length > 1) return true;
+  if ((outboundCounts.get(input.nodeId) ?? 0) > 0) return true;
+  return lineage.ancestorNodeIds.some((ancestorNodeId) =>
+    (outboundCounts.get(ancestorNodeId) ?? 0) > 1
+  );
+}
+
+export function resolveConversationRoute(input: {
+  edges: Pick<Edge, "source" | "target">[];
+  events: readonly ProjectAgentEvent[];
+  nodeId: string;
+  turnIds: readonly string[];
+  createConversationId: () => string;
+}) {
+  const inherited = resolveInheritedConversation({
+    events: input.events,
+    turnIds: input.turnIds,
+  });
+  const forked = shouldForkConversation({ edges: input.edges, nodeId: input.nodeId }) ||
+    inherited.parentConversationIds.length > 1;
+  const canInherit = !forked && inherited.parentConversationIds.length === 1;
+  return {
+    conversationId: canInherit
+      ? inherited.parentConversationIds[0]
+      : input.createConversationId(),
+    parentTurnId: inherited.parentTurnId,
+    parentConversationIds: inherited.parentConversationIds,
+    forked,
+  };
+}
