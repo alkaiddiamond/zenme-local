@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   planProjectAgentCompaction,
+  planProjectAgentConversationCompaction,
   projectProjectAgentToolResultsForModel,
   PROJECT_AGENT_TOOL_RESULT_CLEARED,
   thinProjectAgentToolResults,
@@ -64,6 +65,37 @@ describe("project agent context policy", () => {
     ];
     expect(planProjectAgentCompaction(makeSession(resolvedEvents), config)?.eventsToKeep
       .map((item) => item.turnId)).toEqual(["turn-3", "turn-3"]);
+  });
+
+  it("plans compaction only from the selected conversation lineage", () => {
+    const conversationTurnA = turn("turn-a1", 1, "conversation first");
+    const conversationTurnB = turn("turn-a2", 3, "conversation second");
+    const unrelatedTurn = turn("turn-b1", 5, "unrelated");
+    conversationTurnA[0]!.conversationId = "conv-a";
+    conversationTurnB[0]!.conversationId = "conv-a";
+    unrelatedTurn[0]!.conversationId = "conv-b";
+    const session = makeSession([
+      ...conversationTurnA,
+      ...conversationTurnB,
+      ...unrelatedTurn,
+    ]);
+    session.conversations = [{
+      id: "conv-a",
+      summary: "previous conversation summary",
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    }];
+
+    const plan = planProjectAgentConversationCompaction(session, "conv-a", {
+      minTokens: 1,
+      minTextMessages: 1,
+      maxTokens: 1,
+    });
+
+    expect(plan?.previousSummary).toBe("previous conversation summary");
+    expect(plan?.eventsToSummarize.map((item) => item.turnId)).toEqual(["turn-a1", "turn-a1"]);
+    expect(plan?.eventsToKeep.map((item) => item.turnId)).toEqual(["turn-a2", "turn-a2"]);
+    expect(plan?.eventsToSummarize.some((item) => item.turnId === "turn-b1")).toBe(false);
   });
 
   it("clears only old tool payloads in the model projection and leaves source events unchanged", () => {

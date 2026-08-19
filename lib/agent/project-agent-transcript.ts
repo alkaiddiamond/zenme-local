@@ -4,9 +4,14 @@ import type { ChatMessage, ChatToolCall } from "@/lib/ai/chat-message";
 export function projectConversationEvents(
   events: readonly ProjectAgentEvent[],
   conversationId?: string,
+  options: { compactedThroughSequence?: number } = {},
 ) {
   if (!conversationId) return [...events];
-  return collectConversationLineageEvents(events, conversationId, Number.POSITIVE_INFINITY, new Set());
+  const projected = collectConversationLineageEvents(events, conversationId, Number.POSITIVE_INFINITY, new Set());
+  const compactedThroughSequence = Math.max(0, options.compactedThroughSequence ?? 0);
+  return compactedThroughSequence
+    ? projected.filter((event) => event.sequence > compactedThroughSequence)
+    : projected;
 }
 
 function collectConversationLineageEvents(

@@ -3,6 +3,7 @@ import type {
   ProjectAgentEvent,
   ProjectAgentSession,
 } from "@/lib/agent/project-session-types";
+import { projectConversationEvents } from "@/lib/agent/project-agent-transcript";
 
 export const PROJECT_AGENT_COMPACT_PRESERVE = {
   minTokens: 10_000,
@@ -48,12 +49,41 @@ export function planProjectAgentCompaction(
     maxTokens?: number;
   } = {},
 ): ProjectAgentCompactionPlan | null {
-  const minTokens = positiveInteger(config.minTokens, PROJECT_AGENT_COMPACT_PRESERVE.minTokens);
-  const minTextMessages = positiveInteger(config.minTextMessages, PROJECT_AGENT_COMPACT_PRESERVE.minTextMessages);
-  const maxTokens = positiveInteger(config.maxTokens, PROJECT_AGENT_COMPACT_PRESERVE.maxTokens);
   const activeEvents = session.events.filter(
     (event) => event.sequence > session.context.compactedThroughSequence && event.type !== "compact",
   );
+  return planAgentCompaction(activeEvents, session.context.activeSummary, config);
+}
+
+export function planProjectAgentConversationCompaction(
+  session: ProjectAgentSession,
+  conversationId: string,
+  config: {
+    minTokens?: number;
+    minTextMessages?: number;
+    maxTokens?: number;
+  } = {},
+): ProjectAgentCompactionPlan | null {
+  const conversation = session.conversations?.find((candidate) => candidate.id === conversationId);
+  if (!conversation) return null;
+  const activeEvents = projectConversationEvents(session.events, conversationId, {
+    compactedThroughSequence: conversation.compactedThroughSequence,
+  }).filter((event) => event.type !== "compact");
+  return planAgentCompaction(activeEvents, conversation.summary ?? "", config);
+}
+
+function planAgentCompaction(
+  activeEvents: ProjectAgentEvent[],
+  previousSummary: string,
+  config: {
+    minTokens?: number;
+    minTextMessages?: number;
+    maxTokens?: number;
+  },
+): ProjectAgentCompactionPlan | null {
+  const minTokens = positiveInteger(config.minTokens, PROJECT_AGENT_COMPACT_PRESERVE.minTokens);
+  const minTextMessages = positiveInteger(config.minTextMessages, PROJECT_AGENT_COMPACT_PRESERVE.minTextMessages);
+  const maxTokens = positiveInteger(config.maxTokens, PROJECT_AGENT_COMPACT_PRESERVE.maxTokens);
   if (activeEvents.length < 2) return null;
 
   const groups = groupEventsByTurn(activeEvents);
@@ -86,13 +116,13 @@ export function planProjectAgentCompaction(
   if (eventsToKeep.some((event) => event.sequence <= compactedThroughSequence)) return null;
 
   return {
-    previousSummary: session.context.activeSummary,
+    previousSummary,
     eventsToSummarize,
     eventsToKeep,
     compactedThroughSequence,
     sourceTokenEstimate: eventsToSummarize.reduce(
       (total, event) => total + estimateProjectAgentEventTokens(event),
-      estimateProjectAgentTextTokens(session.context.activeSummary),
+      estimateProjectAgentTextTokens(previousSummary),
     ),
     retainedTokenEstimate: eventsToKeep.reduce(
       (total, event) => total + estimateProjectAgentEventTokens(event),

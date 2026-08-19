@@ -50,6 +50,10 @@ export type ProjectAgentConversation = {
   forkedFromTurnId?: string;
   summary?: string;
   compactedThroughSequence?: number;
+  consecutiveCompactionFailures?: number;
+  compactionBlockedAt?: string;
+  lastCompactionFailureCode?: string;
+  lastCompactedAt?: string;
   createdAt: string;
   updatedAt: string;
   [key: string]: unknown;

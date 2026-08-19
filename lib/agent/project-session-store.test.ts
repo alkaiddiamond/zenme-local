@@ -173,6 +173,11 @@ describe("project agent session store", () => {
       summary: "conversation summary",
       compactedThroughSequence: 1,
     });
+    await expect(getProjectAgentModelContext(projectId, dataDir, "conv-a")).resolves.toMatchObject({
+      summary: "project summary",
+      conversationSummary: "conversation summary",
+      conversationCompactedThroughSequence: 1,
+    });
   });
 
   it("updates one active tool event in place for streamed progress", async () => {
@@ -446,6 +451,36 @@ describe("project agent session store", () => {
     expect(recovered.context).toMatchObject({ consecutiveCompactionFailures: 0 });
     expect(recovered.context.compactionBlockedAt).toBeUndefined();
     expect(canAttemptProjectAgentCompaction(recovered)).toBe(true);
+  });
+
+  it("isolates compaction failure counters between conversations", async () => {
+    for (const conversationId of ["conv-a", "conv-b"]) {
+      await appendProjectAgentEvent({
+        projectId,
+        turnId: `${conversationId}-turn`,
+        conversationId,
+        sourceNodeId: `${conversationId}-node`,
+        type: "user",
+        content: conversationId,
+      }, dataDir);
+    }
+
+    await recordProjectAgentCompactionFailure({ projectId, conversationId: "conv-a", code: "failed" }, dataDir);
+    await recordProjectAgentCompactionFailure({ projectId, conversationId: "conv-a", code: "failed" }, dataDir);
+    await recordProjectAgentCompactionFailure({ projectId, conversationId: "conv-a", code: "failed" }, dataDir);
+
+    const session = await getProjectAgentSession(projectId, dataDir);
+    expect(canAttemptProjectAgentCompaction(session, "conv-a")).toBe(false);
+    expect(canAttemptProjectAgentCompaction(session, "conv-b")).toBe(true);
+    expect(canAttemptProjectAgentCompaction(session)).toBe(true);
+
+    await updateProjectAgentConversationContext({
+      projectId,
+      conversationId: "conv-a",
+      summary: "recovered",
+      compactedThroughSequence: 1,
+    }, dataDir);
+    expect(canAttemptProjectAgentCompaction(await getProjectAgentSession(projectId, dataDir), "conv-a")).toBe(true);
   });
 
   it("rejects compact boundaries that split a turn or cross pending approval", async () => {

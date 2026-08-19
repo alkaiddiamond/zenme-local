@@ -1355,6 +1355,64 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
     expect(session.context.activeSummary).toBe("压缩后的早期上下文");
   });
 
+  it("compacts only the active conversation when a conversation id is present", async () => {
+    for (let index = 0; index < 2; index += 1) {
+      await appendProjectAgentEvent({
+        projectId,
+        turnId: `conv-a-old-${index}`,
+        conversationId: "conv-a",
+        sourceNodeId: `node-a-${index}`,
+        type: "user",
+        content: `A old ${index}`,
+      }, dataDir);
+      await appendProjectAgentEvent({
+        projectId,
+        turnId: `conv-a-old-${index}`,
+        type: "assistant",
+        content: `A reply ${index}`,
+      }, dataDir);
+    }
+    await appendProjectAgentEvent({
+      projectId,
+      turnId: "conv-b-old",
+      conversationId: "conv-b",
+      sourceNodeId: "node-b",
+      type: "user",
+      content: "B old",
+    }, dataDir);
+    await appendProjectAgentEvent({
+      projectId,
+      turnId: "conv-b-old",
+      type: "assistant",
+      content: "B reply",
+    }, dataDir);
+
+    const result = await runProjectAgentTurn({
+      projectId,
+      conversationId: "conv-a",
+      prompt: "/compact 保留 A 分支结论",
+      model,
+      turnId: "conv-a-compact",
+    }, {
+      dataDir,
+      callModel: async () => ({ text: "A conversation summary", usage: null }),
+    });
+
+    expect(result.status).toBe("completed");
+    const session = await getProjectAgentSession(projectId, dataDir);
+    expect(session.context.activeSummary).toBe("");
+    expect(session.conversations?.find((conversation) => conversation.id === "conv-a")).toMatchObject({
+      summary: "A conversation summary",
+    });
+    expect(session.conversations?.find((conversation) => conversation.id === "conv-b")?.summary).toBeUndefined();
+    expect(session.events).toContainEqual(expect.objectContaining({
+      turnId: "conv-a-compact",
+      conversationId: "conv-a",
+      type: "compact",
+      data: expect.objectContaining({ scope: "conversation" }),
+    }));
+  });
+
   it("runs cc-haha-compatible PreCompact and PostCompact Hooks around the checkpoint", async () => {
     await bindLocalWorkspace({ projectId, rootPath: workspaceRoot }, dataDir);
     await fs.mkdir(path.join(workspaceRoot, ".claude"), { recursive: true });

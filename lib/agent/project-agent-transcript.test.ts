@@ -79,6 +79,20 @@ describe("project agent transcript", () => {
     ]);
   });
 
+  it("starts the projected conversation transcript after its local compact boundary", () => {
+    const events = [
+      event({ id: "a-user", sequence: 1, turnId: "turn-a", conversationId: "conv-a", type: "user", content: "A" }),
+      event({ id: "a-assistant", sequence: 2, turnId: "turn-a", type: "assistant", content: "A reply" }),
+      event({ id: "b-user", sequence: 3, turnId: "turn-b", conversationId: "conv-a", type: "user", content: "B" }),
+      event({ id: "b-assistant", sequence: 4, turnId: "turn-b", type: "assistant", content: "B reply" }),
+    ];
+
+    expect(projectConversationEvents(events, "conv-a", { compactedThroughSequence: 2 }).map((item) => item.id)).toEqual([
+      "b-user",
+      "b-assistant",
+    ]);
+  });
+
   it("preserves cc-haha-style tool use and tool result relationships", () => {
     expect(projectAgentTranscript([
       event({ id: "user-1", sequence: 1, type: "user", content: "检查项目状态" }),

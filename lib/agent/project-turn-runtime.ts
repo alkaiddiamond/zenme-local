@@ -30,11 +30,16 @@ import {
   getProjectAgentSession,
   recordProjectAgentCompactionFailure,
   shouldCompactProjectAgentContext,
+  updateProjectAgentConversationContext,
   updateProjectAgentContext,
   updateProjectAgentEvent,
   upsertProjectAgentAnswerDraft,
 } from "@/lib/agent/project-session-store";
-import { isProjectAgentShellCommandTool, planProjectAgentCompaction } from "@/lib/agent/project-context-policy";
+import {
+  isProjectAgentShellCommandTool,
+  planProjectAgentCompaction,
+  planProjectAgentConversationCompaction,
+} from "@/lib/agent/project-context-policy";
 import type { AgentCommandRequest, AgentWorkspaceToolArguments, AgentWorkspaceToolName, AgentWorkspaceToolResult } from "@/lib/agent/types";
 import {
   AgentHookPreventContinuationError,
@@ -921,21 +926,41 @@ export async function runProjectAgentTurn(input: {
     }
     if (contextUsageRequested) {
       const session = await getProjectAgentSession(input.projectId, dataDir);
-      const modelContext = await getProjectAgentModelContext(input.projectId, dataDir);
-      const effectiveTokens = Math.max(session.context.inputTokens, modelContext.estimatedTokens);
+      const modelContext = await getProjectAgentModelContext(input.projectId, dataDir, input.conversationId);
+      const effectiveTokens = input.conversationId
+        ? modelContext.estimatedConversationTokens
+        : Math.max(session.context.inputTokens, modelContext.estimatedTokens);
+      const conversation = input.conversationId
+        ? session.conversations?.find((candidate) => candidate.id === input.conversationId)
+        : undefined;
+      const projectedConversationEvents = input.conversationId
+        ? projectConversationEvents(modelContext.events, input.conversationId, {
+            compactedThroughSequence: modelContext.conversationCompactedThroughSequence,
+          })
+        : modelContext.events;
       const budget = calculateProjectAgentContextBudget(modelInfo.contextWindow);
       const answer = formatContextUsage({
+        scope: input.conversationId ? "conversation" : "project",
         model: input.model,
         contextWindow: modelInfo.contextWindow,
         effectiveTokens,
-        estimatedProjectionTokens: modelContext.estimatedTokens,
+        estimatedProjectionTokens: input.conversationId
+          ? modelContext.estimatedConversationTokens
+          : modelContext.estimatedTokens,
         providerReportedInputTokens: session.context.inputTokens,
         compactAtTokens: budget.compactAtTokens,
         reservedOutputTokens: budget.reservedOutputTokens,
         compactBufferTokens: budget.compactBufferTokens,
-        checkpointCount: session.compactCheckpoints.length,
-        hasActiveSummary: Boolean(session.context.activeSummary),
-        activeEventCount: modelContext.events.length,
+        checkpointCount: input.conversationId
+          ? session.events.filter((event) =>
+              event.conversationId === input.conversationId &&
+              event.type === "compact" && event.data?.scope === "conversation"
+            ).length
+          : session.compactCheckpoints.length,
+        hasActiveSummary: input.conversationId
+          ? Boolean(conversation?.summary)
+          : Boolean(session.context.activeSummary),
+        activeEventCount: projectedConversationEvents.length,
         microcompactTokensSaved: modelContext.microcompactTokensSaved,
       });
       await appendProjectAgentEvent({ projectId: input.projectId, turnId, type: "assistant", content: answer }, dataDir);
@@ -966,6 +991,7 @@ export async function runProjectAgentTurn(input: {
       }, dataDir);
       const compacted = await compactBeforeTurnIfNeeded({
         projectId: input.projectId,
+        conversationId: input.conversationId,
         model: input.model,
         contextWindow: modelInfo.contextWindow,
         callModel,
@@ -1239,6 +1265,7 @@ export async function runProjectAgentTurn(input: {
     }
     const automaticCompaction = await compactBeforeTurnIfNeeded({
       projectId: input.projectId,
+      conversationId: input.conversationId,
       model: input.model,
       contextWindow: modelInfo.contextWindow,
       callModel,
@@ -1509,7 +1536,7 @@ export async function runProjectAgentTurn(input: {
         JSON.stringify(pendingNativeDecision.arguments) === JSON.stringify(approvedMcpAction.arguments),
       );
       if (mcpActionApprovedForIteration) approvedMcpAction = undefined;
-      let modelContext = await getProjectAgentModelContext(input.projectId, dataDir);
+      let modelContext = await getProjectAgentModelContext(input.projectId, dataDir, input.conversationId);
       if (modelContext.newlyClearedToolResultEventIds.length) {
         await appendProjectAgentEvent({
           projectId: input.projectId,
@@ -1522,7 +1549,7 @@ export async function runProjectAgentTurn(input: {
             sourceTokenEstimate: modelContext.newMicrocompactTokensSaved,
           },
         }, dataDir);
-        modelContext = await getProjectAgentModelContext(input.projectId, dataDir);
+        modelContext = await getProjectAgentModelContext(input.projectId, dataDir, input.conversationId);
       }
       const workspaceBinding = await getLocalWorkspaceBinding(input.projectId, dataDir);
       const projectInstructions = await loadProjectAgentInstructions({
@@ -1607,7 +1634,9 @@ export async function runProjectAgentTurn(input: {
             ]),
             model: input.model,
             messages: [
-              ...projectAgentTranscript(projectConversationEvents(modelContext.events, input.conversationId)),
+              ...projectAgentTranscript(projectConversationEvents(modelContext.events, input.conversationId, {
+                compactedThroughSequence: modelContext.conversationCompactedThroughSequence,
+              })),
               ...(maxOutputTokensRecoveryInstruction
                 ? [{ role: "user" as const, content: maxOutputTokensRecoveryInstruction }]
                 : []),
@@ -1888,6 +1917,7 @@ export async function runProjectAgentTurn(input: {
             } else if (isContextOverflowError(error)) {
               const compacted = await compactBeforeTurnIfNeeded({
                 projectId: input.projectId,
+                conversationId: input.conversationId,
                 model: input.model,
                 contextWindow: modelInfo.contextWindow,
                 callModel,
@@ -3892,6 +3922,7 @@ async function applyAgentChangeSetIfAuthorized(
 
 async function compactBeforeTurnIfNeeded(input: {
   projectId: string;
+  conversationId?: string;
   model: string;
   contextWindow: number;
   callModel: typeof callProjectAgentModel;
@@ -3907,18 +3938,21 @@ async function compactBeforeTurnIfNeeded(input: {
 }, dataDir: string) {
   const trigger = input.trigger ?? "auto";
   const session = await getProjectAgentSession(input.projectId, dataDir);
-  const modelContext = await getProjectAgentModelContext(input.projectId, dataDir);
+  const modelContext = await getProjectAgentModelContext(input.projectId, dataDir, input.conversationId);
   const effectiveTokens = Math.max(
-    session.context.inputTokens,
-    modelContext.estimatedTokens,
+    input.conversationId ? 0 : session.context.inputTokens,
+    input.conversationId ? modelContext.estimatedConversationTokens : modelContext.estimatedTokens,
   );
   if (!input.force && trigger === "auto" && (
     !shouldCompactProjectAgentContext({ contextWindowTokens: input.contextWindow, effectiveTokens }) ||
-    !canAttemptProjectAgentCompaction(session)
+    !canAttemptProjectAgentCompaction(session, input.conversationId)
   )) return { status: "not_needed" as const };
-  const plan = planProjectAgentCompaction(session, trigger === "manual" || input.force
+  const compactConfig = trigger === "manual" || input.force
     ? { minTokens: 1, minTextMessages: 1, maxTokens: 1 }
-    : undefined);
+    : undefined;
+  const plan = input.conversationId
+    ? planProjectAgentConversationCompaction(session, input.conversationId, compactConfig)
+    : planProjectAgentCompaction(session, compactConfig);
   if (!plan) return { status: "not_needed" as const };
   await appendProjectAgentEvent({
     projectId: input.projectId,
@@ -3970,16 +4004,43 @@ async function compactBeforeTurnIfNeeded(input: {
       signal: input.signal,
     });
     if (!response.text.trim()) throw new Error("empty_summary");
-    const checkpoint = await createProjectAgentCompactCheckpoint({
-      projectId: input.projectId,
-      turnId: input.turnId,
-      summary: response.text,
-      compactedThroughSequence: plan.compactedThroughSequence,
-      sourceTokenEstimate: plan.sourceTokenEstimate,
-    }, dataDir);
-    checkpointId = checkpoint.id;
+    if (input.conversationId) {
+      checkpointId = crypto.randomUUID();
+      await updateProjectAgentConversationContext({
+        projectId: input.projectId,
+        conversationId: input.conversationId,
+        summary: response.text,
+        compactedThroughSequence: plan.compactedThroughSequence,
+      }, dataDir);
+      await appendProjectAgentEvent({
+        projectId: input.projectId,
+        turnId: input.turnId,
+        conversationId: input.conversationId,
+        type: "compact",
+        content: response.text,
+        data: {
+          scope: "conversation",
+          checkpointId,
+          compactedThroughSequence: plan.compactedThroughSequence,
+          sourceTokenEstimate: plan.sourceTokenEstimate,
+        },
+      }, dataDir);
+    } else {
+      const checkpoint = await createProjectAgentCompactCheckpoint({
+        projectId: input.projectId,
+        turnId: input.turnId,
+        summary: response.text,
+        compactedThroughSequence: plan.compactedThroughSequence,
+        sourceTokenEstimate: plan.sourceTokenEstimate,
+      }, dataDir);
+      checkpointId = checkpoint.id;
+    }
   } catch {
-    await recordProjectAgentCompactionFailure({ projectId: input.projectId, code: "summary_failed" }, dataDir);
+    await recordProjectAgentCompactionFailure({
+      projectId: input.projectId,
+      conversationId: input.conversationId,
+      code: "summary_failed",
+    }, dataDir);
     return { status: "failed" as const };
   }
   if (input.executionId && input.hooks) {
@@ -4307,7 +4368,10 @@ function buildTurnContext(
       permissions: root.permissions,
       git: root.git,
     })))}` : "当前项目尚未绑定 Workspace。",
-    context.summary ? `此前上下文摘要：\n${context.summary}` : "",
+    context.summary ? `Project 背景摘要（跨 Conversation，仅作长期背景）：\n${context.summary}` : "",
+    context.conversationSummary
+      ? `当前 Conversation 摘要（当前分支的连续对话历史）：\n${context.conversationSummary}`
+      : "",
     context.clearedToolResultEventIds.length
       ? `Microcompact 边界：已将 ${context.clearedToolResultEventIds.length} 个旧的、可重建工具结果替换为占位符，约节省 ${context.microcompactTokensSaved} tokens；最近工具结果及审批、任务、记忆等状态仍完整保留。`
       : "",
@@ -4488,6 +4552,7 @@ function compactionPrompt(customInstructions?: string) {
 }
 
 function formatContextUsage(input: {
+  scope: "project" | "conversation";
   model: string;
   contextWindow: number;
   effectiveTokens: number;
@@ -4509,6 +4574,7 @@ function formatContextUsage(input: {
   return [
     "## 上下文使用情况",
     "",
+    `- 范围：${input.scope === "conversation" ? "当前 Conversation" : "整个 Project Session"}`,
     `- 模型：${input.model}`,
     `- 有效上下文：约 ${formatTokenCount(input.effectiveTokens)} / ${formatTokenCount(input.contextWindow)} tokens（${percentage}%）`,
     `- 模型投影估算：约 ${formatTokenCount(input.estimatedProjectionTokens)} tokens`,

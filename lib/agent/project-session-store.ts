@@ -22,6 +22,7 @@ import {
   thinProjectAgentToolResults,
 } from "@/lib/agent/project-context-policy";
 import { normalizeProjectAgentHooks, type ProjectAgentHooks } from "@/lib/agent/project-agent-hooks";
+import { projectConversationEvents } from "@/lib/agent/project-agent-transcript";
 
 const mutationLocks = new Map<string, Promise<unknown>>();
 const MAX_EVENT_CONTENT_LENGTH = 500_000;
@@ -177,6 +178,10 @@ export async function updateProjectAgentConversationContext(input: {
     }
     if (input.compactedThroughSequence !== undefined) {
       conversation.compactedThroughSequence = input.compactedThroughSequence;
+      conversation.consecutiveCompactionFailures = 0;
+      conversation.lastCompactedAt = now;
+      delete conversation.compactionBlockedAt;
+      delete conversation.lastCompactionFailureCode;
     }
     conversation.updatedAt = now;
     session.updatedAt = now;
@@ -512,9 +517,13 @@ export async function getEffectiveProjectAgentContext(
 export async function getProjectAgentModelContext(
   projectId: string,
   dataDir = getZenmeDataDir(),
+  conversationId?: string,
 ) {
   const context = await getEffectiveProjectAgentContext(projectId, dataDir);
   const session = await getProjectAgentSession(projectId, dataDir);
+  const conversation = conversationId
+    ? session.conversations?.find((candidate) => candidate.id === conversationId)
+    : undefined;
   const previouslyClearedEventIds = session.events.flatMap((event) =>
     event.type === "compact" && event.data?.kind === "microcompact" &&
       Array.isArray(event.data.clearedToolResultEventIds)
@@ -530,8 +539,15 @@ export async function getProjectAgentModelContext(
     protectLatestUserTurn: false,
   });
   const modelEvents = projectProjectAgentToolResultsForModel(projection.events);
+  const conversationEvents = conversationId
+    ? projectConversationEvents(modelEvents, conversationId, {
+        compactedThroughSequence: conversation?.compactedThroughSequence,
+      })
+    : modelEvents;
   return {
     ...context,
+    conversationSummary: conversation?.summary ?? "",
+    conversationCompactedThroughSequence: conversation?.compactedThroughSequence ?? 0,
     interactionMode: session.context.interactionMode ?? "default",
     activePlan: session.context.activePlan ?? "",
     taskPlan: session.taskPlan,
@@ -540,6 +556,12 @@ export async function getProjectAgentModelContext(
     newlyClearedToolResultEventIds: projection.newlyClearedEventIds,
     microcompactTokensSaved: projection.estimatedTokensSaved,
     newMicrocompactTokensSaved: projection.newlyEstimatedTokensSaved,
+    estimatedConversationTokens: estimateProjectAgentTextTokens(context.summary) +
+      estimateProjectAgentTextTokens(conversation?.summary ?? "") +
+      estimateProjectAgentTextTokens(JSON.stringify(session.taskPlan)) + conversationEvents.reduce(
+      (total, event) => total + estimateProjectAgentEventTokens(event),
+      0,
+    ),
     estimatedTokens: estimateProjectAgentTextTokens(context.summary) +
       estimateProjectAgentTextTokens(JSON.stringify(session.taskPlan)) + modelEvents.reduce(
       (total, event) => total + estimateProjectAgentEventTokens(event),
@@ -551,29 +573,50 @@ export async function getProjectAgentModelContext(
 export async function recordProjectAgentCompactionFailure(input: {
   projectId: string;
   code: string;
+  conversationId?: string;
 }, dataDir = getZenmeDataDir()) {
   validateProjectId(input.projectId);
   const code = input.code.trim().slice(0, 100);
   if (!code) throw new ProjectAgentSessionError("压缩失败代码无效", "invalid_input");
   let result!: { consecutiveFailures: number; canRetry: boolean };
   await mutateSession(input.projectId, dataDir, (session) => {
+    const conversation = input.conversationId
+      ? session.conversations?.find((candidate) => candidate.id === input.conversationId)
+      : undefined;
+    if (input.conversationId && !conversation) {
+      throw new ProjectAgentSessionError("Conversation 不存在", "invalid_input");
+    }
+    const previousFailures = conversation
+      ? conversation.consecutiveCompactionFailures ?? 0
+      : session.context.consecutiveCompactionFailures;
     const failures = Math.min(
       MAX_CONSECUTIVE_COMPACTION_FAILURES,
-      session.context.consecutiveCompactionFailures + 1,
+      previousFailures + 1,
     );
-    session.context.consecutiveCompactionFailures = failures;
-    session.context.lastCompactionFailureCode = code;
-    if (failures >= MAX_CONSECUTIVE_COMPACTION_FAILURES) {
-      session.context.compactionBlockedAt = new Date().toISOString();
+    const now = new Date().toISOString();
+    if (conversation) {
+      conversation.consecutiveCompactionFailures = failures;
+      conversation.lastCompactionFailureCode = code;
+      if (failures >= MAX_CONSECUTIVE_COMPACTION_FAILURES) conversation.compactionBlockedAt = now;
+      conversation.updatedAt = now;
+    } else {
+      session.context.consecutiveCompactionFailures = failures;
+      session.context.lastCompactionFailureCode = code;
+      if (failures >= MAX_CONSECUTIVE_COMPACTION_FAILURES) session.context.compactionBlockedAt = now;
     }
-    session.updatedAt = new Date().toISOString();
+    session.updatedAt = now;
     result = { consecutiveFailures: failures, canRetry: failures < MAX_CONSECUTIVE_COMPACTION_FAILURES };
     return session;
   });
   return result;
 }
 
-export function canAttemptProjectAgentCompaction(session: ProjectAgentSession) {
+export function canAttemptProjectAgentCompaction(session: ProjectAgentSession, conversationId?: string) {
+  if (conversationId) {
+    const conversation = session.conversations?.find((candidate) => candidate.id === conversationId);
+    return Boolean(conversation) &&
+      (conversation.consecutiveCompactionFailures ?? 0) < MAX_CONSECUTIVE_COMPACTION_FAILURES;
+  }
   return session.context.consecutiveCompactionFailures < MAX_CONSECUTIVE_COMPACTION_FAILURES;
 }
 
