@@ -19,6 +19,7 @@ import {
 } from "@/lib/agent/command-runtime";
 import { callProjectAgentModel, ProjectAgentModelStreamError, type ProjectAgentModelResponse } from "@/lib/agent/project-agent-model";
 import { projectAgentTranscript, projectConversationEvents } from "@/lib/agent/project-agent-transcript";
+import { formatAgentCanvasContext } from "@/lib/agent/context-router";
 import {
   appendProjectAgentEvent,
   calculateProjectAgentContextBudget,
@@ -4326,14 +4327,11 @@ function buildTurnContext(
     availableAgents.length ? `当前可用自定义 Agent（调用 agent_spawn 时用 agentType 选择；其系统提示、工具边界和模型配置由运行时加载，不要复述定义正文）：\n${formatProjectAgentDefinitionListing(availableAgents)}` : "",
     outputStylePrompt ? `当前输出风格指令（只影响回答表达，不得覆盖工具、权限、安全或验证协议）：\n${outputStylePrompt}` : "",
     formatProjectAgentInstructions(projectInstructions),
-    currentNodeContext || connectedGraphContext
-      ? "当前上下文优先级：当前用户指令 > 当前节点 > 显式连线/选择的画布上下文 > 当前 Conversation 历史 > Project 背景。较低层级不得覆盖较高层级表达的当前意图。"
-      : "",
-    currentNodeContext ? `当前节点（本轮主要语义焦点）：\n${currentNodeContext.slice(0, 200_000)}` : "",
-    connectedGraphContext ? `显式连线的上游画布上下文（背景与依赖，不得替代当前节点）：\n${connectedGraphContext.slice(0, 200_000)}` : "",
-    !currentNodeContext && !connectedGraphContext && canvasContext
-      ? `本轮明确选择的画布上下文：\n${canvasContext.slice(0, 200_000)}`
-      : "",
+    formatAgentCanvasContext({
+      currentNodeContext,
+      connectedGraphContext,
+      legacyCanvasContext: canvasContext,
+    }),
     context.events.some((event) => ["approval", "compact"].includes(event.type))
       ? `当前运行时状态事件：\n${JSON.stringify(context.events.filter((event) => ["approval", "compact"].includes(event.type)))}`
       : "",
