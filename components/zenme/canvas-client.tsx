@@ -2673,7 +2673,8 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       const persistedModel = typeof retryUserEvent?.data?.model === "string" ? retryUserEvent.data.model : undefined;
       const model = persistedModel || input?.model || sourceNode.data.textGenerationModel || defaultTextModel;
       const persistedPrompt = retryUserEvent?.content?.trim() || undefined;
-      const prompt = persistedPrompt || input?.prompt?.trim() || "请基于这个节点继续处理。";
+      const prompt = persistedPrompt || input?.prompt?.trim() ||
+        "请直接处理当前节点表达的请求；如果当前节点包含问题，优先回答该问题。";
       const contextTokenBudget = getCanvasContextTokenBudget({
         contextWindow: configuredModelOptions.find((option) => option.id === model)?.contextWindow,
         prompt,

@@ -121,6 +121,7 @@ describe("text generation request boundary", () => {
     expect(canvasSource).toContain("retryUserEvent.data.fileDocumentIds");
     expect(canvasSource).toContain("retryUserEvent.data.selectedNodeIds");
     expect(canvasSource).toContain("const persistedPrompt = retryUserEvent?.content?.trim() || undefined");
+    expect(canvasSource).toContain("如果当前节点包含问题，优先回答该问题");
     expect(canvasSource).toContain("originalSourceNode?.id ?? nodeId");
     expect(canvasSource).not.toContain("无法重试当前 Agent Turn：原始上游节点不存在");
     expect(timeline).toContain("projectTurnCanRetry(events) && onRetry");
