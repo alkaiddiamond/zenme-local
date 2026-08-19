@@ -18,7 +18,7 @@ import {
   waitForAgentBackgroundTaskCompletion,
 } from "@/lib/agent/command-runtime";
 import { callProjectAgentModel, ProjectAgentModelStreamError, type ProjectAgentModelResponse } from "@/lib/agent/project-agent-model";
-import { projectAgentTranscript } from "@/lib/agent/project-agent-transcript";
+import { projectAgentTranscript, projectConversationEvents } from "@/lib/agent/project-agent-transcript";
 import {
   appendProjectAgentEvent,
   calculateProjectAgentContextBudget,
@@ -219,7 +219,11 @@ export async function startProjectAgentTurnRun(input: {
   prompt: string;
   model: string;
   canvasContext?: string;
+  conversationId?: string;
+  parentTurnId?: string;
+  resultNodeId?: string;
   selectedNodeIds?: string[];
+  sourceNodeId?: string;
   fileDocumentIds?: string[];
   imageDataUrls?: string[];
   turnId?: string;
@@ -375,7 +379,11 @@ export async function runProjectAgentTurn(input: {
   prompt: string;
   model: string;
   canvasContext?: string;
+  conversationId?: string;
+  parentTurnId?: string;
+  resultNodeId?: string;
   selectedNodeIds?: string[];
+  sourceNodeId?: string;
   fileDocumentIds?: string[];
   imageDataUrls?: string[];
   signal?: AbortSignal;
@@ -468,6 +476,10 @@ export async function runProjectAgentTurn(input: {
     if (!input.resume) await appendProjectAgentEvent({
       projectId: input.projectId,
       turnId,
+      conversationId: input.conversationId,
+      parentTurnId: input.parentTurnId,
+      resultNodeId: input.resultNodeId,
+      sourceNodeId: input.sourceNodeId,
       type: "user",
       content: submittedPrompt.trim(),
       data: {
@@ -1584,7 +1596,7 @@ export async function runProjectAgentTurn(input: {
             ]),
             model: input.model,
             messages: [
-              ...projectAgentTranscript(modelContext.events),
+              ...projectAgentTranscript(projectConversationEvents(modelContext.events, input.conversationId)),
               ...(maxOutputTokensRecoveryInstruction
                 ? [{ role: "user" as const, content: maxOutputTokensRecoveryInstruction }]
                 : []),

@@ -1,4 +1,5 @@
 import type { Edge } from "@xyflow/react";
+import type { ProjectAgentEvent } from "@/lib/agent/project-session-types";
 
 export type ConversationLineageResolution = {
   directParentNodeIds: string[];
@@ -39,4 +40,20 @@ export function resolveConversationLineage(input: {
 
 function dedupe(values: string[]) {
   return [...new Set(values)];
+}
+
+export function resolveInheritedConversation(input: {
+  events: readonly ProjectAgentEvent[];
+  turnIds: readonly string[];
+}) {
+  const orderedTurnIds = dedupe(input.turnIds.filter(Boolean));
+  const conversationIds = dedupe(orderedTurnIds.flatMap((turnId) => {
+    const userEvent = input.events.find((event) => event.turnId === turnId && event.type === "user");
+    return userEvent?.conversationId ? [userEvent.conversationId] : [];
+  }));
+  return {
+    conversationId: conversationIds.length === 1 ? conversationIds[0] : undefined,
+    parentTurnId: orderedTurnIds[0],
+    parentConversationIds: conversationIds,
+  };
 }

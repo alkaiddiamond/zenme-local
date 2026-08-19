@@ -1,6 +1,19 @@
 import type { ProjectAgentEvent } from "@/lib/agent/project-session-types";
 import type { ChatMessage, ChatToolCall } from "@/lib/ai/chat-message";
 
+export function projectConversationEvents(
+  events: readonly ProjectAgentEvent[],
+  conversationId?: string,
+) {
+  if (!conversationId) return [...events];
+  const turnIds = new Set(
+    events
+      .filter((event) => event.conversationId === conversationId)
+      .map((event) => event.turnId),
+  );
+  return events.filter((event) => turnIds.has(event.turnId));
+}
+
 export function projectAgentTranscript(events: readonly ProjectAgentEvent[]): ChatMessage[] {
   const messages: ChatMessage[] = [];
   let pendingToolCalls: ChatToolCall[] = [];

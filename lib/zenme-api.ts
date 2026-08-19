@@ -269,13 +269,17 @@ export type ProjectAgentTurnApiResult = {
 
 export async function runProjectAgentTurnFromApi(input: {
   canvasContext?: string;
+  conversationId?: string;
   fileDocumentIds?: string[];
   imageDataUrls?: string[];
   model: string;
   projectId: string;
   prompt: string;
+  parentTurnId?: string;
+  resultNodeId?: string;
   selectedNodeIds?: string[];
   signal?: AbortSignal;
+  sourceNodeId?: string;
   turnId?: string;
   reasoningEffort?: ZenmeReasoningEffort;
   modelSpeed?: ZenmeModelSpeed;
@@ -295,11 +299,15 @@ export async function runProjectAgentTurnFromApi(input: {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         canvasContext: input.canvasContext,
+        conversationId: input.conversationId,
         fileDocumentIds: input.fileDocumentIds,
         imageDataUrls: input.imageDataUrls,
         model: input.model,
         prompt: input.prompt,
+        parentTurnId: input.parentTurnId,
+        resultNodeId: input.resultNodeId,
         selectedNodeIds: input.selectedNodeIds,
+        sourceNodeId: input.sourceNodeId,
         turnId: input.turnId,
         reasoningEffort: input.reasoningEffort,
         modelSpeed: input.modelSpeed,

@@ -63,6 +63,10 @@ export async function getProjectAgentSession(
 export async function appendProjectAgentEvent(input: {
   projectId: string;
   turnId?: string;
+  conversationId?: string;
+  parentTurnId?: string;
+  sourceNodeId?: string;
+  resultNodeId?: string;
   type: ProjectAgentEventType;
   content?: string;
   data?: Record<string, unknown>;
@@ -79,6 +83,10 @@ export async function appendProjectAgentEvent(input: {
       id: crypto.randomUUID(),
       sequence: (session.events.at(-1)?.sequence ?? 0) + 1,
       turnId: input.turnId?.trim() || crypto.randomUUID(),
+      conversationId: input.conversationId?.trim() || undefined,
+      parentTurnId: input.parentTurnId?.trim() || undefined,
+      sourceNodeId: input.sourceNodeId?.trim() || undefined,
+      resultNodeId: input.resultNodeId?.trim() || undefined,
       type: input.type,
       createdAt: now,
       content: input.content,

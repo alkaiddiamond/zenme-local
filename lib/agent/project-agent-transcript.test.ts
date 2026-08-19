@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { projectAgentTranscript } from "@/lib/agent/project-agent-transcript";
+import { projectAgentTranscript, projectConversationEvents } from "@/lib/agent/project-agent-transcript";
 import type { ProjectAgentEvent } from "@/lib/agent/project-session-types";
 
 function event(input: Partial<ProjectAgentEvent> & Pick<ProjectAgentEvent, "id" | "sequence" | "type">): ProjectAgentEvent {
@@ -12,6 +12,25 @@ function event(input: Partial<ProjectAgentEvent> & Pick<ProjectAgentEvent, "id" 
 }
 
 describe("project agent transcript", () => {
+  it("projects only turns from the requested conversation", () => {
+    const events = [
+      event({ id: "a-user", sequence: 1, turnId: "turn-a", conversationId: "conv-a", type: "user", content: "A" }),
+      event({ id: "a-assistant", sequence: 2, turnId: "turn-a", type: "assistant", content: "A reply" }),
+      event({ id: "b-user", sequence: 3, turnId: "turn-b", conversationId: "conv-b", type: "user", content: "B" }),
+      event({ id: "b-assistant", sequence: 4, turnId: "turn-b", type: "assistant", content: "B reply" }),
+    ];
+    expect(projectConversationEvents(events, "conv-b").map((item) => item.id)).toEqual([
+      "b-user",
+      "b-assistant",
+    ]);
+    expect(projectConversationEvents(events).map((item) => item.id)).toEqual([
+      "a-user",
+      "a-assistant",
+      "b-user",
+      "b-assistant",
+    ]);
+  });
+
   it("preserves cc-haha-style tool use and tool result relationships", () => {
     expect(projectAgentTranscript([
       event({ id: "user-1", sequence: 1, type: "user", content: "检查项目状态" }),

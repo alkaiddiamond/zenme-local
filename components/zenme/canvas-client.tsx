@@ -111,6 +111,7 @@ import {
   getSelectionToolbarPosition,
 } from "@/components/zenme/canvas/derived-state";
 import { collectAgentTurnReferences } from "@/components/zenme/canvas/agent-context";
+import { resolveConversationLineage, resolveInheritedConversation } from "@/lib/agent/conversation-lineage";
 import { consumeHomePromptRequest } from "@/components/zenme/canvas/home-prompt";
 import {
   requestTextGenerationResponse,
@@ -2645,6 +2646,22 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         ? retrySession?.events.find((event) => event.turnId === sourceNode.data.agentTurnId && event.type === "user")
         : undefined;
       if (retryExistingTurn && !retryUserEvent) throw new Error("无法重试当前 Agent Turn：原始请求快照不存在");
+      const conversationSession = retrySession ?? await getProjectAgentSessionFromApi(projectId);
+      const lineage = resolveConversationLineage({ edges: currentEdges, nodeId });
+      const lineageTurnIds = [nodeId, ...lineage.ancestorNodeIds].flatMap((lineageNodeId) => {
+        const lineageNode = currentNodes.find((node) => node.id === lineageNodeId);
+        return typeof lineageNode?.data.agentTurnId === "string" ? [lineageNode.data.agentTurnId] : [];
+      });
+      const inheritedConversation = resolveInheritedConversation({
+        events: conversationSession.events,
+        turnIds: lineageTurnIds,
+      });
+      const conversationId = retryExistingTurn
+        ? retryUserEvent?.conversationId
+        : inheritedConversation.conversationId ?? crypto.randomUUID();
+      const parentTurnId = retryExistingTurn
+        ? retryUserEvent?.parentTurnId
+        : inheritedConversation.parentTurnId;
       const persistedModel = typeof retryUserEvent?.data?.model === "string" ? retryUserEvent.data.model : undefined;
       const model = persistedModel || input?.model || sourceNode.data.textGenerationModel || defaultTextModel;
       const persistedPrompt = retryUserEvent?.content?.trim() || undefined;
@@ -2750,17 +2767,21 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         ])].slice(0, 4);
         const result = await runProjectAgentTurnFromApi({
           canvasContext: context,
+          conversationId,
           fileDocumentIds: references.fileDocumentIds,
           imageDataUrls: mergedImageDataUrls,
           model,
           modelSpeed: input?.modelSpeed,
           permissionMode: input?.permissionMode,
+          parentTurnId,
           projectId,
           prompt,
           reasoningEffort: input?.reasoningEffort,
           resume: retryExistingTurn,
           selectedNodeIds: references.selectedNodeIds,
           signal: controller.signal,
+          sourceNodeId: originalSourceNode?.id ?? nodeId,
+          resultNodeId,
           turnId,
         });
         const reply = result.status === "completed" ? result.answer : undefined;

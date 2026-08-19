@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveConversationLineage } from "@/lib/agent/conversation-lineage";
+import { resolveConversationLineage, resolveInheritedConversation } from "@/lib/agent/conversation-lineage";
 
 describe("resolveConversationLineage", () => {
   it("treats an unconnected node as a conversation root", () => {
@@ -36,6 +36,23 @@ describe("resolveConversationLineage", () => {
       directParentNodeIds: ["A", "B"],
       ancestorNodeIds: ["A", "B"],
       isConversationRoot: false,
+    });
+  });
+
+  it("inherits a single connected conversation but refuses to merge multiple conversations", () => {
+    const events = [
+      { id: "e1", sequence: 1, turnId: "turn-a", conversationId: "conv-a", type: "user" as const, createdAt: "now" },
+      { id: "e2", sequence: 2, turnId: "turn-b", conversationId: "conv-b", type: "user" as const, createdAt: "now" },
+    ];
+    expect(resolveInheritedConversation({ events, turnIds: ["turn-a"] })).toEqual({
+      conversationId: "conv-a",
+      parentTurnId: "turn-a",
+      parentConversationIds: ["conv-a"],
+    });
+    expect(resolveInheritedConversation({ events, turnIds: ["turn-a", "turn-b"] })).toEqual({
+      conversationId: undefined,
+      parentTurnId: "turn-a",
+      parentConversationIds: ["conv-a", "conv-b"],
     });
   });
 });
