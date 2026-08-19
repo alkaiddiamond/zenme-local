@@ -111,6 +111,7 @@ import {
   getSelectionToolbarPosition,
 } from "@/components/zenme/canvas/derived-state";
 import { collectAgentTurnReferences } from "@/components/zenme/canvas/agent-context";
+import { createAgentContextSnapshot } from "@/lib/agent/context-model";
 import { resolveConversationLineage, resolveConversationRoute } from "@/lib/agent/conversation-lineage";
 import { projectConversationEvents } from "@/lib/agent/project-agent-transcript";
 import { consumeHomePromptRequest } from "@/components/zenme/canvas/home-prompt";
@@ -2807,6 +2808,15 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           ),
         ])].slice(0, 4);
         const result = await runProjectAgentTurnFromApi({
+          contextSnapshot: createAgentContextSnapshot({
+            prompt,
+            currentNodeContext,
+            connectedGraphContext,
+            conversationId,
+            selectedNodeIds: references.selectedNodeIds,
+            fileDocumentIds: references.fileDocumentIds,
+            canvasContext: context,
+          }),
           canvasContext: context,
           currentNodeContext,
           connectedGraphContext,

@@ -21,6 +21,12 @@ import { callProjectAgentModel, ProjectAgentModelStreamError, type ProjectAgentM
 import { projectAgentTranscript, projectConversationEvents } from "@/lib/agent/project-agent-transcript";
 import { buildAgentRetrievalQuery, formatAgentCanvasContext } from "@/lib/agent/context-router";
 import {
+  applyAgentContextSnapshot,
+  createAgentContextSnapshot,
+  parseAgentContextSnapshot,
+  type AgentContextSnapshot,
+} from "@/lib/agent/context-model";
+import {
   appendProjectAgentEvent,
   calculateProjectAgentContextBudget,
   canAttemptProjectAgentCompaction,
@@ -225,6 +231,7 @@ export async function startProjectAgentTurnRun(input: {
   projectId: string;
   prompt: string;
   model: string;
+  contextSnapshot?: AgentContextSnapshot;
   canvasContext?: string;
   currentNodeContext?: string;
   connectedGraphContext?: string;
@@ -388,6 +395,7 @@ export async function runProjectAgentTurn(input: {
   projectId: string;
   prompt: string;
   model: string;
+  contextSnapshot?: AgentContextSnapshot;
   canvasContext?: string;
   currentNodeContext?: string;
   connectedGraphContext?: string;
@@ -413,6 +421,7 @@ export async function runProjectAgentTurn(input: {
   listMcpTools?: typeof listProjectMcpTools;
   callMcpTool?: typeof callProjectMcpTool;
 } = {}) {
+  input = applyAgentContextSnapshot(input);
   const dataDir = options.dataDir ?? getZenmeDataDir();
   const callModel = options.callModel ?? callProjectAgentModel;
   const executeTool = options.executeTool ?? executeAgentWorkspaceTool;
@@ -504,6 +513,15 @@ export async function runProjectAgentTurn(input: {
       content: submittedPrompt.trim(),
       data: {
         model: turnModel,
+        contextSnapshot: createAgentContextSnapshot({
+          prompt: input.prompt,
+          currentNodeContext: input.currentNodeContext?.slice(0, 200_000),
+          connectedGraphContext: input.connectedGraphContext?.slice(0, 200_000),
+          conversationId: input.conversationId,
+          selectedNodeIds: dedupeStrings(input.selectedNodeIds),
+          fileDocumentIds: dedupeStrings(input.fileDocumentIds),
+          canvasContext: input.canvasContext?.slice(0, 200_000),
+        }),
         selectedNodeIds: dedupeStrings(input.selectedNodeIds),
         fileDocumentIds: dedupeStrings(input.fileDocumentIds),
         canvasContext: input.canvasContext?.slice(0, 200_000) || undefined,
@@ -3428,6 +3446,7 @@ async function wakeProjectAgentForQueuedNotification(input: {
   if (!queued.some((message) => message.turnId === input.turnId && message.kind === "task-notification")) return;
   const session = await getProjectAgentSession(input.projectId, input.dataDir);
   const userEvent = session.events.find((event) => event.turnId === input.turnId && event.type === "user");
+  const contextSnapshot = parseAgentContextSnapshot(userEvent?.data?.contextSnapshot);
   const conversationId = userEvent?.conversationId;
   const conversationRuntimeState = getProjectAgentConversationRuntimeState(session, conversationId);
   const model = (typeof userEvent?.data?.model === "string" ? userEvent.data.model : undefined)
@@ -3438,6 +3457,7 @@ async function wakeProjectAgentForQueuedNotification(input: {
     turnId: input.turnId,
     prompt: userEvent?.content?.trim() || "继续处理后台任务通知",
     model,
+    contextSnapshot,
     canvasContext: typeof userEvent?.data?.canvasContext === "string" ? userEvent.data.canvasContext : undefined,
     currentNodeContext: typeof userEvent?.data?.currentNodeContext === "string" ? userEvent.data.currentNodeContext : undefined,
     connectedGraphContext: typeof userEvent?.data?.connectedGraphContext === "string" ? userEvent.data.connectedGraphContext : undefined,

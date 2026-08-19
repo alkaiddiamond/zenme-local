@@ -460,6 +460,34 @@ describe("delegated Sub-agent runtime", { timeout: 15_000 }, () => {
     expect(semanticContext).toContain("根据问题选择语义导航或文本搜索");
   });
 
+  it("uses the structured context snapshot when delegated legacy context fields disagree", async () => {
+    const { detail } = await createAgentExecution({
+      projectId,
+      resultNodeId: "structured-agent",
+      triggerNodeId: "structured-source",
+      instruction: "Inspect the assigned branch",
+      currentNodeContext: "LEGACY_DELEGATED_NODE",
+      connectedGraphContext: "LEGACY_DELEGATED_GRAPH",
+      canvasContext: "LEGACY_DELEGATED_CANVAS",
+      contextSnapshot: {
+        version: 1,
+        instruction: { prompt: "Inspect the assigned branch" },
+        currentNode: { content: "STRUCTURED_DELEGATED_NODE" },
+        graph: { connectedContext: "STRUCTURED_DELEGATED_GRAPH" },
+        conversation: { conversationId: "structured-delegated-conversation" },
+      },
+      allowedPathPrefixes: ["."],
+      allowedTools: ["read_file"],
+    }, dataDir);
+
+    const context = buildDelegatedSubagentContext(detail, "neverAsk");
+    expect(context).toContain("STRUCTURED_DELEGATED_NODE");
+    expect(context).toContain("STRUCTURED_DELEGATED_GRAPH");
+    expect(context).not.toContain("LEGACY_DELEGATED_NODE");
+    expect(context).not.toContain("LEGACY_DELEGATED_GRAPH");
+    expect(context).not.toContain("LEGACY_DELEGATED_CANVAS");
+  });
+
   it("runs independent scoped Sub-agents concurrently and collects their results", async () => {
     const orchestration = await createGlobalOrchestration({
       projectId,

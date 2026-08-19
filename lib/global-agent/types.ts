@@ -135,6 +135,7 @@ export type GlobalOrchestration = {
   selectedNodeIds: string[];
   fileDocumentIds: string[];
   canvasContext: string;
+  contextSnapshot?: import("@/lib/agent/context-model").AgentContextSnapshot;
   currentNodeContext?: string;
   connectedGraphContext?: string;
   conversationId?: string;

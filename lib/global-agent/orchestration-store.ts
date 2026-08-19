@@ -11,6 +11,7 @@ import {
 } from "@/lib/agent/execution-store";
 import { stopRunningAgentCommands } from "@/lib/agent/command-runtime";
 import { createProjectAgentWorktree, settleProjectAgentWorktree } from "@/lib/agent/project-agent-worktree";
+import { createAgentContextSnapshot, parseAgentContextSnapshot, type AgentContextSnapshot } from "@/lib/agent/context-model";
 import type { AgentWorkspaceToolName } from "@/lib/agent/types";
 import { getConfirmedMemoryContext, listProjectMemories } from "@/lib/memory/repository";
 import { searchProjectKnowledge } from "@/lib/knowledge/index-store";
@@ -66,6 +67,7 @@ export class GlobalOrchestrationError extends Error {
 
 export async function createGlobalOrchestration(input: {
   allowEmptyTeam?: boolean;
+  contextSnapshot?: AgentContextSnapshot;
   canvasContext?: string;
   currentNodeContext?: string;
   connectedGraphContext?: string;
@@ -176,6 +178,15 @@ export async function createGlobalOrchestration(input: {
     selectedNodeIds: dedupe(input.selectedNodeIds),
     fileDocumentIds: dedupe(input.fileDocumentIds),
     canvasContext: (input.canvasContext ?? "").slice(0, 2_000_000),
+    contextSnapshot: input.contextSnapshot ?? createAgentContextSnapshot({
+      prompt: input.goal,
+      currentNodeContext: input.currentNodeContext,
+      connectedGraphContext: input.connectedGraphContext,
+      conversationId: input.conversationId,
+      selectedNodeIds: input.selectedNodeIds,
+      fileDocumentIds: input.fileDocumentIds,
+      canvasContext: input.canvasContext,
+    }),
     currentNodeContext: input.currentNodeContext?.slice(0, 2_000_000) || undefined,
     connectedGraphContext: input.connectedGraphContext?.slice(0, 2_000_000) || undefined,
     conversationId: input.conversationId?.trim() || undefined,
@@ -190,6 +201,7 @@ export async function createGlobalOrchestration(input: {
 }
 
 export async function createGlobalTeam(input: {
+  contextSnapshot?: AgentContextSnapshot;
   canvasContext?: string;
   currentNodeContext?: string;
   connectedGraphContext?: string;
@@ -223,6 +235,7 @@ export async function createGlobalTeam(input: {
     teamName = `${requestedName}-${suffix}`.slice(0, 100);
   }
   return createGlobalOrchestration({
+    contextSnapshot: input.contextSnapshot,
     ...input,
     allowEmptyTeam: true,
     kind: "team",
@@ -398,6 +411,7 @@ export async function dispatchGlobalSubtasks(projectId: string, orchestrationId:
         triggerNodeId: current.resultNodeId,
         agentId: `sub-agent:${preparedTask.id}`,
         instruction: delegatedInstruction(current, preparedTask),
+        contextSnapshot: current.contextSnapshot,
         canvasContext: current.canvasContext,
         currentNodeContext: current.currentNodeContext,
         connectedGraphContext: current.connectedGraphContext,
@@ -1331,6 +1345,7 @@ function normalizeOrchestration(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const item = value as GlobalOrchestration;
   if (item.version !== GLOBAL_ORCHESTRATION_VERSION || typeof item.id !== "string" || typeof item.projectId !== "string" || !Array.isArray(item.tasks)) return null;
+  item.contextSnapshot = parseAgentContextSnapshot(item.contextSnapshot);
   for (const task of item.tasks) task.messages ??= [];
   return item;
 }

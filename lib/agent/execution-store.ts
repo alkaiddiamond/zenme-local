@@ -28,6 +28,11 @@ import {
   resolveWorkspaceRoot,
 } from "@/lib/workspace/types";
 import { getConfirmedMemoryContext } from "@/lib/memory/repository";
+import {
+  createAgentContextSnapshot,
+  parseAgentContextSnapshot,
+  type AgentContextSnapshot,
+} from "@/lib/agent/context-model";
 import type { ProjectMemoryContextItem } from "@/lib/memory/types";
 import { searchProjectKnowledge } from "@/lib/knowledge/index-store";
 import type { KnowledgeSearchResult } from "@/lib/knowledge/types";
@@ -77,6 +82,7 @@ export async function createAgentExecution(input: {
   allowedPathPrefixes?: string[];
   allowedTools?: AgentWorkspaceToolName[];
   additionalAllowedTools?: string[];
+  contextSnapshot?: AgentContextSnapshot;
   canvasContext?: string;
   currentNodeContext?: string;
   connectedGraphContext?: string;
@@ -111,6 +117,15 @@ export async function createAgentExecution(input: {
   const now = new Date().toISOString();
   const projectMemories = limitMemoryContext(await getConfirmedMemoryContext(input.projectId, dataDir));
   const knowledgeContext = await resolveKnowledgeContext(input.projectId, input.instruction, dataDir);
+  const contextSnapshot = input.contextSnapshot ?? createAgentContextSnapshot({
+    prompt: input.instruction,
+    currentNodeContext: input.currentNodeContext,
+    connectedGraphContext: input.connectedGraphContext,
+    conversationId: input.conversationId,
+    selectedNodeIds: input.selectedNodeIds,
+    fileDocumentIds: input.fileDocumentIds,
+    canvasContext: input.canvasContext,
+  });
   const detail: AgentExecutionDetail = {
     version: AGENT_EXECUTION_DETAIL_VERSION,
     id: executionId,
@@ -122,6 +137,7 @@ export async function createAgentExecution(input: {
     resultNodeId: input.resultNodeId,
     triggerNodeId: input.triggerNodeId,
     context: {
+      contextSnapshot,
       selectedNodeIds: dedupeStrings(input.selectedNodeIds),
       fileDocumentIds: dedupeStrings(input.fileDocumentIds),
       canvasContext: (input.canvasContext ?? "").slice(0, 2_000_000),
@@ -585,6 +601,7 @@ function normalizeDetail(value: unknown): AgentExecutionDetail | null {
     typeof value.createdAt !== "string" || typeof value.updatedAt !== "string"
   ) return null;
   const context: AgentContextSelection = {
+    contextSnapshot: parseAgentContextSnapshot(value.context.contextSnapshot),
     selectedNodeIds: stringArray(value.context.selectedNodeIds),
     fileDocumentIds: stringArray(value.context.fileDocumentIds),
     canvasContext: typeof value.context.canvasContext === "string" ? value.context.canvasContext : "",

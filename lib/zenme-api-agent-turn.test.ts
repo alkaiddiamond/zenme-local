@@ -19,6 +19,12 @@ describe("Project Agent Turn API client", () => {
       projectId: "project-1",
       prompt: "检查项目",
       model: "provider:model",
+      contextSnapshot: {
+        version: 1,
+        instruction: { prompt: "检查项目" },
+        currentNode: { content: "当前节点" },
+        conversation: { conversationId: "conv-1" },
+      },
       permissionMode: "neverAsk",
       turnId: "turn-1",
       questionAnswer: { eventId: "question-1", value: "核心工具" },
@@ -27,6 +33,12 @@ describe("Project Agent Turn API client", () => {
 
     await expect(result).resolves.toEqual({ status: "completed", turnId: "turn-1", answer: "完成" });
     expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit | undefined)?.body))).toMatchObject({
+      contextSnapshot: {
+        version: 1,
+        instruction: { prompt: "检查项目" },
+        currentNode: { content: "当前节点" },
+        conversation: { conversationId: "conv-1" },
+      },
       permissionMode: "neverAsk",
       questionAnswer: { eventId: "question-1", value: "核心工具" },
     });

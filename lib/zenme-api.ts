@@ -23,6 +23,7 @@ import type {
   AgentWorkspaceToolName,
   AgentWorkspaceToolResult,
 } from "@/lib/agent/types";
+import type { AgentContextSnapshot } from "@/lib/agent/context-model";
 import type {
   GlobalOrchestration,
 } from "@/lib/global-agent/types";
@@ -268,6 +269,7 @@ export type ProjectAgentTurnApiResult = {
 };
 
 export async function runProjectAgentTurnFromApi(input: {
+  contextSnapshot?: AgentContextSnapshot;
   canvasContext?: string;
   currentNodeContext?: string;
   connectedGraphContext?: string;
@@ -301,6 +303,7 @@ export async function runProjectAgentTurnFromApi(input: {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        contextSnapshot: input.contextSnapshot,
         canvasContext: input.canvasContext,
         currentNodeContext: input.currentNodeContext,
         connectedGraphContext: input.connectedGraphContext,

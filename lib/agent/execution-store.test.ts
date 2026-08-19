@@ -56,6 +56,15 @@ describe("agent execution store", () => {
     await expect(getAgentExecution(projectId, created.detail.id, dataDir)).resolves.toMatchObject({
       instruction: "Review this project",
       context: {
+        contextSnapshot: {
+          version: 1,
+          instruction: { prompt: "Review this project" },
+          currentNode: { content: "CURRENT_NODE_LAYER" },
+          graph: { connectedContext: "CONNECTED_GRAPH_LAYER" },
+          conversation: { conversationId: "conversation-a" },
+          references: { selectedNodeIds: ["node-a", "node-a", "node-b"], fileDocumentIds: ["file-a"] },
+          legacy: { canvasContext: "selected context" },
+        },
         selectedNodeIds: ["node-a", "node-b"],
         fileDocumentIds: ["file-a"],
         canvasContext: "selected context",

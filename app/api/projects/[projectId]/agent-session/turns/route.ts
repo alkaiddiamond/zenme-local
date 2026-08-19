@@ -4,6 +4,7 @@ import { answerProjectAgentTurnRun, isProjectAgentTurnRunActive, ProjectAgentTur
 import { reconcileAgentExecutionsForTurn } from "@/lib/agent/execution-store";
 import { appendProjectAgentEvent, getProjectAgentSession } from "@/lib/agent/project-session-store";
 import type { ProjectAgentEvent } from "@/lib/agent/project-session-types";
+import { parseAgentContextSnapshot } from "@/lib/agent/context-model";
 import type { ZenmeModelSpeed, ZenmeReasoningEffort, ZenmeSessionPermissionMode } from "@/lib/local/settings";
 
 export async function POST(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
@@ -33,6 +34,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       projectId,
       prompt: body.prompt,
       model: body.model,
+      contextSnapshot: parseAgentContextSnapshot(body.contextSnapshot),
       canvasContext: optionalString(body.canvasContext),
       currentNodeContext: optionalString(body.currentNodeContext),
       connectedGraphContext: optionalString(body.connectedGraphContext),

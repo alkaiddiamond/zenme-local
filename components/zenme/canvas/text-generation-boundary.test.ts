@@ -57,6 +57,7 @@ describe("text generation request boundary", () => {
     );
 
     expect(nodeSubmitSource).toContain("collectAgentTurnReferences");
+    expect(nodeSubmitSource).toContain("contextSnapshot: createAgentContextSnapshot");
     expect(nodeSubmitSource).toContain("fileDocumentIds: references.fileDocumentIds");
     expect(nodeSubmitSource).toContain("selectedNodeIds: references.selectedNodeIds");
     expect(nodeSubmitSource).not.toContain("selectedNodeIds: [sourceNode.id]");

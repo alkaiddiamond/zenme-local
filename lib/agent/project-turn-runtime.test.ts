@@ -139,6 +139,56 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
     expect(callModel).toHaveBeenCalledTimes(1);
   });
 
+  it("uses the structured context snapshot as the canonical turn context while preserving legacy fallback fields", async () => {
+    const result = await runProjectAgentTurn({
+      projectId,
+      prompt: "LEGACY_PROMPT",
+      currentNodeContext: "LEGACY_NODE",
+      connectedGraphContext: "LEGACY_GRAPH",
+      conversationId: "legacy-conversation",
+      model,
+      turnId: "structured-context-turn",
+      contextSnapshot: {
+        version: 1,
+        instruction: { prompt: "STRUCTURED_PROMPT" },
+        currentNode: { content: "STRUCTURED_NODE" },
+        graph: { connectedContext: "STRUCTURED_GRAPH" },
+        conversation: { conversationId: "structured-conversation" },
+        references: { selectedNodeIds: ["structured-node-id"], fileDocumentIds: ["structured-file-id"] },
+      },
+    }, {
+      dataDir,
+      callModel: async (input) => {
+        expect(input.prompt).toContain("STRUCTURED_PROMPT");
+        expect(input.prompt).not.toContain("LEGACY_PROMPT");
+        expect(input.context).toContain("STRUCTURED_NODE");
+        expect(input.context).toContain("STRUCTURED_GRAPH");
+        expect(input.context).not.toContain("LEGACY_NODE");
+        expect(input.context).not.toContain("LEGACY_GRAPH");
+        return { text: "structured context applied", usage: null };
+      },
+    });
+
+    expect(result).toMatchObject({ status: "completed", answer: "structured context applied" });
+    const userEvent = (await getProjectAgentSession(projectId, dataDir)).events.find((event) =>
+      event.turnId === "structured-context-turn" && event.type === "user");
+    expect(userEvent).toMatchObject({
+      conversationId: "structured-conversation",
+      content: "STRUCTURED_PROMPT",
+      data: {
+        selectedNodeIds: ["structured-node-id"],
+        fileDocumentIds: ["structured-file-id"],
+        contextSnapshot: {
+          version: 1,
+          instruction: { prompt: "STRUCTURED_PROMPT" },
+          currentNode: { content: "STRUCTURED_NODE" },
+          graph: { connectedContext: "STRUCTURED_GRAPH" },
+          conversation: { conversationId: "structured-conversation" },
+        },
+      },
+    });
+  });
+
   it("does not expose blanket-denied tools to the model while retaining content-scoped rules", async () => {
     await bindLocalWorkspace({ projectId, rootPath: workspaceRoot }, dataDir);
     await fs.mkdir(path.join(workspaceRoot, ".zenme"), { recursive: true });
