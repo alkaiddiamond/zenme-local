@@ -2273,6 +2273,90 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
     expect(calls).toBe(3);
   });
 
+  it("keeps Plan Mode scoped to the active conversation", async () => {
+    let aCalls = 0;
+    await expect(runProjectAgentTurn({
+      projectId,
+      conversationId: "conv-a",
+      sourceNodeId: "node-a",
+      prompt: "规划 A 分支",
+      model,
+      turnId: "conv-a-turn",
+    }, {
+      dataDir,
+      callModel: async (input) => {
+        aCalls += 1;
+        if (aCalls === 1) {
+          return { text: "", toolCall: { name: "enter_plan_mode", arguments: {} }, usage: null };
+        }
+        expect(input.context).toContain("当前处于规划模式");
+        expect(input.allowedAgentTools).not.toContain("shell_command");
+        return { text: "A 正在规划。", usage: null };
+      },
+    })).resolves.toMatchObject({ status: "completed", answer: "A 正在规划。" });
+
+    const afterA = await getProjectAgentSession(projectId, dataDir);
+    expect(afterA.context.interactionMode).toBe("default");
+    expect(afterA.conversations?.find((item) => item.id === "conv-a")?.interactionMode).toBe("plan");
+
+    await expect(runProjectAgentTurn({
+      projectId,
+      conversationId: "conv-b",
+      sourceNodeId: "node-b",
+      prompt: "执行 B 分支",
+      model,
+      turnId: "conv-b-turn",
+    }, {
+      dataDir,
+      callModel: async (input) => {
+        expect(input.context).toContain("当前处于普通执行模式");
+        expect(input.allowedAgentTools).toContain("shell_command");
+        return { text: "B 正常执行。", usage: null };
+      },
+    })).resolves.toMatchObject({ status: "completed", answer: "B 正常执行。" });
+
+    const afterB = await getProjectAgentSession(projectId, dataDir);
+    expect(afterB.conversations?.find((item) => item.id === "conv-a")?.interactionMode).toBe("plan");
+    expect(afterB.conversations?.find((item) => item.id === "conv-b")?.interactionMode).toBeUndefined();
+  });
+
+  it("keeps permission mode scoped to the active conversation", async () => {
+    await expect(runProjectAgentTurn({
+      projectId,
+      conversationId: "conv-permission-a",
+      sourceNodeId: "node-permission-a",
+      prompt: "A 使用 neverAsk",
+      model,
+      permissionMode: "neverAsk",
+      turnId: "permission-a-turn",
+    }, {
+      dataDir,
+      callModel: async (input) => {
+        expect(input.context).toContain("默认会话权限：neverAsk");
+        return { text: "A done", usage: null };
+      },
+    })).resolves.toMatchObject({ status: "completed", answer: "A done" });
+
+    const afterA = await getProjectAgentSession(projectId, dataDir);
+    expect(afterA.context.permissionMode).toBeUndefined();
+    expect(afterA.conversations?.find((item) => item.id === "conv-permission-a")?.permissionMode).toBe("neverAsk");
+
+    await expect(runProjectAgentTurn({
+      projectId,
+      conversationId: "conv-permission-b",
+      sourceNodeId: "node-permission-b",
+      prompt: "B 使用默认权限",
+      model,
+      turnId: "permission-b-turn",
+    }, {
+      dataDir,
+      callModel: async (input) => {
+        expect(input.context).toContain("默认会话权限：onRequest");
+        return { text: "B done", usage: null };
+      },
+    })).resolves.toMatchObject({ status: "completed", answer: "B done" });
+  });
+
   it("switches into Plan Mode from a streamed exclusive control tool", async () => {
     let calls = 0;
     const enterPlanCall = { name: "enter_plan_mode", arguments: {} };
@@ -4414,9 +4498,17 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
     await bindLocalWorkspace({ projectId, rootPath: workspaceRoot }, dataDir);
     await setLocalWorkspacePermissions({ projectId, permissions: { read: true, write: true, execute: true } }, dataDir);
     let modelCall = 0;
-    const result = await runProjectAgentTurn({ projectId, prompt: "启动一个短后台任务", model }, {
+    const result = await runProjectAgentTurn({
+      projectId,
+      conversationId: "background-conversation",
+      sourceNodeId: "background-node",
+      currentNodeContext: "CURRENT_BACKGROUND_NODE",
+      connectedGraphContext: "CONNECTED_BACKGROUND_GRAPH",
+      prompt: "启动一个短后台任务",
+      model,
+    }, {
       dataDir,
-      callModel: async () => {
+      callModel: async (modelInput) => {
         modelCall += 1;
         if (modelCall === 1) {
           return {
@@ -4427,6 +4519,10 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
               },
               usage: null,
             };
+        }
+        if (modelCall === 3) {
+          expect(modelInput.context).toContain("CURRENT_BACKGROUND_NODE");
+          expect(modelInput.context).toContain("CONNECTED_BACKGROUND_GRAPH");
         }
         return modelCall === 2
           ? { text: "短后台任务已经启动。", usage: null }
@@ -4449,6 +4545,8 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
         output: expect.objectContaining({ status: "succeeded", stdout: expect.stringContaining("background-finished") }),
       },
     });
+    expect(session.events.find((event) => event.turnId === result.turnId && event.type === "user"))
+      .toMatchObject({ conversationId: "background-conversation", sourceNodeId: "background-node" });
     await vi.waitFor(async () => {
       expect(modelCall).toBe(3);
       session = await getProjectAgentSession(projectId, dataDir);

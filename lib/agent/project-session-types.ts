@@ -48,6 +48,12 @@ export type ProjectAgentConversation = {
   rootNodeId?: string;
   parentConversationIds?: string[];
   forkedFromTurnId?: string;
+  interactionMode?: "default" | "plan";
+  activePlan?: string;
+  activeWorktree?: ProjectAgentWorktree;
+  permissionMode?: "untrusted" | "onRequest" | "neverAsk";
+  skillHooks?: ProjectAgentHooks;
+  consumedHookIds?: string[];
   summary?: string;
   compactedThroughSequence?: number;
   consecutiveCompactionFailures?: number;

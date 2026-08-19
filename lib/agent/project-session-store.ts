@@ -102,11 +102,23 @@ export async function appendProjectAgentEvent(input: {
         existingConversation.updatedAt = now;
       } else {
         const parentConversationIds = [...new Set((input.parentConversationIds ?? []).filter(Boolean))];
+        const parentConversation = parentConversationIds.length === 1
+          ? conversations.find((conversation) => conversation.id === parentConversationIds[0])
+          : undefined;
         conversations.push({
           id: conversationId,
           rootNodeId: appended.sourceNodeId,
           parentConversationIds: parentConversationIds.length ? parentConversationIds : undefined,
           forkedFromTurnId: parentConversationIds.length ? appended.parentTurnId : undefined,
+          interactionMode: parentConversation?.interactionMode,
+          activePlan: parentConversation?.activePlan,
+          permissionMode: parentConversation?.permissionMode,
+          skillHooks: parentConversation?.skillHooks,
+          consumedHookIds: parentConversation?.consumedHookIds
+            ? [...parentConversation.consumedHookIds]
+            : undefined,
+          summary: parentConversation?.summary,
+          compactedThroughSequence: parentConversation?.compactedThroughSequence,
           createdAt: now,
           updatedAt: now,
         });
@@ -146,6 +158,12 @@ export async function updateProjectAgentEvent(input: {
 export async function updateProjectAgentConversationContext(input: {
   projectId: string;
   conversationId: string;
+  interactionMode?: "default" | "plan";
+  activePlan?: string | null;
+  activeWorktree?: ProjectAgentContextState["activeWorktree"] | null;
+  permissionMode?: "untrusted" | "onRequest" | "neverAsk";
+  skillHooks?: ProjectAgentHooks | null;
+  consumedHookIds?: string[];
   summary?: string;
   compactedThroughSequence?: number;
 }, dataDir = getZenmeDataDir()) {
@@ -171,6 +189,25 @@ export async function updateProjectAgentConversationContext(input: {
       throw new ProjectAgentSessionError("Conversation 不存在", "invalid_input");
     }
     const now = new Date().toISOString();
+    if (input.interactionMode !== undefined) conversation.interactionMode = input.interactionMode;
+    if (input.activePlan !== undefined) {
+      if (input.activePlan === null) delete conversation.activePlan;
+      else conversation.activePlan = input.activePlan.slice(0, MAX_SUMMARY_LENGTH);
+    }
+    if (input.activeWorktree !== undefined) {
+      if (input.activeWorktree === null) delete conversation.activeWorktree;
+      else conversation.activeWorktree = input.activeWorktree;
+    }
+    if (input.permissionMode !== undefined) conversation.permissionMode = input.permissionMode;
+    if (input.skillHooks !== undefined) {
+      if (input.skillHooks === null) delete conversation.skillHooks;
+      else conversation.skillHooks = normalizeProjectAgentHooks(input.skillHooks, { preserveRuntimeMetadata: true });
+    }
+    if (input.consumedHookIds !== undefined) {
+      conversation.consumedHookIds = [...new Set(
+        input.consumedHookIds.filter((item) => /^[a-f0-9]{64}$/.test(item)),
+      )].slice(-2_000);
+    }
     if (input.summary !== undefined) {
       const summary = input.summary.trim();
       if (summary) conversation.summary = summary;
@@ -189,6 +226,40 @@ export async function updateProjectAgentConversationContext(input: {
     return session;
   });
   return updated;
+}
+
+export function getProjectAgentConversationRuntimeState(
+  session: ProjectAgentSession,
+  conversationId?: string,
+) {
+  if (!conversationId) {
+    return {
+      interactionMode: session.context.interactionMode ?? "default",
+      activePlan: session.context.activePlan,
+      activeWorktree: session.context.activeWorktree,
+      permissionMode: session.context.permissionMode,
+      skillHooks: session.context.skillHooks,
+      consumedHookIds: session.context.consumedHookIds ?? [],
+    };
+  }
+  const conversation = conversationId
+    ? session.conversations?.find((candidate) => candidate.id === conversationId)
+    : undefined;
+  const legacySingleConversation = Boolean(conversation && (session.conversations?.length ?? 0) === 1);
+  return {
+    interactionMode: conversation?.interactionMode ??
+      (legacySingleConversation ? session.context.interactionMode ?? "default" : "default"),
+    activePlan: conversation?.activePlan ??
+      (legacySingleConversation ? session.context.activePlan : undefined),
+    activeWorktree: conversation?.activeWorktree ??
+      (legacySingleConversation ? session.context.activeWorktree : undefined),
+    permissionMode: conversation?.permissionMode ??
+      (legacySingleConversation ? session.context.permissionMode : undefined),
+    skillHooks: conversation?.skillHooks ??
+      (legacySingleConversation ? session.context.skillHooks : undefined),
+    consumedHookIds: conversation?.consumedHookIds ??
+      (legacySingleConversation ? session.context.consumedHookIds ?? [] : []),
+  };
 }
 
 export async function upsertProjectAgentAnswerDraft(input: {
@@ -524,6 +595,7 @@ export async function getProjectAgentModelContext(
   const conversation = conversationId
     ? session.conversations?.find((candidate) => candidate.id === conversationId)
     : undefined;
+  const conversationRuntimeState = getProjectAgentConversationRuntimeState(session, conversationId);
   const previouslyClearedEventIds = session.events.flatMap((event) =>
     event.type === "compact" && event.data?.kind === "microcompact" &&
       Array.isArray(event.data.clearedToolResultEventIds)
@@ -555,8 +627,12 @@ export async function getProjectAgentModelContext(
     ...context,
     conversationSummary: conversation?.summary ?? "",
     conversationCompactedThroughSequence: conversation?.compactedThroughSequence ?? 0,
-    interactionMode: session.context.interactionMode ?? "default",
-    activePlan: session.context.activePlan ?? "",
+    interactionMode: conversationId
+      ? conversationRuntimeState.interactionMode
+      : session.context.interactionMode ?? "default",
+    activePlan: conversationId
+      ? conversationRuntimeState.activePlan ?? ""
+      : session.context.activePlan ?? "",
     taskPlan: session.taskPlan,
     events: modelEvents,
     clearedToolResultEventIds: projection.clearedEventIds,
@@ -621,8 +697,8 @@ export async function recordProjectAgentCompactionFailure(input: {
 export function canAttemptProjectAgentCompaction(session: ProjectAgentSession, conversationId?: string) {
   if (conversationId) {
     const conversation = session.conversations?.find((candidate) => candidate.id === conversationId);
-    return Boolean(conversation) &&
-      (conversation.consecutiveCompactionFailures ?? 0) < MAX_CONSECUTIVE_COMPACTION_FAILURES;
+    if (!conversation) return false;
+    return (conversation.consecutiveCompactionFailures ?? 0) < MAX_CONSECUTIVE_COMPACTION_FAILURES;
   }
   return session.context.consecutiveCompactionFailures < MAX_CONSECUTIVE_COMPACTION_FAILURES;
 }
@@ -725,8 +801,12 @@ function normalizeSession(value: unknown): ProjectAgentSession | null {
   ) return null;
   const events = value.events.filter(isEvent).slice(0, MAX_EVENTS);
   const compactCheckpoints = value.compactCheckpoints.filter(isCheckpoint).slice(0, MAX_CHECKPOINTS);
+  const maximumSequence = events.at(-1)?.sequence ?? 0;
   const conversations = Array.isArray(value.conversations)
-    ? value.conversations.filter(isConversation)
+    ? value.conversations.flatMap((conversation) => {
+        const normalized = normalizeConversation(conversation, maximumSequence);
+        return normalized ? [normalized] : [];
+      })
     : [];
   return {
     ...value,
@@ -743,11 +823,45 @@ function normalizeSession(value: unknown): ProjectAgentSession | null {
   } as ProjectAgentSession;
 }
 
-function isConversation(value: unknown): value is ProjectAgentConversation {
-  return isObject(value) &&
-    typeof value.id === "string" &&
-    typeof value.createdAt === "string" &&
-    typeof value.updatedAt === "string";
+function normalizeConversation(value: unknown, maximumSequence: number): ProjectAgentConversation | null {
+  if (!isObject(value) || typeof value.id !== "string" ||
+    typeof value.createdAt !== "string" || typeof value.updatedAt !== "string") return null;
+  const compactedThroughSequence = value.compactedThroughSequence === undefined
+    ? undefined
+    : Math.min(safeCount(value.compactedThroughSequence), maximumSequence);
+  return {
+    ...value,
+    id: value.id,
+    rootNodeId: typeof value.rootNodeId === "string" ? value.rootNodeId : undefined,
+    parentConversationIds: Array.isArray(value.parentConversationIds)
+      ? [...new Set(value.parentConversationIds.filter((item): item is string => typeof item === "string"))]
+      : undefined,
+    forkedFromTurnId: typeof value.forkedFromTurnId === "string" ? value.forkedFromTurnId : undefined,
+    interactionMode: value.interactionMode === "plan" || value.interactionMode === "default"
+      ? value.interactionMode
+      : undefined,
+    activePlan: typeof value.activePlan === "string" ? value.activePlan.slice(0, MAX_SUMMARY_LENGTH) : undefined,
+    activeWorktree: normalizeActiveWorktree(value.activeWorktree),
+    permissionMode: normalizePermissionMode(value.permissionMode),
+    skillHooks: normalizeProjectAgentHooks(value.skillHooks, { preserveRuntimeMetadata: true }),
+    consumedHookIds: Array.isArray(value.consumedHookIds)
+      ? [...new Set(value.consumedHookIds.filter((item): item is string =>
+          typeof item === "string" && /^[a-f0-9]{64}$/.test(item)))].slice(-2_000)
+      : undefined,
+    summary: typeof value.summary === "string" ? value.summary.slice(0, MAX_SUMMARY_LENGTH) : undefined,
+    compactedThroughSequence,
+    consecutiveCompactionFailures: Math.min(
+      MAX_CONSECUTIVE_COMPACTION_FAILURES,
+      safeCount(value.consecutiveCompactionFailures),
+    ),
+    compactionBlockedAt: typeof value.compactionBlockedAt === "string" ? value.compactionBlockedAt : undefined,
+    lastCompactionFailureCode: typeof value.lastCompactionFailureCode === "string"
+      ? value.lastCompactionFailureCode.slice(0, 100)
+      : undefined,
+    lastCompactedAt: typeof value.lastCompactedAt === "string" ? value.lastCompactedAt : undefined,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+  };
 }
 
 function normalizeContext(value: Record<string, unknown>, events: ProjectAgentEvent[]): ProjectAgentContextState {

@@ -9,6 +9,7 @@ import {
   canAttemptProjectAgentCompaction,
   createProjectAgentCompactCheckpoint,
   getEffectiveProjectAgentContext,
+  getProjectAgentConversationRuntimeState,
   getProjectAgentModelContext,
   getProjectAgentSession,
   recordProjectAgentCompactionFailure,
@@ -126,6 +127,147 @@ describe("project agent session store", () => {
         forkedFromTurnId: "turn-a",
       }),
     ]);
+  });
+
+  it("isolates plan mode and session-scoped hooks between conversations", async () => {
+    for (const conversationId of ["conv-a", "conv-b"]) {
+      await appendProjectAgentEvent({
+        projectId,
+        turnId: `${conversationId}-turn`,
+        conversationId,
+        sourceNodeId: `${conversationId}-node`,
+        type: "user",
+        content: conversationId,
+      }, dataDir);
+    }
+    await updateProjectAgentConversationContext({
+      projectId,
+      conversationId: "conv-a",
+      interactionMode: "plan",
+      activePlan: "## A plan",
+      permissionMode: "neverAsk",
+      activeWorktree: {
+        originalRootId: "root-main",
+        rootId: "root-worktree-a",
+        path: "G:/tmp/worktree-a",
+        branch: "zenme/a",
+        headCommit: "abc123",
+        gitRoot: "G:/repo",
+        state: "active",
+      },
+      skillHooks: {
+        PreToolUse: [{ hooks: [{ type: "http", url: "https://hooks.example.test/a" }] }],
+      },
+      consumedHookIds: ["a".repeat(64)],
+    }, dataDir);
+
+    await expect(getProjectAgentModelContext(projectId, dataDir, "conv-a")).resolves.toMatchObject({
+      interactionMode: "plan",
+      activePlan: "## A plan",
+    });
+    await expect(getProjectAgentModelContext(projectId, dataDir, "conv-b")).resolves.toMatchObject({
+      interactionMode: "default",
+      activePlan: "",
+    });
+    const session = await getProjectAgentSession(projectId, dataDir);
+    expect(getProjectAgentConversationRuntimeState(session, "conv-a")).toMatchObject({
+      permissionMode: "neverAsk",
+      activeWorktree: { rootId: "root-worktree-a", state: "active" },
+    });
+    expect(getProjectAgentConversationRuntimeState(session, "conv-b")).toMatchObject({
+      permissionMode: undefined,
+      activeWorktree: undefined,
+    });
+    expect(session.context.interactionMode).toBe("default");
+    expect(session.conversations?.find((item) => item.id === "conv-a")).toMatchObject({
+      interactionMode: "plan",
+      activePlan: "## A plan",
+      permissionMode: "neverAsk",
+      activeWorktree: { rootId: "root-worktree-a", state: "active" },
+      consumedHookIds: ["a".repeat(64)],
+      skillHooks: { PreToolUse: expect.any(Array) },
+    });
+    expect(session.conversations?.find((item) => item.id === "conv-b")?.skillHooks).toBeUndefined();
+    expect(session.conversations?.find((item) => item.id === "conv-b")?.permissionMode).toBeUndefined();
+    expect(session.conversations?.find((item) => item.id === "conv-b")?.activeWorktree).toBeUndefined();
+  });
+
+  it("snapshots the parent conversation state when a branch forks", async () => {
+    await appendProjectAgentEvent({
+      projectId,
+      turnId: "turn-a",
+      conversationId: "conv-a",
+      sourceNodeId: "node-a",
+      type: "user",
+      content: "A",
+    }, dataDir);
+    await updateProjectAgentConversationContext({
+      projectId,
+      conversationId: "conv-a",
+      interactionMode: "plan",
+      activePlan: "## parent plan",
+      permissionMode: "neverAsk",
+      activeWorktree: {
+        originalRootId: "root-main",
+        rootId: "root-parent-worktree",
+        path: "G:/tmp/parent-worktree",
+        branch: "zenme/parent",
+        headCommit: "abc123",
+        gitRoot: "G:/repo",
+        state: "active",
+      },
+      summary: "parent summary at fork",
+      compactedThroughSequence: 1,
+      skillHooks: {
+        PreToolUse: [{ hooks: [{ type: "http", url: "https://hooks.example.test/parent" }] }],
+      },
+      consumedHookIds: ["b".repeat(64)],
+    }, dataDir);
+    await appendProjectAgentEvent({
+      projectId,
+      turnId: "turn-b",
+      conversationId: "conv-b",
+      parentConversationIds: ["conv-a"],
+      parentTurnId: "turn-a",
+      sourceNodeId: "node-b",
+      type: "user",
+      content: "B",
+      data: { parentConversationIds: ["conv-a"] },
+    }, dataDir);
+
+    await updateProjectAgentConversationContext({
+      projectId,
+      conversationId: "conv-a",
+      interactionMode: "default",
+      activePlan: null,
+      summary: "parent changed later",
+      compactedThroughSequence: 2,
+      skillHooks: null,
+      consumedHookIds: [],
+    }, dataDir);
+
+    const child = (await getProjectAgentSession(projectId, dataDir)).conversations?.find((item) => item.id === "conv-b");
+    expect(child).toMatchObject({
+      interactionMode: "plan",
+      activePlan: "## parent plan",
+      permissionMode: "neverAsk",
+      summary: "parent summary at fork",
+      compactedThroughSequence: 1,
+      consumedHookIds: ["b".repeat(64)],
+      skillHooks: { PreToolUse: expect.any(Array) },
+    });
+    expect(child?.activeWorktree).toBeUndefined();
+    await expect(getProjectAgentModelContext(projectId, dataDir, "conv-b")).resolves.toMatchObject({
+      conversationSummary: "parent summary at fork",
+      conversationCompactedThroughSequence: 1,
+      interactionMode: "plan",
+      activePlan: "## parent plan",
+      events: [expect.objectContaining({ turnId: "turn-b", content: "B" })],
+    });
+    expect(getProjectAgentConversationRuntimeState(
+      await getProjectAgentSession(projectId, dataDir),
+      "conv-b",
+    )).toMatchObject({ permissionMode: "neverAsk", activeWorktree: undefined });
   });
 
   it("stores conversation-local summary metadata without changing the project summary", async () => {

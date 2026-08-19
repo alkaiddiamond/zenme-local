@@ -37,6 +37,7 @@ export function collectTextGenerationContext(input: {
   nodeId: string;
   nodes: CanvasNode[];
   sourceNodeIds?: string[];
+  transcriptTurnIds?: ReadonlySet<string>;
 }) {
   const maxDepth = normalizeTraversalDepth(input.maxDepth);
   const maxTokens = input.maxTokens ?? getCanvasContextTokenBudget({
@@ -73,7 +74,11 @@ export function collectTextGenerationContext(input: {
       continue;
     }
 
-    const contextText = getCanvasNodeContextText(node);
+    const contextText = node.data.kind === "agent" &&
+      typeof node.data.agentTurnId === "string" &&
+      input.transcriptTurnIds?.has(node.data.agentTurnId)
+      ? `AI 回复节点「${node.data.title || node.data.kind}」（正文已包含在当前 Conversation 历史；此处仅表示显式上游连线关系）`
+      : getCanvasNodeContextText(node);
     if (contextText) {
       const contentKey = normalizeContextContent(contextText);
       if (!seenContent.has(contentKey)) {

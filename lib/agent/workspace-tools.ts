@@ -60,9 +60,11 @@ import { AGENT_TOOL_NAMES, getAgentToolDefinition, searchAgentToolDefinitions } 
 import {
   appendProjectAgentEvent,
   createProjectAgentTask,
+  getProjectAgentConversationRuntimeState,
   getProjectAgentSession,
   getProjectAgentTask,
   listProjectAgentTasks,
+  updateProjectAgentConversationContext,
   updateProjectAgentTask,
   updateProjectAgentContext,
 } from "@/lib/agent/project-session-store";
@@ -574,7 +576,13 @@ async function runTool<Name extends AgentWorkspaceToolName>(
       }) as Promise<AgentWorkspaceToolResult[Name]>;
     case "exit_plan_mode": {
       const plan = (input.arguments as AgentWorkspaceToolArguments["exit_plan_mode"]).plan;
-      const filePath = await writeProjectAgentPlan(input.projectId, plan, dataDir);
+      const execution = await getAgentExecution(input.projectId, input.executionId, dataDir);
+      const filePath = await writeProjectAgentPlan(
+        input.projectId,
+        plan,
+        dataDir,
+        execution?.context.conversationId,
+      );
       return Promise.resolve({
         filePath,
         plan,
@@ -2028,8 +2036,9 @@ async function enterMainAgentWorktree(
     requireWorkspaceBinding(projectId, dataDir),
   ]);
   if (!execution) throw new AgentWorkspaceToolError("Agent Execution 不存在", "invalid_arguments");
-  if (session.context.activeWorktree?.state === "active") {
-    throw new AgentWorkspaceToolError("当前 Project Agent Session 已处于 worktree 中", "invalid_arguments");
+  const conversationId = execution.context.conversationId;
+  if (getProjectAgentConversationRuntimeState(session, conversationId).activeWorktree?.state === "active") {
+    throw new AgentWorkspaceToolError("当前 Conversation 已处于 worktree 中", "invalid_arguments");
   }
   const originalRootId = execution.context.workspaceRootId ?? listWorkspaceRoots(binding).find((root) => root.primary)?.id;
   if (!originalRootId) throw new AgentWorkspaceToolError("Workspace 主根不存在", "workspace_unavailable");
@@ -2055,7 +2064,11 @@ async function enterMainAgentWorktree(
     if (!registeredRootId) throw new Error("Agent worktree 无法注册为临时 Workspace Root");
     worktree = { ...worktree, rootId: registeredRootId };
     await setAgentExecutionWorkspaceRoot(projectId, executionId, registeredRootId, dataDir);
-    await updateProjectAgentContext({ projectId, activeWorktree: worktree }, dataDir);
+    if (conversationId) {
+      await updateProjectAgentConversationContext({ projectId, conversationId, activeWorktree: worktree }, dataDir);
+    } else {
+      await updateProjectAgentContext({ projectId, activeWorktree: worktree }, dataDir);
+    }
   } catch (error) {
     if (registeredRootId) await removeLocalWorkspaceRoot({ projectId, rootId: registeredRootId }, dataDir).catch(() => undefined);
     await removeProjectAgentWorktree(worktree).catch(() => undefined);
@@ -2076,8 +2089,13 @@ async function exitMainAgentWorktree(
   args: AgentWorkspaceToolArguments["exit_worktree"],
   dataDir: string,
 ): Promise<AgentWorkspaceToolResult["exit_worktree"]> {
-  const session = await getProjectAgentSession(projectId, dataDir);
-  const worktree = session.context.activeWorktree;
+  const [session, execution] = await Promise.all([
+    getProjectAgentSession(projectId, dataDir),
+    getAgentExecution(projectId, executionId, dataDir),
+  ]);
+  if (!execution) throw new AgentWorkspaceToolError("Agent Execution 不存在", "invalid_arguments");
+  const conversationId = execution.context.conversationId;
+  const worktree = getProjectAgentConversationRuntimeState(session, conversationId).activeWorktree;
   if (!worktree || worktree.state !== "active" || !worktree.rootId) {
     throw new AgentWorkspaceToolError(
       "当前 Session 没有通过 enter_worktree 创建的活动 worktree；不会处理手工或其他 Session 创建的 worktree。",
@@ -2102,7 +2120,11 @@ async function exitMainAgentWorktree(
 
   if (args.action === "remove") await removeProjectAgentWorktree(worktree);
   await setAgentExecutionWorkspaceRoot(projectId, executionId, worktree.originalRootId, dataDir);
-  await updateProjectAgentContext({ projectId, activeWorktree: null }, dataDir);
+  if (conversationId) {
+    await updateProjectAgentConversationContext({ projectId, conversationId, activeWorktree: null }, dataDir);
+  } else {
+    await updateProjectAgentContext({ projectId, activeWorktree: null }, dataDir);
+  }
   if (args.action === "remove") {
     await removeLocalWorkspaceRoot({ projectId, rootId: worktree.rootId }, dataDir);
   }
@@ -2315,7 +2337,13 @@ async function readFile(
   dataDir: string,
 ): Promise<AgentWorkspaceToolResult["read_file"]> {
   if (isProjectAgentPlanVirtualPath(args.relativePath)) {
-    return sliceTextFileResult(args.relativePath, await readProjectAgentPlan(projectId, dataDir), args.startLine, args.endLine);
+    const detail = await getAgentExecution(projectId, executionId, dataDir);
+    return sliceTextFileResult(
+      args.relativePath,
+      await readProjectAgentPlan(projectId, dataDir, detail?.context.conversationId),
+      args.startLine,
+      args.endLine,
+    );
   }
   if (isProjectAgentMemoryVirtualPath(args.relativePath)) {
     const detail = await requireAgentMemoryContext(projectId, executionId, dataDir);
@@ -2456,13 +2484,19 @@ async function writeFile(
   args: AgentWorkspaceToolArguments["write_file"],
   dataDir: string,
 ): Promise<AgentWorkspaceToolResult["write_file"]> {
+  const execution = await getAgentExecution(projectId, executionId, dataDir);
+  const conversationId = execution?.context.conversationId;
   if (isProjectAgentPlanVirtualPath(args.relativePath)) {
-    const previous = await readProjectAgentPlan(projectId, dataDir);
-    await writeProjectAgentPlan(projectId, args.content, dataDir);
+    const previous = await readProjectAgentPlan(projectId, dataDir, conversationId);
+    await writeProjectAgentPlan(projectId, args.content, dataDir, conversationId);
     return { operation: previous ? "modify" : "create", relativePath: args.relativePath, status: "written" };
   }
-  if ((await getProjectAgentSession(projectId, dataDir)).context.interactionMode === "plan") {
-    throw new AgentWorkspaceToolError(`规划模式只能写入 ${getProjectAgentPlanFilePath(projectId, dataDir)}`, "invalid_arguments");
+  const session = await getProjectAgentSession(projectId, dataDir);
+  if (getProjectAgentConversationRuntimeState(session, conversationId).interactionMode === "plan") {
+    throw new AgentWorkspaceToolError(
+      `规划模式只能写入 ${getProjectAgentPlanFilePath(projectId, dataDir, conversationId)}`,
+      "invalid_arguments",
+    );
   }
   if (isProjectAgentMemoryVirtualPath(args.relativePath)) {
     const detail = await requireAgentMemoryContext(projectId, executionId, dataDir);
@@ -2501,17 +2535,23 @@ async function editFile(
   args: AgentWorkspaceToolArguments["edit_file"],
   dataDir: string,
 ): Promise<AgentWorkspaceToolResult["edit_file"]> {
+  const execution = await getAgentExecution(projectId, executionId, dataDir);
+  const conversationId = execution?.context.conversationId;
   if (isProjectAgentPlanVirtualPath(args.relativePath)) {
-    const content = await readProjectAgentPlan(projectId, dataDir);
+    const content = await readProjectAgentPlan(projectId, dataDir, conversationId);
     const occurrences = content.split(args.oldText).length - 1;
     if (occurrences === 0) throw new AgentWorkspaceToolError("Edit 未找到 oldText", "invalid_arguments");
     if (!args.replaceAll && occurrences !== 1) throw new AgentWorkspaceToolError("Edit 的 oldText 匹配多处；请提供更精确文本或启用 replaceAll", "invalid_arguments");
     const next = args.replaceAll ? content.split(args.oldText).join(args.newText) : content.replace(args.oldText, args.newText);
-    await writeProjectAgentPlan(projectId, next, dataDir);
+    await writeProjectAgentPlan(projectId, next, dataDir, conversationId);
     return { replacements: args.replaceAll ? occurrences : 1, relativePath: args.relativePath, status: "written" };
   }
-  if ((await getProjectAgentSession(projectId, dataDir)).context.interactionMode === "plan") {
-    throw new AgentWorkspaceToolError(`规划模式只能编辑 ${getProjectAgentPlanFilePath(projectId, dataDir)}`, "invalid_arguments");
+  const session = await getProjectAgentSession(projectId, dataDir);
+  if (getProjectAgentConversationRuntimeState(session, conversationId).interactionMode === "plan") {
+    throw new AgentWorkspaceToolError(
+      `规划模式只能编辑 ${getProjectAgentPlanFilePath(projectId, dataDir, conversationId)}`,
+      "invalid_arguments",
+    );
   }
   if (isProjectAgentMemoryVirtualPath(args.relativePath)) {
     const detail = await requireAgentMemoryContext(projectId, executionId, dataDir);

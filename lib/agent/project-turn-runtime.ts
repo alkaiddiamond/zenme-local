@@ -26,6 +26,7 @@ import {
   canAttemptProjectAgentCompaction,
   clearProjectAgentAnswerDraft,
   createProjectAgentCompactCheckpoint,
+  getProjectAgentConversationRuntimeState,
   getProjectAgentModelContext,
   getProjectAgentSession,
   recordProjectAgentCompactionFailure,
@@ -460,7 +461,13 @@ export async function runProjectAgentTurn(input: {
       : [];
     const turnModel = slashCommand?.model || persistedCommandModel || input.model;
     const turnAdditionalAllowedTools = new Set(slashCommand?.allowedTools ?? persistedAllowedTools);
-    const modelInfo = await resolveTurnModel(input.projectId, turnModel, input.permissionMode, dataDir);
+    const modelInfo = await resolveTurnModel(
+      input.projectId,
+      turnModel,
+      input.permissionMode,
+      dataDir,
+      input.conversationId,
+    );
     const existingTurnUserEvent = input.resume
       ? (await getProjectAgentSession(input.projectId, dataDir)).events.find((event) =>
           event.turnId === turnId && event.type === "user")
@@ -538,7 +545,8 @@ export async function runProjectAgentTurn(input: {
       ? (await getAgentExecution(input.projectId, executionId, dataDir))?.context.agentHooks
       : undefined;
     const hookSession = await getProjectAgentSession(input.projectId, dataDir);
-    const consumedHookIds = new Set(hookSession.context.consumedHookIds ?? []);
+    const hookRuntimeState = getProjectAgentConversationRuntimeState(hookSession, input.conversationId);
+    const consumedHookIds = new Set(hookRuntimeState.consumedHookIds);
     const configuredAgentHooksCandidate = input.resume
       ? resumedAgentHooks
       : await resolveProjectAgentHooksWithConfigChangeRuntime({
@@ -590,20 +598,37 @@ export async function runProjectAgentTurn(input: {
           },
         });
     const configuredAgentHooks = omitConsumedProjectAgentHooks(configuredAgentHooksCandidate, consumedHookIds);
-    const persistedSkillHooks = omitConsumedProjectAgentHooks(hookSession.context.skillHooks, consumedHookIds);
+    const persistedSkillHooks = omitConsumedProjectAgentHooks(hookRuntimeState.skillHooks, consumedHookIds);
     let sessionSkillHooks = mergeProjectAgentHooks(persistedSkillHooks, slashCommand?.hooks);
     let activeAgentHooks = input.resume
       ? configuredAgentHooks
       : mergeProjectAgentHooks(configuredAgentHooks, sessionSkillHooks);
+    const updateConversationSessionState = async (state: {
+      interactionMode?: "default" | "plan";
+      activePlan?: string | null;
+      permissionMode?: ZenmeSessionPermissionMode;
+      skillHooks?: ProjectAgentHooks | null;
+      consumedHookIds?: string[];
+    }) => {
+      if (input.conversationId) {
+        await updateProjectAgentConversationContext({
+          projectId: input.projectId,
+          conversationId: input.conversationId,
+          ...state,
+        }, dataDir);
+        return;
+      }
+      await updateProjectAgentContext({ projectId: input.projectId, ...state }, dataDir);
+    };
     if (slashCommand?.hooks) {
-      await updateProjectAgentContext({ projectId: input.projectId, skillHooks: sessionSkillHooks }, dataDir);
+      await updateConversationSessionState({ skillHooks: sessionSkillHooks });
     }
     const registerSkillHooks = async (output: unknown) => {
       if (!isObject(output) || !output.hooks) return;
       const hooks = output.hooks as ProjectAgentHooks;
       sessionSkillHooks = mergeProjectAgentHooks(sessionSkillHooks, hooks);
       activeAgentHooks = mergeProjectAgentHooks(activeAgentHooks, hooks);
-      await updateProjectAgentContext({ projectId: input.projectId, skillHooks: sessionSkillHooks }, dataDir);
+      await updateConversationSessionState({ skillHooks: sessionSkillHooks });
       if (executionId) await setAgentExecutionHooks(input.projectId, executionId, activeAgentHooks, dataDir);
     };
     const consumeOnceHook = async (
@@ -616,11 +641,10 @@ export async function runProjectAgentTurn(input: {
       consumedHookIds.add(id);
       sessionSkillHooks = omitConsumedProjectAgentHooks(sessionSkillHooks, consumedHookIds);
       activeAgentHooks = omitConsumedProjectAgentHooks(activeAgentHooks, consumedHookIds);
-      await updateProjectAgentContext({
-        projectId: input.projectId,
+      await updateConversationSessionState({
         skillHooks: sessionSkillHooks ?? null,
         consumedHookIds: [...consumedHookIds],
-      }, dataDir);
+      });
       if (executionId) await setAgentExecutionHooks(input.projectId, executionId, activeAgentHooks, dataDir);
     };
     if (!executionId && activeAgentHooks) {
@@ -1144,9 +1168,9 @@ export async function runProjectAgentTurn(input: {
     await updateProjectAgentContext({
       projectId: input.projectId,
       modelId: input.model,
-      permissionMode: modelInfo.permissionMode,
       contextWindowTokens: modelInfo.contextWindow,
     }, dataDir);
+    await updateConversationSessionState({ permissionMode: modelInfo.permissionMode });
     if (input.resume) {
       const resumeSession = await getProjectAgentSession(input.projectId, dataDir);
       const pendingSkillPromptResult = [...resumeSession.events].reverse().find((event) =>
@@ -1395,14 +1419,13 @@ export async function runProjectAgentTurn(input: {
           await registerSkillHooks(output);
         }
         if (decision.name === "enter_plan_mode") {
-          await updateProjectAgentContext({
-            projectId: input.projectId,
+          await updateConversationSessionState({
             interactionMode: "plan",
             activePlan: null,
-          }, dataDir);
+          });
         }
         if (decision.name === "exit_plan_mode" && isObject(output) && typeof output.plan === "string") {
-          await updateProjectAgentContext({ projectId: input.projectId, activePlan: output.plan }, dataDir);
+          await updateConversationSessionState({ activePlan: output.plan });
         }
         if (decision.name === "agent_spawn" && isObject(output) && output.background === true &&
           typeof output.teamId === "string" && typeof output.agentId === "string" && executionId) {
@@ -1554,6 +1577,7 @@ export async function runProjectAgentTurn(input: {
         await appendProjectAgentEvent({
           projectId: input.projectId,
           turnId,
+          conversationId: input.conversationId,
           type: "compact",
           content: `已清理 ${modelContext.newlyClearedToolResultEventIds.length} 个旧工具结果`,
           data: {
@@ -2613,11 +2637,10 @@ export async function runProjectAgentTurn(input: {
           onHookFeedback,
           onHookSuccess: consumeOnceHook,
         }, dataDir) as AgentWorkspaceToolResult["enter_plan_mode"];
-        await updateProjectAgentContext({
-          projectId: input.projectId,
+        await updateConversationSessionState({
           interactionMode: "plan",
           activePlan: null,
-        }, dataDir);
+        });
         await appendProjectAgentEvent({
           projectId: input.projectId,
           turnId,
@@ -2644,7 +2667,7 @@ export async function runProjectAgentTurn(input: {
           onHookFeedback,
           onHookSuccess: consumeOnceHook,
         }, dataDir) as AgentWorkspaceToolResult["exit_plan_mode"];
-        await updateProjectAgentContext({ projectId: input.projectId, activePlan: output.plan }, dataDir);
+        await updateConversationSessionState({ activePlan: output.plan });
         await appendProjectAgentEvent({
           projectId: input.projectId,
           turnId,
@@ -3405,6 +3428,8 @@ async function wakeProjectAgentForQueuedNotification(input: {
   if (!queued.some((message) => message.turnId === input.turnId && message.kind === "task-notification")) return;
   const session = await getProjectAgentSession(input.projectId, input.dataDir);
   const userEvent = session.events.find((event) => event.turnId === input.turnId && event.type === "user");
+  const conversationId = userEvent?.conversationId;
+  const conversationRuntimeState = getProjectAgentConversationRuntimeState(session, conversationId);
   const model = (typeof userEvent?.data?.model === "string" ? userEvent.data.model : undefined)
     || session.context.modelId;
   if (!model) return;
@@ -3413,10 +3438,23 @@ async function wakeProjectAgentForQueuedNotification(input: {
     turnId: input.turnId,
     prompt: userEvent?.content?.trim() || "继续处理后台任务通知",
     model,
+    canvasContext: typeof userEvent?.data?.canvasContext === "string" ? userEvent.data.canvasContext : undefined,
+    currentNodeContext: typeof userEvent?.data?.currentNodeContext === "string" ? userEvent.data.currentNodeContext : undefined,
+    connectedGraphContext: typeof userEvent?.data?.connectedGraphContext === "string" ? userEvent.data.connectedGraphContext : undefined,
+    conversationId,
+    parentTurnId: userEvent?.parentTurnId,
+    sourceNodeId: userEvent?.sourceNodeId,
+    resultNodeId: userEvent?.resultNodeId,
+    selectedNodeIds: Array.isArray(userEvent?.data?.selectedNodeIds)
+      ? userEvent.data.selectedNodeIds.filter((value): value is string => typeof value === "string")
+      : [],
+    fileDocumentIds: Array.isArray(userEvent?.data?.fileDocumentIds)
+      ? userEvent.data.fileDocumentIds.filter((value): value is string => typeof value === "string")
+      : [],
     resume: true,
     reasoningEffort: optionalReasoningEffort(userEvent?.data?.reasoningEffort),
     modelSpeed: optionalModelSpeed(userEvent?.data?.modelSpeed),
-    permissionMode: session.context.permissionMode,
+    permissionMode: conversationRuntimeState.permissionMode,
   }, {
     dataDir: input.dataDir,
     callModel: input.callModel,
@@ -4334,15 +4372,17 @@ async function resolveTurnModel(
   model: string,
   permissionMode: ZenmeSessionPermissionMode | undefined,
   dataDir: string,
+  conversationId?: string,
 ) {
   const settings = await getLocalSettings(dataDir);
   const session = await getProjectAgentSession(projectId, dataDir);
+  const conversationRuntimeState = getProjectAgentConversationRuntimeState(session, conversationId);
   const selection = resolveProviderModelSelection(model, settings.modelProviders, "text");
   if (!selection) throw new ProjectAgentTurnError("模型不可用", "invalid_input");
   const config = selection.provider.models.find((item) => item.id === selection.modelId);
   return {
     contextWindow: config?.contextWindow || selection.provider.contextWindows[selection.modelId] || DEFAULT_CONTEXT_WINDOW,
-    permissionMode: permissionMode ?? session.context.permissionMode ?? settings.defaultSessionPermissionMode,
+    permissionMode: permissionMode ?? conversationRuntimeState.permissionMode ?? settings.defaultSessionPermissionMode,
     thinkingEnabled: settings.thinkingEnabled,
     reasoningEffort: settings.defaultReasoningEffort,
     modelSpeed: settings.defaultModelSpeed,
@@ -4839,6 +4879,9 @@ async function appendProjectAgentQuestionAnswer(input: {
     throw new ProjectAgentTurnError("用户回答无效", "invalid_input");
   }
   const session = await getProjectAgentSession(input.projectId, dataDir);
+  const conversationId = session.events.find((event) =>
+    event.turnId === input.turnId && event.type === "user" && event.conversationId,
+  )?.conversationId;
   const latestStage = [...session.events].reverse().find((event) => event.turnId === input.turnId && event.type === "status")?.data?.stage;
   const questionEvent = session.events.find((event) =>
     event.id === input.eventId && event.turnId === input.turnId && event.type === "toolResult" &&
@@ -4888,10 +4931,18 @@ async function appendProjectAgentQuestionAnswer(input: {
     },
   }, dataDir);
   if (toolName === "exit_plan_mode") {
-    await updateProjectAgentContext({
-      projectId: input.projectId,
-      interactionMode: answer === "批准并开始实施" ? "default" : "plan",
-    }, dataDir);
+    if (conversationId) {
+      await updateProjectAgentConversationContext({
+        projectId: input.projectId,
+        conversationId,
+        interactionMode: answer === "批准并开始实施" ? "default" : "plan",
+      }, dataDir);
+    } else {
+      await updateProjectAgentContext({
+        projectId: input.projectId,
+        interactionMode: answer === "批准并开始实施" ? "default" : "plan",
+      }, dataDir);
+    }
     return {};
   }
   if (answer === "允许一次") {

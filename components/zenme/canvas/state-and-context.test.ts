@@ -320,6 +320,36 @@ describe("canvas state and context helpers", () => {
     expect(context).toContain("共 1 个节点");
   });
 
+  it("keeps only a graph relationship marker when an upstream Agent Turn is already in the conversation transcript", () => {
+    const upstream = canvasNode({
+      data: {
+        kind: "agent",
+        title: "MCP 回答",
+        agentTurnId: "turn-mcp",
+        aiPrompt: "配置 MCP",
+        aiResponse: "完整 MCP 配置正文不应在 Graph Context 重复",
+      },
+      id: "upstream-agent",
+      type: "agent",
+    });
+    const generator = canvasNode({
+      data: { kind: "textGeneration", title: "生成" },
+      id: "generator",
+      type: "textGeneration",
+    });
+
+    const context = collectTextGenerationContext({
+      edges: [edge("upstream-agent", "generator")],
+      maxTokens: 1_000,
+      nodeId: "generator",
+      nodes: [upstream, generator],
+      transcriptTurnIds: new Set(["turn-mcp"]),
+    });
+
+    expect(context).toContain("正文已包含在当前 Conversation 历史");
+    expect(context).not.toContain("完整 MCP 配置正文不应在 Graph Context 重复");
+  });
+
   it("normalizes text generation context handles into readable edge direction", () => {
     const source = canvasNode({ id: "source" });
     const generator = canvasNode({

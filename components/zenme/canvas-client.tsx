@@ -77,7 +77,7 @@ import {
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 import { parseProviderModelReference } from "@/lib/ai/model-reference";
 import type { ZenmeModelSpeed, ZenmeReasoningEffort, ZenmeSessionPermissionMode } from "@/lib/local/settings";
-import { getCanvasContextTokenBudget } from "@/lib/ai/context-budget";
+import { estimateTextTokenCount, getCanvasContextTokenBudget } from "@/lib/ai/context-budget";
 import { resolveNodeAgentTurnId } from "@/components/zenme/canvas/agent-turn-control";
 import {
   createDroppedFileCanvasNodes,
@@ -112,6 +112,7 @@ import {
 } from "@/components/zenme/canvas/derived-state";
 import { collectAgentTurnReferences } from "@/components/zenme/canvas/agent-context";
 import { resolveConversationLineage, resolveConversationRoute } from "@/lib/agent/conversation-lineage";
+import { projectConversationEvents } from "@/lib/agent/project-agent-transcript";
 import { consumeHomePromptRequest } from "@/components/zenme/canvas/home-prompt";
 import {
   requestTextGenerationResponse,
@@ -2674,6 +2675,15 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
             ? retryUserEvent.data.parentConversationIds.filter((value): value is string => typeof value === "string")
             : [])
         : conversationRoute.parentConversationIds;
+      const transcriptSourceConversationId = !retryExistingTurn && parentConversationIds.length === 1
+        ? parentConversationIds[0]
+        : !retryExistingTurn && !conversationRoute.forked
+          ? conversationRoute.conversationId
+          : undefined;
+      const transcriptTurnIds = transcriptSourceConversationId
+        ? new Set(projectConversationEvents(conversationSession.events, transcriptSourceConversationId)
+            .map((event) => event.turnId))
+        : undefined;
       const persistedModel = typeof retryUserEvent?.data?.model === "string" ? retryUserEvent.data.model : undefined;
       const model = persistedModel || input?.model || sourceNode.data.textGenerationModel || defaultTextModel;
       const persistedPrompt = retryUserEvent?.content?.trim() || undefined;
@@ -2694,15 +2704,21 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         : undefined;
       const currentNodeContext = retryExistingTurn
         ? persistedCurrentNodeContext
-        : getCanvasNodeContextText(sourceNode);
+        : limitTextGenerationContext([
+            getCanvasNodeContextText(sourceNode),
+          ], contextTokenBudget);
+      const connectedGraphTokenBudget = retryExistingTurn
+        ? contextTokenBudget
+        : Math.max(0, contextTokenBudget - estimateTextTokenCount(currentNodeContext ?? ""));
       const connectedGraphContext = retryExistingTurn
         ? persistedConnectedGraphContext
-        : collectTextGenerationContext({
+        : connectedGraphTokenBudget > 0 ? collectTextGenerationContext({
             edges: currentEdges,
-            maxTokens: contextTokenBudget,
+            maxTokens: connectedGraphTokenBudget,
             nodeId,
             nodes: currentNodes,
-          });
+            transcriptTurnIds,
+          }) : "";
       const context = retryExistingTurn
         ? persistedCanvasContext
         : limitTextGenerationContext([

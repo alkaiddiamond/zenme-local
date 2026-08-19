@@ -22,7 +22,12 @@ import {
 import { buildCommandEnvironment } from "@/lib/agent/command-environment";
 import { createAgentExecution, finishAgentToolCall, getAgentExecution, startAgentToolCall, updateAgentCommandRequest } from "@/lib/agent/execution-store";
 import { continueProjectSkillPromptShell, executeAgentWorkspaceTool, parsePdfPages, projectDelegatedExecutionEvents } from "@/lib/agent/workspace-tools";
-import { getProjectAgentModelContext, getProjectAgentSession, updateProjectAgentContext } from "@/lib/agent/project-session-store";
+import {
+  appendProjectAgentEvent,
+  getProjectAgentModelContext,
+  getProjectAgentSession,
+  updateProjectAgentContext,
+} from "@/lib/agent/project-session-store";
 import { createLocalProject } from "@/lib/local/project-repository";
 import {
   addLocalWorkspaceRoot,
@@ -533,6 +538,77 @@ describe("agent workspace tools", { timeout: 15_000 }, () => {
     await execFileAsync("git", ["-C", workspaceRoot, "worktree", "remove", "--force", entered.worktreePath], { windowsHide: true });
     await execFileAsync("git", ["-C", workspaceRoot, "branch", "-D", entered.worktreeBranch], { windowsHide: true });
   }, 20_000);
+
+  it("keeps main-Agent worktree ownership isolated between conversations", async () => {
+    await execFileAsync("git", ["-C", workspaceRoot, "init", "-b", "main"], { encoding: "utf8", windowsHide: true });
+    await execFileAsync("git", ["-C", workspaceRoot, "config", "user.email", "tests@example.com"], { encoding: "utf8", windowsHide: true });
+    await execFileAsync("git", ["-C", workspaceRoot, "config", "user.name", "Zenme Tests"], { encoding: "utf8", windowsHide: true });
+    await execFileAsync("git", ["-C", workspaceRoot, "add", "README.md", "package.json", "src/alpha.ts"], { encoding: "utf8", windowsHide: true });
+    await execFileAsync("git", ["-C", workspaceRoot, "commit", "-m", "base"], { encoding: "utf8", windowsHide: true });
+
+    for (const conversationId of ["conv-worktree-a", "conv-worktree-b"]) {
+      await appendProjectAgentEvent({
+        projectId,
+        turnId: `${conversationId}-turn`,
+        conversationId,
+        sourceNodeId: `${conversationId}-node`,
+        type: "user",
+        content: conversationId,
+      }, dataDir);
+    }
+    const executionA = (await createAgentExecution({
+      projectId,
+      conversationId: "conv-worktree-a",
+      instruction: "A",
+      resultNodeId: "result-a",
+      triggerNodeId: "source-a",
+    }, dataDir)).detail.id;
+    const executionB = (await createAgentExecution({
+      projectId,
+      conversationId: "conv-worktree-b",
+      instruction: "B",
+      resultNodeId: "result-b",
+      triggerNodeId: "source-b",
+    }, dataDir)).detail.id;
+
+    const enteredA = await executeAgentWorkspaceTool({
+      projectId,
+      executionId: executionA,
+      name: "enter_worktree",
+      arguments: { name: "conversation-a" },
+    }, dataDir);
+    const sessionAfterA = await getProjectAgentSession(projectId, dataDir);
+    expect(sessionAfterA.conversations?.find((item) => item.id === "conv-worktree-a")?.activeWorktree)
+      .toMatchObject({ rootId: enteredA.rootId, state: "active" });
+    expect(sessionAfterA.conversations?.find((item) => item.id === "conv-worktree-b")?.activeWorktree)
+      .toBeUndefined();
+
+    const enteredB = await executeAgentWorkspaceTool({
+      projectId,
+      executionId: executionB,
+      name: "enter_worktree",
+      arguments: { name: "conversation-b" },
+    }, dataDir);
+    expect(enteredB.rootId).not.toBe(enteredA.rootId);
+    const sessionAfterB = await getProjectAgentSession(projectId, dataDir);
+    expect(sessionAfterB.conversations?.find((item) => item.id === "conv-worktree-a")?.activeWorktree)
+      .toMatchObject({ rootId: enteredA.rootId, state: "active" });
+    expect(sessionAfterB.conversations?.find((item) => item.id === "conv-worktree-b")?.activeWorktree)
+      .toMatchObject({ rootId: enteredB.rootId, state: "active" });
+
+    await expect(executeAgentWorkspaceTool({
+      projectId,
+      executionId: executionB,
+      name: "exit_worktree",
+      arguments: { action: "remove" },
+    }, dataDir)).resolves.toMatchObject({ action: "remove", originalRootId: enteredB.originalRootId });
+    await expect(executeAgentWorkspaceTool({
+      projectId,
+      executionId: executionA,
+      name: "exit_worktree",
+      arguments: { action: "remove" },
+    }, dataDir)).resolves.toMatchObject({ action: "remove", originalRootId: enteredA.originalRootId });
+  }, 30_000);
 
   it("removes a changed main-session worktree only after explicit discard confirmation", async () => {
     await execFileAsync("git", ["-C", workspaceRoot, "init", "-b", "main"], { encoding: "utf8", windowsHide: true });
