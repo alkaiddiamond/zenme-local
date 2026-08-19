@@ -91,7 +91,8 @@ Runtime 可以阻止**不安全、不授权、不合法或超预算**的动作�
 
 | cc-haha/Agent 概念 | Zenme 映射 |
 | --- | --- |
-| Session / Thread | Project Agent Session |
+| Project / Workspace | Project Agent Session：完整事件总账、Project Memory/Task/权限/摘要等共享状态 |
+| Session / Thread | Conversation：由当前画布分支与连线继承关系确定，独立投影 transcript |
 | User turn | 触发节点 + 用户事件 |
 | Agent Turn | 一个 AI Reply Node 的一个持久 Turn |
 | assistant/tool_use/tool_result | Project Session 结构化事件 |
@@ -105,6 +106,8 @@ Runtime 可以阻止**不安全、不授权、不合法或超预算**的动作�
 | localhost result | AI Reply Node 的“打开预览”动作 |
 
 **节点是交互单元，不是 Agent Runtime 本身。** 一次 Turn 内可以发生几十轮工具调用、多个 Sub-agent、审批、后台任务和 Context compact，但最终仍是一个 AI Reply Node。
+
+**同一个 Project 不等于同一个 Conversation。** 无连线节点默认开启独立 Conversation；显式 Edge 决定局部上下文继承；分叉节点 fork 会话历史；多父节点只合并 Graph Context。Project Session 始终保留全部事件，但模型 transcript 只投影当前 Conversation lineage（或未归属 Conversation 的 Project 级 Turn）。
 
 ## 6. Core Agent Loop
 

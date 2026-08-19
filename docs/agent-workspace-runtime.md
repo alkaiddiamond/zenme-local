@@ -4,11 +4,13 @@
 
 ## 统一 Project Agent Turn
 
-- 每个画布对应一个持久化 Project Agent Session，聊天和任务共用 `/api/projects/{projectId}/agent-session/turns` 单一入口。
+- 每个 Project 对应一个持久化 Project Agent Session，作为完整事件总账与共享 Project 状态容器；聊天和任务共用 `/api/projects/{projectId}/agent-session/turns` 单一入口。Session 本身不等于模型的单一 Conversation。
 - 普通问题直接形成 assistant 事件；需要读取、搜索、提案或命令时，同一个 Turn 在服务端进入工具循环，不再由前端分别判断“聊天”或“执行”。
-- Session 保存完整瀑布事件；发给模型的是独立投影，可清理旧工具正文并在阈值处压缩，不改写用户可见历史。
+- Session 保存完整瀑布事件；发给模型的是 Conversation-aware 独立投影。无连线的新节点创建新的 Conversation；单链沿上游继承 Conversation；画布分叉会 fork Conversation；多入边只合并显式 Graph Context，不把多个父 Conversation transcript 拼成一条聊天。Project 级未归属 Conversation 的 Turn 与节点 Conversation 同样彼此隔离。
+- 模型上下文按 `当前用户指令 > 当前节点 > 显式连线/选择的 Graph Context > 当前 Conversation 历史 > Project 背景` 排序。Project Memory、Workspace、Project Instructions、共享任务与 Project summary 跨 Conversation 保留；其他 Conversation 的 user/assistant/tool transcript 不因处于同一 Project 而自动进入当前模型输入。
+- Project Session 与 Conversation 都可独立压缩：Project compact 只处理未归属 Conversation 的 Project 级 Turn；Conversation compact 只处理当前 Conversation lineage，并保存自己的 summary、compact boundary 与失败熔断状态。原始事件始终保留，不因任何一种压缩改写或删除。
 - 画布只提供一种面向用户的 Agent 入口：创建 `textGeneration` 输入节点，并在其下游创建带 Turn 瀑布流的 AI 回复节点。浮动按钮、单节点动作和多选工具栏都只是在创建同一种输入节点；用户不需要预先区分聊天、Workspace Agent 或 Global Agent，统一 Project Agent 根据任务自主决定是否调用工具或 `delegate_tasks`。运行中只展开当前阶段并显示已完成步数，完成后收起工具、思考、状态与压缩事件为“执行记录”。旧 Agent Execution 与 Global Orchestration 节点继续兼容读取和渲染，但不再作为新任务入口。
-- 失败或主动停止的 AI 回复节点提供显式“重试”。重试复用原 `turnId/resultNodeId` 并在原 AI 回复节点中恢复运行，读取原 user event 持久化的提示、模型、`canvasContext`、`selectedNodeIds` 与 `fileDocumentIds` 快照；失败状态和旧工具证据在同一 Turn 审计历史中保留，不再创建新的下游 AI 回复节点。
+- 失败或主动停止的 AI 回复节点提供显式“重试”。重试复用原 `turnId/resultNodeId/conversationId` 并在原 AI 回复节点中恢复运行，读取原 user event 持久化的提示、模型、`currentNodeContext`、`connectedGraphContext`、legacy `canvasContext`、`selectedNodeIds` 与 `fileDocumentIds` 快照；失败状态和旧工具证据在同一 Turn 审计历史中保留，不再创建新的下游 AI 回复节点，也不按当前画布重新计算上下文。
 - 同一项目同一时刻只运行一个 Turn。不同项目可独立运行。
 - GPT-5.6/OpenAI-compatible Chat Completions 与 Responses 服务商使用原生 function/tool calling；Responses 事件会转换为统一工具调用流，再进入同一 Session、权限和执行循环。一次响应中的多个原生工具调用按 provider index 完整保留，主 Agent 和 Sub-agent 会处理完整批次后才再次请求模型，不再静默丢弃第二个及后续调用。模型只被允许批量发出相互独立的读取工具；写入、命令和交互动作仍逐次经过原有权限与顺序边界。不支持原生工具的服务商保留严格 JSON 决策协议作为兼容层，该协议不是第二个用户入口。
 - 历史 Workspace Agent / Global Agent 画布节点只保留既有记录读取、审计和必要停止操作，不再重新进入模型运行时。新任务只从 Project Agent Turn 创建；画布客户端只负责启动、恢复、轮询与展示当前 Turn，不解析模型决策，也不维护第二套权限、聊天消息或命令状态。

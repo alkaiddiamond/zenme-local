@@ -69,7 +69,9 @@ Phase 7 的 Project Knowledge v1 位于 `derived/knowledge/index.json`。该目�
 
 Phase 8 的 Agent 节点在既有 Canvas Snapshot v3 `data` 中保存可选 `nodeLifecycle`、`nodeLifecycleBeforeArchive`、`agentDetailsFolded` 和 `agentExpandedHeight`。旧节点缺失字段时按 `working` 展示，不要求快照版本升级；归档仍保留完整节点和边。
 
-Project Agent Session v1 位于 `agent/session.json`。每个 Project 只创建一个稳定 Session，按严格递增序号保存用户消息、助手消息、思考、工具调用、工具结果、审批、状态、压缩和 Memory 事件。压缩检查点只更新模型的有效上下文边界，不删除原始事件；有效上下文由当前摘要与边界之后的事件组成。读取和后续写入必须保留未知字段。Session 终态与 Agent Execution 通过 `turnId/resultNodeId` 关联；轮询终态 Turn 时会幂等结束仍为 `running` 的旧 Execution，用读取修复兼容早期版本异常退出或拒绝命令后留下的非终态记录。
+Project Agent Session v1 位于 `agent/session.json`。每个 Project 只创建一个稳定 Session，按严格递增序号保存用户消息、助手消息、思考、工具调用、工具结果、审批、状态、压缩和 Memory 事件；它是项目事件总账，不等价于模型的单一 Conversation。Conversation 作为 v1 的向后兼容可选元数据保存在 `conversations[]` 与事件的 `conversationId/parentTurnId/sourceNodeId/resultNodeId` 中，可记录 root node、父 Conversation、fork turn、独立 summary、compact boundary 和压缩失败状态。旧 Session 缺少这些字段时仍按 legacy Project transcript 读取，新节点运行时再逐步建立 Conversation 元数据，不要求清空或重写旧历史。
+
+Project 与 Conversation 使用独立模型投影和压缩边界。Project compact 只摘要未归属任何 Conversation 的 Project 级 Turn；Conversation compact 只摘要当前 Conversation lineage。Conversation 投影直接从完整事件总账读取，并应用自己的 compact boundary，因此 Project global boundary 即使在全局序号上跨过 Conversation 事件，也不会删除或截断该 Conversation 的历史。Project summary 只作为跨 Conversation 的长期背景，Conversation summary 表示当前分支的连续对话历史。所有 compact 都只更新投影元数据，不删除原始事件；读取和后续写入继续保留未知字段。Session 终态与 Agent Execution 通过 `turnId/resultNodeId` 关联，Execution/Global Orchestration 同时可携带 `conversationId/currentNodeContext/connectedGraphContext`，确保 Hook 与 Sub-agent 不把分层上下文重新压扁。轮询终态 Turn 时会幂等结束仍为 `running` 的旧 Execution，用读取修复兼容早期版本异常退出或拒绝命令后留下的非终态记录。
 
 Project Agent Message Queue v1 位于 `agent/message-queue.json`。它只保存尚未投递到 Session 的消息：运行中补充指令为 `now`，普通用户消息为 `next`，后台任务终态为 `later`；同优先级按写入顺序消费。后台通知使用稳定 taskId 去重，消费后从队列移除并以事件写入 `session.json`，因此 Session 仍是已消费历史的唯一真相源。文件缺失视为空队列；结构损坏按统一 JSON 隔离规则处理，不得影响既有 Session。
 
