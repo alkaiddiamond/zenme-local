@@ -2717,6 +2717,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       });
       const persistedCurrentNodeContext = retryPersistedContext?.currentNodeContext;
       const persistedConnectedGraphContext = retryPersistedContext?.connectedGraphContext;
+      const persistedLegacyCanvasContext = retryPersistedContext?.canvasContext;
       const currentNodeContext = retryExistingTurn
         ? persistedCurrentNodeContext
         : limitTextGenerationContext([
@@ -2726,7 +2727,8 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         ? contextTokenBudget
         : Math.max(0, contextTokenBudget - estimateTextTokenCount(currentNodeContext ?? ""));
       const connectedGraphContext = retryExistingTurn
-        ? persistedConnectedGraphContext
+        ? persistedConnectedGraphContext ??
+          (!persistedCurrentNodeContext ? persistedLegacyCanvasContext : undefined)
         : connectedGraphTokenBudget > 0 ? collectTextGenerationContext({
             edges: currentEdges,
             maxTokens: connectedGraphTokenBudget,
@@ -2734,12 +2736,6 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
             nodes: currentNodes,
             transcriptTurnIds,
           }) : "";
-      const context = retryExistingTurn
-        ? retryPersistedContext?.canvasContext
-        : limitTextGenerationContext([
-            currentNodeContext,
-            connectedGraphContext,
-          ], contextTokenBudget);
       const references = retryExistingTurn
         ? {
             fileDocumentIds: retryPersistedContext?.fileDocumentIds ?? [],
@@ -2826,11 +2822,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
             selectedNodeIds: references.selectedNodeIds,
             fileDocumentIds: references.fileDocumentIds,
           }),
-          canvasContext: context,
-          currentNodeContext,
-          connectedGraphContext,
           conversationId,
-          fileDocumentIds: references.fileDocumentIds,
           imageDataUrls: mergedImageDataUrls,
           model,
           modelSpeed: input?.modelSpeed,
@@ -2841,7 +2833,6 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           prompt,
           reasoningEffort: input?.reasoningEffort,
           resume: retryExistingTurn,
-          selectedNodeIds: references.selectedNodeIds,
           signal: controller.signal,
           sourceNodeId: originalSourceNode?.id ?? nodeId,
           resultNodeId,

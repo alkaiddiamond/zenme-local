@@ -14,7 +14,7 @@
 - [Continuous Global Agent](continuous-global-agent.md)
 - [Project Memory](project-memory.md)
 - [Project Knowledge Graph 与向量检索](project-knowledge.md)
-- [Canvas Convergence](canvas-convergence.md)
+- [历史兼容：Canvas Convergence](canvas-convergence.md)
 - [AI Project Workspace 需求—证据矩阵](ai-project-workspace-verification.md)
 - [画布性能基线与回归](canvas-performance.md)
 - [本地数据与迁移](data-and-migrations.md)

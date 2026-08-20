@@ -26,7 +26,7 @@ Agent 执行、Global Agent 调度、Continuous Global Agent 检查点和 Projec
 
 Project Knowledge Graph 与向量库位于 `derived/`，只从现有真相源重建，并通过有限预算的混合检索向 Agent 提供可追溯上下文。详见 [Project Knowledge Graph 与向量检索](project-knowledge.md)。
 
-Agent 节点生命周期和 Fold、Promote、Pin、Archive 收敛只作用于 Canvas 视图；领域记录保持独立。详见 [Canvas Convergence](canvas-convergence.md)。
+历史 `agentExecution/globalAgent` 节点的生命周期和 Fold、Promote、Pin、Archive 只作用于旧 Canvas 视图；领域记录保持独立。当前统一 Project Agent Turn 不再创建这些独立节点。兼容行为见 [历史 Canvas Convergence](canvas-convergence.md)。
 
 ## 代码职责
 

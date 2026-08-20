@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import {
   getGlobalOrchestration,
   GlobalOrchestrationError,
-  refreshGlobalOrchestration,
   stopGlobalOrchestration,
 } from "@/lib/global-agent/orchestration-store";
 import { stopDelegatedOrchestrationRun } from "@/lib/global-agent/delegated-runtime";
@@ -20,7 +19,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
   const { projectId, orchestrationId } = await params;
   try {
     const body = await request.json() as Record<string, unknown>;
-    if (body.action === "refresh") return NextResponse.json(await refreshGlobalOrchestration(projectId, orchestrationId));
     if (body.action === "stop") {
       stopDelegatedOrchestrationRun(projectId, orchestrationId);
       return NextResponse.json(await stopGlobalOrchestration(projectId, orchestrationId));

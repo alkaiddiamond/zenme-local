@@ -2412,6 +2412,21 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
 
     await expect(runProjectAgentTurn({
       projectId,
+      conversationId: "conv-permission-a",
+      sourceNodeId: "node-permission-a-continued",
+      prompt: "A 继续沿用当前会话权限",
+      model,
+      turnId: "permission-a-follow-up-turn",
+    }, {
+      dataDir,
+      callModel: async (input) => {
+        expect(input.context).toContain("默认会话权限：neverAsk");
+        return { text: "A continued", usage: null };
+      },
+    })).resolves.toMatchObject({ status: "completed", answer: "A continued" });
+
+    await expect(runProjectAgentTurn({
+      projectId,
       conversationId: "conv-permission-b",
       sourceNodeId: "node-permission-b",
       prompt: "B 使用默认权限",

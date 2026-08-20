@@ -97,9 +97,9 @@ describe("text generation request boundary", () => {
     expect(source).toContain('isGenerating ? "追加指令"');
     expect(source).toContain("createImagePreview(file)");
     expect(source).toContain('fetch("/api/settings"');
-    expect(source).toContain("getProjectAgentSessionFromApi(nodeData.projectId)");
-    expect(source).toContain("updateProjectAgentSessionPermissionFromApi(nodeData.projectId, nextMode)");
+    expect(source).not.toContain("updateProjectAgentSessionPermissionFromApi");
     expect(source).not.toContain("defaultSessionPermissionMode: nextMode");
+    expect(source).toContain("permissionMode: permissionModeOverridden ? permissionMode : undefined");
     expect(source).toContain('aria-label="推理强度"');
     expect(source).toContain("reasoningEffort,");
     expect(source).toContain("modelSpeed,");

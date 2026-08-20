@@ -134,16 +134,18 @@
 | 暂停、恢复、清除、重建和磁盘状态 | UI/API 管理派生索引 | `app/api/projects/memory-knowledge-api.test.ts` | 通过 |
 | Windows Knowledge 对话框交互 | Electron 中重建为 7 实体/3 关系/7 向量块；混合检索返回路径、关键词、向量和图证据；暂停/恢复通过 | 本文件“Windows Electron 最终回归记录” | 通过 |
 
-## Phase 8 — Canvas Convergence
+## Phase 8 — Canvas Convergence（历史节点兼容）
+
+本节是旧独立 Agent Execution / Global Agent 画布节点的历史验收记录，不代表当前统一 Project Agent Turn 仍提供独立 Global Agent 收敛 UI。当前新任务入口以 `textGeneration → AI 回复节点` 为准；以下能力只需维持旧快照可读、可恢复和不破坏领域数据。
 
 | 要求 | 实现 | 证据 | 状态 |
 | --- | --- | --- | --- |
-| Ephemeral、Working、Knowledge、Pinned、Archived | Agent 节点从创建起携带生命周期 | `components/zenme/canvas/node-factories.test.ts` | 通过 |
+| Ephemeral、Working、Knowledge、Pinned、Archived | 历史 Agent 节点可携带生命周期；当前新 Turn 不创建旧执行节点 | `components/zenme/canvas/convergence.test.ts` | 兼容通过 |
 | Fold、Archive、Promote 与恢复 | 生命周期只改变呈现，不删除领域记录 | `components/zenme/canvas/convergence.test.ts` | 通过 |
 | 归档默认不进入画布、搜索、上下文与知识索引 | 主画布与连线过滤；索引构建和检索过滤 | `components/zenme/canvas/rendered-nodes.test.ts`、`lib/knowledge/index-store.test.ts` | 通过 |
-| Global Agent 只提出收敛方案 | 用户确认前不改画布，方案保留 ChangeSet 和 Memory ID | `lib/global-agent/orchestration-store.test.ts` | 通过 |
+| 历史 Global Agent 收敛方案 | 旧 Orchestration 数据仍可保留 convergence proposal；不作为当前新任务入口 | `lib/global-agent/orchestration-store.test.ts` | 兼容通过 |
 | 收敛不删除 Workspace、Memory 或审批历史 | 生命周期操作只更新 Canvas 节点引用 | `components/zenme/canvas/convergence.test.ts` | 通过 |
-| Windows 收敛与归档恢复交互 | 终态节点展示收敛建议、保留 2 个 ChangeSet，并提供确认/Fold/Promote/Archive；最终归档与恢复点击仍待复验 | 本文件“Windows Electron 最终回归记录” | 待真机 |
+| Windows 旧节点收敛与归档恢复交互 | 仅属于历史 UI 兼容，不作为当前 Agent Turn 发布门禁 | 本文件“Windows Electron 最终回归记录” | 历史记录 |
 
 ## 跨阶段门禁
 
@@ -187,6 +189,6 @@
 
 本目标中的“可用”指基本、常见的 Agent Turn 能力可以在真实 Workspace 与桌面运行链路中完成，而不是要求通过 500+ 节点大画布容量门禁，也不是要求把所有低频管理 UI 逐个人工点击一遍。2026-08-18 的验证快照覆盖：普通读取/搜索、文件修改、Shell 执行与失败恢复、审批暂停/同 Turn 恢复、Ask User Question、Plan Mode、Task V2、后台任务终态续接、Skill、一次性及并行 Sub-agent；真实 `gpt-5.3-codex-spark` Live Autonomy 1/1、exit 0；当次源码重新打包后的 `npm run desktop:smoke` exit 0。后续改动必须重新记录自己的门禁结果，不能继承此处“历史绿灯”。
 
-以下内容属于独立的扩展 UI / 管理 / 容量验收，不作为“常见 Agent Turn 当前可用”的阻塞项：Memory 的完整人工管理点击链路；Knowledge 清除与重建等破坏性管理操作；Global Agent Fold/Promote/Archive 的完整人工点击链路；500/1000 节点等大画布容量与性能门禁；真实第三方 MCP/LSP/MDM/macOS 等平台集成认证。它们需要单独声明和单独验收，不能与 Agent Runtime 基本可用性混为一谈。
+以下内容属于独立的扩展 UI / 管理 / 容量验收，不作为“常见 Agent Turn 当前可用”的阻塞项：Memory 的完整人工管理点击链路；Knowledge 清除与重建等破坏性管理操作；500/1000 节点等大画布容量与性能门禁；真实第三方 MCP/LSP/MDM/macOS 等平台集成认证。历史 Global Agent Fold/Promote/Archive 只属于旧快照兼容，不再列为当前产品功能验收项。
 
 若要声明桌面发布就绪，仍应单独执行对应平台 release gate；本轮 Windows packaged Workspace/Browser smoke 已通过，但不等同于所有平台发布认证。

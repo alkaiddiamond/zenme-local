@@ -28,7 +28,7 @@ afterEach(async () => {
 });
 
 describe("Agent execution compatibility API", () => {
-  it("reads an internally created execution and invokes a bounded read tool", async () => {
+  it("reads an internally created execution but refuses retired tool execution", async () => {
     const created = await createAgentExecution({
       instruction: "读取项目说明",
       projectId,
@@ -41,17 +41,31 @@ describe("Agent execution compatibility API", () => {
       method: "PATCH",
       body: JSON.stringify({ action: "tool", name: "read_file", arguments: { relativePath: "README.md" } }),
     }), { params: Promise.resolve({ projectId, executionId: created.detail.id }) });
-    expect(toolResponse.status).toBe(200);
-    await expect(toolResponse.json()).resolves.toMatchObject({ content: "# Workspace\n", relativePath: "README.md" });
+    expect(toolResponse.status).toBe(400);
 
     const getResponse = await getExecution(new Request("http://localhost/agent"), {
       params: Promise.resolve({ projectId, executionId: created.detail.id }),
     });
     await expect(getResponse.json()).resolves.toMatchObject({
       context: { selectedNodeIds: ["source-node-1"] },
-      stage: "reading",
-      toolCalls: [{ name: "read_file", status: "succeeded" }],
+      stage: "planning",
+      toolCalls: [],
     });
+  });
+
+  it("keeps stop as the only mutation for historical executions", async () => {
+    const created = await createAgentExecution({
+      instruction: "停止旧任务",
+      projectId,
+      resultNodeId: "agent-node-stop",
+      triggerNodeId: "source-node-stop",
+    }, dataDir);
+    const response = await patchExecution(new Request("http://localhost/agent", {
+      method: "PATCH",
+      body: JSON.stringify({ action: "stop" }),
+    }), { params: Promise.resolve({ projectId, executionId: created.detail.id }) });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ status: "stopped" });
   });
 
   it("rejects retired standalone execution mutations", async () => {

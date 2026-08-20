@@ -17,11 +17,7 @@ import type {
 } from "@/lib/workspace/file-document-types";
 import type { WorkspaceChangeSet } from "@/lib/workspace/change-set-types";
 import type {
-  AgentCommandRequest,
   AgentExecutionDetail,
-  AgentWorkspaceToolArguments,
-  AgentWorkspaceToolName,
-  AgentWorkspaceToolResult,
 } from "@/lib/agent/types";
 import type { AgentContextSnapshot } from "@/lib/agent/context-model";
 import type {
@@ -240,20 +236,6 @@ export async function getProjectAgentSessionFromApi(projectId: string) {
   return readJson<ProjectAgentSession>(await fetch(
     `/api/projects/${encodeURIComponent(projectId)}/agent-session`,
     { cache: "no-store" },
-  ));
-}
-
-export async function updateProjectAgentSessionPermissionFromApi(
-  projectId: string,
-  permissionMode: ZenmeSessionPermissionMode,
-) {
-  return readJson<ProjectAgentSession>(await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/agent-session`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "updateContext", permissionMode }),
-    },
   ));
 }
 
@@ -528,28 +510,6 @@ export async function getAgentExecutionFromApi(projectId: string, executionId: s
   ));
 }
 
-export async function executeAgentWorkspaceToolFromApi<Name extends AgentWorkspaceToolName>(input: {
-  arguments: AgentWorkspaceToolArguments[Name];
-  executionId: string;
-  name: Name;
-  progressEventId?: string;
-  projectId: string;
-}) {
-  return readJson<AgentWorkspaceToolResult[Name]>(await fetch(
-    `/api/projects/${encodeURIComponent(input.projectId)}/agent-executions/${encodeURIComponent(input.executionId)}`,
-    {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        action: "tool",
-        name: input.name,
-        arguments: input.arguments,
-        ...(input.progressEventId ? { progressEventId: input.progressEventId } : {}),
-      }),
-    },
-  ));
-}
-
 export async function updateAgentExecutionFromApi(input: {
   action: "stop";
   executionId: string;
@@ -565,28 +525,6 @@ export async function updateAgentExecutionFromApi(input: {
   ));
 }
 
-export async function approveAgentCommandFromApi(projectId: string, executionId: string, commandId: string, scope: "once" | "project" = "once") {
-  return readJson<AgentCommandRequest>(await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/agent-executions/${encodeURIComponent(executionId)}`,
-    {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "approveCommand", commandId, scope }),
-    },
-  ));
-}
-
-export async function rejectAgentCommandFromApi(projectId: string, executionId: string, commandId: string) {
-  return readJson<AgentCommandRequest>(await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/agent-executions/${encodeURIComponent(executionId)}`,
-    {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "rejectCommand", commandId }),
-    },
-  ));
-}
-
 export async function getGlobalOrchestrationFromApi(projectId: string, orchestrationId: string) {
   return readJson<GlobalOrchestration>(await fetch(
     `/api/projects/${encodeURIComponent(projectId)}/global-agent/${encodeURIComponent(orchestrationId)}`,
@@ -595,7 +533,7 @@ export async function getGlobalOrchestrationFromApi(projectId: string, orchestra
 }
 
 export async function updateGlobalOrchestrationFromApi(input: {
-  action: "refresh" | "stop";
+  action: "stop";
   orchestrationId: string;
   projectId: string;
 }) {

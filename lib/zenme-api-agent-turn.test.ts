@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { executeAgentWorkspaceToolFromApi, runProjectAgentTurnFromApi, steerProjectAgentTurnFromApi, stopProjectAgentTurnFromApi } from "@/lib/zenme-api";
+import { runProjectAgentTurnFromApi, steerProjectAgentTurnFromApi, stopProjectAgentTurnFromApi } from "@/lib/zenme-api";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -71,25 +71,6 @@ describe("Project Agent Turn API client", () => {
       .toEqual({ prompt: "同时打开预览", steer: true, turnId: "turn-2" });
   });
 
-  it("associates an approved command request with one durable progress event", async () => {
-    const fetchMock = vi.fn(async () => jsonResponse({ id: "command-1", status: "succeeded" }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await executeAgentWorkspaceToolFromApi({
-      projectId: "project-1",
-      executionId: "execution-1",
-      name: "run_approved_command",
-      arguments: { commandRequestId: "command-1" },
-      progressEventId: "event-1",
-    });
-
-    expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))).toEqual({
-      action: "tool",
-      name: "run_approved_command",
-      arguments: { commandRequestId: "command-1" },
-      progressEventId: "event-1",
-    });
-  });
 });
 
 function jsonResponse(value: unknown, status = 200) {

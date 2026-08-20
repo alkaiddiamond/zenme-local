@@ -28,7 +28,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { ZenmeModelSpeed, ZenmeReasoningEffort, ZenmeSessionPermissionMode } from "@/lib/local/settings";
-import { getProjectAgentSessionFromApi, updateProjectAgentSessionPermissionFromApi } from "@/lib/zenme-api";
 
 const PERMISSION_OPTIONS: Array<{
   description: string;
@@ -83,6 +82,7 @@ export function TextNodeComposer({
   );
   const [permissionMode, setPermissionMode] =
     useState<ZenmeSessionPermissionMode>("onRequest");
+  const [permissionModeOverridden, setPermissionModeOverridden] = useState(false);
   const [reasoningEffort, setReasoningEffort] = useState<ZenmeReasoningEffort>("low");
   const [modelSpeed, setModelSpeed] = useState<ZenmeModelSpeed>("standard");
   const [images, setImages] = useState<Array<{ dataUrl: string; name: string }>>([]);
@@ -125,12 +125,9 @@ export function TextNodeComposer({
           };
         }>;
       })
-      .then(async (payload) => {
-        const sessionMode = nodeData.projectId
-          ? (await getProjectAgentSessionFromApi(nodeData.projectId)).context.permissionMode
-          : undefined;
+      .then((payload) => {
         if (cancelled) return;
-        const nextMode = sessionMode ?? payload.settings?.defaultSessionPermissionMode;
+        const nextMode = payload.settings?.defaultSessionPermissionMode;
         if (nextMode) setPermissionMode(nextMode);
         if (payload.settings?.defaultReasoningEffort) setReasoningEffort(payload.settings.defaultReasoningEffort);
         if (payload.settings?.defaultModelSpeed) setModelSpeed(payload.settings.defaultModelSpeed);
@@ -162,17 +159,10 @@ export function TextNodeComposer({
     void rememberAiModelPreference("text", nextModel);
   }
 
-  async function handlePermissionChange(nextMode: ZenmeSessionPermissionMode) {
-    const previousMode = permissionMode;
+  function handlePermissionChange(nextMode: ZenmeSessionPermissionMode) {
     setPermissionMode(nextMode);
+    setPermissionModeOverridden(true);
     setError(null);
-    if (!nodeData.projectId) return;
-    try {
-      await updateProjectAgentSessionPermissionFromApi(nodeData.projectId, nextMode);
-    } catch (saveError) {
-      setPermissionMode(previousMode);
-      setError(saveError instanceof Error ? saveError.message : "会话权限保存失败");
-    }
   }
 
   async function addImages(files: FileList | null) {
@@ -223,7 +213,7 @@ export function TextNodeComposer({
         imageDataUrls: images.map((image) => image.dataUrl),
         model,
         modelSpeed,
-        permissionMode,
+        permissionMode: permissionModeOverridden ? permissionMode : undefined,
         prompt: nextPrompt,
         reasoningEffort,
       });
