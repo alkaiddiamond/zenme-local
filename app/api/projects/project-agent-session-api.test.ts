@@ -38,7 +38,7 @@ describe("project agent session API", () => {
     });
   });
 
-  it("persists a permission override on the project session instead of global settings", async () => {
+  it("does not expose the retired project-level permission override through updateContext", async () => {
     const params = Promise.resolve({ projectId });
     const updated = await POST(new Request(`http://localhost/api/projects/${projectId}/agent-session`, {
       method: "POST",
@@ -46,10 +46,12 @@ describe("project agent session API", () => {
       body: JSON.stringify({ action: "updateContext", permissionMode: "neverAsk" }),
     }), { params });
     expect(updated.status).toBe(200);
-    await expect(updated.json()).resolves.toMatchObject({ context: { permissionMode: "neverAsk" } });
+    const updatedBody = await updated.json();
+    expect(updatedBody.context).not.toHaveProperty("permissionMode");
 
     const response = await GET(new Request(`http://localhost/api/projects/${projectId}/agent-session`), { params });
-    await expect(response.json()).resolves.toMatchObject({ context: { permissionMode: "neverAsk" } });
+    const responseBody = await response.json();
+    expect(responseBody.context).not.toHaveProperty("permissionMode");
   });
 
   it("returns only summary and post-boundary messages for effective context", async () => {

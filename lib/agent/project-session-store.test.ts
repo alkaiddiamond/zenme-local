@@ -346,7 +346,7 @@ describe("project agent session store", () => {
     expect((await getProjectAgentSession(projectId, dataDir)).events).toHaveLength(1);
   });
 
-  it("persists a project-session permission override independently from global defaults", async () => {
+  it("keeps the legacy project-level permission fallback for conversation-less records", async () => {
     await updateProjectAgentContext({ projectId, permissionMode: "untrusted" }, dataDir);
     expect((await getProjectAgentSession(projectId, dataDir)).context.permissionMode).toBe("untrusted");
     await updateProjectAgentContext({ projectId, modelId: "provider:model" }, dataDir);
@@ -356,7 +356,7 @@ describe("project agent session store", () => {
     });
   });
 
-  it("persists Plan Mode and its active plan as project-session state", async () => {
+  it("keeps legacy project-level Plan Mode state for conversation-less records", async () => {
     await updateProjectAgentContext({
       projectId,
       interactionMode: "plan",

@@ -67,7 +67,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       const context = await updateProjectAgentContext({
         projectId,
         modelId: typeof body.modelId === "string" || body.modelId === null ? body.modelId : undefined,
-        permissionMode: optionalPermissionMode(body.permissionMode),
         contextWindowTokens: typeof body.contextWindowTokens === "number" || body.contextWindowTokens === null
           ? body.contextWindowTokens
           : undefined,
@@ -95,10 +94,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
   } catch (error) {
     return response(error, "项目 Agent Session 更新失败");
   }
-}
-
-function optionalPermissionMode(value: unknown) {
-  return value === "untrusted" || value === "onRequest" || value === "neverAsk" ? value : undefined;
 }
 
 function isEventType(value: unknown): value is ProjectAgentEventType {

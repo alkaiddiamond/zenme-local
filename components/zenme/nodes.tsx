@@ -132,8 +132,8 @@ function CanvasNodeContentShell({
 function getCanvasNodeKindLabel(kind: CanvasNodeData["kind"]) {
   const labels: Partial<Record<CanvasNodeData["kind"], string>> = {
     agent: "AI 回复",
-    agentExecution: "Workspace Agent",
-    globalAgent: "Global Agent",
+    agentExecution: "历史 Workspace Agent",
+    globalAgent: "历史 Global Agent",
     book: "书籍",
     code: "代码",
     file: "文件",

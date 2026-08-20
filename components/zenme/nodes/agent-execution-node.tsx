@@ -62,7 +62,7 @@ export function AgentExecutionNode({ data, id, selected }: NodeProps) {
         <NodeEdgeSourceHandle visible={Boolean(nodeData.hasOutgoingEdge)} />
         <header className="flex items-center gap-3 border-b border-zinc-200 px-4 py-3">
           <Bot className="size-4 text-zinc-600" />
-          <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{nodeData.agentInstruction || "Workspace Agent"}</p><p className="text-[11px] text-zinc-500">{detail ? `${stageLabel(detail.stage)} · ${statusLabel(detail.status)}` : "正在加载执行状态"}</p></div>
+          <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{nodeData.agentInstruction || "历史 Workspace Agent"}</p><p className="text-[11px] text-zinc-500">{detail ? `${stageLabel(detail.stage)} · ${statusLabel(detail.status)}` : "正在加载执行状态"}</p></div>
           {detail?.status === "running" ? <Loader2 className="size-4 animate-spin text-zinc-500" /> : null}
         </header>
         {!folded && (error || detail?.error) ? <p className="m-3 mb-0 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700"><AlertTriangle className="mr-1 inline size-3.5" />{error || detail?.error}</p> : null}
