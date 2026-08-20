@@ -7,7 +7,7 @@ afterEach(() => {
 });
 
 describe("provider model discovery", () => {
-  it("returns the documented Agent Plan model preset without calling an unsupported models endpoint", async () => {
+  it("reports Agent Plan model discovery as unsupported instead of returning a static list as if it were fetched", async () => {
     const upstreamFetch = vi.fn();
     vi.stubGlobal("fetch", upstreamFetch);
 
@@ -35,13 +35,10 @@ describe("provider model discovery", () => {
 
     expect(upstreamFetch).not.toHaveBeenCalled();
     const payload = await response.json();
-    expect(payload.data.map((item: { id: string }) => item.id)).toEqual(
-      expect.arrayContaining([
-        "doubao-seed-2.0-pro",
-        "glm-5.2",
-        "deepseek-v4-pro",
-        "doubao-seedream-5.0-lite",
-      ]),
-    );
+    expect(response.status).toBe(400);
+    expect(payload).toMatchObject({
+      code: "model_discovery_unsupported",
+    });
+    expect(payload.error).toContain("不提供");
   });
 });

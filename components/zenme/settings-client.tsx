@@ -1896,6 +1896,13 @@ function ProviderEditorModal({
   }
 
   async function fetchProviderModels() {
+    if (draft.apiFormat === "volcengine_agent_plan") {
+      setModelFetchState("unsupported");
+      setModelFetchMessage(
+        "火山方舟 Agent Plan 的个人版 Bearer API Key 当前不支持在线枚举模型；请使用 Zenme 内置模型目录或手动添加模型。",
+      );
+      return;
+    }
     if (draft.apiFormat === "openrouter") {
       setModelFetchState("unsupported");
       setModelFetchMessage("OpenRouter 模型池过大，当前请手动添加需要启用的模型。");
@@ -2092,21 +2099,28 @@ function ProviderEditorModal({
                     <Plus className="size-4" />
                     添加模型
                   </Button>
-                  <Button
-                    disabled={modelFetchState === "loading"}
-                    onClick={fetchProviderModels}
-                    type="button"
-                    variant="outline"
-                  >
-                    {modelFetchState === "loading" ? (
-                      <RefreshCw className="size-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="size-4" />
-                    )}
-                    拉取模型
-                  </Button>
+                  {draft.apiFormat !== "volcengine_agent_plan" ? (
+                    <Button
+                      disabled={modelFetchState === "loading"}
+                      onClick={fetchProviderModels}
+                      type="button"
+                      variant="outline"
+                    >
+                      {modelFetchState === "loading" ? (
+                        <RefreshCw className="size-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-4" />
+                      )}
+                      拉取模型
+                    </Button>
+                  ) : null}
                 </div>
               </div>
+              {draft.apiFormat === "volcengine_agent_plan" ? (
+                <p className="mb-3 rounded-md bg-[var(--color-surface-container-lowest)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+                  Agent Plan 模型列表来自 Zenme 内置目录；当前 Bearer API Key 无模型发现接口，不显示“拉取模型”。如官方新增模型，可手动添加 Model ID。
+                </p>
+              ) : null}
               {modelFetchMessage ? (
                 <p
                   className={`mb-3 rounded-md px-3 py-2 text-xs ${

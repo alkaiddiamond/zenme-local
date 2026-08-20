@@ -29,7 +29,7 @@ describe("provider-scoped model resolution", () => {
     ]);
     expect(glmOptions.map((selection) => selection.label)).toEqual([
       "GLM 5.2（Zhipu GLM）",
-      "GLM 5.2（Agent Plan）",
+      "GLM 5.2（即将下线）（火山方舟 Agent Plan）",
     ]);
   });
 

@@ -4,6 +4,7 @@ import { resolveInside } from "@/lib/local/path-safety";
 import {
   CHATGPT_PROVIDER_ID,
   createVolcengineAgentPlanProvider,
+  mergeVolcengineAgentPlanCatalogModels,
 } from "@/lib/ai/provider-presets";
 
 export { CHATGPT_PROVIDER_ID, createChatGptProvider } from "@/lib/ai/provider-presets";
@@ -430,10 +431,19 @@ function normalizeModelProvider(
     models = createVolcengineAgentPlanProvider().models;
   }
   const agentPlanDefaults = createVolcengineAgentPlanProvider();
-  const nextModelMapping = isLegacyAgentPlan
+  if (apiFormat === "volcengine_agent_plan") {
+    models = mergeVolcengineAgentPlanCatalogModels(models);
+  }
+  const modelIds = new Set(models.map((model) => model.id));
+  const nextModelMapping = apiFormat === "volcengine_agent_plan"
     ? {
-        main: normalizedModelMapping.main || agentPlanDefaults.modelMapping.main,
-        image: normalizedModelMapping.image || agentPlanDefaults.modelMapping.image,
+        ...normalizedModelMapping,
+        main: modelIds.has(normalizedModelMapping.main)
+          ? normalizedModelMapping.main
+          : agentPlanDefaults.modelMapping.main,
+        image: modelIds.has(normalizedModelMapping.image)
+          ? normalizedModelMapping.image
+          : agentPlanDefaults.modelMapping.image,
       }
     : normalizedModelMapping;
 

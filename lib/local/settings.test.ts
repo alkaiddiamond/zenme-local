@@ -243,13 +243,14 @@ describe("local settings", () => {
       baseUrl: "https://ark.cn-beijing.volces.com/api/plan",
       modelMapping: {
         image: "doubao-seedream-5.0-lite",
-        main: "doubao-seed-2.0-pro",
+        main: "doubao-seed-evolving",
       },
     });
     expect(provider.models.map((model) => model.id)).toEqual(
       expect.arrayContaining([
-        "ark-code-latest",
-        "doubao-seed-2.0-pro",
+        "doubao-seed-evolving",
+        "doubao-seed-2.1-turbo",
+        "glm-5.3",
         "glm-5.2",
         "deepseek-v4-pro",
         "kimi-k3",
@@ -294,10 +295,48 @@ describe("local settings", () => {
       apiKey: "local-test-key",
       modelMapping: {
         image: "doubao-seedream-5.0-lite",
-        main: "doubao-seed-2.0-pro",
+        main: "doubao-seed-evolving",
       },
     });
     expect(provider?.models.length).toBeGreaterThan(10);
+  });
+
+  it("refreshes known Agent Plan catalog entries while preserving manually added models", async () => {
+    await fs.writeFile(
+      getLocalSettingsPath(dataDir),
+      JSON.stringify({
+        version: 1,
+        dataDir,
+        autoSaveIntervalMs: 5000,
+        modelProviders: [
+          {
+            id: "volcengine-agent-plan",
+            name: "火山方舟 Agent Plan",
+            baseUrl: "https://ark.cn-beijing.volces.com/api/plan",
+            apiFormat: "volcengine_agent_plan",
+            authType: "bearer",
+            apiKey: "local-test-key",
+            enabled: true,
+            isDefault: false,
+            modelMapping: { main: "doubao-seed-2.0-pro" },
+            models: [
+              { id: "doubao-seed-2.0-pro", enabled: true, modalities: ["text", "tool"] },
+              { id: "glm-5.2", enabled: false, modalities: ["text", "tool"] },
+              { id: "my-manual-model", enabled: true, modalities: ["text"] },
+            ],
+            contextWindows: {},
+            modelModalities: {},
+          },
+        ],
+      }),
+    );
+
+    const provider = (await getLocalSettings(dataDir)).modelProviders[0];
+    expect(provider.modelMapping.main).toBe("doubao-seed-evolving");
+    expect(provider.models.find((model) => model.id === "doubao-seed-2.0-pro")).toBeUndefined();
+    expect(provider.models.find((model) => model.id === "glm-5.2")?.enabled).toBe(false);
+    expect(provider.models.find((model) => model.id === "glm-5.3")?.contextWindow).toBe(1_000_000);
+    expect(provider.models.find((model) => model.id === "my-manual-model")).toBeTruthy();
   });
 
   it("recognizes a local Ollama OpenAI-compatible provider", async () => {

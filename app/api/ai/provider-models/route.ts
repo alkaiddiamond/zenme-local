@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { checkRateLimit, getClientIp } from "@/lib/api/rate-limit";
 import { normalizeProviderApiBaseUrl } from "@/lib/api/provider-url";
 import { getProxyFetchOptions } from "@/lib/api/proxy-fetch";
-import { createVolcengineAgentPlanProvider } from "@/lib/ai/provider-presets";
 import type { ModelProviderConfig } from "@/lib/local/settings";
 
 type ModelsResponse = {
@@ -49,11 +48,14 @@ export async function POST(request: Request) {
     }
 
     if (provider.apiFormat === "volcengine_agent_plan") {
-      return NextResponse.json({
-        data: createVolcengineAgentPlanProvider().models.map(({ id }) => ({
-          id,
-        })),
-      });
+      return NextResponse.json(
+        {
+          error:
+            "火山方舟 Agent Plan 当前不提供可由个人版 Bearer API Key 调用的模型列表接口；请使用 Zenme 内置 Agent Plan 模型目录或手动维护模型。",
+          code: "model_discovery_unsupported",
+        },
+        { status: 400 },
+      );
     }
 
     const baseUrl = normalizeProviderApiBaseUrl(

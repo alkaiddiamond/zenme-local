@@ -36,23 +36,53 @@ export function createChatGptProvider(): ModelProviderConfig {
 }
 
 const VOLCENGINE_AGENT_PLAN_MODELS: ModelConfig[] = [
-  { id: "ark-code-latest", alias: "Ark Code Latest", enabled: true, modalities: ["text", "tool"] },
-  { id: "doubao-seed-2.0-code", alias: "Doubao Seed 2.0 Code", enabled: true, modalities: ["text", "tool"] },
-  { id: "doubao-seed-2.0-pro", alias: "Doubao Seed 2.0 Pro", enabled: true, modalities: ["text", "vision", "tool"] },
+  { id: "doubao-seed-evolving", alias: "Doubao Seed Evolving", enabled: true, contextWindow: 1_000_000, modalities: ["text", "tool"] },
+  { id: "doubao-seed-2.1-turbo", alias: "Doubao Seed 2.1 Turbo", enabled: true, modalities: ["text", "vision", "tool"] },
   { id: "doubao-seed-2.0-lite", alias: "Doubao Seed 2.0 Lite", enabled: true, modalities: ["text", "tool"] },
   { id: "doubao-seed-2.0-mini", alias: "Doubao Seed 2.0 Mini", enabled: true, modalities: ["text"] },
-  { id: "glm-5.2", alias: "GLM 5.2（Agent Plan）", enabled: true, modalities: ["text", "tool"] },
-  { id: "kimi-k2.7-code", alias: "Kimi K2.7 Code", enabled: true, modalities: ["text", "tool"] },
-  { id: "deepseek-v4-pro", alias: "DeepSeek V4 Pro", enabled: true, modalities: ["text", "tool"] },
+  { id: "glm-5.3", alias: "GLM 5.3（Agent Plan）", enabled: true, contextWindow: 1_000_000, modalities: ["text", "tool"] },
   { id: "deepseek-v4-flash", alias: "DeepSeek V4 Flash", enabled: true, modalities: ["text", "tool"] },
+  { id: "kimi-k3", alias: "Kimi K3", enabled: true, contextWindow: 1_000_000, modalities: ["text", "vision", "tool"] },
+  { id: "glm-5.2", alias: "GLM 5.2（即将下线）", enabled: true, contextWindow: 1_000_000, modalities: ["text", "tool"] },
+  { id: "kimi-k2.7-code", alias: "Kimi K2.7 Code", enabled: true, modalities: ["text", "vision", "tool"] },
   { id: "minimax-m3", alias: "MiniMax M3", enabled: true, modalities: ["text", "tool"] },
-  { id: "minimax-m2.7", alias: "MiniMax M2.7", enabled: true, modalities: ["text", "tool"] },
-  { id: "kimi-k2.6", alias: "Kimi K2.6", enabled: true, modalities: ["text", "tool"] },
-  { id: "doubao-seed-evolving", alias: "Doubao Seed Evolving", enabled: true, modalities: ["text", "tool"] },
-  { id: "kimi-k3", alias: "Kimi K3", enabled: true, modalities: ["text", "tool"] },
+  { id: "deepseek-v4-pro", alias: "DeepSeek V4 Pro", enabled: true, modalities: ["text", "tool"] },
   { id: "doubao-embedding-vision", alias: "Doubao Embedding Vision", enabled: true, modalities: ["embedding", "vision"] },
   { id: "doubao-seedream-5.0-lite", alias: "Doubao Seedream 5.0 Lite", enabled: true, modalities: ["image"] },
 ];
+
+const LEGACY_VOLCENGINE_AGENT_PLAN_MODEL_IDS = new Set([
+  "ark-code-latest",
+  "doubao-seed-2.0-code",
+  "doubao-seed-2.0-pro",
+  "doubao-seed-2.0-lite",
+  "doubao-seed-2.0-mini",
+  "glm-5.2",
+  "kimi-k2.7-code",
+  "deepseek-v4-pro",
+  "deepseek-v4-flash",
+  "minimax-m3",
+  "minimax-m2.7",
+  "kimi-k2.6",
+  "doubao-seed-evolving",
+  "kimi-k3",
+  "doubao-embedding-vision",
+  "doubao-seedream-5.0-lite",
+]);
+
+export function mergeVolcengineAgentPlanCatalogModels(existing: ModelConfig[]) {
+  const existingById = new Map(existing.map((model) => [model.id, model]));
+  const catalogIds = new Set(VOLCENGINE_AGENT_PLAN_MODELS.map((model) => model.id));
+  const catalogModels = VOLCENGINE_AGENT_PLAN_MODELS.map((model) => ({
+    ...model,
+    enabled: existingById.get(model.id)?.enabled ?? model.enabled,
+    modalities: [...model.modalities],
+  }));
+  const customModels = existing.filter(
+    (model) => !catalogIds.has(model.id) && !LEGACY_VOLCENGINE_AGENT_PLAN_MODEL_IDS.has(model.id),
+  );
+  return [...catalogModels, ...customModels];
+}
 
 export function createVolcengineAgentPlanProvider(): ModelProviderConfig {
   const models = VOLCENGINE_AGENT_PLAN_MODELS.map((model) => ({
@@ -62,7 +92,7 @@ export function createVolcengineAgentPlanProvider(): ModelProviderConfig {
   return {
     id: VOLCENGINE_AGENT_PLAN_PROVIDER_ID,
     name: "火山方舟 Agent Plan",
-    note: "Agent Plan 个人版；语言模型使用 Responses API，图片使用 Seedream",
+    note: "Agent Plan 个人版；语言模型使用 Responses API，图片使用 Seedream。模型目录为 Zenme 内置维护，Agent Plan Bearer API Key 当前不支持在线枚举模型。",
     baseUrl: VOLCENGINE_AGENT_PLAN_BASE_URL,
     apiFormat: "volcengine_agent_plan",
     authType: "bearer",
@@ -70,11 +100,13 @@ export function createVolcengineAgentPlanProvider(): ModelProviderConfig {
     enabled: true,
     isDefault: false,
     modelMapping: {
-      main: "doubao-seed-2.0-pro",
+      main: "doubao-seed-evolving",
       image: "doubao-seedream-5.0-lite",
     },
     models,
-    contextWindows: {},
+    contextWindows: Object.fromEntries(
+      models.flatMap((model) => model.contextWindow ? [[model.id, model.contextWindow]] : []),
+    ),
     modelModalities: Object.fromEntries(
       models.map((model) => [model.id, model.modalities]),
     ),
