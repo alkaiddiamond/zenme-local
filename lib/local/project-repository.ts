@@ -11,7 +11,7 @@ import {
 } from "@/lib/zenme";
 
 type LocalProjectFile = {
-  version: 1;
+  version: 2;
   id: string;
   name: string;
   prompt: string;
@@ -22,6 +22,8 @@ type LocalProjectFile = {
   lastSavedAt: string | null;
   lastOpenedAt: string | null;
   ownerId: "local";
+  workspaceBindingId: string | null;
+  [key: string]: unknown;
 };
 
 export type CanvasSnapshotRecord = {
@@ -30,6 +32,13 @@ export type CanvasSnapshotRecord = {
 };
 
 const canvasSaveLocks = new Map<string, Promise<boolean>>();
+
+export class ProjectNotFoundError extends Error {
+  constructor() {
+    super("项目不存在");
+    this.name = "ProjectNotFoundError";
+  }
+}
 
 export async function listLocalProjects(dataDir = getZenmeDataDir()) {
   const projectsDir = getProjectsDir(dataDir);
@@ -58,7 +67,7 @@ export async function createLocalProject(input: {
 }, dataDir = getZenmeDataDir()) {
   const now = new Date().toISOString();
   const project: LocalProjectFile = {
-    version: 1,
+    version: 2,
     id: crypto.randomUUID(),
     name: input.name,
     prompt: input.prompt,
@@ -69,6 +78,7 @@ export async function createLocalProject(input: {
     lastSavedAt: null,
     lastOpenedAt: now,
     ownerId: "local",
+    workspaceBindingId: null,
   };
 
   const projectDir = getProjectDir(project.id, dataDir);
@@ -90,15 +100,23 @@ export async function createLocalProject(input: {
 
 export async function getLocalProject(projectId: string, dataDir = getZenmeDataDir()) {
   assertSafePathSegment(projectId, "projectId");
-  const project = await readJsonFile<LocalProjectFile | null>(
-    getProjectJsonPath(projectId, dataDir),
-    {
-      defaultValue: null,
-      normalize: normalizeProject,
-    },
-  );
+  const project = await readProjectFile(projectId, dataDir);
 
   return project ? toZenmeProject(project) : null;
+}
+
+export async function setLocalProjectWorkspaceBinding(input: {
+  projectId: string;
+  workspaceBindingId: string | null;
+}, dataDir = getZenmeDataDir()) {
+  const project = await readRequiredProject(input.projectId, dataDir);
+  if (input.workspaceBindingId !== null) {
+    assertSafePathSegment(input.workspaceBindingId, "workspaceBindingId");
+  }
+  project.workspaceBindingId = input.workspaceBindingId;
+  project.updatedAt = new Date().toISOString();
+  await writeLocalProject(project, dataDir);
+  return toZenmeProject(project);
 }
 
 export async function updateLocalProjectName(input: {
@@ -255,18 +273,30 @@ function getProjectJsonPath(projectId: string, dataDir: string) {
 }
 
 async function readRequiredProject(projectId: string, dataDir: string) {
+  const project = await readProjectFile(projectId, dataDir);
+
+  if (!project) {
+    throw new ProjectNotFoundError();
+  }
+
+  return project;
+}
+
+async function readProjectFile(projectId: string, dataDir: string) {
+  let migrated = false;
   const project = await readJsonFile<LocalProjectFile | null>(
     getProjectJsonPath(projectId, dataDir),
     {
       defaultValue: null,
-      normalize: normalizeProject,
+      normalize: (value) => {
+        migrated = isLegacyProject(value);
+        return normalizeProject(value);
+      },
     },
   );
-
-  if (!project) {
-    throw new Error("项目不存在");
+  if (project && migrated) {
+    await writeLocalProject(project, dataDir);
   }
-
   return project;
 }
 
@@ -278,9 +308,9 @@ function normalizeProject(value: unknown): LocalProjectFile | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
-  const row = value as Partial<LocalProjectFile>;
+  const row = value as Record<string, unknown>;
   if (
-    row.version !== 1 ||
+    (row.version !== 1 && row.version !== 2) ||
     typeof row.id !== "string" ||
     typeof row.name !== "string" ||
     typeof row.prompt !== "string" ||
@@ -292,7 +322,8 @@ function normalizeProject(value: unknown): LocalProjectFile | null {
   }
 
   return {
-    version: 1,
+    ...row,
+    version: 2,
     id: row.id,
     name: row.name,
     prompt: row.prompt,
@@ -303,7 +334,19 @@ function normalizeProject(value: unknown): LocalProjectFile | null {
     lastSavedAt: typeof row.lastSavedAt === "string" ? row.lastSavedAt : null,
     lastOpenedAt: typeof row.lastOpenedAt === "string" ? row.lastOpenedAt : null,
     ownerId: "local",
+    workspaceBindingId:
+      typeof row.workspaceBindingId === "string" ? row.workspaceBindingId : null,
   };
+}
+
+function isLegacyProject(value: unknown) {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    "version" in value &&
+    value.version === 1,
+  );
 }
 
 function normalizeCanvasRecord(value: unknown): CanvasSnapshotRecord | null {
@@ -333,5 +376,6 @@ function toZenmeProject(project: LocalProjectFile): ZenmeProject {
     updatedAt: project.updatedAt,
     lastSavedAt: project.lastSavedAt,
     lastOpenedAt: project.lastOpenedAt,
+    workspaceBindingId: project.workspaceBindingId,
   };
 }

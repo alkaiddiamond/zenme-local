@@ -29,6 +29,7 @@ const TASK_NODE_COLLAPSED_SIZE = { height: 176, width: 560 };
 const TASK_NODE_DEFAULT_EXPANDED_HEIGHT = 460;
 const CODE_NODE_DEFAULT_SIZE = { height: 420, width: 720 };
 const MARKDOWN_NODE_DEFAULT_SIZE = { height: 320, width: 560 };
+const WORKSPACE_FILE_NODE_DEFAULT_SIZE = { height: 420, width: 720 };
 export const NANO_BANANA_2_IMAGE_MODEL =
   "google/gemini-3.1-flash-image-preview";
 export const IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE = { height: 260, width: 520 };
@@ -70,6 +71,30 @@ export function createTextCanvasNode(input: {
       codeLanguage: input.codeLanguage,
       textMode: input.textMode ?? "plain",
       textGenerationModel: input.model,
+    },
+  };
+}
+
+export function createWorkspaceFileCanvasNode(input: {
+  documentId: string;
+  id: string;
+  position: { x: number; y: number };
+  projectId: string;
+  relativePath: string;
+  rootId?: string;
+}): CanvasNode {
+  return {
+    id: input.id,
+    type: "workspaceFile",
+    position: input.position,
+    style: WORKSPACE_FILE_NODE_DEFAULT_SIZE,
+    data: {
+      kind: "workspaceFile",
+      title: input.relativePath.split("/").at(-1) || input.relativePath,
+      projectId: input.projectId,
+      workspaceFileDocumentId: input.documentId,
+      ...(input.rootId ? { workspaceRootId: input.rootId } : {}),
+      workspaceRelativePath: input.relativePath,
     },
   };
 }
@@ -430,6 +455,7 @@ export function createTextChildCanvasNode(input: {
 }
 
 export function createAiResponseChildCanvasNode(input: {
+  agentTurnId?: string;
   execution?: ExecutionIdentity;
   id: string;
   model?: string;
@@ -456,6 +482,7 @@ export function createAiResponseChildCanvasNode(input: {
     },
     data: {
       ...input.execution,
+      agentTurnId: input.agentTurnId,
       kind: "agent",
       title: "AI 回复",
       aiPrompt: input.prompt,

@@ -23,6 +23,12 @@ const TEXT_GENERATION_CONTEXT_NODE_KINDS = new Set([
 
 const CONTEXT_TRUNCATION_MARKER = "\n\n[其余上下文因长度限制已省略]";
 
+type CanvasContextEntry = {
+  depth: number;
+  nodeId: string;
+  text: string;
+};
+
 export function collectTextGenerationContext(input: {
   edges: Edge[];
   contextWindow?: number;
@@ -31,8 +37,9 @@ export function collectTextGenerationContext(input: {
   nodeId: string;
   nodes: CanvasNode[];
   sourceNodeIds?: string[];
+  transcriptTurnIds?: ReadonlySet<string>;
 }) {
-  const maxDepth = input.maxDepth ?? 3;
+  const maxDepth = normalizeTraversalDepth(input.maxDepth);
   const maxTokens = input.maxTokens ?? getCanvasContextTokenBudget({
     contextWindow: input.contextWindow,
   });
@@ -52,7 +59,8 @@ export function collectTextGenerationContext(input: {
     depth: 1,
     nodeId,
   }));
-  let context = "";
+  const entries: CanvasContextEntry[] = [];
+  const seenContent = new Set<string>();
 
   while (queue.length > 0) {
     const current = queue.shift();
@@ -66,16 +74,20 @@ export function collectTextGenerationContext(input: {
       continue;
     }
 
-    const contextText = getCanvasNodeContextText(node);
+    const contextText = node.data.kind === "agent" &&
+      typeof node.data.agentTurnId === "string" &&
+      input.transcriptTurnIds?.has(node.data.agentTurnId)
+      ? `AI 回复节点「${node.data.title || node.data.kind}」（正文已包含在当前 Conversation 历史；此处仅表示显式上游连线关系）`
+      : getCanvasNodeContextText(node);
     if (contextText) {
-      const appended = appendBoundedContext(
-        context,
-        `上游上下文 L${current.depth}\n${contextText}`,
-        maxTokens,
-      );
-      context = appended.context;
-      if (appended.truncated) {
-        break;
+      const contentKey = normalizeContextContent(contextText);
+      if (!seenContent.has(contentKey)) {
+        seenContent.add(contentKey);
+        entries.push({
+          depth: current.depth,
+          nodeId: current.nodeId,
+          text: contextText,
+        });
       }
     }
 
@@ -89,6 +101,29 @@ export function collectTextGenerationContext(input: {
         nodeId: parentId,
       });
     }
+  }
+
+  return organizeTextGenerationContext(entries, maxTokens);
+}
+
+export function organizeTextGenerationContext(
+  entries: CanvasContextEntry[],
+  maxTokens = getCanvasContextTokenBudget({}),
+) {
+  const organizedEntries = deduplicateContextEntries(entries);
+  if (organizedEntries.length === 0) return "";
+
+  const maximumDepth = Math.max(...organizedEntries.map((entry) => entry.depth));
+  let context = `画布上游上下文（已整理，共 ${organizedEntries.length} 个节点，最远 L${maximumDepth}，由近到远）`;
+
+  for (const entry of organizedEntries) {
+    const appended = appendBoundedContext(
+      context,
+      `上游上下文 L${entry.depth}\n${entry.text}`,
+      maxTokens,
+    );
+    context = appended.context;
+    if (appended.truncated) break;
   }
 
   return context;
@@ -128,7 +163,7 @@ export function collectTextGenerationImageUrls(input: {
   nodes: CanvasNode[];
   sourceNodeIds?: string[];
 }) {
-  const maxDepth = input.maxDepth ?? 3;
+  const maxDepth = normalizeTraversalDepth(input.maxDepth);
   const maxImages = input.maxImages ?? 4;
   const nodeById = new Map(input.nodes.map((node) => [node.id, node]));
   const inboundByTarget = input.edges.reduce((result, edge) => {
@@ -351,6 +386,28 @@ function appendBoundedContext(
     )}`,
     truncated: true,
   };
+}
+
+function normalizeTraversalDepth(maxDepth?: number) {
+  return typeof maxDepth === "number" && Number.isFinite(maxDepth)
+    ? Math.max(0, Math.floor(maxDepth))
+    : Number.POSITIVE_INFINITY;
+}
+
+function normalizeContextContent(value: string) {
+  return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+function deduplicateContextEntries(entries: CanvasContextEntry[]) {
+  const seen = new Set<string>();
+  return [...entries]
+    .sort((left, right) => left.depth - right.depth)
+    .filter((entry) => {
+      const key = normalizeContextContent(entry.text);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function formatTimestamp(seconds: number) {

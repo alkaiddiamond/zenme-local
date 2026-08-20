@@ -21,6 +21,7 @@ import {
   createTextCanvasNode,
   createTextChildCanvasNode,
   createTextGenerationCanvasNode,
+  createWorkspaceFileCanvasNode,
 } from "./node-factories";
 import type { CanvasNode } from "./types";
 
@@ -80,6 +81,33 @@ const note: ReadingNote = {
 };
 
 describe("canvas node factories", () => {
+  it("creates a workspace file reference without embedding file content", () => {
+    const node = createWorkspaceFileCanvasNode({
+      documentId: "document-1",
+      id: "workspace-file-1",
+      position: { x: 10, y: 20 },
+      projectId: "project-1",
+      relativePath: "src/app.ts",
+      rootId: "root-1",
+    });
+
+    expect(node).toMatchObject({
+      id: "workspace-file-1",
+      type: "workspaceFile",
+      position: { x: 10, y: 20 },
+      style: { height: 420, width: 720 },
+      data: {
+        kind: "workspaceFile",
+        projectId: "project-1",
+        title: "app.ts",
+        workspaceFileDocumentId: "document-1",
+        workspaceRootId: "root-1",
+        workspaceRelativePath: "src/app.ts",
+      },
+    });
+    expect(node.data).not.toHaveProperty("plainText");
+    expect(node.data).not.toHaveProperty("codeContent");
+  });
   beforeEach(() => {
     vi.useRealTimers();
   });

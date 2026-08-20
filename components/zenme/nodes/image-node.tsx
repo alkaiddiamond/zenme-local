@@ -58,7 +58,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   const { zoom } = useViewport();
   const updateNodeInternals = useUpdateNodeInternals();
   const nodeData = data as CanvasNodeData;
-  const imageModelOptions = useAiModelOptions("image");
+  const imageModelOptions = useAiModelOptions("image", ["vision", "image"]);
   const rememberedPreferences = getImageEditPreferences();
   const isGeneratedImage = Boolean(nodeData.imageGenerated);
   const [prompt, setPrompt] = useState(nodeData.imagePrompt ?? "");

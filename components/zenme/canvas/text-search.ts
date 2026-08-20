@@ -9,9 +9,12 @@ export type CanvasTextSearchResult = {
 
 const NODE_KIND_LABELS: Record<CanvasNode["data"]["kind"], string> = {
   agent: "AI 回复",
+  agentExecution: "历史 Workspace Agent",
+  globalAgent: "历史 Global Agent",
   book: "书籍",
   code: "代码",
   file: "文件",
+  workspaceFile: "Workspace 文件",
   group: "分组",
   image: "图片",
   imageGeneration: "图片生成",
@@ -63,6 +66,7 @@ export function getCanvasNodeSearchText(node: CanvasNode) {
     data.comment,
     data.chapterTitle,
     data.fileName,
+    data.workspaceRelativePath,
     data.plainText,
     data.codeContent,
     stripHtmlToText(data.richTextHtml),

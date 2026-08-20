@@ -10,6 +10,7 @@ import {
   ProjectCard,
   ProjectGrid,
 } from "@/components/zenme/project-card";
+import { openCreateProjectDialog } from "@/components/zenme/create-project-dialog";
 import {
   rememberAiModelPreference,
   useAiModelOptions,
@@ -85,23 +86,17 @@ export function DashboardClient() {
     [isSubmitting, model, router],
   );
 
-  const createBlankProject = useCallback(() => {
-    void createProject("");
-  }, [createProject]);
+  const openNewProjectDialog = useCallback(() => {
+    openCreateProjectDialog();
+  }, []);
 
-  // 通过 sidebar「新建项目」入口直接创建项目。
+  // 保留 /?new=1 入口，但统一进入需要名称和源文件夹的创建模态窗。
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("new") === "1") {
-      createBlankProject();
+      openNewProjectDialog();
     }
-  }, [createBlankProject]);
-
-  useEffect(() => {
-    window.addEventListener("zenme:create-new-project", createBlankProject);
-    return () =>
-      window.removeEventListener("zenme:create-new-project", createBlankProject);
-  }, [createBlankProject]);
+  }, [openNewProjectDialog]);
 
   useEffect(() => {
     async function loadProjects() {
@@ -210,7 +205,7 @@ export function DashboardClient() {
         <ProjectGrid columns={4}>
           <CreateProjectCard
             disabled={isSubmitting}
-            onClick={createBlankProject}
+            onClick={openNewProjectDialog}
           />
 
           {recentProjects.map((project) => (

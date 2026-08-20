@@ -11,6 +11,10 @@ const requiredPaths = [
   ".next/static",
   "public",
 ];
+const forbiddenStandalonePaths = [
+  ".next/standalone/dist-desktop",
+  ".next/standalone/.electron-builder-cache",
+];
 
 const missingPaths = requiredPaths.filter((relativePath) => {
   const absolutePath = path.join(projectRoot, ...relativePath.split("/"));
@@ -21,6 +25,16 @@ const missingPaths = requiredPaths.filter((relativePath) => {
 if (missingPaths.length > 0) {
   throw new Error(
     `Standalone runtime is incomplete. Run npm run build before packaging. Missing: ${missingPaths.join(", ")}`,
+  );
+}
+
+const forbiddenPaths = forbiddenStandalonePaths.filter((relativePath) =>
+  fs.existsSync(path.join(projectRoot, ...relativePath.split("/"))),
+);
+
+if (forbiddenPaths.length > 0) {
+  throw new Error(
+    `Standalone runtime contains stale build output and must be rebuilt: ${forbiddenPaths.join(", ")}`,
   );
 }
 

@@ -25,6 +25,11 @@ describe("settings API", () => {
       settings: {
         dataDir,
         autoSaveIntervalMs: 5000,
+        defaultSessionPermissionMode: "onRequest",
+        thinkingEnabled: true,
+        defaultReasoningEffort: "low",
+        defaultModelSpeed: "standard",
+        autoDreamEnabled: false,
       },
     });
 
@@ -37,6 +42,11 @@ describe("settings API", () => {
           lastImageAspectRatio: "auto",
           lastImageQuality: "1K",
           lastTextModelId: "glm-5.2",
+          defaultSessionPermissionMode: "untrusted",
+          thinkingEnabled: false,
+          defaultReasoningEffort: "high",
+          defaultModelSpeed: "fast",
+          autoDreamEnabled: true,
         }),
       }),
     );
@@ -49,6 +59,11 @@ describe("settings API", () => {
         lastImageAspectRatio: "auto",
         lastImageQuality: "1K",
         lastTextModelId: "glm-5.2",
+        defaultSessionPermissionMode: "untrusted",
+        thinkingEnabled: false,
+        defaultReasoningEffort: "high",
+        defaultModelSpeed: "fast",
+        autoDreamEnabled: true,
       },
     });
   });

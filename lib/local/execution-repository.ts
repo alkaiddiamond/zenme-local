@@ -457,7 +457,7 @@ function isExecutionStatus(value: unknown): value is ExecutionStatus {
 }
 
 function isExecutionKind(value: unknown): value is ExecutionKind {
-  return value === "text" || value === "image" || value === "video";
+  return value === "text" || value === "image" || value === "video" || value === "agent";
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

@@ -27,6 +27,21 @@ describe("writeTextToClipboard", () => {
     expect(writeText).toHaveBeenCalledWith("web text");
   });
 
+  it.each([false, new Error("stale preload")])(
+    "falls back to the web clipboard when the Electron bridge returns or throws %s",
+    async (desktopResult) => {
+      const writeClipboardText = desktopResult instanceof Error
+        ? vi.fn().mockRejectedValue(desktopResult)
+        : vi.fn().mockResolvedValue(desktopResult);
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      vi.stubGlobal("window", { zenmeDesktop: { writeClipboardText } });
+      vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+      await expect(writeTextToClipboard("fallback text")).resolves.toBe(true);
+      expect(writeText).toHaveBeenCalledWith("fallback text");
+    },
+  );
+
   it("does not attempt clipboard access during server rendering", async () => {
     vi.stubGlobal("window", undefined);
 

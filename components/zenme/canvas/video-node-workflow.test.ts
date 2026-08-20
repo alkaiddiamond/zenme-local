@@ -49,6 +49,11 @@ describe("video generation node workflow", () => {
     expect(canvasClientSource).toContain("if (!draggedNode) {");
   });
 
+  it("writes only the current external video task id field", () => {
+    expect(canvasClientSource).toContain("externalTaskId: created.taskId");
+    expect(canvasClientSource).not.toContain("providerTaskId: created.taskId");
+  });
+
   it("opens the image picker for @ anywhere and inserts a persistent inline chip", () => {
     expect(videoNodeSource).toContain("ImageReferencePicker");
     expect(videoNodeSource).toContain("setReferencePickerRequest");

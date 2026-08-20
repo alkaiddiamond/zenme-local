@@ -22,12 +22,40 @@ afterEach(async () => {
 });
 
 describe("local settings", () => {
+  it("normalizes local stdio MCP servers and migrates legacy settings without them", async () => {
+    await expect(getLocalSettings(dataDir)).resolves.toMatchObject({ mcpServers: [] });
+    const settings = await updateLocalSettings({
+      mcpServers: [{
+        id: "filesystem",
+        name: "Filesystem",
+        enabled: true,
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem", "."],
+        connectTimeoutMs: 100,
+        callTimeoutMs: 900_000,
+        access: "full",
+      }],
+    }, dataDir);
+
+    expect(settings.mcpServers).toEqual([expect.objectContaining({
+      id: "filesystem",
+      access: "full",
+      connectTimeoutMs: 1_000,
+      callTimeoutMs: 300_000,
+    })]);
+  });
+
   it("returns defaults and persists updates to settings.json", async () => {
     await expect(getLocalSettings(dataDir)).resolves.toMatchObject({
       autoSaveIntervalMs: 5000,
       dataDir,
       modelProviders: [],
       theme: "light",
+      defaultSessionPermissionMode: "onRequest",
+      thinkingEnabled: true,
+      defaultReasoningEffort: "low",
+      defaultModelSpeed: "standard",
+      autoDreamEnabled: false,
       version: 1,
     });
 
@@ -52,6 +80,40 @@ describe("local settings", () => {
     ).resolves.toContain('"lastImageAspectRatio": "auto"');
   });
 
+  it("persists Agent reasoning effort and speed while migrating the short-lived extra levels", async () => {
+    await expect(updateLocalSettings({
+      defaultReasoningEffort: "xhigh",
+      defaultModelSpeed: "fast",
+    }, dataDir)).resolves.toMatchObject({
+      defaultReasoningEffort: "xhigh",
+      defaultModelSpeed: "fast",
+    });
+
+    await fs.writeFile(getLocalSettingsPath(dataDir), JSON.stringify({
+      version: 1,
+      dataDir,
+      autoSaveIntervalMs: 5_000,
+      theme: "light",
+      defaultReasoningEffort: "none",
+      modelProviders: [],
+    }));
+    await expect(getLocalSettings(dataDir)).resolves.toMatchObject({
+      defaultReasoningEffort: "low",
+      defaultModelSpeed: "standard",
+    });
+    await fs.writeFile(getLocalSettingsPath(dataDir), JSON.stringify({
+      version: 1,
+      dataDir,
+      autoSaveIntervalMs: 5_000,
+      theme: "light",
+      defaultReasoningEffort: "max",
+      modelProviders: [],
+    }));
+    await expect(getLocalSettings(dataDir)).resolves.toMatchObject({
+      defaultReasoningEffort: "xhigh",
+    });
+  });
+
   it("persists a theme and falls back safely for legacy or invalid values", async () => {
     await expect(updateLocalSettings({ theme: "warm" }, dataDir)).resolves.toMatchObject({
       theme: "warm",
@@ -69,6 +131,31 @@ describe("local settings", () => {
     );
 
     await expect(getLocalSettings(dataDir)).resolves.toMatchObject({ theme: "light" });
+  });
+
+  it("migrates the short-lived six-option permission values into three modes", async () => {
+    await fs.writeFile(getLocalSettingsPath(dataDir), JSON.stringify({
+      version: 1,
+      dataDir,
+      autoSaveIntervalMs: 5_000,
+      theme: "light",
+      defaultSessionPermissionMode: "plan",
+      modelProviders: [],
+    }));
+    await expect(getLocalSettings(dataDir)).resolves.toMatchObject({
+      defaultSessionPermissionMode: "untrusted",
+    });
+    await fs.writeFile(getLocalSettingsPath(dataDir), JSON.stringify({
+      version: 1,
+      dataDir,
+      autoSaveIntervalMs: 5_000,
+      theme: "light",
+      defaultSessionPermissionMode: "dontAsk",
+      modelProviders: [],
+    }));
+    await expect(getLocalSettings(dataDir)).resolves.toMatchObject({
+      defaultSessionPermissionMode: "neverAsk",
+    });
   });
 
   it("migrates a legacy global proxy to each provider", async () => {
@@ -156,13 +243,14 @@ describe("local settings", () => {
       baseUrl: "https://ark.cn-beijing.volces.com/api/plan",
       modelMapping: {
         image: "doubao-seedream-5.0-lite",
-        main: "doubao-seed-2.0-pro",
+        main: "doubao-seed-evolving",
       },
     });
     expect(provider.models.map((model) => model.id)).toEqual(
       expect.arrayContaining([
-        "ark-code-latest",
-        "doubao-seed-2.0-pro",
+        "doubao-seed-evolving",
+        "doubao-seed-2.1-turbo",
+        "glm-5.3",
         "glm-5.2",
         "deepseek-v4-pro",
         "kimi-k3",
@@ -170,6 +258,10 @@ describe("local settings", () => {
         "doubao-seedream-5.0-lite",
       ]),
     );
+    expect(
+      provider.models.find((model) => model.id === "doubao-seedream-5.0-lite")
+        ?.modalities,
+    ).toEqual(["vision", "image"]);
   });
 
   it("migrates a legacy OpenAI Agent Plan provider and fills its documented models", async () => {
@@ -207,10 +299,48 @@ describe("local settings", () => {
       apiKey: "local-test-key",
       modelMapping: {
         image: "doubao-seedream-5.0-lite",
-        main: "doubao-seed-2.0-pro",
+        main: "doubao-seed-evolving",
       },
     });
     expect(provider?.models.length).toBeGreaterThan(10);
+  });
+
+  it("refreshes known Agent Plan catalog entries while preserving manually added models", async () => {
+    await fs.writeFile(
+      getLocalSettingsPath(dataDir),
+      JSON.stringify({
+        version: 1,
+        dataDir,
+        autoSaveIntervalMs: 5000,
+        modelProviders: [
+          {
+            id: "volcengine-agent-plan",
+            name: "火山方舟 Agent Plan",
+            baseUrl: "https://ark.cn-beijing.volces.com/api/plan",
+            apiFormat: "volcengine_agent_plan",
+            authType: "bearer",
+            apiKey: "local-test-key",
+            enabled: true,
+            isDefault: false,
+            modelMapping: { main: "doubao-seed-2.0-pro" },
+            models: [
+              { id: "doubao-seed-2.0-pro", enabled: true, modalities: ["text", "tool"] },
+              { id: "glm-5.2", enabled: false, modalities: ["text", "tool"] },
+              { id: "my-manual-model", enabled: true, modalities: ["text"] },
+            ],
+            contextWindows: {},
+            modelModalities: {},
+          },
+        ],
+      }),
+    );
+
+    const provider = (await getLocalSettings(dataDir)).modelProviders[0];
+    expect(provider.modelMapping.main).toBe("doubao-seed-evolving");
+    expect(provider.models.find((model) => model.id === "doubao-seed-2.0-pro")).toBeUndefined();
+    expect(provider.models.find((model) => model.id === "glm-5.2")?.enabled).toBe(false);
+    expect(provider.models.find((model) => model.id === "glm-5.3")?.contextWindow).toBe(1_000_000);
+    expect(provider.models.find((model) => model.id === "my-manual-model")).toBeTruthy();
   });
 
   it("recognizes a local Ollama OpenAI-compatible provider", async () => {

@@ -46,6 +46,7 @@ import {
   stripLegacyRichTextHtml,
 } from "@/components/zenme/nodes/renderers/rich-text";
 import { TextNodeComposer } from "@/components/zenme/nodes/text-node-composer";
+import { AgentTurnTimeline, projectAgentTurnAnswer } from "@/components/zenme/nodes/agent-turn-timeline";
 import { ImageTaskTiming } from "@/components/zenme/nodes/image-task-timing";
 import { getWordSelectionOffsets } from "@/components/zenme/nodes/text-selection";
 import {
@@ -58,6 +59,7 @@ import {
   TEXT_EDITOR_TAB_SPACES,
 } from "@/components/zenme/nodes/text-editor-keyboard";
 import { writeTextToClipboard } from "@/lib/clipboard";
+import { getProjectAgentSessionFromApi } from "@/lib/zenme-api";
 
 type TextDisplayMode = "code" | "markdown" | "plain";
 
@@ -147,6 +149,23 @@ export function TextNode({ data, id, selected }: NodeProps) {
     }
 
     void writeTextToClipboard(text);
+  }
+
+  async function copyAgentResponse() {
+    let response = nodeData.aiResponse || nodeData.plainText;
+    if (nodeData.agentTurnId && nodeData.projectId) {
+      try {
+        const session = await getProjectAgentSessionFromApi(nodeData.projectId);
+        response = projectAgentTurnAnswer(
+          session.events,
+          nodeData.agentTurnId,
+          response,
+        );
+      } catch {
+        // The persisted canvas response remains a valid offline fallback.
+      }
+    }
+    copyText(response);
   }
 
   function selectAgentResponseWord(event: ReactMouseEvent<HTMLDivElement>) {
@@ -1058,10 +1077,11 @@ export function TextNode({ data, id, selected }: NodeProps) {
               </button>
               <button
                 className="flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 focus-visible:bg-zinc-100 focus-visible:text-zinc-900"
-                disabled={!nodeData.aiResponse && !nodeData.plainText}
-                onClick={() =>
-                  copyText(nodeData.aiResponse || nodeData.plainText)
-                }
+                disabled={!nodeData.aiResponse && !nodeData.plainText && !(nodeData.agentTurnId && nodeData.projectId)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void copyAgentResponse();
+                }}
                 title="复制回复"
                 type="button"
               >
@@ -1082,7 +1102,20 @@ export function TextNode({ data, id, selected }: NodeProps) {
                 }}
                 onMouseDown={selectAgentResponseWord}
               >
-                {isGenerating ? (
+                {nodeData.agentTurnId && nodeData.projectId ? (
+                  <AgentTurnTimeline
+                    failure={nodeData.aiError}
+                    fallback={nodeData.aiResponse || nodeData.plainText}
+                    onRetry={() => nodeData.onSubmitTextGenerationNode?.(id, {
+                      model: nodeData.aiModel || nodeData.textGenerationModel,
+                      prompt: nodeData.aiPrompt,
+                      retryExistingTurn: true,
+                    })}
+                    onTurnSettled={(state) => nodeData.onSyncAgentTurnState?.(id, state)}
+                    projectId={nodeData.projectId}
+                    turnId={nodeData.agentTurnId}
+                  />
+                ) : isGenerating ? (
                   <div className="flex min-h-[160px] items-center justify-center gap-2 text-zinc-500">
                     <Loader2 className="size-4 animate-spin" />
                     AI 正在生成回复...

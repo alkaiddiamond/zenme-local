@@ -12,11 +12,14 @@ export function openAiResponsesToChatStream(
   const encoder = new TextEncoder();
   let buffer = "";
   let emittedText = false;
+  let emittedToolCall = false;
+  let emittedToolCallCount = 0;
 
   return new ReadableStream<Uint8Array>({
     async start(controller) {
       const reader = source.getReader();
       let completed = false;
+      let failed = false;
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -47,10 +50,20 @@ export function openAiResponsesToChatStream(
                   }>;
                   usage?: Record<string, unknown>;
                 };
+                item?: {
+                  type?: unknown;
+                  id?: unknown;
+                  call_id?: unknown;
+                  name?: unknown;
+                  arguments?: unknown;
+                };
               };
               if (payload.type === "response.output_text.delta" && typeof payload.delta === "string") {
                 emitContent(controller, encoder, payload.delta);
                 emittedText = true;
+              }
+              if (payload.type === "response.reasoning_summary_text.delta" && typeof payload.delta === "string") {
+                emitThinkingDelta(controller, encoder, payload.delta);
               }
               if (
                 payload.type === "response.output_text.done" &&
@@ -70,10 +83,30 @@ export function openAiResponsesToChatStream(
                   }
                 }
                 const usage = normalizeStreamTokenUsage(payload.response?.usage);
-                if (usage) await options.onUsage?.(usage);
+                if (usage) {
+                  emitUsage(controller, encoder, usage);
+                  await options.onUsage?.(usage);
+                }
+              }
+              if (payload.type === "response.output_item.done" && payload.item?.type === "function_call" &&
+                typeof payload.item.name === "string" && typeof payload.item.arguments === "string") {
+                const toolCall = {
+                  id: typeof payload.item.call_id === "string"
+                    ? payload.item.call_id
+                    : typeof payload.item.id === "string" ? payload.item.id : "tool-call",
+                  name: payload.item.name,
+                  arguments: payload.item.arguments,
+                };
+                emitToolCall(controller, encoder, {
+                  ...toolCall,
+                }, emittedToolCallCount);
+                emitToolCallDone(controller, encoder, toolCall, emittedToolCallCount);
+                emittedToolCallCount += 1;
+                emittedToolCall = true;
               }
               if (payload.type === "response.failed" || payload.type === "error") {
                 completed = true;
+                failed = true;
                 emitError(
                   controller,
                   encoder,
@@ -82,6 +115,7 @@ export function openAiResponsesToChatStream(
               }
               if (payload.type === "response.incomplete") {
                 completed = true;
+                failed = true;
                 emitError(
                   controller,
                   encoder,
@@ -96,8 +130,13 @@ export function openAiResponsesToChatStream(
           }
           if (done) break;
         }
-        if (!completed) completed = true;
-        if (completed) controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        if (!completed) {
+          failed = true;
+          emitError(controller, encoder, "模型响应意外中断，请重试");
+        } else if (!failed && !emittedText && !emittedToolCall) {
+          emitError(controller, encoder, "模型返回了空内容，请重试");
+        }
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         controller.close();
       } catch (error) {
         controller.error(error);
@@ -108,6 +147,49 @@ export function openAiResponsesToChatStream(
   });
 }
 
+function emitToolCallDone(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+  toolCall: { id: string; name: string; arguments: string },
+  index: number,
+) {
+  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ zenme: {
+    type: "tool_call_done",
+    index,
+    id: toolCall.id,
+    name: toolCall.name,
+    arguments: toolCall.arguments,
+  } })}\n\n`));
+}
+
+function emitToolCall(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+  toolCall: { id: string; name: string; arguments: string },
+  index: number,
+) {
+  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{
+    index,
+    id: toolCall.id,
+    type: "function",
+    function: { name: toolCall.name, arguments: toolCall.arguments },
+  }] } }] })}\n\n`));
+}
+
+function emitUsage(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+  usage: StreamTokenUsage,
+) {
+  controller.enqueue(
+    encoder.encode(`data: ${JSON.stringify({ usage: {
+      input_tokens: usage.inputTokens,
+      output_tokens: usage.outputTokens,
+      total_tokens: usage.totalTokens,
+    } })}\n\n`),
+  );
+}
+
 function emitContent(
   controller: ReadableStreamDefaultController<Uint8Array>,
   encoder: TextEncoder,
@@ -116,6 +198,18 @@ function emitContent(
   controller.enqueue(
     encoder.encode(
       `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`,
+    ),
+  );
+}
+
+function emitThinkingDelta(
+  controller: ReadableStreamDefaultController<Uint8Array>,
+  encoder: TextEncoder,
+  delta: string,
+) {
+  controller.enqueue(
+    encoder.encode(
+      `data: ${JSON.stringify({ zenme: { type: "thinking_delta", delta } })}\n\n`,
     ),
   );
 }

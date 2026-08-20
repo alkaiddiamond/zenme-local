@@ -21,5 +21,7 @@
 - 渲染器保持 `contextIsolation`、sandbox 和禁用 Node integration。
 - 密钥只保存在本地数据目录，备份默认移除密钥。
 - 所有用户输入路径必须经过限定根目录的安全解析。
+- Windows Agent 命令和本机 MCP Server 当前没有进程级文件系统沙箱；安全边界依赖 Workspace Root、能力授权、路径校验、命令分类和逐次审批。
+- 公开 Windows Alpha 可能是未签名产物；Release 必须明确标注签名状态、SmartScreen 风险并提供 SHA-256。macOS 公开产物必须签名并 notarize。
 
 发现密钥误提交时，应立即撤销密钥并清理 Git 历史；仅删除最新提交中的文件不能使密钥恢复安全。

@@ -27,11 +27,10 @@ import {
   useStoreApi,
 } from "@xyflow/react";
 import { Loader2, RefreshCw } from "lucide-react";
-import { AgentPanel } from "@/components/zenme/agent-panel";
-import type { AgentMessage } from "@/components/zenme/agent-types";
 import { useAiModelOptions } from "@/components/zenme/use-ai-model-options";
 import {
   CanvasAgentButton,
+  CanvasArchivePanel,
   CanvasBottomControls,
   CanvasNotice,
   CanvasSelectionToolbar,
@@ -40,6 +39,7 @@ import {
   EmptyCanvasHint,
 } from "@/components/zenme/canvas/controls";
 import { searchCanvasNodes } from "@/components/zenme/canvas/text-search";
+import { applyAgentDetailsFold, applyCanvasNodeLifecycle } from "@/components/zenme/canvas/convergence";
 import {
   getConnectedPlaceholderPosition,
   getNextConnectedChildNodePosition,
@@ -56,6 +56,7 @@ import {
 } from "@/components/zenme/canvas/connections";
 import { CanvasProjectStatus } from "@/components/zenme/canvas/project-status";
 import { nodeTypes } from "@/components/zenme/nodes";
+import { WorkspaceFilePicker } from "@/components/zenme/workspace-file-picker";
 import {
   getCanvasSnapshotFromApi,
   getProjectFromApi,
@@ -63,18 +64,21 @@ import {
   createExecutionInApi,
   downloadVideoTask,
   generateOrEditImage,
+  getProjectAgentSessionFromApi,
   getVideoTaskStatus,
   listExecutionsFromApi,
   saveProjectThumbnailToApi,
   uploadProjectFileToApi,
   updateExecutionAttemptInApi,
+  runProjectAgentTurnFromApi,
+  steerProjectAgentTurnFromApi,
+  stopProjectAgentTurnFromApi,
 } from "@/lib/zenme-api";
-import {
-  ZENME_AGENT_KEY_PREFIX,
-} from "@/lib/zenme";
 import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 import { parseProviderModelReference } from "@/lib/ai/model-reference";
-import { getCanvasContextTokenBudget } from "@/lib/ai/context-budget";
+import type { ZenmeModelSpeed, ZenmeReasoningEffort, ZenmeSessionPermissionMode } from "@/lib/local/settings";
+import { estimateTextTokenCount, getCanvasContextTokenBudget } from "@/lib/ai/context-budget";
+import { resolveNodeAgentTurnId } from "@/components/zenme/canvas/agent-turn-control";
 import {
   createDroppedFileCanvasNodes,
   getDroppedFiles,
@@ -106,11 +110,10 @@ import {
   getSaveStatusTone,
   getSelectionToolbarPosition,
 } from "@/components/zenme/canvas/derived-state";
-import {
-  loadAgentSessionSnapshot,
-  saveAgentSessionSnapshot,
-} from "@/components/zenme/canvas/agent-session";
-import { createAgentContextFromActionNode } from "@/components/zenme/canvas/agent-context";
+import { collectAgentTurnReferences } from "@/components/zenme/canvas/agent-context";
+import { applyAgentContextSnapshot, createAgentContextSnapshot, parseAgentContextSnapshot } from "@/lib/agent/context-model";
+import { resolveConversationLineage, resolveConversationRoute } from "@/lib/agent/conversation-lineage";
+import { projectConversationEvents } from "@/lib/agent/project-agent-transcript";
 import { consumeHomePromptRequest } from "@/components/zenme/canvas/home-prompt";
 import {
   requestTextGenerationResponse,
@@ -201,8 +204,11 @@ import {
   createReadingNoteCanvasNode,
   createTextChildCanvasNode,
   createTextCanvasNode,
+  createTextGenerationCanvasNode,
   createVideoGenerationCanvasNode,
+  createWorkspaceFileCanvasNode,
 } from "@/components/zenme/canvas/node-factories";
+import type { WorkspaceFileDocumentView } from "@/lib/workspace/file-document-types";
 import {
   getImageRequestReferenceUrls,
   getOrderedImageReferenceUrls,
@@ -323,7 +329,7 @@ const MINI_MAP_CLASS =
 
 export function CanvasClient(props: CanvasClientProps) {
   return (
-    <ReactFlowProvider>
+    <ReactFlowProvider key={props.projectId}>
       <CanvasClientInner {...props} />
     </ReactFlowProvider>
   );
@@ -359,17 +365,12 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("已保存");
   const [autoSaveIntervalMs, setAutoSaveIntervalMs] = useState(5_000);
   const [lastSavedAt, setLastSavedAt] = useState<string>();
-  const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [isCanvasSearchOpen, setIsCanvasSearchOpen] = useState(false);
+  const [isCanvasArchiveOpen, setIsCanvasArchiveOpen] = useState(false);
   const [canvasSearchQuery, setCanvasSearchQuery] = useState("");
   const [canvasNotice, setCanvasNotice] = useState<string | null>(null);
-  const [agentContext, setAgentContext] = useState<string>();
-  const [agentError, setAgentError] = useState<string | null>(null);
-  const [agentInput, setAgentInput] = useState("");
   const [agentIsSubmitting, setAgentIsSubmitting] = useState(false);
-  const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([]);
   const homePromptRequestProjectRef = useRef<string | null>(null);
-  const [agentModel, setAgentModel] = useState("");
   const configuredModelOptions = useAiModelOptions();
   const configuredImageModelOptions = useAiModelOptions("image");
   const configuredVideoModelOptions = useAiModelOptions("video");
@@ -379,9 +380,10 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   );
   const defaultTextModel = configuredModelOptions[0]?.id ?? "";
   const canvasSearchResults = useMemo(
-    () => searchCanvasNodes(nodes, canvasSearchQuery),
+    () => searchCanvasNodes(nodes.filter((node) => node.data.nodeLifecycle !== "archived"), canvasSearchQuery),
     [canvasSearchQuery, nodes],
   );
+  const archivedNodes = useMemo(() => nodes.filter((node) => node.data.nodeLifecycle === "archived"), [nodes]);
   const closeCanvasSearch = useCallback(() => {
     setIsCanvasSearchOpen(false);
     setCanvasSearchQuery("");
@@ -397,6 +399,8 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     useState<NodeActionMenuState | null>(null);
   const [canvasAddMenu, setCanvasAddMenu] =
     useState<CanvasAddMenuState | null>(null);
+  const [workspaceFilePosition, setWorkspaceFilePosition] =
+    useState<{ x: number; y: number } | null>(null);
   const [pendingViewport, setPendingViewport] = useState<Viewport | null>(null);
   const [canvasLoaded, setCanvasLoaded] = useState(false);
   const [canvasHydrated, setCanvasHydrated] = useState(false);
@@ -424,6 +428,12 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   const activeExecutionSourceNodeIdsRef = useRef(new Set<string>());
   const activeExecutionControllersRef = useRef(new Map<string, AbortController>());
   const activeVideoTaskControllersRef = useRef(new Map<string, AbortController>());
+  const nodeAgentControllerRef = useRef<{
+    controller: AbortController;
+    resultNodeId: string;
+    sourceNodeId: string;
+    turnId: string;
+  } | null>(null);
   const defaultTextModelRef = useRef(defaultTextModel);
   defaultTextModelRef.current = defaultTextModel;
 
@@ -486,8 +496,6 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   const groupDragPosition = useRef<GroupDragPosition | null>(null);
   const musicWaveformTasksRef = useRef(new Map<string, Promise<void>>());
   const refreshingLyricsKeysRef = useRef(new Set<string>());
-
-  const agentKey = `${ZENME_AGENT_KEY_PREFIX}${projectId}`;
 
   useEffect(() => {
     void hydrateImageEditPreferences();
@@ -1192,30 +1200,6 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     setEdges,
     setNodes,
   ]);
-
-  useEffect(() => {
-    const snapshot = loadAgentSessionSnapshot(
-      agentKey,
-      defaultTextModel,
-      configuredModelIds,
-    );
-    if (!snapshot) {
-      return;
-    }
-
-    setAgentInput(snapshot.input);
-    setAgentMessages(snapshot.messages);
-    setAgentModel(snapshot.model);
-  }, [agentKey, configuredModelIds, defaultTextModel]);
-
-  useEffect(() => {
-    saveAgentSessionSnapshot({
-      key: agentKey,
-      messages: agentMessages,
-      model: agentModel,
-      prompt: agentInput,
-    });
-  }, [agentInput, agentKey, agentMessages, agentModel]);
 
   useEffect(() => {
     if (isHydrating.current || isRefreshingUrls.current) {
@@ -2629,6 +2613,290 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     [appendCanvasItems, configuredModelIds, configuredModelOptions, defaultTextModel, edges, persistExecutionTaskNodes, projectId, reactFlow, setNodes],
   );
 
+  const syncAgentTurnState = useCallback((
+    nodeId: string,
+    state: Parameters<NonNullable<CanvasNodeData["onSyncAgentTurnState"]>>[1],
+  ) => {
+    const nextNodes = nodesRef.current.map((node) => node.id === nodeId ? {
+      ...node,
+      data: {
+        ...node.data,
+        aiError: state.error,
+        aiResponse: state.answer ?? node.data.aiResponse,
+        aiStatus: state.status,
+        plainText: state.answer ?? node.data.plainText,
+      },
+    } : node);
+    nodesRef.current = nextNodes;
+    setNodes(nextNodes);
+  }, [setNodes]);
+
+  const submitNodeToProjectAgent = useCallback(
+    async (nodeId: string, input?: { imageDataUrls?: string[]; model?: string; retryExistingTurn?: boolean; modelSpeed?: ZenmeModelSpeed; permissionMode?: ZenmeSessionPermissionMode; prompt?: string; reasoningEffort?: ZenmeReasoningEffort }) => {
+      const currentNodes = reactFlow?.getNodes() ?? nodesRef.current;
+      const currentEdges = reactFlow?.getEdges() ?? edgesRef.current;
+      const sourceNode = currentNodes.find((node) => node.id === nodeId);
+      if (!sourceNode || agentIsSubmitting) return;
+      const retryExistingTurn = input?.retryExistingTurn === true &&
+        sourceNode.data.kind === "agent" &&
+        typeof sourceNode.data.agentTurnId === "string";
+      const originalSourceNode = retryExistingTurn
+        ? currentNodes.find((node) => node.id === currentEdges.find((edge) => edge.target === nodeId)?.source)
+        : sourceNode;
+      const retrySession = retryExistingTurn ? await getProjectAgentSessionFromApi(projectId) : undefined;
+      const retryUserEvent = retryExistingTurn
+        ? retrySession?.events.find((event) => event.turnId === sourceNode.data.agentTurnId && event.type === "user")
+        : undefined;
+      if (retryExistingTurn && !retryUserEvent) throw new Error("无法重试当前 Agent Turn：原始请求快照不存在");
+      const retryContextSnapshot = parseAgentContextSnapshot(retryUserEvent?.data?.contextSnapshot);
+      const retryPersistedContext = retryUserEvent ? applyAgentContextSnapshot({
+        prompt: retryUserEvent.content ?? "",
+        contextSnapshot: retryContextSnapshot,
+        currentNodeContext: typeof retryUserEvent.data?.currentNodeContext === "string"
+          ? retryUserEvent.data.currentNodeContext
+          : undefined,
+        connectedGraphContext: typeof retryUserEvent.data?.connectedGraphContext === "string"
+          ? retryUserEvent.data.connectedGraphContext
+          : undefined,
+        conversationId: retryUserEvent.conversationId,
+        selectedNodeIds: Array.isArray(retryUserEvent.data?.selectedNodeIds)
+          ? retryUserEvent.data.selectedNodeIds.filter((value): value is string => typeof value === "string")
+          : [],
+        fileDocumentIds: Array.isArray(retryUserEvent.data?.fileDocumentIds)
+          ? retryUserEvent.data.fileDocumentIds.filter((value): value is string => typeof value === "string")
+          : [],
+        canvasContext: typeof retryUserEvent.data?.canvasContext === "string"
+          ? retryUserEvent.data.canvasContext
+          : undefined,
+      }) : undefined;
+      const conversationSession = retrySession ?? await getProjectAgentSessionFromApi(projectId);
+      const lineage = resolveConversationLineage({ edges: currentEdges, nodeId });
+      const turnIdByNodeId = new Map(
+        [nodeId, ...lineage.ancestorNodeIds].flatMap((lineageNodeId) => {
+          const lineageNode = currentNodes.find((node) => node.id === lineageNodeId);
+          return typeof lineageNode?.data.agentTurnId === "string"
+            ? [[lineageNodeId, lineageNode.data.agentTurnId] as const]
+            : [];
+        }),
+      );
+      const conversationRoute = resolveConversationRoute({
+        edges: currentEdges,
+        events: conversationSession.events,
+        nodeId,
+        turnIdByNodeId,
+        createConversationId: () => crypto.randomUUID(),
+      });
+      const conversationId = retryExistingTurn
+        ? retryPersistedContext?.conversationId
+        : conversationRoute.conversationId;
+      const parentTurnId = retryExistingTurn
+        ? retryUserEvent?.parentTurnId
+        : conversationRoute.parentTurnId;
+      const parentConversationIds = retryExistingTurn
+        ? (Array.isArray(retryUserEvent?.data?.parentConversationIds)
+            ? retryUserEvent.data.parentConversationIds.filter((value): value is string => typeof value === "string")
+            : [])
+        : conversationRoute.parentConversationIds;
+      const transcriptSourceConversationId = !retryExistingTurn && parentConversationIds.length === 1
+        ? parentConversationIds[0]
+        : !retryExistingTurn && !conversationRoute.forked
+          ? conversationRoute.conversationId
+          : undefined;
+      const transcriptTurnIds = transcriptSourceConversationId
+        ? new Set(projectConversationEvents(conversationSession.events, transcriptSourceConversationId)
+            .map((event) => event.turnId))
+        : undefined;
+      const persistedModel = typeof retryUserEvent?.data?.model === "string" ? retryUserEvent.data.model : undefined;
+      const model = persistedModel || input?.model || sourceNode.data.textGenerationModel || defaultTextModel;
+      const persistedPrompt = retryPersistedContext?.prompt.trim() || undefined;
+      const prompt = persistedPrompt || input?.prompt?.trim() ||
+        "请直接处理当前节点表达的请求；如果当前节点包含问题，优先回答该问题。";
+      const contextTokenBudget = getCanvasContextTokenBudget({
+        contextWindow: configuredModelOptions.find((option) => option.id === model)?.contextWindow,
+        prompt,
+      });
+      const persistedCurrentNodeContext = retryPersistedContext?.currentNodeContext;
+      const persistedConnectedGraphContext = retryPersistedContext?.connectedGraphContext;
+      const persistedLegacyCanvasContext = retryPersistedContext?.canvasContext;
+      const currentNodeContext = retryExistingTurn
+        ? persistedCurrentNodeContext
+        : limitTextGenerationContext([
+            getCanvasNodeContextText(sourceNode),
+          ], contextTokenBudget);
+      const connectedGraphTokenBudget = retryExistingTurn
+        ? contextTokenBudget
+        : Math.max(0, contextTokenBudget - estimateTextTokenCount(currentNodeContext ?? ""));
+      const connectedGraphContext = retryExistingTurn
+        ? persistedConnectedGraphContext ??
+          (!persistedCurrentNodeContext ? persistedLegacyCanvasContext : undefined)
+        : connectedGraphTokenBudget > 0 ? collectTextGenerationContext({
+            edges: currentEdges,
+            maxTokens: connectedGraphTokenBudget,
+            nodeId,
+            nodes: currentNodes,
+            transcriptTurnIds,
+          }) : "";
+      const references = retryExistingTurn
+        ? {
+            fileDocumentIds: retryPersistedContext?.fileDocumentIds ?? [],
+            selectedNodeIds: retryPersistedContext?.selectedNodeIds ?? [],
+          }
+        : collectAgentTurnReferences({
+            edges: currentEdges,
+            nodeId,
+            nodes: currentNodes,
+          });
+      const upstreamImageUrls = originalSourceNode
+        ? collectTextGenerationImageUrls({
+            edges: currentEdges,
+            nodeId: originalSourceNode.id,
+            nodes: currentNodes,
+          })
+        : [];
+      const turnId = retryExistingTurn ? sourceNode.data.agentTurnId! : crypto.randomUUID();
+      const resultNodeId = retryExistingTurn ? nodeId : crypto.randomUUID();
+      const taskStartedAt = Date.now();
+      if (retryExistingTurn) {
+        const nextNodes = currentNodes.map((node) => node.id === resultNodeId ? {
+          ...node,
+          data: {
+            ...node.data,
+            aiError: undefined,
+            aiStatus: "generating" as const,
+            aiTaskDurationMs: undefined,
+            aiTaskStartedAt: new Date(taskStartedAt).toISOString(),
+          },
+        } : node);
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
+      } else {
+        const position = getNextConnectedChildNodePosition({
+          childFallbackSize: { height: 420, width: 620 },
+          edges: currentEdges,
+          nodes: currentNodes,
+          sourceFallbackSize: { height: 180, width: 560 },
+          sourceNode,
+          yOffsetWithoutChild: 0,
+        });
+        const { edge: resultEdge, node: resultNode } = createAiResponseChildCanvasNode({
+          agentTurnId: turnId,
+          id: resultNodeId,
+          model,
+          position,
+          prompt,
+          startedAt: new Date(taskStartedAt).toISOString(),
+          sourceNode,
+        });
+        resultNode.style = { height: 420, width: 620 };
+        appendCanvasItems({
+          currentEdges,
+          currentNodes,
+          edges: [resultEdge],
+          nodes: [resultNode],
+        });
+      }
+      setAgentIsSubmitting(true);
+      const controller = new AbortController();
+      nodeAgentControllerRef.current = {
+        controller,
+        resultNodeId,
+        sourceNodeId: originalSourceNode?.id ?? nodeId,
+        turnId,
+      };
+      try {
+        const upstreamImageResults = await Promise.allSettled(
+          upstreamImageUrls.map((url) => fetchImageAsDataUrl(url)),
+        );
+        const mergedImageDataUrls = [...new Set([
+          ...(input?.imageDataUrls ?? []),
+          ...upstreamImageResults.flatMap((result) =>
+            result.status === "fulfilled" ? [result.value] : [],
+          ),
+        ])].slice(0, 4);
+        const result = await runProjectAgentTurnFromApi({
+          contextSnapshot: createAgentContextSnapshot({
+            prompt,
+            currentNodeContext,
+            connectedGraphContext,
+            conversationId,
+            selectedNodeIds: references.selectedNodeIds,
+            fileDocumentIds: references.fileDocumentIds,
+          }),
+          conversationId,
+          imageDataUrls: mergedImageDataUrls,
+          model,
+          modelSpeed: input?.modelSpeed,
+          permissionMode: input?.permissionMode,
+          parentConversationIds,
+          parentTurnId,
+          projectId,
+          prompt,
+          reasoningEffort: input?.reasoningEffort,
+          resume: retryExistingTurn,
+          signal: controller.signal,
+          sourceNodeId: originalSourceNode?.id ?? nodeId,
+          resultNodeId,
+          turnId,
+        });
+        const reply = result.status === "completed" ? result.answer : undefined;
+        const nextNodes = nodesRef.current.map((node) => node.id === resultNodeId ? {
+          ...node,
+          data: {
+            ...node.data,
+            aiError: undefined,
+            aiResponse: reply,
+            aiStatus: result.status === "waitingApproval"
+              ? "waitingApproval" as const
+              : result.status === "waitingInput" ? "waitingInput" as const : "done" as const,
+            aiTaskDurationMs: Date.now() - taskStartedAt,
+            plainText: reply ?? "",
+          },
+        } : node);
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
+      } catch (error) {
+        const stopped = controller.signal.aborted;
+        const message = stopped
+          ? undefined
+          : error instanceof Error ? error.message : "Project Agent 执行失败";
+        const nextNodes = nodesRef.current.map((node) => node.id === resultNodeId ? {
+          ...node,
+          data: {
+            ...node.data,
+            aiError: message,
+            aiStatus: stopped ? "done" as const : "failed" as const,
+            aiTaskDurationMs: Date.now() - taskStartedAt,
+          },
+        } : node);
+        nodesRef.current = nextNodes;
+        setNodes(nextNodes);
+      } finally {
+        setAgentIsSubmitting(false);
+        if (nodeAgentControllerRef.current?.controller === controller) {
+          nodeAgentControllerRef.current = null;
+        }
+      }
+    },
+    [agentIsSubmitting, appendCanvasItems, configuredModelOptions, defaultTextModel, projectId, reactFlow, setNodes],
+  );
+
+  const stopNodeProjectAgent = useCallback((nodeId: string) => {
+    const active = nodeAgentControllerRef.current;
+    const turnId = resolveNodeAgentTurnId({ active, nodeId, nodes: nodesRef.current });
+    if (!turnId) return;
+    if (active?.turnId === turnId) active.controller.abort();
+    void stopProjectAgentTurnFromApi(projectId, turnId).catch(() => undefined);
+  }, [projectId]);
+
+  const steerNodeProjectAgent = useCallback(async (nodeId: string, prompt: string) => {
+    const active = nodeAgentControllerRef.current;
+    const turnId = resolveNodeAgentTurnId({ active, nodeId, nodes: nodesRef.current });
+    if (!turnId) {
+      throw new Error("当前节点没有运行中的 Agent Turn");
+    }
+    await steerProjectAgentTurnFromApi({ projectId, prompt, turnId });
+  }, [projectId]);
+
   const updateVideoNode = useCallback((
     nodeId: string,
     updates: Parameters<NonNullable<CanvasNodeData["onUpdateVideoNode"]>>[1],
@@ -3339,7 +3607,6 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
               data: {
                 ...node.data,
                 externalTaskId: created.taskId,
-                providerTaskId: created.taskId,
               },
             }
           : node,
@@ -3424,6 +3691,24 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       position,
     });
     appendCanvasItems({ currentEdges: edges, currentNodes: nodes, nodes: [nextNode] });
+  }
+
+  function createWorkspaceFileNode(view: WorkspaceFileDocumentView) {
+    if (!workspaceFilePosition) return;
+    const nextNode = createWorkspaceFileCanvasNode({
+      documentId: view.document.id,
+      id: crypto.randomUUID(),
+      position: workspaceFilePosition,
+      projectId,
+      relativePath: view.document.relativePath,
+      rootId: view.document.rootId,
+    });
+    appendCanvasItems({
+      currentEdges: edgesRef.current,
+      currentNodes: nodesRef.current,
+      nodes: [nextNode],
+    });
+    setWorkspaceFilePosition(null);
   }
 
   function openUploadPickerAt(position: { x: number; y: number }) {
@@ -4251,6 +4536,47 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     });
   }, [setNodes]);
 
+  const createUnifiedAgentPrompt = useCallback((sourceNodeIds?: string[]) => {
+    const currentNodes = reactFlow?.getNodes() ?? nodesRef.current;
+    const currentEdges = reactFlow?.getEdges() ?? edgesRef.current;
+    const requestedIds = sourceNodeIds ?? currentNodes
+      .filter((node) => node.selected)
+      .map((node) => node.id);
+    const requestedIdSet = new Set(requestedIds);
+    const sourceNodes = currentNodes.filter((node) =>
+      requestedIdSet.has(node.id) && node.data.nodeLifecycle !== "archived"
+    );
+    const canvasRect = canvasViewportRef.current?.getBoundingClientRect();
+    const position = sourceNodes.length > 0
+      ? {
+          x: Math.max(...sourceNodes.map((node) =>
+            node.position.x + (node.measured?.width ?? 560),
+          )) + 80,
+          y: Math.min(...sourceNodes.map((node) => node.position.y)),
+        }
+      : reactFlow?.screenToFlowPosition({
+          x: (canvasRect?.left ?? 0) + (canvasRect?.width ?? 1000) / 2,
+          y: (canvasRect?.top ?? 0) + (canvasRect?.height ?? 700) / 2,
+        }) ?? { x: 320, y: 180 };
+    const nodeId = crypto.randomUUID();
+    const { node } = createTextGenerationCanvasNode({
+      id: nodeId,
+      model: defaultTextModel,
+      position,
+    });
+    const nextEdges = sourceNodes.map((sourceNode) =>
+      createConnectedEdge(sourceNode.id, nodeId)
+    );
+
+    appendCanvasItems({
+      currentEdges,
+      currentNodes,
+      edges: nextEdges,
+      nodes: [node],
+    });
+    focusCanvasNode(nodeId, { preserveZoom: true });
+  }, [appendCanvasItems, defaultTextModel, focusCanvasNode, reactFlow]);
+
   const createMusicPlayer = useCallback((musicNodeId: string, position?: { x: number; y: number }) => {
     const sourceNode = nodesRef.current.find((node) => node.id === musicNodeId);
     if (!sourceNode || (sourceNode.data.kind !== "music" && sourceNode.data.kind !== "musicFolder")) return;
@@ -4622,6 +4948,14 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     focusCanvasNode(nodeId);
   }, [focusCanvasNode]);
 
+  const updateNodeLifecycle = useCallback((nodeId: string, lifecycle: NonNullable<CanvasNodeData["nodeLifecycle"]>) => {
+    setNodes((current) => applyCanvasNodeLifecycle(current, nodeId, lifecycle));
+  }, [setNodes]);
+
+  const toggleAgentDetailsFolded = useCallback((nodeId: string, folded: boolean) => {
+    setNodes((current) => applyAgentDetailsFold(current, nodeId, folded));
+  }, [setNodes]);
+
   const requestTaskParentOptions = useCallback((nodeId: string) =>
     getTaskParentOptions({
       edges: edgesRef.current,
@@ -4654,7 +4988,9 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         onCreateTextChildNode: createTextChildNode,
         onSubmitImageNode: submitImageGenerationNode,
         onSubmitVideoNode: submitVideoGenerationNode,
-        onSubmitTextGenerationNode: submitTextGenerationNode,
+        onSubmitTextGenerationNode: submitNodeToProjectAgent,
+        onSteerTextGenerationNode: steerNodeProjectAgent,
+        onStopTextGenerationNode: stopNodeProjectAgent,
         onUpdateImageNode: updateImageGenerationNode,
         onUpdateVideoNode: updateVideoNode,
         onUpdateTextGenerationNode: updateTextGenerationNode,
@@ -4663,8 +4999,11 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         onSetTaskParent: setTaskParent,
         onRequestTaskParentOptions: requestTaskParentOptions,
         onLocateTaskNode: locateTaskNode,
+        onUpdateNodeLifecycle: updateNodeLifecycle,
+        onToggleAgentDetailsFolded: toggleAgentDetailsFolded,
         onToggleTaskChildren: toggleTaskChildren,
         onToggleAiResponseExpanded: toggleAiResponseExpanded,
+        onSyncAgentTurnState: syncAgentTurnState,
         onToggleTextExpanded: toggleTextExpanded,
         onToggleImagePromptExpanded: toggleImagePromptExpanded,
         onToggleMusicChildExpanded: toggleMusicChildExpanded,
@@ -4699,7 +5038,9 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       resolveImageNodeDimensions,
       submitImageGenerationNode,
       submitVideoGenerationNode,
-      submitTextGenerationNode,
+      submitNodeToProjectAgent,
+      steerNodeProjectAgent,
+      stopNodeProjectAgent,
       toggleReaderCollapse,
       updateImageGenerationNode,
       updateVideoNode,
@@ -4709,8 +5050,11 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       setTaskParent,
       requestTaskParentOptions,
       locateTaskNode,
+      updateNodeLifecycle,
+      toggleAgentDetailsFolded,
       toggleTaskChildren,
       toggleAiResponseExpanded,
+      syncAgentTurnState,
       toggleTextExpanded,
       toggleImagePromptExpanded,
       toggleMusicChildExpanded,
@@ -4989,7 +5333,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
             size={1}
             variant={BackgroundVariant.Dots}
           />
-          {nodes.length === 0 ? <EmptyCanvasHint /> : null}
+          {nodes.length === archivedNodes.length ? <EmptyCanvasHint /> : null}
           {showMiniMap && isMiniMapSuspended ? (
             <div
               aria-hidden
@@ -5019,17 +5363,32 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           <CanvasSelectionToolbar
             left={selectionToolbarPosition.left}
             onGroupSelectedNodes={groupSelectedNodes}
+            onStartAgentWithSelection={() => createUnifiedAgentPrompt(
+              nodesRef.current.filter((node) => node.selected).map((node) => node.id),
+            )}
             top={selectionToolbarPosition.top}
           />
         ) : null}
 
         <CanvasSideToolbar
+          archivedCount={archivedNodes.length}
           onArrange={quickArrangeCanvas}
-          onOpenAgent={() => setIsAgentOpen(true)}
+          onOpenArchive={() => { setIsCanvasArchiveOpen(true); closeCanvasSearch(); }}
           onSave={() => void saveCanvas({ includeThumbnail: true })}
           onToggleSearch={toggleCanvasSearch}
           searchOpen={isCanvasSearchOpen}
         />
+
+        {isCanvasArchiveOpen ? (
+          <CanvasArchivePanel
+            items={archivedNodes.map((node) => ({ id: node.id, kind: node.data.kind, title: node.data.title || node.data.name || "未命名节点" }))}
+            onClose={() => setIsCanvasArchiveOpen(false)}
+            onRestore={(nodeId) => {
+              const node = nodesRef.current.find((item) => item.id === nodeId);
+              updateNodeLifecycle(nodeId, node?.data.nodeLifecycleBeforeArchive ?? "knowledge");
+            }}
+          />
+        ) : null}
 
         {isCanvasSearchOpen ? (
           <CanvasTextSearchPanel
@@ -5052,27 +5411,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           zoomLevel={zoomLevel}
         />
 
-        <CanvasAgentButton onOpenAgent={() => setIsAgentOpen(true)} />
-
-        {isAgentOpen ? (
-          <AgentPanel
-            context={agentContext}
-            error={agentError}
-            input={agentInput}
-            isSubmitting={agentIsSubmitting}
-            messages={agentMessages}
-            model={agentModel}
-            onClose={() => {
-              setIsAgentOpen(false);
-              setAgentContext(undefined);
-            }}
-            setError={setAgentError}
-            setInput={setAgentInput}
-            setIsSubmitting={setAgentIsSubmitting}
-            setMessages={setAgentMessages}
-            setModel={setAgentModel}
-          />
-        ) : null}
+        <CanvasAgentButton onCreateAgentPrompt={() => createUnifiedAgentPrompt()} />
 
         {canvasNotice ? (
           <CanvasNotice
@@ -5091,7 +5430,19 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
             onCreateTaskNode={createTaskNodeAt}
             onCreateTextNode={createTextNodeAt}
             onCreateMusicFolderNode={createMusicFolderNodeAt}
+            onOpenWorkspaceFiles={(position) => {
+              setWorkspaceFilePosition(position);
+              setCanvasAddMenu(null);
+            }}
             onUploadFiles={openUploadPickerAt}
+          />
+        ) : null}
+
+        {workspaceFilePosition ? (
+          <WorkspaceFilePicker
+            onClose={() => setWorkspaceFilePosition(null)}
+            onPick={createWorkspaceFileNode}
+            projectId={projectId}
           />
         ) : null}
 
@@ -5111,12 +5462,6 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
             onCreateMusicChild={(kind) => {
               if (!actionNode || actionNode.data.kind !== "musicPlayer") return;
               createMusicChild(actionNode.id, kind, nodeActionMenu.flowPosition);
-              setNodeActionMenu(null);
-            }}
-            onProcessWithAgent={() => {
-              createConnectedPlaceholder("agent");
-              setAgentContext(createAgentContextFromActionNode(actionNode));
-              setIsAgentOpen(true);
               setNodeActionMenu(null);
             }}
           />

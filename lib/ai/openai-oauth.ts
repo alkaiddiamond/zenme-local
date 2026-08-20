@@ -172,6 +172,16 @@ export async function ensureFreshOpenAiTokens() {
   const existing = await readTokens();
   if (!existing) return null;
   if (existing.expiresAt - Date.now() > 5 * 60 * 1000) return existing;
+  return refreshOpenAiTokens(existing);
+}
+
+export async function forceRefreshOpenAiTokens() {
+  const existing = await readTokens();
+  if (!existing) return null;
+  return refreshOpenAiTokens(existing);
+}
+
+async function refreshOpenAiTokens(existing: StoredTokens) {
   try {
     const refreshed = await requestTokens(new URLSearchParams({
       grant_type: "refresh_token",

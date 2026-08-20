@@ -4,6 +4,7 @@ import { resolveInside } from "@/lib/local/path-safety";
 import {
   CHATGPT_PROVIDER_ID,
   createVolcengineAgentPlanProvider,
+  mergeVolcengineAgentPlanCatalogModels,
 } from "@/lib/ai/provider-presets";
 
 export { CHATGPT_PROVIDER_ID, createChatGptProvider } from "@/lib/ai/provider-presets";
@@ -13,15 +14,40 @@ export type ZenmeLocalSettings = {
   dataDir: string;
   autoSaveIntervalMs: number;
   theme: ZenmeTheme;
+  defaultSessionPermissionMode: ZenmeSessionPermissionMode;
+  thinkingEnabled: boolean;
+  defaultReasoningEffort: ZenmeReasoningEffort;
+  defaultModelSpeed: ZenmeModelSpeed;
+  autoDreamEnabled: boolean;
   lastTextModelId?: string;
   lastImageModelId?: string;
   lastVideoModelId?: string;
   lastImageAspectRatio?: string;
   lastImageQuality?: string;
   modelProviders: ModelProviderConfig[];
+  mcpServers: McpServerConfig[];
+};
+
+export type McpServerConfig = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  command: string;
+  args: string[];
+  connectTimeoutMs: number;
+  callTimeoutMs: number;
+  access: "readOnly" | "full";
 };
 
 export type ZenmeTheme = "light" | "dark" | "warm" | "system";
+
+export type ZenmeReasoningEffort = "low" | "medium" | "high" | "xhigh";
+export type ZenmeModelSpeed = "standard" | "fast";
+
+export type ZenmeSessionPermissionMode =
+  | "untrusted"
+  | "onRequest"
+  | "neverAsk";
 
 export type NetworkProxyMode = "environment" | "custom" | "direct";
 
@@ -88,7 +114,13 @@ export function createDefaultLocalSettings(dataDir = getZenmeDataDir()): ZenmeLo
     dataDir,
     autoSaveIntervalMs: 5_000,
     theme: "light",
+    defaultSessionPermissionMode: "onRequest",
+    thinkingEnabled: true,
+    defaultReasoningEffort: "low",
+    defaultModelSpeed: "standard",
+    autoDreamEnabled: false,
     modelProviders: createDefaultModelProviders(),
+    mcpServers: [],
   };
 }
 
@@ -148,6 +180,17 @@ function normalizeLocalSettings(
       settings.theme === "light"
         ? settings.theme
         : defaults.theme,
+    defaultSessionPermissionMode: normalizeSessionPermissionMode(
+      settings.defaultSessionPermissionMode,
+      defaults.defaultSessionPermissionMode,
+    ),
+    thinkingEnabled: settings.thinkingEnabled !== false,
+    defaultReasoningEffort: normalizeReasoningEffort(
+      settings.defaultReasoningEffort,
+      defaults.defaultReasoningEffort,
+    ),
+    defaultModelSpeed: settings.defaultModelSpeed === "fast" ? "fast" : "standard",
+    autoDreamEnabled: settings.autoDreamEnabled === true,
     lastTextModelId:
       typeof settings.lastTextModelId === "string" ? settings.lastTextModelId : undefined,
     lastImageModelId:
@@ -172,7 +215,61 @@ function normalizeLocalSettings(
         createDefaultNetworkProxy(),
       ),
     ),
+    mcpServers: normalizeMcpServers(settings.mcpServers),
   };
+}
+
+function normalizeMcpServers(value: unknown): McpServerConfig[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.slice(0, 20).flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const candidate = entry as Partial<McpServerConfig>;
+    const id = typeof candidate.id === "string" ? candidate.id.trim().slice(0, 100) : "";
+    const name = typeof candidate.name === "string" ? candidate.name.trim().slice(0, 100) : "";
+    const command = typeof candidate.command === "string" ? candidate.command.trim().slice(0, 2_048) : "";
+    if (!id || seen.has(id) || !name || !command) return [];
+    seen.add(id);
+    return [{
+      id,
+      name,
+      enabled: candidate.enabled !== false,
+      command,
+      args: Array.isArray(candidate.args)
+        ? candidate.args.filter((arg): arg is string => typeof arg === "string").slice(0, 100).map((arg) => arg.slice(0, 4_096))
+        : [],
+      connectTimeoutMs: normalizeMcpTimeout(candidate.connectTimeoutMs, 10_000, 1_000, 60_000),
+      callTimeoutMs: normalizeMcpTimeout(candidate.callTimeoutMs, 120_000, 1_000, 300_000),
+      access: candidate.access === "full" ? "full" : "readOnly",
+    }];
+  });
+}
+
+function normalizeMcpTimeout(value: unknown, fallback: number, minimum: number, maximum: number) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(maximum, Math.max(minimum, Math.floor(value)))
+    : fallback;
+}
+
+function normalizeReasoningEffort(value: unknown, fallback: ZenmeReasoningEffort): ZenmeReasoningEffort {
+  if (value === "low" || value === "medium" || value === "high" || value === "xhigh") return value;
+  if (value === "none") return "low";
+  if (value === "max") return "xhigh";
+  return fallback;
+}
+
+function normalizeSessionPermissionMode(
+  value: unknown,
+  fallback: ZenmeSessionPermissionMode,
+): ZenmeSessionPermissionMode {
+  if (value === "untrusted" || value === "onRequest" || value === "neverAsk") return value;
+  // Forward migration for the short-lived six-option settings shape.
+  if (value === "plan") return "untrusted";
+  if (value === "dontAsk") return "neverAsk";
+  if (value === "default" || value === "acceptEdits" || value === "auto" || value === "bypassPermissions") {
+    return "onRequest";
+  }
+  return fallback;
 }
 
 export function createDefaultNetworkProxy(): NetworkProxyConfig {
@@ -334,10 +431,19 @@ function normalizeModelProvider(
     models = createVolcengineAgentPlanProvider().models;
   }
   const agentPlanDefaults = createVolcengineAgentPlanProvider();
-  const nextModelMapping = isLegacyAgentPlan
+  if (apiFormat === "volcengine_agent_plan") {
+    models = mergeVolcengineAgentPlanCatalogModels(models);
+  }
+  const modelIds = new Set(models.map((model) => model.id));
+  const nextModelMapping = apiFormat === "volcengine_agent_plan"
     ? {
-        main: normalizedModelMapping.main || agentPlanDefaults.modelMapping.main,
-        image: normalizedModelMapping.image || agentPlanDefaults.modelMapping.image,
+        ...normalizedModelMapping,
+        main: modelIds.has(normalizedModelMapping.main)
+          ? normalizedModelMapping.main
+          : agentPlanDefaults.modelMapping.main,
+        image: modelIds.has(normalizedModelMapping.image)
+          ? normalizedModelMapping.image
+          : agentPlanDefaults.modelMapping.image,
       }
     : normalizedModelMapping;
 

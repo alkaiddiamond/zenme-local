@@ -16,10 +16,12 @@ import {
   LogIn,
   LogOut,
   Plus,
+  Puzzle,
   RefreshCw,
   Save,
   Server,
   Settings2,
+  SlidersHorizontal,
   Sun,
   Trash2,
   Upload,
@@ -40,9 +42,13 @@ import type {
   ModelProviderApiFormat,
   ModelProviderAuthType,
   ModelProviderConfig,
+  McpServerConfig,
   NetworkProxyConfig,
   ZenmeLocalSettings,
   ZenmeTheme,
+  ZenmeSessionPermissionMode,
+  ZenmeModelSpeed,
+  ZenmeReasoningEffort,
 } from "@/lib/local/settings";
 import { announceThemePreference } from "@/components/zenme/theme-controller";
 import {
@@ -50,6 +56,7 @@ import {
   identifyModelProviderPreset,
   type ModelProviderPresetId,
 } from "@/lib/ai/provider-presets";
+import { rememberAiModelPreference, useAiModelOptions } from "@/components/zenme/use-ai-model-options";
 
 type SettingsPayload = {
   mode: "local";
@@ -67,7 +74,36 @@ type ZenmeDesktopApi = {
   }>;
 };
 
-type SettingsTab = "appearance" | "models" | "usage" | "local" | "save";
+type SettingsTab = "general" | "models" | "mcp" | "plugins" | "usage" | "local" | "save";
+
+type AgentPluginField = {
+  description?: string;
+  default?: unknown;
+  max?: number;
+  min?: number;
+  multiple?: boolean;
+  required?: boolean;
+  sensitive?: boolean;
+  title?: string;
+  type: "string" | "number" | "boolean" | "directory" | "file";
+};
+
+type AgentPluginConfiguration = {
+  configuredKeys: string[];
+  id: string;
+  kind: "plugin" | "mcpServer";
+  label: string;
+  missing: string[];
+  schema: Record<string, AgentPluginField>;
+  values: Record<string, string | number | boolean | string[]>;
+};
+
+type AgentPlugin = {
+  configurations: AgentPluginConfiguration[];
+  errors: Array<{ source: string; error: string }>;
+  id: string;
+  name: string;
+};
 
 type TokenUsagePayload = {
   summary: {
@@ -196,10 +232,19 @@ export function SettingsClient() {
   const [payload, setPayload] = useState<SettingsPayload | null>(null);
   const [desktopDataDir, setDesktopDataDir] = useState("");
   const [isDesktop, setIsDesktop] = useState(false);
-  const [activeTab, setActiveTab] = useState<SettingsTab>("models");
+  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const [autoSaveIntervalMs, setAutoSaveIntervalMs] = useState(5_000);
   const [theme, setTheme] = useState<ZenmeTheme>("light");
+  const [defaultSessionPermissionMode, setDefaultSessionPermissionMode] =
+    useState<ZenmeSessionPermissionMode>("onRequest");
+  const [, setThinkingEnabled] = useState(true);
+  const [defaultReasoningEffort, setDefaultReasoningEffort] = useState<ZenmeReasoningEffort>("low");
+  const [defaultModelSpeed, setDefaultModelSpeed] = useState<ZenmeModelSpeed>("standard");
+  const [lastTextModelId, setLastTextModelId] = useState("");
+  const [autoDreamEnabled, setAutoDreamEnabled] = useState(false);
+  const [showAutoDreamConfirmation, setShowAutoDreamConfirmation] = useState(false);
   const [modelProviders, setModelProviders] = useState<ModelProviderConfig[]>([]);
+  const [mcpServers, setMcpServers] = useState<McpServerConfig[]>([]);
   const [editingProvider, setEditingProvider] = useState<ModelProviderConfig | null>(null);
   const [isCreatingProvider, setIsCreatingProvider] = useState(false);
   const [editingProxyProvider, setEditingProxyProvider] =
@@ -212,6 +257,7 @@ export function SettingsClient() {
   const [chatGptAction, setChatGptAction] = useState<"idle" | "login" | "sync" | "logout" | "failed">("idle");
   const [chatGptMessage, setChatGptMessage] = useState("");
   const syncChatGptModelsRef = useRef<() => Promise<void>>(async () => undefined);
+  const textModelOptions = useAiModelOptions();
 
   async function loadChatGptStatus() {
     const response = await fetch("/api/ai/openai-oauth/status", { cache: "no-store" });
@@ -227,6 +273,7 @@ export function SettingsClient() {
     const nextPayload = await response.json() as SettingsPayload;
     setPayload(nextPayload);
     setModelProviders(nextPayload.settings.modelProviders);
+    setMcpServers(nextPayload.settings.mcpServers);
   }
 
   useEffect(() => {
@@ -238,7 +285,14 @@ export function SettingsClient() {
       setPayload(nextPayload);
       setAutoSaveIntervalMs(nextPayload.settings.autoSaveIntervalMs);
       setTheme(nextPayload.settings.theme);
+      setDefaultSessionPermissionMode(nextPayload.settings.defaultSessionPermissionMode);
+      setThinkingEnabled(nextPayload.settings.thinkingEnabled);
+      setDefaultReasoningEffort(nextPayload.settings.defaultReasoningEffort);
+      setDefaultModelSpeed(nextPayload.settings.defaultModelSpeed);
+      setLastTextModelId(nextPayload.settings.lastTextModelId ?? "");
+      setAutoDreamEnabled(nextPayload.settings.autoDreamEnabled);
       setModelProviders(nextPayload.settings.modelProviders);
+      setMcpServers(nextPayload.settings.mcpServers);
       const status = await loadChatGptStatus();
       if (status?.loggedIn && !status.modelSyncing && status.modelCount === 0) {
         void syncChatGptModelsRef.current();
@@ -328,7 +382,14 @@ export function SettingsClient() {
   async function persistSettings(updates: {
     autoSaveIntervalMs?: number;
     modelProviders?: ModelProviderConfig[];
+    mcpServers?: McpServerConfig[];
     theme?: ZenmeTheme;
+    defaultSessionPermissionMode?: ZenmeSessionPermissionMode;
+    thinkingEnabled?: boolean;
+    defaultReasoningEffort?: ZenmeReasoningEffort;
+    defaultModelSpeed?: ZenmeModelSpeed;
+    lastTextModelId?: string;
+    autoDreamEnabled?: boolean;
   }) {
     setSaveState("saving");
     try {
@@ -345,7 +406,14 @@ export function SettingsClient() {
       const nextPayload = await response.json() as SettingsPayload;
       setPayload(nextPayload);
       setModelProviders(nextPayload.settings.modelProviders);
+      setMcpServers(nextPayload.settings.mcpServers);
       setTheme(nextPayload.settings.theme);
+      setDefaultSessionPermissionMode(nextPayload.settings.defaultSessionPermissionMode);
+      setThinkingEnabled(nextPayload.settings.thinkingEnabled);
+      setDefaultReasoningEffort(nextPayload.settings.defaultReasoningEffort);
+      setDefaultModelSpeed(nextPayload.settings.defaultModelSpeed);
+      setLastTextModelId(nextPayload.settings.lastTextModelId ?? "");
+      setAutoDreamEnabled(nextPayload.settings.autoDreamEnabled);
       setSaveState("saved");
       window.setTimeout(() => setSaveState("idle"), 1400);
       return nextPayload;
@@ -445,10 +513,10 @@ export function SettingsClient() {
           </div>
           <nav className="space-y-1">
             <SettingsNavButton
-              active={activeTab === "appearance"}
-              icon={<Sun className="size-5" />}
-              label="外观"
-              onClick={() => setActiveTab("appearance")}
+              active={activeTab === "general"}
+              icon={<SlidersHorizontal className="size-5" />}
+              label="通用"
+              onClick={() => setActiveTab("general")}
             />
             <SettingsNavButton
               active={activeTab === "usage"}
@@ -461,6 +529,18 @@ export function SettingsClient() {
               icon={<Server className="size-5" />}
               label="模型配置"
               onClick={() => setActiveTab("models")}
+            />
+            <SettingsNavButton
+              active={activeTab === "mcp"}
+              icon={<Server className="size-5" />}
+              label="MCP 工具"
+              onClick={() => setActiveTab("mcp")}
+            />
+            <SettingsNavButton
+              active={activeTab === "plugins"}
+              icon={<Puzzle className="size-5" />}
+              label="Agent 插件"
+              onClick={() => setActiveTab("plugins")}
             />
             <SettingsNavButton
               active={activeTab === "local"}
@@ -483,8 +563,14 @@ export function SettingsClient() {
         </aside>
 
         <main className="px-10 py-8">
-          {activeTab === "appearance" ? (
-            <AppearanceSettings
+          {activeTab === "general" ? (
+            <GeneralSettings
+              autoDreamEnabled={autoDreamEnabled}
+              defaultSessionPermissionMode={defaultSessionPermissionMode}
+              defaultReasoningEffort={defaultReasoningEffort}
+              defaultModelSpeed={defaultModelSpeed}
+              lastTextModelId={lastTextModelId || textModelOptions[0]?.id || ""}
+              textModelOptions={textModelOptions}
               onChange={(nextTheme) => {
                 const previousTheme = theme;
                 setTheme(nextTheme);
@@ -494,6 +580,32 @@ export function SettingsClient() {
                   setTheme(previousTheme);
                   announceThemePreference(previousTheme);
                 });
+              }}
+              onAutoDreamChange={(enabled) => {
+                if (enabled) {
+                  setShowAutoDreamConfirmation(true);
+                  return;
+                }
+                setAutoDreamEnabled(false);
+                void persistSettings({ autoDreamEnabled: false });
+              }}
+              onPermissionModeChange={(mode) => {
+                setDefaultSessionPermissionMode(mode);
+                void persistSettings({ defaultSessionPermissionMode: mode });
+              }}
+              onReasoningEffortChange={(effort) => {
+                setDefaultReasoningEffort(effort);
+                setThinkingEnabled(true);
+                void persistSettings({ defaultReasoningEffort: effort, thinkingEnabled: true });
+              }}
+              onModelSpeedChange={(speed) => {
+                setDefaultModelSpeed(speed);
+                void persistSettings({ defaultModelSpeed: speed });
+              }}
+              onTextModelChange={(modelId) => {
+                setLastTextModelId(modelId);
+                void rememberAiModelPreference("text", modelId);
+                void persistSettings({ lastTextModelId: modelId });
               }}
               saveState={saveState}
               theme={theme}
@@ -536,6 +648,19 @@ export function SettingsClient() {
               providers={modelProviders}
             />
           ) : null}
+
+          {activeTab === "mcp" ? (
+            <McpServerSettings
+              servers={mcpServers}
+              saveState={saveState}
+              onChange={(servers) => {
+                setMcpServers(servers);
+                void persistSettings({ mcpServers: servers });
+              }}
+            />
+          ) : null}
+
+          {activeTab === "plugins" ? <AgentPluginSettings /> : null}
 
           {activeTab === "local" ? (
             <LocalDataSettings
@@ -581,6 +706,16 @@ export function SettingsClient() {
           provider={editingProxyProvider}
         />
       ) : null}
+      {showAutoDreamConfirmation ? (
+        <AutoDreamConfirmation
+          onCancel={() => setShowAutoDreamConfirmation(false)}
+          onConfirm={() => {
+            setShowAutoDreamConfirmation(false);
+            setAutoDreamEnabled(true);
+            void persistSettings({ autoDreamEnabled: true });
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -617,67 +752,118 @@ const THEME_OPTIONS: Array<{
   },
 ];
 
-function AppearanceSettings({
+const PERMISSION_MODE_OPTIONS: Array<{ label: string; description: string; value: ZenmeSessionPermissionMode }> = [
+  { value: "untrusted", label: "不可信", description: "采取操作前始终询问。" },
+  { value: "onRequest", label: "按请求", description: "Agent 请求提升权限时询问。" },
+  { value: "neverAsk", label: "从不请求审批", description: "受阻操作直接失败，不请求批准。" },
+];
+
+const REASONING_EFFORT_OPTIONS: Array<{ label: string; value: ZenmeReasoningEffort }> = [
+  { value: "low", label: "轻" },
+  { value: "medium", label: "中" },
+  { value: "high", label: "高" },
+  { value: "xhigh", label: "极高" },
+];
+
+const MODEL_SPEED_OPTIONS: Array<{ description: string; label: string; value: ZenmeModelSpeed }> = [
+  { value: "standard", label: "标准", description: "使用服务商的标准处理队列。" },
+  { value: "fast", label: "快速", description: "支持时使用 Priority / Fast 通道，可能消耗更多额度或产生更高费用。" },
+];
+
+function GeneralSettings({
+  autoDreamEnabled,
+  defaultSessionPermissionMode,
+  defaultModelSpeed,
+  defaultReasoningEffort,
+  lastTextModelId,
   onChange,
+  onAutoDreamChange,
+  onModelSpeedChange,
+  onPermissionModeChange,
+  onReasoningEffortChange,
+  onTextModelChange,
   saveState,
+  textModelOptions,
   theme,
 }: {
+  autoDreamEnabled: boolean;
+  defaultSessionPermissionMode: ZenmeSessionPermissionMode;
+  defaultModelSpeed: ZenmeModelSpeed;
+  defaultReasoningEffort: ZenmeReasoningEffort;
+  lastTextModelId: string;
   onChange: (theme: ZenmeTheme) => void;
+  onAutoDreamChange: (enabled: boolean) => void;
+  onModelSpeedChange: (speed: ZenmeModelSpeed) => void;
+  onPermissionModeChange: (mode: ZenmeSessionPermissionMode) => void;
+  onReasoningEffortChange: (effort: ZenmeReasoningEffort) => void;
+  onTextModelChange: (modelId: string) => void;
   saveState: "idle" | "saving" | "saved" | "failed";
+  textModelOptions: ReturnType<typeof useAiModelOptions>;
   theme: ZenmeTheme;
 }) {
   return (
-    <section className="max-w-3xl space-y-5">
+    <section className="max-w-3xl space-y-8">
       <div>
-        <h2 className="text-xl font-medium text-[var(--color-text-primary)]">外观</h2>
+        <h2 className="text-xl font-medium text-[var(--color-text-primary)]">通用</h2>
         <p className="mt-1 text-sm text-[var(--color-text-tertiary)]">
-          主题会应用到工作台、画布、节点、阅读器和所有弹层。
+          配置界面外观以及新 Project Agent 会话的默认行为。
         </p>
       </div>
-      <div className="grid grid-cols-2 gap-4" role="radiogroup" aria-label="界面主题">
-        {THEME_OPTIONS.map((option) => {
-          const selected = theme === option.value;
-          return (
-            <button
-              aria-checked={selected}
-              className={`group overflow-hidden rounded-xl border text-left transition focus-visible:outline-none focus-visible:shadow-[var(--shadow-focus-ring)] ${
-                selected
-                  ? "border-[var(--color-border-focus)] ring-1 ring-[var(--color-border-focus)]"
-                  : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
-              }`}
-              key={option.value}
-              onClick={() => onChange(option.value)}
-              role="radio"
-              type="button"
-            >
-              <ThemePreview theme={option.value} />
-              <span className="flex items-start gap-3 bg-[var(--color-surface-container-lowest)] px-4 py-3.5">
-                <span className="mt-0.5 text-[var(--color-text-secondary)]">{option.icon}</span>
-                <span className="min-w-0">
-                  <span className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
-                    {option.label}
-                    {selected ? <Check className="size-4" /> : null}
-                  </span>
-                  <span className="mt-1 block text-xs leading-5 text-[var(--color-text-tertiary)]">
-                    {option.description}
+      <SettingsSectionBlock title="外观" description="主题会应用到工作台、画布、节点、阅读器和所有弹层。">
+        <div className="grid grid-cols-2 gap-4" role="radiogroup" aria-label="界面主题">
+          {THEME_OPTIONS.map((option) => {
+            const selected = theme === option.value;
+            return (
+              <button aria-checked={selected} className={`group overflow-hidden rounded-xl border text-left transition focus-visible:outline-none focus-visible:shadow-[var(--shadow-focus-ring)] ${selected ? "border-[var(--color-border-focus)] ring-1 ring-[var(--color-border-focus)]" : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]"}`} key={option.value} onClick={() => onChange(option.value)} role="radio" type="button">
+                <ThemePreview theme={option.value} />
+                <span className="flex items-start gap-3 bg-[var(--color-surface-container-lowest)] px-4 py-3.5">
+                  <span className="mt-0.5 text-[var(--color-text-secondary)]">{option.icon}</span>
+                  <span className="min-w-0"><span className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">{option.label}{selected ? <Check className="size-4" /> : null}</span>
                   </span>
                 </span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      <p aria-live="polite" className="text-sm text-[var(--color-text-tertiary)]">
-        {saveState === "saving"
-          ? "正在保存主题…"
-          : saveState === "saved"
-            ? "主题已保存"
-            : saveState === "failed"
-              ? "主题保存失败，请重试"
-              : "切换后立即生效。"}
-      </p>
+              </button>
+            );
+          })}
+        </div>
+      </SettingsSectionBlock>
+      <SettingsSectionBlock title="默认会话权限" description="应用于新建的 Project Agent Turn；现有会话不被改写。">
+        <select aria-label="默认会话权限" className="h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] px-3 text-sm" onChange={(event) => onPermissionModeChange(event.target.value as ZenmeSessionPermissionMode)} value={defaultSessionPermissionMode}>
+          {PERMISSION_MODE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label} — {option.description}</option>)}
+        </select>
+      </SettingsSectionBlock>
+      <SettingsSectionBlock title="默认模型" description="作为新建 Project Agent Turn 和节点对话的首选文本模型。">
+        <select aria-label="默认模型" className="h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] px-3 text-sm" disabled={!textModelOptions.length} onChange={(event) => onTextModelChange(event.target.value)} value={lastTextModelId}>
+          {textModelOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+        </select>
+      </SettingsSectionBlock>
+      <SettingsSectionBlock title="推理强度" description="控制支持该能力的模型在每个 Project Agent Turn 中投入的推理量。">
+        <select aria-label="推理强度" className="h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] px-3 text-sm" onChange={(event) => onReasoningEffortChange(event.target.value as ZenmeReasoningEffort)} value={defaultReasoningEffort}>
+          {REASONING_EFFORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </SettingsSectionBlock>
+      <SettingsSectionBlock title="模型速度" description="控制支持该能力的服务商处理通道；不支持的服务商保持默认行为。">
+        <select aria-label="模型速度" className="h-11 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] px-3 text-sm" onChange={(event) => onModelSpeedChange(event.target.value as ZenmeModelSpeed)} value={defaultModelSpeed}>
+          {MODEL_SPEED_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label} — {option.description}</option>)}
+        </select>
+      </SettingsSectionBlock>
+      <SettingsSectionBlock title="自动做梦" description="在会话积累到阈值后，后台整理 Project Memory 候选。">
+        <SettingsToggle checked={autoDreamEnabled} label="启用自动做梦" description={autoDreamEnabled ? "已启用；整理结果仍需用户确认后才进入长期上下文。" : "默认关闭，因为后台整理会额外调用模型并消耗 Token。"} onChange={onAutoDreamChange} />
+      </SettingsSectionBlock>
+      <p aria-live="polite" className="text-sm text-[var(--color-text-tertiary)]">{saveState === "saving" ? "正在保存…" : saveState === "failed" ? "设置保存失败，请重试" : "设置会自动保存。"}</p>
     </section>
   );
+}
+
+function SettingsSectionBlock({ children, description, title }: { children: React.ReactNode; description: string; title: string }) {
+  return <div><h3 className="text-base font-medium text-[var(--color-text-primary)]">{title}</h3><p className="mb-3 mt-1 text-sm text-[var(--color-text-tertiary)]">{description}</p>{children}</div>;
+}
+
+function SettingsToggle({ checked, description, label, onChange }: { checked: boolean; description: string; label: string; onChange: (checked: boolean) => void }) {
+  return <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] px-4 py-3"><input aria-label={label} checked={checked} className="mt-1 size-4" onChange={(event) => onChange(event.target.checked)} type="checkbox" /><span><span className="block text-sm font-medium text-[var(--color-text-primary)]">{label}</span><span className="mt-1 block text-xs leading-5 text-[var(--color-text-tertiary)]">{description}</span></span></label>;
+}
+
+function AutoDreamConfirmation({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/45 px-6"><div aria-labelledby="auto-dream-title" className="w-full max-w-md rounded-2xl bg-[var(--color-surface-container-lowest)] p-6 shadow-2xl" role="dialog"><h2 className="text-lg font-medium" id="auto-dream-title">启用自动做梦？</h2><p className="mt-3 text-sm leading-6 text-[var(--color-text-secondary)]">符合条件的会话结束后，Zenme 会在后台调用当前文本模型整理记忆，因此会额外消耗 Token。生成内容只作为候选 Memory，不会自动成为可信事实。</p><div className="mt-6 flex justify-end gap-2"><Button onClick={onCancel} type="button" variant="ghost">取消</Button><Button onClick={onConfirm} type="button">启用自动做梦</Button></div></div></div>;
 }
 
 function ThemePreview({ theme }: { theme: ZenmeTheme }) {
@@ -1019,6 +1205,310 @@ function startOfLocalDay(date: Date) {
 
 function formatLocalDateKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function McpServerSettings({
+  onChange,
+  saveState,
+  servers,
+}: {
+  onChange: (servers: McpServerConfig[]) => void;
+  saveState: "idle" | "saving" | "saved" | "failed";
+  servers: McpServerConfig[];
+}) {
+  const [name, setName] = useState("");
+  const [command, setCommand] = useState("");
+  const [argsText, setArgsText] = useState("");
+
+  function addServer(event: React.FormEvent) {
+    event.preventDefault();
+    if (!name.trim() || !command.trim()) return;
+    onChange([...servers, {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      enabled: true,
+      command: command.trim(),
+      args: argsText.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean),
+      connectTimeoutMs: 10_000,
+      callTimeoutMs: 120_000,
+      access: "readOnly",
+    }]);
+    setName("");
+    setCommand("");
+    setArgsText("");
+  }
+
+  return (
+    <section className="max-w-4xl space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">MCP 工具</h2>
+        <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+          连接本机 stdio MCP Server。服务进程在当前项目 Workspace 中启动；工具会在连接后动态加入 Project Agent。
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {servers.length === 0 ? (
+          <div className="rounded-md border border-dashed border-[var(--color-border)] p-5 text-sm text-[var(--color-text-secondary)]">
+            尚未配置 MCP Server。
+          </div>
+        ) : servers.map((server) => (
+          <div className="rounded-md border border-[var(--color-border)] p-4" key={server.id}>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="font-medium text-[var(--color-text-primary)]">{server.name}</div>
+                <code className="mt-1 block truncate text-xs text-[var(--color-text-secondary)]">
+                  {[server.command, ...server.args].join(" ")}
+                </code>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onChange(servers.map((item) => item.id === server.id
+                    ? { ...item, access: item.access === "full" ? "readOnly" : "full" }
+                    : item))}
+                >
+                  {server.access === "full" ? "完全访问" : "只读"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onChange(servers.map((item) => item.id === server.id ? { ...item, enabled: !item.enabled } : item))}
+                >
+                  {server.enabled ? "已启用" : "已停用"}
+                </Button>
+                <Button aria-label={`删除 ${server.name}`} size="icon" variant="ghost" onClick={() => onChange(servers.filter((item) => item.id !== server.id))}>
+                  <Trash2 className="size-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <form className="space-y-4 rounded-md border border-[var(--color-border)] p-5" onSubmit={addServer}>
+        <div>
+          <h3 className="font-medium text-[var(--color-text-primary)]">添加 stdio Server</h3>
+          <p className="mt-1 text-xs text-[var(--color-text-secondary)]">默认只注入声明了 readOnlyHint 的工具；确认信任该服务后可切换为完全访问。</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Input aria-label="MCP 服务名称" placeholder="服务名称，例如 Filesystem" value={name} onChange={(event) => setName(event.target.value)} />
+          <Input aria-label="MCP 启动命令" placeholder="命令，例如 npx" value={command} onChange={(event) => setCommand(event.target.value)} />
+        </div>
+        <textarea
+          aria-label="MCP 命令参数"
+          className="min-h-28 w-full resize-y rounded-md border border-[var(--color-border)] bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+          placeholder={"参数，每行一个\n-y\n@modelcontextprotocol/server-filesystem\n."}
+          value={argsText}
+          onChange={(event) => setArgsText(event.target.value)}
+        />
+        <div className="flex items-center gap-3">
+          <Button type="submit" disabled={!name.trim() || !command.trim()}>添加 Server</Button>
+          <span className="text-xs text-[var(--color-text-secondary)]">
+            {saveState === "saving" ? "正在保存…" : saveState === "saved" ? "已保存" : saveState === "failed" ? "保存失败" : ""}
+          </span>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+function AgentPluginSettings() {
+  const [plugins, setPlugins] = useState<AgentPlugin[]>([]);
+  const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
+  const [message, setMessage] = useState("");
+  const [editing, setEditing] = useState<{ plugin: AgentPlugin; configuration: AgentPluginConfiguration } | null>(null);
+
+  async function loadPlugins() {
+    setState("loading");
+    try {
+      const response = await fetch("/api/settings/agent-plugins", { cache: "no-store" });
+      const body = await response.json() as { plugins?: AgentPlugin[]; error?: string };
+      if (!response.ok || !body.plugins) throw new Error(body.error || "插件加载失败");
+      setPlugins(body.plugins);
+      setState("ready");
+      setMessage("");
+    } catch (error) {
+      setState("failed");
+      setMessage(error instanceof Error ? error.message : "插件加载失败");
+    }
+  }
+
+  useEffect(() => { void loadPlugins(); }, []);
+
+  return (
+    <section className="max-w-4xl space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-semibold text-[var(--color-text-primary)]">Agent 插件</h2>
+          <p className="mt-1 text-sm text-[var(--color-text-secondary)]">
+            配置已通过 cc-haha 兼容设置启用的插件。敏感字段独立保存在本地凭据文件中，不会返回给界面或模型。
+          </p>
+        </div>
+        <Button disabled={state === "loading"} onClick={() => void loadPlugins()} size="sm" type="button" variant="outline">
+          <RefreshCw className={`mr-2 size-4 ${state === "loading" ? "animate-spin" : ""}`} />刷新
+        </Button>
+      </div>
+
+      {state === "failed" ? <p className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{message}</p> : null}
+      {state === "loading" && plugins.length === 0 ? <p className="text-sm text-[var(--color-text-tertiary)]">正在读取插件配置…</p> : null}
+      {state === "ready" && plugins.length === 0 ? (
+        <div className="rounded-md border border-dashed border-[var(--color-border)] p-5 text-sm text-[var(--color-text-secondary)]">
+          尚无已启用插件。Zenme 会读取 `~/.claude/settings.json` 与 `~/.zenme/settings.json` 中的 enabledPlugins。
+        </div>
+      ) : null}
+
+      <div className="space-y-4">
+        {plugins.map((plugin) => (
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-container-lowest)] p-5" key={plugin.id}>
+            <div>
+              <h3 className="font-medium text-[var(--color-text-primary)]">{plugin.name}</h3>
+              <p className="mt-0.5 text-xs text-[var(--color-text-tertiary)]">{plugin.id}</p>
+            </div>
+            {plugin.configurations.length ? (
+              <div className="mt-4 divide-y divide-[var(--color-border)] border-y border-[var(--color-border)]">
+                {plugin.configurations.map((configuration) => (
+                  <div className="flex items-center justify-between gap-4 py-3" key={configuration.id}>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-[var(--color-text-primary)]">{configuration.label}</div>
+                      <div className={`mt-0.5 text-xs ${configuration.missing.length ? "text-red-600" : "text-[var(--color-text-tertiary)]"}`}>
+                        {configuration.missing.length
+                          ? `缺少必需配置：${configuration.missing.join("、")}`
+                          : `${configuration.configuredKeys.length} 项配置已就绪`}
+                      </div>
+                    </div>
+                    <Button onClick={() => setEditing({ plugin, configuration })} size="sm" type="button" variant="outline">
+                      配置
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="mt-4 text-sm text-[var(--color-text-tertiary)]">该插件没有需要填写的选项。</p>}
+            {plugin.errors.map((error) => (
+              <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700" key={`${error.source}:${error.error}`}>
+                {error.source}：{error.error}
+              </p>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {editing ? (
+        <AgentPluginConfigurationModal
+          configuration={editing.configuration}
+          onClose={() => setEditing(null)}
+          onSaved={(nextPlugins) => {
+            setPlugins(nextPlugins);
+            setEditing(null);
+          }}
+          plugin={editing.plugin}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function AgentPluginConfigurationModal({
+  configuration,
+  onClose,
+  onSaved,
+  plugin,
+}: {
+  configuration: AgentPluginConfiguration;
+  onClose: () => void;
+  onSaved: (plugins: AgentPlugin[]) => void;
+  plugin: AgentPlugin;
+}) {
+  const [draft, setDraft] = useState<Record<string, unknown>>(() => Object.fromEntries(
+    Object.entries(configuration.schema).map(([key, field]) => [
+      key,
+      field.sensitive ? "" : configuration.values[key] ?? field.default ?? (field.type === "boolean" ? false : ""),
+    ]),
+  ));
+  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "failed">("idle");
+  const [error, setError] = useState("");
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    setSaveState("saving");
+    setError("");
+    try {
+      const response = await fetch("/api/settings/agent-plugins", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pluginId: plugin.id, configurationId: configuration.id, values: draft }),
+      });
+      const body = await response.json() as { plugins?: AgentPlugin[]; error?: string };
+      if (!response.ok || !body.plugins) throw new Error(body.error || "插件配置保存失败");
+      onSaved(body.plugins);
+    } catch (caught) {
+      setSaveState("failed");
+      setError(caught instanceof Error ? caught.message : "插件配置保存失败");
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/45 px-6" role="presentation">
+      <form aria-labelledby="agent-plugin-config-title" className="flex max-h-[80vh] w-full max-w-xl flex-col rounded-2xl bg-[var(--color-surface-container-lowest)] p-6 shadow-2xl" onSubmit={save} role="dialog">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-medium" id="agent-plugin-config-title">配置 {configuration.label}</h2>
+            <p className="mt-1 text-sm text-[var(--color-text-tertiary)]">{plugin.name} · {plugin.id}</p>
+          </div>
+          <Button aria-label="关闭插件配置" onClick={onClose} size="icon" type="button" variant="ghost"><X className="size-5" /></Button>
+        </div>
+        <OverlayScrollArea className="mt-6 min-h-0 flex-1" viewportClassName="max-h-[calc(80vh-11rem)] overflow-y-auto pr-2">
+          <div className="space-y-5">
+            {Object.entries(configuration.schema).map(([key, field]) => {
+            const label = field.title || key;
+            const configured = configuration.configuredKeys.includes(key);
+            if (field.type === "boolean") return (
+              <SettingsToggle
+                checked={draft[key] === true}
+                description={field.description || key}
+                key={key}
+                label={`${label}${field.required ? " *" : ""}`}
+                onChange={(checked) => setDraft((current) => ({ ...current, [key]: checked }))}
+              />
+            );
+            if (field.multiple) return (
+              <label className="block" key={key}>
+                <span className="text-sm font-medium">{label}{field.required ? " *" : ""}</span>
+                {field.description ? <span className="mt-1 block text-xs text-[var(--color-text-tertiary)]">{field.description}</span> : null}
+                <textarea className="mt-2 min-h-24 w-full rounded-md border border-[var(--color-border)] bg-transparent px-3 py-2 text-sm" onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value.split(/\r?\n/).filter(Boolean) }))} value={Array.isArray(draft[key]) ? (draft[key] as string[]).join("\n") : ""} />
+              </label>
+            );
+            return (
+              <label className="block" key={key}>
+                <span className="text-sm font-medium">{label}{field.required ? " *" : ""}</span>
+                {field.description ? <span className="mt-1 block text-xs text-[var(--color-text-tertiary)]">{field.description}</span> : null}
+                <span className="relative mt-2 block">
+                  <Input
+                    aria-label={label}
+                    max={field.max}
+                    min={field.min}
+                    onChange={(event) => setDraft((current) => ({ ...current, [key]: field.type === "number" ? (event.target.value === "" ? "" : Number(event.target.value)) : event.target.value }))}
+                    placeholder={field.sensitive && configured ? "已配置；留空保持原值" : undefined}
+                    type={field.type === "number" ? "number" : field.sensitive && !showSecrets[key] ? "password" : "text"}
+                    value={typeof draft[key] === "string" || typeof draft[key] === "number" ? draft[key] as string | number : ""}
+                  />
+                  {field.sensitive ? <button aria-label={`${showSecrets[key] ? "隐藏" : "显示"}${label}`} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-[var(--color-text-tertiary)]" onClick={() => setShowSecrets((current) => ({ ...current, [key]: !current[key] }))} type="button">{showSecrets[key] ? <EyeOff className="size-4" /> : <Eye className="size-4" />}</button> : null}
+                </span>
+              </label>
+            );
+            })}
+          </div>
+          {error ? <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+        </OverlayScrollArea>
+        <div className="mt-6 flex justify-end gap-2">
+          <Button onClick={onClose} type="button" variant="ghost">取消</Button>
+          <Button disabled={saveState === "saving"} type="submit">{saveState === "saving" ? "保存中…" : "保存"}</Button>
+        </div>
+      </form>
+    </div>
+  );
 }
 
 function ModelProviderSettings({
@@ -1406,6 +1896,13 @@ function ProviderEditorModal({
   }
 
   async function fetchProviderModels() {
+    if (draft.apiFormat === "volcengine_agent_plan") {
+      setModelFetchState("unsupported");
+      setModelFetchMessage(
+        "火山方舟 Agent Plan 的个人版 Bearer API Key 当前不支持在线枚举模型；请使用 Zenme 内置模型目录或手动添加模型。",
+      );
+      return;
+    }
     if (draft.apiFormat === "openrouter") {
       setModelFetchState("unsupported");
       setModelFetchMessage("OpenRouter 模型池过大，当前请手动添加需要启用的模型。");
@@ -1445,7 +1942,7 @@ function ProviderEditorModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/45 px-6 py-[80px]">
-      <div className="zenme-shadow-overlay flex max-h-[calc(100vh-160px)] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white">
+      <div className="zenme-shadow-overlay flex h-[calc(100vh-160px)] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white">
         <header className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
           <h2 className="text-lg font-medium text-[var(--color-text-primary)]">
             {isNewProvider ? "添加服务商" : "编辑服务商"}
@@ -1461,6 +1958,7 @@ function ProviderEditorModal({
 
         <OverlayScrollArea
           className="min-h-0 flex-1"
+          contentKey={`${draft.models.length}:${fetchedModelIds.length}:${modelFetchState}`}
           viewportClassName="h-full overflow-auto px-5 py-4"
         >
           <div className="grid gap-4">
@@ -1602,21 +2100,28 @@ function ProviderEditorModal({
                     <Plus className="size-4" />
                     添加模型
                   </Button>
-                  <Button
-                    disabled={modelFetchState === "loading"}
-                    onClick={fetchProviderModels}
-                    type="button"
-                    variant="outline"
-                  >
-                    {modelFetchState === "loading" ? (
-                      <RefreshCw className="size-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="size-4" />
-                    )}
-                    拉取模型
-                  </Button>
+                  {draft.apiFormat !== "volcengine_agent_plan" ? (
+                    <Button
+                      disabled={modelFetchState === "loading"}
+                      onClick={fetchProviderModels}
+                      type="button"
+                      variant="outline"
+                    >
+                      {modelFetchState === "loading" ? (
+                        <RefreshCw className="size-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-4" />
+                      )}
+                      拉取模型
+                    </Button>
+                  ) : null}
                 </div>
               </div>
+              {draft.apiFormat === "volcengine_agent_plan" ? (
+                <p className="mb-3 rounded-md bg-[var(--color-surface-container-lowest)] px-3 py-2 text-xs text-[var(--color-text-secondary)]">
+                  Agent Plan 模型列表来自 Zenme 内置目录；当前 Bearer API Key 无模型发现接口，不显示“拉取模型”。如官方新增模型，可手动添加 Model ID。
+                </p>
+              ) : null}
               {modelFetchMessage ? (
                 <p
                   className={`mb-3 rounded-md px-3 py-2 text-xs ${

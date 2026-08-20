@@ -90,6 +90,7 @@ export type CanvasNodeData = {
   kind:
     | "image"
     | "file"
+    | "workspaceFile"
     | "music"
     | "musicFolder"
     | "musicPlayer"
@@ -104,6 +105,8 @@ export type CanvasNodeData = {
     | "videoGeneration"
     | "video"
     | "agent"
+    | "agentExecution"
+    | "globalAgent"
     | "book"
     | "note"
     | "reader"
@@ -140,6 +143,9 @@ export type CanvasNodeData = {
   readingError?: string;
   fileName?: string;
   fileSize?: number;
+  workspaceFileDocumentId?: string;
+  workspaceRootId?: string;
+  workspaceRelativePath?: string;
   coverUrl?: string;
   previewUrl?: string;
   originalUrl?: string;
@@ -217,8 +223,9 @@ export type CanvasNodeData = {
   aiResponse?: string;
   aiModel?: string;
   aiCreatedAt?: string;
-  aiStatus?: "generating" | "done" | "failed";
+  aiStatus?: "generating" | "waitingApproval" | "waitingInput" | "done" | "failed";
   aiError?: string;
+  agentTurnId?: string;
   aiTaskStartedAt?: string;
   aiTaskDurationMs?: number;
   aiResponseExpanded?: boolean;
@@ -262,6 +269,21 @@ export type CanvasNodeData = {
   executionId?: string;
   nodeRunId?: string;
   attemptId?: string;
+  agentInstruction?: string;
+  agentModel?: string;
+  nodeLifecycle?: "ephemeral" | "working" | "knowledge" | "pinned" | "archived";
+  nodeLifecycleBeforeArchive?: "ephemeral" | "working" | "knowledge" | "pinned";
+  agentDetailsFolded?: boolean;
+  agentExpandedHeight?: number;
+  ownerExecutionId?: string;
+  globalOrchestrationId?: string;
+  globalGoal?: string;
+  globalModel?: string;
+  onUpdateNodeLifecycle?: (
+    nodeId: string,
+    lifecycle: NonNullable<CanvasNodeData["nodeLifecycle"]>,
+  ) => void;
+  onToggleAgentDetailsFolded?: (nodeId: string, folded: boolean) => void;
   externalTaskId?: string;
   assetRefs?: AssetRef[];
   /** @deprecated Read legacy snapshots only; use externalTaskId. */
@@ -315,6 +337,14 @@ export type CanvasNodeData = {
   onToggleAiResponseExpanded?: (
     nodeId: string,
     expanded: boolean,
+  ) => void;
+  onSyncAgentTurnState?: (
+    nodeId: string,
+    state: {
+      answer?: string;
+      error?: string;
+      status: "waitingApproval" | "waitingInput" | "done" | "failed";
+    },
   ) => void;
   onToggleTextExpanded?: (
     nodeId: string,
@@ -387,8 +417,18 @@ export type CanvasNodeData = {
   ) => void;
   onSubmitTextGenerationNode?: (
     nodeId: string,
-    input?: { model?: string; prompt?: string },
+    input?: {
+      imageDataUrls?: string[];
+      model?: string;
+      retryExistingTurn?: boolean;
+      modelSpeed?: import("@/lib/local/settings").ZenmeModelSpeed;
+      permissionMode?: import("@/lib/local/settings").ZenmeSessionPermissionMode;
+      prompt?: string;
+      reasoningEffort?: import("@/lib/local/settings").ZenmeReasoningEffort;
+    },
   ) => Promise<void> | void;
+  onSteerTextGenerationNode?: (nodeId: string, prompt: string) => Promise<void> | void;
+  onStopTextGenerationNode?: (nodeId: string) => void;
   onUpdateImageNode?: (
     nodeId: string,
     updates: Partial<

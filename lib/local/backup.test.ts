@@ -60,6 +60,16 @@ describe("local backup", () => {
     expect(settings).toContain('"apiKey": ""');
   });
 
+  it("excludes rebuildable project derived indexes from backups", async () => {
+    await fs.mkdir(path.join(dataDir, "projects", "project-1", "derived", "knowledge"), { recursive: true });
+    await fs.writeFile(path.join(dataDir, "projects", "project-1", "project.json"), "{}\n");
+    await fs.writeFile(path.join(dataDir, "projects", "project-1", "derived", "knowledge", "index.json"), '{"large":"derived"}\n');
+
+    const zip = new AdmZip(await createLocalDataBackup(dataDir));
+    expect(zip.getEntry("zenme-data/projects/project-1/project.json")).not.toBeNull();
+    expect(zip.getEntry("zenme-data/projects/project-1/derived/knowledge/index.json")).toBeNull();
+  });
+
   it("removes credentials embedded in proxy URLs from backups", async () => {
     await fs.writeFile(
       path.join(dataDir, "settings.json"),

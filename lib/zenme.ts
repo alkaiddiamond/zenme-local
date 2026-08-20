@@ -10,6 +10,7 @@ export type ZenmeProject = {
   updatedAt: string;
   lastSavedAt?: string | null;
   lastOpenedAt?: string | null;
+  workspaceBindingId?: string | null;
 };
 
 export type CanvasSnapshotPayload = {

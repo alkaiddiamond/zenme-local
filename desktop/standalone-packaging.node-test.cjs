@@ -20,6 +20,10 @@ const standaloneVerifier = fs.readFileSync(
   path.join(projectRoot, "desktop", "scripts", "verify-standalone-runtime.cjs"),
   "utf8",
 );
+const standalonePreparer = fs.readFileSync(
+  path.join(projectRoot, "desktop", "scripts", "prepare-standalone-build.cjs"),
+  "utf8",
+);
 const packagedVerifier = fs.readFileSync(
   path.join(projectRoot, "desktop", "scripts", "verify-packaged-runtime.cjs"),
   "utf8",
@@ -27,6 +31,13 @@ const packagedVerifier = fs.readFileSync(
 
 test("desktop packages the traced Next standalone runtime", () => {
   assert.match(nextConfig, /output: "standalone"/);
+  assert.match(nextConfig, /distDir: nextDistDir/);
+  assert.match(nextConfig, /NODE_ENV === "development" \? "\.next-dev" : "\.next"/);
+  assert.match(packageJson.scripts.build, /prepare-standalone-build\.cjs/);
+  assert.match(standalonePreparer, /\.next["'],\s*["']standalone/);
+  assert.match(standalonePreparer, /rmSync\(standaloneDir, \{ force: true, recursive: true \}\)/);
+  assert.match(nextConfig, /\.\/dist-desktop\/\*\*/);
+  assert.match(nextConfig, /\.\/\.electron-builder-cache\/\*\*/);
   assert.equal(packageJson.build.asarUnpack, undefined);
   assert.ok(packageJson.build.files.includes("!node_modules/**/*"));
 
@@ -52,6 +63,8 @@ test("desktop packaging requires both OCR models and the Tesseract worker", () =
   assert.match(standaloneVerifier, /tesseract\.js\/src\/worker-script\/node\/index\.js/);
   assert.match(standaloneVerifier, /chi_sim\.traineddata\.gz/);
   assert.match(standaloneVerifier, /eng\.traineddata\.gz/);
+  assert.match(standaloneVerifier, /\.next\/standalone\/dist-desktop/);
+  assert.match(standaloneVerifier, /\.next\/standalone\/\.electron-builder-cache/);
   assert.equal(
     packageJson.build.afterPack,
     "desktop/scripts/verify-packaged-runtime.cjs",
@@ -81,8 +94,17 @@ test("packaged desktop starts standalone server while development keeps next dev
   );
   assert.match(desktopMain, /path\.join\(root, "server\.js"\)/);
   assert.match(desktopMain, /require\.resolve\("next\/dist\/bin\/next"\)/);
+  assert.match(desktopMain, /ZENME_NEXT_DIST_DIR = "\.next-dev"/);
   assert.match(desktopMain, /"dev",[\s\S]*?"--hostname"/);
   assert.match(desktopMain, /ELECTRON_RUN_AS_NODE/);
   assert.match(desktopMain, /LOCAL_MODEL_OCR_CACHE_PATH/);
   assert.match(desktopMain, /LOCAL_MODEL_OCR_LANG_PATH/);
+  assert.match(desktopMain, /verifyPackagedWorkspaceFlow/);
+  assert.match(desktopMain, /body: \{ rootPath: workspaceRoot \}/);
+  assert.match(desktopMain, /spawnSync\(npmExecutable, \["test"\]/);
+  assert.match(desktopMain, /spawn\(npmExecutable, \["run", "preview"\]/);
+  assert.match(desktopMain, /verifyBrowserText\(previewUrl, "beta"\)/);
+  assert.match(desktopMain, /verifyBrowserText\(previewUrl, "gamma"\)/);
+  assert.match(desktopMain, /\[zenme-smoke\] failed/);
+  assert.match(desktopMain, /app\.exit\(1\)/);
 });

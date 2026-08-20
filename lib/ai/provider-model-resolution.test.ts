@@ -29,7 +29,7 @@ describe("provider-scoped model resolution", () => {
     ]);
     expect(glmOptions.map((selection) => selection.label)).toEqual([
       "GLM 5.2（Zhipu GLM）",
-      "GLM 5.2（Agent Plan）",
+      "GLM 5.2（即将下线）（火山方舟 Agent Plan）",
     ]);
   });
 
@@ -62,5 +62,19 @@ describe("provider-scoped model resolution", () => {
       modelId: "glm-5.2",
       provider: { id: VOLCENGINE_AGENT_PLAN_PROVIDER_ID },
     });
+  });
+
+  it("exposes embedding-only models through the same provider-scoped resolution", () => {
+    const option = getProviderModelSelections(providers, "embedding")[0];
+
+    expect(option).toMatchObject({
+      label: "Doubao Embedding Vision",
+      modelId: "doubao-embedding-vision",
+      provider: { id: VOLCENGINE_AGENT_PLAN_PROVIDER_ID },
+    });
+    expect(resolveProviderModelSelection(option.id, providers, "embedding")).toEqual(option);
+    expect(getProviderModelSelections(providers, "text").some(
+      (selection) => selection.modelId === "doubao-embedding-vision",
+    )).toBe(false);
   });
 });

@@ -104,4 +104,24 @@ describe("canvas execution recovery", () => {
     expect(result.nodes[0].data).toMatchObject({ aiStatus: "failed" });
     expect(result.nodes[0].data.aiError).toContain("应用重启");
   });
+
+  it("leaves a durable Project Agent Turn running for its timeline to reconnect", () => {
+    const result = reconcileCanvasExecutions({
+      projectId: "project-1",
+      executions: [execution({ kind: "text", nodeId: "text", status: "running" })],
+      nodes: [node("text", {
+        agentTurnId: "turn-running",
+        aiStatus: "generating",
+        kind: "agent",
+        title: "AI 回复",
+      })],
+    });
+
+    expect(result.changed).toBe(false);
+    expect(result.interruptedAttempts).toHaveLength(0);
+    expect(result.nodes[0].data).toMatchObject({
+      agentTurnId: "turn-running",
+      aiStatus: "generating",
+    });
+  });
 });

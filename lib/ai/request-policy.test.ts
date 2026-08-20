@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   getAllowedAiModels,
+  MAX_AGENT_TOOLS,
   resolveAiModel,
   validateChatBody,
 } from "./request-policy";
+import { createNativeAgentTools } from "@/lib/agent/tool-registry";
 
 describe("AI request policy", () => {
   it("exposes the server-side model allowlist", () => {
@@ -31,12 +33,12 @@ describe("AI request policy", () => {
   it("rejects excessive message counts and only applies a transport safety cap", () => {
     expect(
       validateChatBody({
-        messages: Array.from({ length: 25 }, () => ({
+        messages: Array.from({ length: 1_001 }, () => ({
           role: "user" as const,
           content: "hello",
         })),
       }),
-    ).toBe("单次对话最多支持 24 条消息");
+    ).toBe("单次对话最多支持 1000 条消息");
 
     expect(
       validateChatBody({
@@ -47,7 +49,7 @@ describe("AI request policy", () => {
 
     expect(
       validateChatBody({
-        messages: [{ role: "user", content: "x".repeat(2_000_001) }],
+        messages: [{ role: "user", content: "x".repeat(8_000_001) }],
       }),
     ).toBe("请求文本数据过大，请减少内容后重试");
   });
@@ -67,5 +69,23 @@ describe("AI request policy", () => {
       imageDataUrls: Array.from({ length: 5 }, () => "data:image/png;base64,YQ=="),
       messages: [{ role: "user", content: "识别图片" }],
     })).toBe("单次对话最多支持 4 张图片");
+  });
+
+  it("accepts the complete Project Agent registry and guards the provider limit", () => {
+    const tools = createNativeAgentTools();
+    expect(tools.length).toBeGreaterThan(32);
+    expect(validateChatBody({
+      agentTools: tools,
+      messages: [{ role: "user", content: "检查项目状态" }],
+    })).toBeNull();
+
+    expect(validateChatBody({
+      agentTools: Array.from({ length: MAX_AGENT_TOOLS + 1 }, (_, index) => ({
+        name: `tool_${index}`,
+        description: "test",
+        parameters: { type: "object" },
+      })),
+      messages: [{ role: "user", content: "继续" }],
+    })).toBe(`Agent 工具数量超过 ${MAX_AGENT_TOOLS} 个`);
   });
 });

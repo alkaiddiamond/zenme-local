@@ -37,6 +37,7 @@ type CanvasAddMenuProps = {
   onCreateTaskNode: (position: { x: number; y: number }) => void;
   onCreateTextNode: (position: { x: number; y: number }) => void;
   onCreateMusicFolderNode: (position: { x: number; y: number }) => void;
+  onOpenWorkspaceFiles: (position: { x: number; y: number }) => void;
   onUploadFiles: (position: { x: number; y: number }) => void;
 };
 
@@ -125,6 +126,7 @@ export function CanvasAddMenu({
   onCreateTextNode,
   onCreateMusicFolderNode,
   onUploadFiles,
+  onOpenWorkspaceFiles,
 }: CanvasAddMenuProps) {
   return (
     <FloatingMenu
@@ -148,6 +150,12 @@ export function CanvasAddMenu({
         onCreateMusicFolderNode={() => onCreateMusicFolderNode(menu.flowPosition)}
         onUploadFiles={() => onUploadFiles(menu.flowPosition)}
       />
+      <FloatingMenuItem
+        description="打开已绑定 Workspace 中的真实文件"
+        icon={FileText}
+        onClick={() => onOpenWorkspaceFiles(menu.flowPosition)}
+        title="Workspace 文件"
+      />
     </FloatingMenu>
   );
 }
@@ -168,7 +176,6 @@ type NodeActionMenuProps = {
   ) => void;
   onUploadConnectedFiles: () => void;
   onOpenReadingWorkspace: () => void;
-  onProcessWithAgent: () => void;
   onCreateMusicPlayer: () => void;
   onCreateMusicChild: (kind: MusicChildNodeKind) => void;
 };
@@ -180,7 +187,6 @@ export function NodeActionMenu({
   onCreateConnectedPlaceholder,
   onUploadConnectedFiles,
   onOpenReadingWorkspace,
-  onProcessWithAgent,
   onCreateMusicPlayer,
   onCreateMusicChild,
 }: NodeActionMenuProps) {
@@ -219,6 +225,12 @@ export function NodeActionMenu({
           onCreateTextNode={() => onCreateConnectedPlaceholder("text")}
           onUploadFiles={onUploadConnectedFiles}
         />
+        <FloatingMenuItem
+          icon={MessageSquareText}
+          onClick={() => onCreateConnectedPlaceholder("textGeneration")}
+          primary
+          title="继续对话或执行任务"
+        />
       </FloatingMenu>
     );
   }
@@ -240,10 +252,9 @@ export function NodeActionMenu({
       ) : null}
       <FloatingMenuItem
         icon={MessageSquareText}
-        onClick={onProcessWithAgent}
-        title={
-          actionNode?.data.kind === "note" ? "让 Agent 处理笔记" : "让 Agent 处理"
-        }
+        onClick={() => onCreateConnectedPlaceholder("textGeneration")}
+        primary
+        title="继续对话或执行任务"
       />
       {actionNode?.data.kind === "book" ? (
         <FloatingMenuItem

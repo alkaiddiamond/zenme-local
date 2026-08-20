@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { createAgentContextFromActionNode } from "./agent-context";
+import {
+  collectAgentTurnReferences,
+  createAgentContextFromActionNode,
+} from "./agent-context";
 import type { CanvasNode } from "./types";
 
 function node(input: {
@@ -54,7 +57,87 @@ describe("agent context helpers", () => {
     ).toBe("节点「代码片段」（类型：code）");
   });
 
+  it("includes the stable root identity for Workspace file nodes", () => {
+    expect(createAgentContextFromActionNode(node({
+      data: {
+        kind: "workspaceFile",
+        title: "config.ts",
+        workspaceRootId: "root-additional",
+        workspaceRelativePath: "src/config.ts",
+      },
+      id: "workspace-file-1",
+      type: "workspaceFile",
+    }))).toBe("Workspace 文件节点「config.ts」\nRoot ID：root-additional\n相对路径：src/config.ts");
+  });
+
   it("returns undefined when there is no action node", () => {
     expect(createAgentContextFromActionNode(undefined)).toBeUndefined();
+  });
+
+  it("collects every upstream node and deduplicates Workspace file documents", () => {
+    const prompt = node({
+      data: { kind: "textGeneration", title: "Agent 输入" },
+      id: "prompt",
+      type: "textGeneration",
+    });
+    const fileA = node({
+      data: {
+        kind: "workspaceFile",
+        title: "a.ts",
+        workspaceFileDocumentId: "document-a",
+      },
+      id: "file-a",
+      type: "workspaceFile",
+    });
+    const fileAlias = node({
+      data: {
+        kind: "workspaceFile",
+        title: "a.ts 的另一个视图",
+        workspaceFileDocumentId: "document-a",
+      },
+      id: "file-alias",
+      type: "workspaceFile",
+    });
+    const note = node({ id: "note" });
+
+    expect(collectAgentTurnReferences({
+      edges: [
+        { id: "file-a-note", source: "file-a", target: "note" },
+        { id: "note-prompt", source: "note", target: "prompt" },
+        { id: "file-alias-prompt", source: "file-alias", target: "prompt" },
+      ],
+      nodeId: "prompt",
+      nodes: [prompt, fileA, fileAlias, note],
+    })).toEqual({
+      fileDocumentIds: ["document-a"],
+      selectedNodeIds: ["prompt", "file-a", "file-alias", "note"],
+    });
+  });
+
+  it("does not submit archived upstream nodes as active Agent references", () => {
+    const prompt = node({
+      data: { kind: "textGeneration", title: "Agent 输入" },
+      id: "prompt",
+      type: "textGeneration",
+    });
+    const archived = node({
+      data: {
+        kind: "workspaceFile",
+        nodeLifecycle: "archived",
+        title: "old.ts",
+        workspaceFileDocumentId: "document-old",
+      },
+      id: "archived",
+      type: "workspaceFile",
+    });
+
+    expect(collectAgentTurnReferences({
+      edges: [{ id: "archived-prompt", source: "archived", target: "prompt" }],
+      nodeId: "prompt",
+      nodes: [prompt, archived],
+    })).toEqual({
+      fileDocumentIds: [],
+      selectedNodeIds: ["prompt"],
+    });
   });
 });

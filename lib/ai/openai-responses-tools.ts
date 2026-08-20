@@ -5,7 +5,6 @@ type SearchableMessage = {
 
 export function createOpenAiWebSearchCommands(
   messages: SearchableMessage[],
-  context = "",
 ) {
   const latestUserMessage = [...messages]
     .reverse()
@@ -18,12 +17,11 @@ export function createOpenAiWebSearchCommands(
     try {
       const parsed = new URL(url);
       const hostname = parsed.hostname.replace(/^www\./i, "");
-      const brand = hostname.split(".")[0];
       const page = parsed.pathname === "/" ? "" : parsed.pathname;
       const question = latestUserMessage.replace(url, " ").replace(/\s+/g, " ").trim();
       return {
         search_query: [{
-          q: `site:${hostname}${page} ${brand} company about ${question}`.trim().slice(0, 1_000),
+          q: `site:${hostname}${page} ${question}`.trim().slice(0, 1_000),
         }],
         response_length: "long" as const,
       };
@@ -32,19 +30,5 @@ export function createOpenAiWebSearchCommands(
     }
   }
 
-  const normalizedContext = context.replace(/\s+/g, " ").trim();
-  if (!needsCurrentWebInformation(`${latestUserMessage}\n${normalizedContext}`)) {
-    return null;
-  }
-  const query = normalizedContext
-    ? `${latestUserMessage}\n相关画布上下文：${normalizedContext}`
-    : latestUserMessage;
-  return {
-    search_query: [{ q: query.slice(0, 1_000) }],
-    response_length: "long" as const,
-  };
-}
-
-function needsCurrentWebInformation(message: string) {
-  return /(搜索|搜一下|查一下|查询|查找|联网|网上|最新|最近|今日|今天|当前|现在|新闻|价格|汇率|天气|赛程|比分|政策|法规|现任|官网|来源|链接|search|look\s*up|latest|current|today|news|price|weather)/i.test(message);
+  return null;
 }

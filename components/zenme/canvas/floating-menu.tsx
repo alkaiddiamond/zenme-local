@@ -23,11 +23,15 @@ export function FloatingMenu({
   return (
     <div
       className={cn(
-        "zenme-shadow-dropdown fixed z-30 w-72 rounded-lg border border-zinc-200 bg-white/95 p-2 text-zinc-950 backdrop-blur",
+        "zenme-overlay-scroll-container zenme-shadow-dropdown fixed z-30 w-72 max-w-[calc(100vw-24px)] overflow-y-auto rounded-lg border border-zinc-200 bg-white/95 p-2 text-zinc-950 backdrop-blur",
         className,
       )}
       data-thumbnail-hidden="true"
-      style={{ left, top }}
+      style={{
+        left: `clamp(12px, ${left}px, calc(100vw - 300px))`,
+        maxHeight: `calc(100vh - ${Math.max(12, top)}px - 12px)`,
+        top: Math.max(12, top),
+      }}
     >
       {children}
     </div>

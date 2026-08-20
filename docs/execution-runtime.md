@@ -1,5 +1,7 @@
 # 节点执行与恢复
 
+文档状态：当前文本/图片/视频生成的通用 Execution 契约。Project Agent 的 Session、Turn 与 Agent Execution Detail 另见 [Agent Workspace Runtime](agent-workspace-runtime.md)，两者不得混为同一持久化对象。
+
 Zenme 将一次用户触发的工作记录为 `Execution`，其中每个实际执行节点对应一个
 `NodeRun`，每次初次运行或重试对应一个不可覆盖的 `Attempt`。画布节点只保存便于
 渲染和定位的执行 ID；完整运行证据保存在项目目录的

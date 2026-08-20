@@ -59,6 +59,39 @@ describe("persistent app shell", () => {
     );
   });
 
+  it("keeps the continuous global agent alive at app scope instead of canvas scope", () => {
+    const canvasSource = readFileSync(
+      new URL("./canvas-client.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(appShellSource).toContain("<ContinuousGlobalAgentSupervisor");
+    expect(appShellSource).toContain("projects.map((project) => project.id)");
+    expect(canvasSource).not.toContain("ContinuousGlobalAgentDriver");
+  });
+
+  it("places new-project creation beside the project heading and reveals it on hover", () => {
+    expect(appShellSource).toContain('className="group mb-2 flex h-7 items-center justify-between');
+    expect(appShellSource).toContain('aria-label="新建项目"');
+    expect(appShellSource).toContain("group-hover:pointer-events-auto group-hover:opacity-100");
+    expect(appShellSource).toContain('<Plus aria-hidden="true" className="size-4" strokeWidth={1.6} />');
+    expect(appShellSource).not.toContain("新建项目\n          </button>");
+    expect(appShellSource).toMatch(/href="\/projects"[\s\S]{0,120}>\s*全部\s*<\/Link>[\s\S]{0,220}aria-label="新建项目"/);
+  });
+
+  it("labels the project index tab as all projects and allows closing it", () => {
+    expect(appShellSource).toContain('label: "全部项目"');
+    expect(appShellSource).toContain('if (tab.id === "projects")');
+    expect(appShellSource).toContain('aria-label={`关闭 ${tab.label}`}');
+    expect(appShellSource).toContain("onClick={closeTransientTab}");
+    expect(appShellSource).toMatch(
+      /function closeProjectTab[\s\S]*?persistOpenProjectIds\(nextIds\);\s*router\.push\("\/"\);/,
+    );
+    expect(appShellSource).toMatch(
+      /function closeTransientTab\(\) \{\s*router\.push\("\/"\);/,
+    );
+  });
+
   it("shows the restore icon while the desktop window is maximized", () => {
     expect(desktopMainSource).toContain('mainWindow.on("maximize"');
     expect(desktopMainSource).toContain('mainWindow.on("unmaximize"');

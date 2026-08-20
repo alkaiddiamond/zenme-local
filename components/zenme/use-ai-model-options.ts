@@ -11,6 +11,7 @@ export type AiModelOption = {
   contextWindow?: number;
   id: string;
   label: string;
+  modalities?: string[];
   tooltip: string;
 };
 
@@ -26,8 +27,9 @@ export function createModelOption(
   label = id,
   tooltip = label,
   contextWindow?: number,
+  modalities?: string[],
 ): AiModelOption {
-  return { contextWindow, id, label, tooltip };
+  return { contextWindow, id, label, modalities, tooltip };
 }
 
 export function resolveAiModelOptionId(
@@ -82,7 +84,10 @@ export function orderModelOptionsByPreference(
     : models;
 }
 
-export function useAiModelOptions(modality: AiModelModality = "text") {
+export function useAiModelOptions(
+  modality: AiModelModality = "text",
+  requiredModalities: string[] = [],
+) {
   const [models, setModels] = useState<AiModelOption[]>(
     () => modelOptionsCache[modality] ?? [],
   );
@@ -136,6 +141,7 @@ export function useAiModelOptions(modality: AiModelModality = "text") {
             modelId?: string;
             providerName?: string;
             contextWindow?: number;
+            modalities?: string[];
           }>;
           preferredModelId?: string | null;
         };
@@ -155,6 +161,7 @@ export function useAiModelOptions(modality: AiModelModality = "text") {
             label,
             providerName && modelId ? `${providerName} · ${modelId}` : label,
             item?.contextWindow,
+            item?.modalities,
           );
         });
 
@@ -192,5 +199,8 @@ export function useAiModelOptions(modality: AiModelModality = "text") {
     };
   }, [modality]);
 
-  return models;
+  if (requiredModalities.length === 0) return models;
+  return models.filter((model) =>
+    requiredModalities.every((required) => model.modalities?.includes(required)),
+  );
 }

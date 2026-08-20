@@ -6,6 +6,9 @@ import { Plus } from "lucide-react";
 
 import { BookNode } from "@/components/zenme/nodes/book-node";
 import { FileNode } from "@/components/zenme/nodes/file-node";
+import { WorkspaceFileNode } from "@/components/zenme/nodes/workspace-file-node";
+import { AgentExecutionNode } from "@/components/zenme/nodes/agent-execution-node";
+import { GlobalAgentNode } from "@/components/zenme/nodes/global-agent-node";
 import { GroupNode } from "@/components/zenme/nodes/group-node";
 import { ImageNode } from "@/components/zenme/nodes/image-node";
 import { ImageGenerationNode } from "@/components/zenme/nodes/image-edit-node";
@@ -129,9 +132,12 @@ function CanvasNodeContentShell({
 function getCanvasNodeKindLabel(kind: CanvasNodeData["kind"]) {
   const labels: Partial<Record<CanvasNodeData["kind"], string>> = {
     agent: "AI 回复",
+    agentExecution: "历史 Workspace Agent",
+    globalAgent: "历史 Global Agent",
     book: "书籍",
     code: "代码",
     file: "文件",
+    workspaceFile: "Workspace 文件",
     group: "分组",
     image: "图片",
     imageGeneration: "图片生成",
@@ -179,6 +185,16 @@ function withNodeDragBorder(NodeComponent: ComponentType<NodeProps>) {
 }
 
 export const nodeTypes = {
+  globalAgent: withCanvasContentBoundary(GlobalAgentNode, {
+    actionHandle: true,
+    contextHandle: true,
+    dragBorder: true,
+  }),
+  agentExecution: withCanvasContentBoundary(AgentExecutionNode, {
+    actionHandle: true,
+    contextHandle: true,
+    dragBorder: true,
+  }),
   group: withCanvasContentBoundary(GroupNode),
   image: withNodeDragBorder(ImageNode),
   imageGeneration: withCanvasContentBoundary(ImageGenerationNode, {
@@ -197,6 +213,7 @@ export const nodeTypes = {
     dragBorder: true,
   }),
   file: withNodeDragBorder(FileNode),
+  workspaceFile: withNodeDragBorder(WorkspaceFileNode),
   music: withNodeDragBorder(MusicNode),
   musicFolder: withNodeDragBorder(MusicFolderNode),
   musicPlayer: withNodeDragBorder(MusicPlayerNode),

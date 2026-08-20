@@ -226,16 +226,11 @@ export function getMusicApiErrorMessage(
 
 export function createMusicPlayerUpdate(input: {
   edges: Edge[];
-  /** @deprecated Use sourceNode. */
-  musicNode?: CanvasNode;
-  sourceNode?: CanvasNode;
+  sourceNode: CanvasNode;
   nodes: CanvasNode[];
   projectId: string;
 }) {
-  const sourceNode = input.sourceNode ?? input.musicNode;
-  if (!sourceNode) {
-    throw new Error("创建播放器需要音乐或音乐文件夹来源");
-  }
+  const sourceNode = input.sourceNode;
   const id = musicPlayerNodeId(sourceNode.id);
   const existing = input.nodes.find(
     (node) => node.id === id || (
