@@ -106,6 +106,15 @@ describe("text generation request boundary", () => {
     expect(source).toContain("permissionMode,");
   });
 
+  it("routes command approval through the Project Agent Turn runtime", () => {
+    const timeline = readProjectFile("components/zenme/nodes/agent-turn-timeline.tsx");
+
+    expect(timeline).toContain("resolveProjectAgentTurnCommandApprovalFromApi");
+    expect(timeline).not.toContain("approveAgentCommandFromApi");
+    expect(timeline).not.toContain("rejectAgentCommandFromApi");
+    expect(timeline).not.toContain("executeAgentWorkspaceToolFromApi");
+  });
+
   it("retries a failed AI reply in the same node and Project Agent Turn", () => {
     const source = readProjectFile("components/zenme/nodes/text-node.tsx");
     const canvasSource = readProjectFile("components/zenme/canvas-client.tsx");

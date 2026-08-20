@@ -6,12 +6,9 @@ import { Check, CircleStop, ExternalLink, FileDiff, Loader2, RotateCcw, Square, 
 import { Button } from "@/components/ui/button";
 import { renderMarkdown } from "@/components/zenme/nodes/renderers/markdown";
 import {
-  appendProjectAgentEventFromApi,
-  approveAgentCommandFromApi,
-  executeAgentWorkspaceToolFromApi,
   getProjectAgentSessionFromApi,
+  resolveProjectAgentTurnCommandApprovalFromApi,
   runProjectAgentTurnFromApi,
-  rejectAgentCommandFromApi,
   stopProjectAgentBackgroundTaskFromApi,
 } from "@/lib/zenme-api";
 import type { ProjectAgentEvent } from "@/lib/agent/project-session-types";
@@ -108,69 +105,18 @@ export function AgentTurnTimeline({
   }, [events, failure, finalAnswer, onTurnSettled]);
 
   async function approveAndRun(event: ProjectAgentEvent, scope: "once" | "project") {
-    const executionId = typeof event.data?.executionId === "string" ? event.data.executionId : "";
     const commandId = typeof event.data?.commandRequestId === "string" ? event.data.commandRequestId : "";
-    if (!executionId || !commandId || busyCommandId) return;
+    if (!commandId || busyCommandId) return;
     setBusyCommandId(commandId);
     setError("");
     try {
-      await approveAgentCommandFromApi(projectId, executionId, commandId, scope);
-      await appendProjectAgentEventFromApi({
+      await resolveProjectAgentTurnCommandApprovalFromApi({
         projectId,
         turnId,
-        type: "approval",
-        content: event.content || "命令已批准",
-        data: { commandRequestId: commandId, executionId, status: "approved", approvalScope: scope },
+        eventId: event.id,
+        decision: "approve",
+        scope,
       });
-      const toolEvent = await appendProjectAgentEventFromApi({
-        projectId,
-        turnId,
-        type: "toolCall",
-        content: "命令正在运行",
-        data: {
-          executionId,
-          name: "shell_command",
-          status: "running",
-          arguments: {
-            command: event.data?.command,
-            executable: event.data?.executable,
-            args: event.data?.args,
-            cwd: event.data?.cwd,
-          },
-        },
-      });
-      const result = await executeAgentWorkspaceToolFromApi({
-        arguments: { commandRequestId: commandId },
-        executionId,
-        name: "run_approved_command",
-        progressEventId: toolEvent.id,
-        projectId,
-      });
-      await appendProjectAgentEventFromApi({
-        projectId,
-        turnId,
-        type: "toolResult",
-        content: result.stdout || result.stderr || (result.status === "running" ? `后台任务已启动：${result.id}` : "命令执行完成"),
-        data: {
-          executionId,
-          toolCallEventId: toolEvent.id,
-          name: "shell_command",
-          output: result,
-          status: result.status === "succeeded" || result.status === "running" ? "succeeded" : "failed",
-        },
-      });
-      const userEvent = events.find((candidate) => candidate.type === "user");
-      const model = typeof userEvent?.data?.model === "string" ? userEvent.data.model : "";
-      if (userEvent?.content && model) {
-        await runProjectAgentTurnFromApi({ projectId, turnId, prompt: userEvent.content, model, resume: true });
-      } else {
-        await appendProjectAgentEventFromApi({
-          projectId,
-          turnId,
-          type: "status",
-          data: { stage: result.status === "succeeded" || result.status === "running" ? "completed" : "failed" },
-        });
-      }
       await refresh();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "命令执行失败");
@@ -180,40 +126,17 @@ export function AgentTurnTimeline({
   }
 
   async function rejectAndResume(event: ProjectAgentEvent) {
-    const executionId = typeof event.data?.executionId === "string" ? event.data.executionId : "";
     const commandId = typeof event.data?.commandRequestId === "string" ? event.data.commandRequestId : "";
-    if (!executionId || !commandId || busyCommandId) return;
-    const userEvent = events.find((candidate) => candidate.type === "user");
-    const model = typeof userEvent?.data?.model === "string" ? userEvent.data.model : "";
+    if (!commandId || busyCommandId) return;
     setBusyCommandId(commandId);
     setError("");
     try {
-      const result = await rejectAgentCommandFromApi(projectId, executionId, commandId);
-      await appendProjectAgentEventFromApi({
+      await resolveProjectAgentTurnCommandApprovalFromApi({
         projectId,
         turnId,
-        type: "approval",
-        content: "用户拒绝执行命令",
-        data: { commandRequestId: commandId, executionId, status: "rejected" },
+        eventId: event.id,
+        decision: "reject",
       });
-      await appendProjectAgentEventFromApi({
-        projectId,
-        turnId,
-        type: "toolResult",
-        content: "用户拒绝执行命令",
-        data: { executionId, name: "shell_command", output: result, status: "failed" },
-      });
-      if (model) {
-        await runProjectAgentTurnFromApi({
-          projectId,
-          turnId,
-          prompt: "用户拒绝了上一条命令。请不要重复请求相同命令；基于现有上下文继续，或说明无法完成的部分。",
-          model,
-          resume: true,
-        });
-      } else {
-        await appendProjectAgentEventFromApi({ projectId, turnId, type: "status", data: { stage: "failed" } });
-      }
       await refresh();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "命令拒绝失败");

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   start: vi.fn(),
+  commandApproval: vi.fn(),
   steer: vi.fn(),
   stop: vi.fn(),
   active: vi.fn(),
@@ -12,7 +13,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/agent/project-turn-runtime", async () => {
   const actual = await vi.importActual<typeof import("@/lib/agent/project-turn-runtime")>("@/lib/agent/project-turn-runtime");
-  return { ...actual, isProjectAgentTurnRunActive: mocks.active, startProjectAgentTurnRun: mocks.start, steerProjectAgentTurnRun: mocks.steer, stopProjectAgentTurnRun: mocks.stop };
+  return { ...actual, isProjectAgentTurnRunActive: mocks.active, resolveProjectAgentTurnCommandApproval: mocks.commandApproval, startProjectAgentTurnRun: mocks.start, steerProjectAgentTurnRun: mocks.steer, stopProjectAgentTurnRun: mocks.stop };
 });
 
 import { DELETE, GET, POST } from "@/app/api/projects/[projectId]/agent-session/turns/route";
@@ -69,6 +70,28 @@ describe("Project Agent detached Turn API", () => {
       resume: true,
       questionAnswer: { eventId: "question-event", value: "核心工具" },
     }));
+  });
+
+  it("routes command approval through the server-owned Turn runtime", async () => {
+    mocks.commandApproval.mockResolvedValue({ status: "running", turnId: "turn-command" });
+    const response = await POST(new Request("http://localhost/turns", {
+      method: "POST",
+      body: JSON.stringify({
+        turnId: "turn-command",
+        commandApproval: { eventId: "approval-event", decision: "approve", scope: "project" },
+      }),
+    }), { params: Promise.resolve({ projectId }) });
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({ status: "running", turnId: "turn-command" });
+    expect(mocks.commandApproval).toHaveBeenCalledWith({
+      projectId,
+      turnId: "turn-command",
+      eventId: "approval-event",
+      decision: "approve",
+      scope: "project",
+    });
+    expect(mocks.start).not.toHaveBeenCalled();
   });
 
   it("routes a steering request into the active Turn without requiring a model field", async () => {

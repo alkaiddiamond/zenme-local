@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { runProjectAgentTurnFromApi, steerProjectAgentTurnFromApi, stopProjectAgentTurnFromApi } from "@/lib/zenme-api";
+import { resolveProjectAgentTurnCommandApprovalFromApi, runProjectAgentTurnFromApi, steerProjectAgentTurnFromApi, stopProjectAgentTurnFromApi } from "@/lib/zenme-api";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -69,6 +69,24 @@ describe("Project Agent Turn API client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body)))
       .toEqual({ prompt: "同时打开预览", steer: true, turnId: "turn-2" });
+  });
+
+  it("sends command approval as one server-owned Turn action", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ status: "running", turnId: "turn-3" }, 202));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(resolveProjectAgentTurnCommandApprovalFromApi({
+      projectId: "project-1",
+      turnId: "turn-3",
+      eventId: "approval-1",
+      decision: "approve",
+      scope: "project",
+    })).resolves.toEqual({ status: "running", turnId: "turn-3" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))).toEqual({
+      turnId: "turn-3",
+      commandApproval: { eventId: "approval-1", decision: "approve", scope: "project" },
+    });
   });
 
 });

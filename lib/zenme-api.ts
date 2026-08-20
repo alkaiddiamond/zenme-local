@@ -331,6 +331,30 @@ export async function stopProjectAgentTurnFromApi(projectId: string, turnId: str
   ));
 }
 
+export async function resolveProjectAgentTurnCommandApprovalFromApi(input: {
+  projectId: string;
+  turnId: string;
+  eventId: string;
+  decision: "approve" | "reject";
+  scope?: "once" | "project";
+}) {
+  return readJson<{ status: "running"; turnId: string }>(await fetch(
+    `/api/projects/${encodeURIComponent(input.projectId)}/agent-session/turns`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        turnId: input.turnId,
+        commandApproval: {
+          eventId: input.eventId,
+          decision: input.decision,
+          scope: input.scope,
+        },
+      }),
+    },
+  ));
+}
+
 export async function steerProjectAgentTurnFromApi(input: {
   projectId: string;
   prompt: string;

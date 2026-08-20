@@ -13,7 +13,10 @@ import { AgentToolPipelineError, executeAgentToolPipeline } from "@/lib/agent/to
 import {
   AgentCommandError,
   type AgentCommandStall,
+  approveAgentCommand,
   listAgentBackgroundTasks,
+  rejectAgentCommand,
+  runApprovedAgentCommand,
   stopRunningAgentCommands,
   waitForAgentBackgroundTaskCompletion,
 } from "@/lib/agent/command-runtime";
@@ -349,6 +352,134 @@ export async function answerProjectAgentTurnRun(input: {
   if (pending.abortListener) pending.signal?.removeEventListener("abort", pending.abortListener);
   pending.resolve(parseMcpElicitationAnswer(input.value ?? Object.values(input.answers ?? {})[0] ?? "取消"));
   return true;
+}
+
+export async function resolveProjectAgentTurnCommandApproval(input: {
+  projectId: string;
+  turnId: string;
+  eventId: string;
+  decision: "approve" | "reject";
+  scope?: "once" | "project";
+}, dataDir = getZenmeDataDir()) {
+  const session = await getProjectAgentSession(input.projectId, dataDir);
+  const approvalEvent = session.events.find((event) =>
+    event.id === input.eventId && event.turnId === input.turnId && event.type === "approval" &&
+    event.data?.status === "pending");
+  const executionId = typeof approvalEvent?.data?.executionId === "string" ? approvalEvent.data.executionId : "";
+  const commandRequestId = typeof approvalEvent?.data?.commandRequestId === "string"
+    ? approvalEvent.data.commandRequestId
+    : "";
+  if (!approvalEvent || !executionId || !commandRequestId) {
+    throw new ProjectAgentTurnError("当前 Turn 没有等待处理的命令审批", "invalid_input");
+  }
+
+  if (input.decision === "approve") {
+    await approveAgentCommand(
+      input.projectId,
+      executionId,
+      commandRequestId,
+      dataDir,
+      input.scope ?? "once",
+    );
+    await appendProjectAgentEvent({
+      projectId: input.projectId,
+      turnId: input.turnId,
+      type: "approval",
+      content: approvalEvent.content || "命令已批准",
+      data: {
+        ...approvalEvent.data,
+        status: "approved",
+        approvalEventId: approvalEvent.id,
+        approvalScope: input.scope ?? "once",
+      },
+    }, dataDir);
+    const toolEvent = await appendProjectAgentEvent({
+      projectId: input.projectId,
+      turnId: input.turnId,
+      type: "toolCall",
+      content: "命令正在运行",
+      data: {
+        executionId,
+        name: "shell_command",
+        status: "running",
+        approvalEventId: approvalEvent.id,
+        arguments: {
+          command: approvalEvent.data?.command,
+          executable: approvalEvent.data?.executable,
+          args: approvalEvent.data?.args,
+          cwd: approvalEvent.data?.cwd,
+        },
+      },
+    }, dataDir);
+    const result = await runApprovedAgentCommand({
+      projectId: input.projectId,
+      executionId,
+      commandId: commandRequestId,
+      foregroundBudgetMs: 300_000,
+      onProgress: async (progress) => {
+        await updateProjectAgentEvent({
+          projectId: input.projectId,
+          eventId: toolEvent.id,
+          content: formatCommandProgress(progress.stdout, progress.stderr),
+          data: { elapsedMs: progress.elapsedMs },
+        }, dataDir);
+      },
+    }, dataDir);
+    await appendProjectAgentEvent({
+      projectId: input.projectId,
+      turnId: input.turnId,
+      type: "toolResult",
+      content: result.stdout || result.stderr ||
+        (result.status === "running" ? `后台任务已启动：${result.id}` : "命令执行完成"),
+      data: {
+        executionId,
+        toolCallEventId: toolEvent.id,
+        name: "shell_command",
+        output: result,
+        status: result.status === "succeeded" || result.status === "running" ? "succeeded" : "failed",
+      },
+    }, dataDir);
+  } else {
+    const result = await rejectAgentCommand(input.projectId, executionId, commandRequestId, dataDir);
+    await appendProjectAgentEvent({
+      projectId: input.projectId,
+      turnId: input.turnId,
+      type: "approval",
+      content: "用户拒绝执行命令",
+      data: {
+        ...approvalEvent.data,
+        status: "rejected",
+        approvalEventId: approvalEvent.id,
+      },
+    }, dataDir);
+    await appendProjectAgentEvent({
+      projectId: input.projectId,
+      turnId: input.turnId,
+      type: "toolResult",
+      content: "用户拒绝执行命令",
+      data: { executionId, name: "shell_command", output: result, status: "failed" },
+    }, dataDir);
+  }
+
+  const refreshed = await getProjectAgentSession(input.projectId, dataDir);
+  const userEvent = refreshed.events.find((event) =>
+    event.turnId === input.turnId && event.type === "user" && event.data?.meta !== true);
+  const model = typeof userEvent?.data?.model === "string" ? userEvent.data.model : "";
+  const prompt = userEvent?.content ?? "";
+  if (!userEvent || !model || !prompt) {
+    throw new ProjectAgentTurnError("当前 Turn 缺少可恢复的原始请求", "invalid_input");
+  }
+  const started = await startProjectAgentTurnRun({
+    projectId: input.projectId,
+    turnId: input.turnId,
+    prompt,
+    model,
+    conversationId: userEvent.conversationId,
+    reasoningEffort: optionalReasoningEffort(userEvent.data?.reasoningEffort),
+    modelSpeed: optionalModelSpeed(userEvent.data?.modelSpeed),
+    resume: true,
+  }, { dataDir });
+  return { turnId: started.turnId, status: "running" as const };
 }
 
 export function isProjectAgentTurnRunActive(projectId: string, turnId: string, dataDir = getZenmeDataDir()) {

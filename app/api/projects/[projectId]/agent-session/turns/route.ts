@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { answerProjectAgentTurnRun, isProjectAgentTurnRunActive, ProjectAgentTurnError, startProjectAgentTurnRun, steerProjectAgentTurnRun, stopProjectAgentTurnRun } from "@/lib/agent/project-turn-runtime";
+import { answerProjectAgentTurnRun, isProjectAgentTurnRunActive, ProjectAgentTurnError, resolveProjectAgentTurnCommandApproval, startProjectAgentTurnRun, steerProjectAgentTurnRun, stopProjectAgentTurnRun } from "@/lib/agent/project-turn-runtime";
 import { reconcileAgentExecutionsForTurn } from "@/lib/agent/execution-store";
 import { appendProjectAgentEvent, getProjectAgentSession } from "@/lib/agent/project-session-store";
 import type { ProjectAgentEvent } from "@/lib/agent/project-session-types";
@@ -11,6 +11,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
   try {
     const { projectId } = await params;
     const body = await request.json() as Record<string, unknown>;
+    const commandApproval = optionalCommandApproval(body.commandApproval);
+    if (typeof body.turnId === "string" && commandApproval) {
+      return NextResponse.json(await resolveProjectAgentTurnCommandApproval({
+        projectId,
+        turnId: body.turnId,
+        ...commandApproval,
+      }), { status: 202 });
+    }
     const activeAnswer = optionalQuestionAnswer(body.questionAnswer);
     if (body.resume === true && typeof body.turnId === "string" && activeAnswer) {
       const answered = await answerProjectAgentTurnRun({
@@ -179,6 +187,21 @@ function optionalQuestionAnswer(value: unknown) {
     : undefined;
   if (typeof value.value !== "string" && !answers) return undefined;
   return { eventId: value.eventId, ...(typeof value.value === "string" ? { value: value.value } : {}), ...(answers ? { answers } : {}), ...(annotations ? { annotations } : {}) };
+}
+
+function optionalCommandApproval(value: unknown) {
+  if (!isObject(value) || typeof value.eventId !== "string") return undefined;
+  if (value.decision !== "approve" && value.decision !== "reject") return undefined;
+  if (value.scope !== undefined && value.scope !== "once" && value.scope !== "project") return undefined;
+  const scope: "once" | "project" | undefined = value.scope === "once" || value.scope === "project"
+    ? value.scope
+    : undefined;
+  const decision: "approve" | "reject" = value.decision;
+  return {
+    eventId: value.eventId,
+    decision,
+    ...(scope ? { scope } : {}),
+  };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
