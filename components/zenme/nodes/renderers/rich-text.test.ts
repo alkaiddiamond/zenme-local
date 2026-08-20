@@ -70,6 +70,15 @@ describe("rich text renderer helpers", () => {
     ).toBe("<p><br>第二行</p>");
   });
 
+  it("keeps the first browser-created line break when the first line stays at the root", () => {
+    expect(normalizeRichTextHtml("第一行<div><br></div>")).toBe(
+      "<p>第一行<br></p>",
+    );
+    expect(normalizeRichTextHtml("第一行<div>第二行</div>")).toBe(
+      "<p>第一行<br>第二行</p>",
+    );
+  });
+
   it("removes redundant browser formatting spans that create false wrap points", () => {
     expect(
       normalizeRichTextHtml(

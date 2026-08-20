@@ -53,12 +53,26 @@ function removeRedundantEditorSpans(value: string) {
   );
 }
 
+function preserveFirstRootLineBreak(value: string) {
+  const firstBlock = value.search(/<(?:p|div)\b/i);
+  if (firstBlock <= 0) {
+    return value;
+  }
+
+  const prefix = value.slice(0, firstBlock);
+  if (!prefix.trim() || /<br\s*\/?>\s*$/i.test(prefix)) {
+    return value;
+  }
+
+  return `${prefix}<br>${value.slice(firstBlock)}`;
+}
+
 export function normalizeRichTextHtml(html?: string) {
   if (!html) {
     return "";
   }
 
-  const fragment = removeRedundantEditorSpans(html)
+  const fragment = preserveFirstRootLineBreak(removeRedundantEditorSpans(html))
     .trim()
     .replace(/<br\s*\/?>\s*<\/(p|div)>(?=\s*<(?:p|div)\b)/gi, "</$1>")
     .replace(

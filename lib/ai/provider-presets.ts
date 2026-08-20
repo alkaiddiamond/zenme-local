@@ -48,7 +48,7 @@ const VOLCENGINE_AGENT_PLAN_MODELS: ModelConfig[] = [
   { id: "minimax-m3", alias: "MiniMax M3", enabled: true, modalities: ["text", "tool"] },
   { id: "deepseek-v4-pro", alias: "DeepSeek V4 Pro", enabled: true, modalities: ["text", "tool"] },
   { id: "doubao-embedding-vision", alias: "Doubao Embedding Vision", enabled: true, modalities: ["embedding", "vision"] },
-  { id: "doubao-seedream-5.0-lite", alias: "Doubao Seedream 5.0 Lite", enabled: true, modalities: ["image"] },
+  { id: "doubao-seedream-5.0-lite", alias: "Doubao Seedream 5.0 Lite", enabled: true, modalities: ["vision", "image"] },
 ];
 
 const LEGACY_VOLCENGINE_AGENT_PLAN_MODEL_IDS = new Set([

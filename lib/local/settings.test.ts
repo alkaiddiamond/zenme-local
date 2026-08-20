@@ -258,6 +258,10 @@ describe("local settings", () => {
         "doubao-seedream-5.0-lite",
       ]),
     );
+    expect(
+      provider.models.find((model) => model.id === "doubao-seedream-5.0-lite")
+        ?.modalities,
+    ).toEqual(["vision", "image"]);
   });
 
   it("migrates a legacy OpenAI Agent Plan provider and fills its documented models", async () => {

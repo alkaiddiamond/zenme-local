@@ -1942,7 +1942,7 @@ function ProviderEditorModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/45 px-6 py-[80px]">
-      <div className="zenme-shadow-overlay flex max-h-[calc(100vh-160px)] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white">
+      <div className="zenme-shadow-overlay flex h-[calc(100vh-160px)] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-xl bg-white">
         <header className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4">
           <h2 className="text-lg font-medium text-[var(--color-text-primary)]">
             {isNewProvider ? "添加服务商" : "编辑服务商"}
@@ -1958,6 +1958,7 @@ function ProviderEditorModal({
 
         <OverlayScrollArea
           className="min-h-0 flex-1"
+          contentKey={`${draft.models.length}:${fetchedModelIds.length}:${modelFetchState}`}
           viewportClassName="h-full overflow-auto px-5 py-4"
         >
           <div className="grid gap-4">

@@ -31,6 +31,12 @@ const globalStylesSource = readFileSync(
 );
 
 describe("direct image editing workflow", () => {
+  it("requires image-edit models to support both image input and image output", () => {
+    expect(imageNodeSource).toContain(
+      'useAiModelOptions("image", ["vision", "image"])',
+    );
+  });
+
   it("keeps mounted canvas images from blocking initial interaction", () => {
     expect(imageNodeSource).toContain('decoding="async"');
     expect(imageNodeSource).toContain('loading="lazy"');

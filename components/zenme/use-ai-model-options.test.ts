@@ -46,6 +46,18 @@ describe("AI model option preferences", () => {
     ).toMatchObject({ contextWindow: 200_000 });
   });
 
+  it("keeps model capability metadata for client-side capability filtering", () => {
+    expect(
+      createModelOption(
+        "seedream",
+        "Seedream",
+        "Agent Plan · Seedream",
+        undefined,
+        ["vision", "image"],
+      ),
+    ).toMatchObject({ modalities: ["vision", "image"] });
+  });
+
   it("initializes new selectors from the shared model cache", () => {
     const source = readFileSync(
       new URL("./use-ai-model-options.ts", import.meta.url),
