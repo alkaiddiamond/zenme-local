@@ -1,8 +1,10 @@
 # Zenme Agent Runtime 能力与自治边界
 
-本文是 Zenme Project Agent Runtime 的**权威能力模型**。`docs/cc-haha-agent-turn-parity.md` 用于记录与 cc-haha 当前源码的行为对照，`docs/ai-project-workspace-verification.md` 用于记录工程证据；两者都不能覆盖本文定义的自治边界。
+文档状态：当前 Runtime 权威能力模型，不是发布认证或第三方集成兼容清单。
 
-当前参考基线：本地 `../cc-haha` 的默认外部 Agent Turn 行为。产品目标不是复制终端 UI，而是在保留 **节点 + 无限画布** 交互的前提下，让一次 Zenme AI Reply Node 承载完整 Agent Turn。
+本文是 Zenme Project Agent Runtime 的**权威能力模型**。实现证据由相邻源码测试和当前门禁结果提供；外部项目对照或历史验收快照不能覆盖本文定义的自治边界。
+
+产品目标是在保留 **节点 + 无限画布** 交互的前提下，让一次 Zenme AI Reply Node 承载完整 Agent Turn。本文只描述 Zenme 自身可达的生产行为，不以外部项目源码作为运行时事实源。
 
 ## 1. 核心原则
 
@@ -89,7 +91,7 @@ Runtime 可以阻止**不安全、不授权、不合法或超预算**的动作�
 
 ## 5. 一次 Turn 与画布的映射
 
-| cc-haha/Agent 概念 | Zenme 映射 |
+| Agent 概念 | Zenme 映射 |
 | --- | --- |
 | Project / Workspace | Project Agent Session：完整事件总账、Project Memory/Task/权限/摘要等共享状态 |
 | Session / Thread | Conversation：由当前画布分支与连线继承关系确定，独立投影 transcript |
@@ -243,7 +245,7 @@ Runtime 不规定 Agent 必须“先读哪个文件/先跑哪个诊断”；只�
 
 ## 14. Hook 生命周期
 
-当前 Hook 事件与 cc-haha 默认外部事件集合保持一致，包括：
+当前可配置的 Hook 事件包括：
 
 `PreToolUse`、`PostToolUse`、`PostToolUseFailure`、`Notification`、`UserPromptSubmit`、`SessionStart`、`SessionEnd`、`Stop`、`StopFailure`、`SubagentStart`、`SubagentStop`、`PreCompact`、`PostCompact`、`PermissionRequest`、`PermissionDenied`、`Setup`、`TeammateIdle`、`TaskCreated`、`TaskCompleted`、`Elicitation`、`ElicitationResult`、`ConfigChange`、`WorktreeCreate`、`WorktreeRemove`、`InstructionsLoaded`、`CwdChanged`、`FileChanged`。
 
@@ -259,7 +261,7 @@ Hook 可以构成明确的组织策略/安全约束，因为这是用户、项�
 - OpenAI OAuth `token_invalidated`：强制 refresh token 后重试原请求一次。
 - 中间恢复不生成第二个 AI Reply Node。
 
-cc-haha 中 Ant/KAIROS/实验 feature gate 的 PostSampling 消费者不自动视为默认外部 Agent Turn 基线。
+受 Ant、KAIROS 或其他实验 feature gate 控制的 PostSampling 消费者不属于默认生产能力。
 
 ## 16. Memory / Knowledge
 
@@ -326,13 +328,7 @@ cc-haha 中 Ant/KAIROS/实验 feature gate 的 PostSampling 消费者不自动�
 
 仓库提供 `lib/agent/agent-autonomy.live.test.ts`。默认跳过，避免常规 `npm run check` 消耗真实模型额度；只有显式设置 `ZENME_LIVE_AGENT_MODEL` 时才执行。
 
-2026-08-18 Windows 使用真实 ChatGPT OAuth 与 `provider-model:chatgpt-official:gpt-5.3-codex-spark` 验证通过，Vitest **1/1，exit 0**。临时 Workspace 的修复 token 不存在于可读 Workspace 文件中，只会由第一次真实失败命令输出暴露，因此 Agent 必须消费真实失败 observation 才能继续。
-
-同一工作树的常规 `npm run check` 也已通过：**251/252 个 Vitest 文件通过，1 个 live 文件按设计跳过；1444/1445 项测试通过，1 项 live 测试按设计跳过；Desktop Node tests 23/23 通过；ESLint 通过。** Live test 已由上面的显式真实模型命令单独执行并 1/1 通过，因此常规门禁不会偷偷消耗在线模型额度。
-
-同一工作树随后执行 `npm run verify`，完整重复 lint/test 并完成 Next.js production build，**exit 0**。clean build 后 `.next/standalone` 通过污染检查，明确输出 `standalone-trace-clean`；Windows `npm run desktop:pack` **exit 0**；`npm run desktop:smoke` **exit 0**，启动最新 `dist-desktop/win-unpacked/Zenme.exe` 并完成 packaged Electron/standalone/Browser/临时 Workspace 冒烟链路。
-
-实际工具轨迹：
+该场景要求以下实际工具轨迹：
 
 1. `shell_command("npm run check-runtime")`：Shell 子进程 **failed**，stderr 返回 `RUNTIME_CONFIG_MISSING` 和一次性 token。
 2. `read_file` / `list_directory`：Agent 自主检查当前实现与 Workspace，而不是 Runtime 指定固定恢复步骤。
@@ -348,13 +344,13 @@ $env:ZENME_LIVE_AGENT_MODEL = "provider-model:chatgpt-official:gpt-5.3-codex-spa
 npx vitest run lib/agent/agent-autonomy.live.test.ts --maxWorkers=1
 ```
 
-Live test 使用生产 repository 创建一次性 Project/Workspace，结束后停止其 Agent 命令、删除临时 Project 并删除临时 Workspace，不复用用户现有项目会话。
+Live test 使用生产 repository 创建一次性 Project/Workspace，结束后停止其 Agent 命令、删除临时 Project 并删除临时 Workspace，不复用用户现有项目会话。每次发布候选都必须记录本次命令结果，不能沿用旧工作树的通过结论。
 
 ## 19. 完成定义
 
 只有同时满足以下条件，才可宣称 Agent Runtime 能力完成：
 
-1. 当前 cc-haha 默认外部、实际可达 Agent Turn 能力没有已知生产缺口。
+1. 本文声明的默认、实际可达 Agent Turn 能力没有已知生产缺口。
 2. 主 Agent 与 Sub-agent 的问题求解控制权符合本文自治边界。
 3. 历史兼容不会进入当前模型世界模型；旧 Canvas Agent 节点仅保留只读审计、结果回看和停止仍在运行任务的 UI 兼容面，不能创建、批准、重试或续跑旧入口。
 4. 所有失败都是真实、具体、可行动的 observation。

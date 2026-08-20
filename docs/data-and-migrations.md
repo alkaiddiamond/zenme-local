@@ -1,5 +1,7 @@
 # 本地数据与迁移
 
+文档状态：当前持久化与兼容契约。
+
 ## 数据位置
 
 桌面版默认在 Electron `userData/data` 下保存业务数据。用户可在设置页选择其他目录；选择结果保存在 `userData/desktop-config.json`。开发环境可用 `ZENME_DATA_DIR` 覆盖。
@@ -55,19 +57,19 @@ Alpha 阶段也不得静默丢弃旧画布或项目数据。
 
 ## Project v1 → v2
 
-Phase 0 将 `project.json` 升级为 version 2，并增加可选 `workspaceBindingId`。读取 version 1 时规范化为 version 2、默认 `workspaceBindingId: null`，再通过原子写入回写。旧项目因此保持“未绑定 Workspace”，无需访问任何外部目录即可继续使用。
+Project v2 为 `project.json` 增加可选 `workspaceBindingId`。读取 version 1 时规范化为 version 2、默认 `workspaceBindingId: null`，再通过原子写入回写。旧项目因此保持“未绑定 Workspace”，无需访问任何外部目录即可继续使用。
 
 规范化和后续名称、缩略图、打开时间更新必须保留未知字段。Workspace Binding 独立保存在 `workspace/binding.json`；删除 Binding 或 Project 不得删除绑定的外部 Workspace。
 
-Phase 1 的 File Document 索引位于 `workspace/documents.json`。画布节点不保存文件正文，只保存 Document ID 与相对路径提示；文件移动时 Document 路径可在身份匹配后原子更新。详见 [Live File 与 File Document](live-files.md)。
+File Document 索引位于 `workspace/documents.json`。画布节点不保存文件正文，只保存 Document ID 与相对路径提示；文件移动时 Document 路径可在身份匹配后原子更新。详见 [Live File 与 File Document](live-files.md)。
 
-Phase 3 的 ChangeSet 审批历史位于 `workspace/change-sets.json`。操作记录保存基线、提案和恢复所需的有限文本，但不进入 Canvas Snapshot。持久化状态 `applying` 与 `reverting` 会在下次读取时根据磁盘哈希恢复；无法确认的外部状态不得被覆盖。详见 [Editable File 与 ChangeSet](editable-files-and-change-sets.md)。
+ChangeSet 审批历史位于 `workspace/change-sets.json`。操作记录保存基线、提案和恢复所需的有限文本，但不进入 Canvas Snapshot。持久化状态 `applying` 与 `reverting` 会在下次读取时根据磁盘哈希恢复；无法确认的外部状态不得被覆盖。详见 [Editable File 与 ChangeSet](editable-files-and-change-sets.md)。
 
-Phase 6 的 Project Memory v1 位于 `memory/index.json`。每条记录保存来源、来源版本、修订历史、确认与失效状态；它不复制或级联删除来源对象。Workspace 文件来源变化会在上下文解析前转为 `needsReview` 或 `stale`。
+Project Memory v1 位于 `memory/index.json`。每条记录保存来源、来源版本、修订历史、确认与失效状态；它不复制或级联删除来源对象。Workspace 文件来源变化会在上下文解析前转为 `needsReview` 或 `stale`。
 
-Phase 7 的 Project Knowledge v1 位于 `derived/knowledge/index.json`。该目录不进入备份，格式变化可直接清除并从 Workspace、Canvas、Execution、ChangeSet 与 Memory 重建，不需要把派生索引迁移成真相源。
+Project Knowledge v1 位于 `derived/knowledge/index.json`。该目录不进入备份，格式变化可直接清除并从 Workspace、Canvas、Execution、ChangeSet 与 Memory 重建，不需要把派生索引迁移成真相源。
 
-Phase 8 历史 Agent Execution / Global Agent 画布节点曾在既有 Canvas Snapshot v3 `data` 中保存可选 `nodeLifecycle`、`nodeLifecycleBeforeArchive`、`agentDetailsFolded` 和 `agentExpandedHeight`。这些字段现在仅用于旧快照兼容读取与历史节点呈现，新 Project Agent Turn 不创建上述独立执行节点。旧节点缺失字段时按 `working` 展示，不要求快照版本升级；归档仍保留完整节点和边。
+历史 Agent Execution / Global Agent 画布节点曾在既有 Canvas Snapshot v3 `data` 中保存可选 `nodeLifecycle`、`nodeLifecycleBeforeArchive`、`agentDetailsFolded` 和 `agentExpandedHeight`。这些字段现在仅用于旧快照兼容读取与历史节点呈现，新 Project Agent Turn 不创建上述独立执行节点。旧节点缺失字段时按 `working` 展示，不要求快照版本升级；归档仍保留完整节点和边。
 
 Project Agent Session v1 位于 `agent/session.json`。每个 Project 只创建一个稳定 Session，按严格递增序号保存用户消息、助手消息、思考、工具调用、工具结果、审批、状态、压缩和 Memory 事件；它是项目事件总账，不等价于模型的单一 Conversation。当前新 Turn 以 Conversation 作为正式的模型历史与运行状态边界：`conversations[]` 以及事件的 `conversationId/parentTurnId/sourceNodeId/resultNodeId` 记录 root node、父 Conversation、fork turn、独立 summary、compact boundary、压缩失败状态和 Conversation runtime state。只有旧 Session 可能缺少这些字段；读取时才回退到 legacy Project transcript，并在后续新节点运行时逐步建立 Conversation 元数据，不要求清空或重写旧历史。
 

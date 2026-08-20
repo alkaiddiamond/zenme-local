@@ -1,5 +1,7 @@
 # 安全模型
 
+文档状态：当前安全工程契约。
+
 ## 信任边界
 
 - Electron 主进程和本地数据仓库属于可信应用边界。
@@ -29,14 +31,14 @@
 
 - 运行环境变量安全测试和路径安全测试。
 - 检查安装包中不包含 `.env.local`、真实数据、日志或调试截图。
-- Windows 与 macOS 正式产物必须代码签名；macOS 还必须完成 notarization。
+- Windows 公开 Alpha 产物可在 Release 明确标注 `unsigned`、SmartScreen 风险并提供 SHA-256 后发布；具备证书时应使用 Authenticode。macOS 公开产物必须代码签名并完成 notarization。
 - 依赖安全审计必须使用支持 npm audit API 的 registry，并记录未解决项。
 
 Workspace 的完整威胁、状态、权限和重关联设计见 [Workspace Foundation 工程规格](workspace-foundation.md)。
 
 ## Windows Agent 命令边界
 
-- 与 cc-haha 的原生 Windows 实现一致，Zenme 不额外包装 Codex Windows 沙箱运行器。Shell 使用固定 PowerShell、`shell: false` 和受控环境直接启动命令，避免改变 Vite、tsx、esbuild、Turbo 等真实开发进程树的语义。
+- Zenme 不额外包装 Windows 进程沙箱运行器。Shell 使用固定 PowerShell、`shell: false` 和受控环境直接启动命令，避免改变 Vite、tsx、esbuild、Turbo 等真实开发进程树的语义。
 - 安全边界由 Workspace Root、路径规范化、敏感文件过滤、命令解析与风险分类、会话权限和精确的一次性审批共同组成；未授权越界、安装依赖、联网或系统管理命令不会静默执行。
 - 前台命令持续运行时保留同一个子进程，达到后台阈值后只改变任务表示，不重新启动命令。后台输出、终态通知和停止操作都绑定稳定 task ID。
 - 桌面关闭、任务停止和超时会终止整棵进程树；原生 Windows 当前不提供强制的进程级文件系统隔离，因此界面和文档不得把 `workspace-write` 描述为 OS 沙箱保证。

@@ -1,6 +1,8 @@
 # Editable File 与 ChangeSet
 
-本文记录 AI Project Workspace Phase 2–3 的工程契约。Workspace 授权与路径边界见 [Workspace Foundation](workspace-foundation.md)，File Document 身份与外部同步见 [Live File](live-files.md)。
+文档状态：当前工程契约。
+
+本文记录 Workspace 文件编辑与 ChangeSet 的工程契约。Workspace 授权与路径边界见 [Workspace Foundation](workspace-foundation.md)，File Document 身份与外部同步见 [Live File](live-files.md)。
 
 ## 编辑状态与磁盘真相源
 
@@ -68,17 +70,4 @@ Agent 的 `write_file`、`edit_file`、`apply_patch`、`notebook_edit` 与 `prop
 | 多文件审批 | create/modify/delete/rename 应用与 Revert 测试 | ChangeSet 面板整体批准、应用、回退 |
 | 中断恢复 | `applying` 回滚、`reverting` 完成、未知状态不覆盖测试 | 应用中强制退出后重启 |
 
-## Windows 真机验证记录
-
-2026-08-12 在 Electron 开发版与仓库内临时 Workspace 完成以下验证：
-
-- 打开 `sample.txt`，编辑并直接保存；PowerShell 从磁盘读取到精确 Buffer：通过。
-- 保持本地 Dirty Buffer 时从外部修改磁盘；节点进入“外部冲突”，Buffer 未丢失，保存与 ChangeSet 提交被阻止：通过。
-- 选择 `Keep Mine` 后保留 Buffer，并以新的磁盘版本作为审批基线：通过。
-- 创建 ChangeSet、整体批准并应用到 Workspace；磁盘内容变为提案内容：通过。
-- 应用后共享 File Document 立即接受与 Buffer 相同的受控写入，显示“已同步”，未误报外部冲突：通过。
-- Revert 已应用 ChangeSet；磁盘和 File Document 均恢复到应用前内容并保持同步：通过。
-- 解除 Workspace Binding 后，节点进入可恢复的“Workspace 未绑定或不可用”状态：通过。
-- 临时 Project、Binding、ChangeSet 与 Workspace 文件已精确清理；其他 Project 未修改：通过。
-
-中断事务的进程级故障注入由自动化测试覆盖；本次真机未在写入系统调用中途强制终止 Electron。
+真机列是发布候选需要重新执行的场景，不代表当前工作树已经通过。中断事务的进程级故障注入由自动化测试覆盖。

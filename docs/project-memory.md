@@ -1,5 +1,7 @@
 # Project Memory
 
+文档状态：当前工程契约。
+
 Project Memory 是 Project 级派生知识，不替代 Workspace 文件、Canvas Snapshot、ChangeSet 或 Execution。当前格式版本为 `1`，持久化在 `projects/{projectId}/memory/index.json`。
 
 ## 状态与确认

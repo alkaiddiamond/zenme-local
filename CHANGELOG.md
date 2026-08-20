@@ -4,6 +4,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- 新增统一 Project Agent Turn：在 AI 回复节点内完成流式回答、工具调用、审批、提问、计划、重试、停止和运行中追加指令。
+- 新增本地 Workspace、多 Root、Live File、ChangeSet、Project Memory、Project Knowledge 与可选 Git Worktree 隔离。
+- 新增 Shell、代码诊断/语义导航、网页取证、隔离浏览器、Skill、MCP、Hooks、Workflow、Task V2、Sub-agent 和持续 Team 能力。
+- 新增 Conversation 分支、分层上下文、独立压缩状态和结构化 `contextSnapshot` 持久化。
+
+### Changed
+
+- 普通问答、Workspace Agent 与 Global Agent 收敛为单一 Project Agent 入口；历史独立节点和 API 仅保留兼容读取、审计与必要停止操作。
+- Agent 的文件变更统一形成可审阅 ChangeSet；命令审批、权限模式、Plan Mode、Hook 与 Worktree 状态改为按 Conversation 持久化。
+- Agent、工具、命令、Sub-agent 和后台任务统一使用服务端生命周期与持久化恢复边界。
+
+### Removed
+
+- 移除已被当前工程契约取代的旧里程碑、一次性验收矩阵、外部项目对照、前瞻产品规范和模型版本维护档案；历史内容继续由 Git 保存。
+
 ## [0.1.2] - 2026-08-06
 
 ### Added

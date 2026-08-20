@@ -1,6 +1,8 @@
 # Agent Workspace Runtime
 
-本文记录 AI Project Workspace Phase 4 的工程契约。Agent 复用现有 `Execution → NodeRun → Attempt` 证据链；工具调用、审批命令和阶段日志保存在独立的 Agent Execution Detail 中，不写入 Canvas Snapshot。
+文档状态：当前统一 Project Agent 的生产工程契约；历史节点和字段只在明确标注的兼容段落中有效。
+
+本文记录统一 Project Agent 的工程契约。Agent 复用现有 `Execution → NodeRun → Attempt` 证据链；工具调用、审批命令和阶段日志保存在独立的 Agent Execution Detail 中，不写入 Canvas Snapshot。
 
 ## 统一 Project Agent Turn
 
@@ -19,16 +21,16 @@
 - 后台命令是 `shell_command` 的执行模式，不是模型需要枚举或轮询的第二套工作流。Shell 默认前台执行，2 秒后在同一工具事件节流更新进度，15 秒仍未退出时将同一进程转为后台；显式 `run_in_background=true` 则立即返回。结果包含稳定 `taskId`、有界预览和保存完整输出的 `outputFilePath`，后续可按已知 ID 调用 `task_output/task_stop`，也可用 `read_file` 按行读取该精确输出文件。任务进入终态时，运行时向原 Agent 注入一次内部通知；`task_list` 只列出共享开发任务，不枚举后台进程，最终答复中的明确 loopback URL 由界面投影为用户可点击的预览入口。
 - 前台 Turn 完成后，仍在运行的后台命令作为运行时投影显示独立的“后台任务运行中”项目、命令和停止按钮；停止请求由服务端按 `projectId + taskId` 校验并终止进程树。任务终态后活动项消失，内部通知不会作为普通聊天正文长期铺开，完整记录仍保留在执行证据中。
 - 每个 Turn 持久化真实的 `规划 → 思考 → 工具 → 思考` 阶段转换；运行界面只突出当前活动，完成后折叠临时状态。内置工具与动态 MCP 工具统一使用面向用户的活动标签，内部工具标识仅保留在执行证据中。
-- 后台任务契约以本节为准：模型侧 `task_list` 对齐 cc-haha 的 TaskList，只处理共享开发任务；它不是后台进程列表。后台进程内部列表仅供运行时恢复和管理界面使用。
+- 后台任务契约以本节为准：模型侧 `task_list` 只处理共享开发任务，不是后台进程列表。后台进程内部列表仅供运行时恢复和管理界面使用。
 - 工具名称、描述、权限类别、Workspace 依赖、参数示例和运行时校验集中在 `lib/agent/tool-registry.ts`。Project Agent 与 Workspace/Sub-agent 共享该注册表，禁止分别维护不同的硬编码工具名单。
 - 所有已开始执行的内置工具、MCP 调用和 Sub-agent 协作消息统一经过 `lib/agent/tool-execution-pipeline.ts`：参数校验后依次运行 PreToolUse Hook、硬权限判断、实际执行以及 PostToolUse/PostToolUseFailure Hook。Pre Hook 可以改写参数或收紧为询问/拒绝，但 `allow` 不能覆盖 Workspace、MCP 或命令的硬权限拒绝；执行一旦开始，Execution 中的 Tool Call 必须且只能结束一次。用户、项目、local、管理员托管设置和显式启用插件都可以声明持久 Hook；`allowManagedHooksOnly`、`disableAllHooks` 与 `strictPluginOnlyCustomization: ["hooks"]` 在加载时执行 cc-haha 相同的来源限制。
 - Project Skill 从每个可读 Workspace Root 的 `.zenme/skills`、`.claude/skills`、`.agents/skills` 和用户级技能目录发现。列表为项目 Skill 标注稳定 `rootId`；不同 Root 的同名 Skill 同时可见，主 Agent 通过 `rootId` 精确加载，Sub-agent 的 `skill` 工具则自动绑定到其任务 Root 并拒绝跨根切换。Root 内优先级保持 `.zenme` → `.claude` → `.agents`，项目 Skill 优先于同名用户 Skill。
-- 当前交互会话与 cc-haha 的 Task V2 一致，只向模型暴露 `task_create`、`task_get`、`task_list`、`task_update`。最新结构化任务计划独立保存在 Project Agent Session 中，跨 Turn、重启和上下文压缩继续进入模型上下文；每次创建或更新同时形成 `todo` 瀑布投影，运行中展示当前进度，Turn 结束后保留最新快照。`todo_write` 仅保留在旧 Execution / Session 的持久化类型、审计展示和模型上下文迁移层；当前 Tool Registry 不向模型暴露，通用 Agent Tool API 也拒绝执行，新 Sub-agent 默认工具池同样不会包含它。
+- 当前交互会话使用 Task V2，只向模型暴露 `task_create`、`task_get`、`task_list`、`task_update`。最新结构化任务计划独立保存在 Project Agent Session 中，跨 Turn、重启和上下文压缩继续进入模型上下文；每次创建或更新同时形成 `todo` 瀑布投影，运行中展示当前进度，Turn 结束后保留最新快照。`todo_write` 仅保留在旧 Execution / Session 的持久化类型、审计展示和模型上下文迁移层；当前 Tool Registry 不向模型暴露，通用 Agent Tool API 也拒绝执行，新 Sub-agent 默认工具池同样不会包含它。
 - 长任务和多 Agent 协作使用项目级共享任务对象。Task V2 任务拥有稳定 ID、完整描述、负责人、状态和依赖；更新在 Project Session 锁内原子提交，循环依赖和删除仍被依赖的任务会被拒绝。主 Agent 与长期 Team 成员读取同一列表；一次性 Orchestration Sub-agent 只执行父 Agent 已分配的任务，不获得共享任务或 `send_message` 工具。后台进程由 Shell 返回的稳定 ID、终态通知以及主 Agent 针对已知 ID 的 `task_output/task_stop` 管理；进程枚举只供运行时与管理界面使用，不进入模型工具集。
 - 多 Agent 同时提供两种明确语义：`delegate_tasks` 是一次性、可带依赖的并行批次；`team_create/agent_spawn/send_message/team_delete` 是参照 cc-haha 的持续团队。每个 Project Session 同时只允许一个未关闭团队，成员名称在团队内唯一；主 Agent 可按名称定向发送、广播或发出结构化 `shutdown_request`。成员完成后保留同一 Execution 与会话历史，再次收到消息时重新唤醒而不是创建同名副本。成员终态由运行时主动写入父 Turn 的后台通知，模型不通过列表工具轮询。团队仍有活动或等待成员时禁止删除，成功删除只归档审计记录，不抹除 Execution 和消息证据。
 - 每个新 Turn 在第一次模型调用前，会以当前用户请求对已就绪的 Project Knowledge 执行一次本地、有限的混合召回。最多注入 8 条、16000 字符预算内的文件/符号/画布/Execution/ChangeSet/Memory 证据，只包含标题、路径、评分、关系依据和匹配片段，不注入实体完整正文。索引缺失、暂停、过期或不可读时安静降级，不阻断普通对话；模型需要更深证据时仍可显式调用 `search_knowledge`。
 - 运行中的 Turn 接受同一输入框追加指令。补充指令先作为 `user/source=steering` 事件持久化，再递增运行时版本；若旧模型响应随后返回，Runtime 会丢弃旧决策并用包含补充指令的最新 Project Session 上下文继续，而不会新建平行 Turn。追加指令必须携带持久化 `turnId`，Runtime 会拒绝把旧节点的输入误投到同项目另一个活动 Turn。AI 回复节点自身保持运行态；渲染器刷新或面板重开后，停止与追加指令会从节点恢复 `turnId`，不依赖已丢失的前端 `AbortController`。工具或后台进程执行期间收到的指令在当前不可中断步骤结束后消费，空输入仍保留停止入口。
-- 主 Turn 最多允许 200 次工具决策作为异常服务商的最终保险，不再用较小轮数截断正常的复杂开发任务。普通工具成功或失败都像 cc-haha 一样作为结果返回下一轮模型，由 Agent 诊断、改道或完成；Runtime 不再用“三次相同结果”生成伪回答，也不在主循环中识别或复用所谓“相同服务启动命令”。Sub-agent 同样遵循这一规则，并只受自身最大轮数、权限边界和进程安全上限约束。
+- 主 Turn 最多允许 200 次工具决策作为异常服务商的最终保险，不再用较小轮数截断正常的复杂开发任务。普通工具成功或失败都作为结果返回下一轮模型，由 Agent 诊断、改道或完成；Runtime 不再用“三次相同结果”生成伪回答，也不在主循环中识别或复用所谓“相同服务启动命令”。Sub-agent 同样遵循这一规则，并只受自身最大轮数、权限边界和进程安全上限约束。
 - 长 Turn 的完整工具事件始终保存在 Session 和可追溯执行记录中。提交模型前的 microcompact 投影对齐 cc-haha 的工具边界：只处理 `read_file`、Shell、Glob/Grep、WebSearch/WebFetch、Edit/Write/ApplyPatch/NotebookEdit 等可重建结果；审批、任务、记忆、浏览器、MCP 和其他持久状态永不因“太旧”而被清掉。策略至少保留最近五个可压缩工具结果，并按原始事件与占位符的实际 token 估算差值判断，新增释放不足 4,000 tokens 时不触发。触发后 Session 追加一次 `compact/kind=microcompact` 边界，画布显示释放量；完整原始事件不改写，后续模型投影复用已记录 ID，不重复压缩或刷屏。正在运行、待审批和等待输入的事件同样受保护，因此提升循环容量不会牺牲恢复与审计能力。
 - 主 Agent 和并行 Sub-agent 自动加载每个可读 Workspace Root 中的 `AGENTS.md`、`CLAUDE.md`、`CLAUDE.local.md`、`.claude/CLAUDE.md` 与 `.claude/rules/*.md`。根目录规则从第一次模型调用起生效；Agent 的工具参数触及某个 Root 的子目录后，下次模型调用只按该 `rootId` 从根到子目录加入更具体规则，不会把主根同名目录的规则误用于附加根。这些项目指令在上下文中带稳定 Root 标识，属于 system context 的受控组成部分，但不能扩大 Workspace 能力、改变会话权限或绕过 ChangeSet/命令审批。
 - `code_diagnostics` 是模型可自主选择的结构化 observation，不由 Runtime 在完成前强制插入。诊断器读取 Workspace 内的 `tsconfig.json`/`jsconfig.json`，返回结构化文件、行列、错误码与严重级别；对尚未应用的 Agent/Sub-agent ChangeSet 使用内存覆盖层分析提案后的代码，不会为了诊断提前写盘。没有支持的配置时明确返回 `available=false`，该结果不等同于测试通过，Agent 仍需按风险运行相关项目检查。
@@ -36,7 +38,7 @@
 ## 通用 Agent 默认设置
 
 - `defaultSessionPermissionMode` 只有三档：`untrusted`（采取操作前始终询问）、`onRequest`（请求提升权限时询问，默认值）、`neverAsk`（受阻动作直接失败）。所有模式都不会越过 ChangeSet 与命令一次性审批硬边界。
-- 通用设置保存默认文本模型、与 Codex 一致的四档推理强度（轻 `low`、中 `medium`、高 `high`、极高 `xhigh`）和速度（`standard / fast`）。节点对话可对单个 Turn 覆盖推理强度与速度；未覆盖时使用通用默认值。GPT-5.6 Responses/Chat Completions 映射到真实 reasoning effort，快速模式映射到 Priority service tier；不支持这些参数的服务商保持默认行为。短期六档版本中的 `none` 向前迁移为“轻”，`max` 向前迁移为“极高”。
+- 通用设置保存默认文本模型、四档推理强度（轻 `low`、中 `medium`、高 `high`、极高 `xhigh`）和速度（`standard / fast`）。节点对话可对单个 Turn 覆盖推理强度与速度；未覆盖时使用通用默认值。GPT-5.6 Responses/Chat Completions 映射到真实 reasoning effort，快速模式映射到 Priority service tier；不支持这些参数的服务商保持默认行为。短期六档版本中的 `none` 向前迁移为“轻”，`max` 向前迁移为“极高”。
 - Project Agent 的 system prompt 固定注入统一决策循环：先明确完成条件和授权范围，再选择最小充分路径，逐次读取工具真实结果，完成前核验结果与证据。该策略指导模型内部推理，但不要求暴露私有思维链。GPT-5.6 Responses 请求会启用可展示的 `reasoning.summary=auto`，摘要增量经统一模型流分批写入 `thinking` 事件；瀑布流在运行中展示简短摘要、工具记录与审批，Turn 完成后回到最终结果投影。
 - 节点为本 Turn 选择的模型、推理强度（轻/中/高/极高）和速度（标准/快速）写入原始用户事件，命令审批、用户回答、后台任务通知和应用重启后的恢复均复用同一配置。`delegate_tasks` 创建的 Sub-agent 同样继承该 Turn 的推理强度和速度，不在中途退回全局默认值。
 - 等待用户回答或命令审批只暂停当前 Turn，不创建第二条执行轨迹。恢复时按稳定的 `turnId/resultNodeId` 找回原父级 Agent Execution，后续工具调用、命令记录与最终答案继续写入同一 Execution；应用重启后 `waitingInput` 与 `waitingApproval` 都作为可恢复等待态保留。
@@ -153,17 +155,17 @@ Planning → Searching → Reading → Editing → Waiting Approval | Waiting In
 
 ### Windows 命令隔离
 
-原生 Windows 默认采用与 cc-haha 一致的可用性边界：不启用进程沙箱，命令由工具白名单、声明脚本校验、Workspace 路径校验、会话权限与高风险命令审批共同约束。这样 Vite、tsx、esbuild、Turbo 等真实开发进程树可以正常工作；文件工具仍只能在已授权 Workspace Root 内操作，越界目录、安装依赖、联网或系统管理命令仍需明确批准。
+原生 Windows 默认不启用进程沙箱，命令由工具白名单、声明脚本校验、Workspace 路径校验、会话权限与高风险命令审批共同约束。这样 Vite、tsx、esbuild、Turbo 等真实开发进程树可以正常工作；文件工具仍只能在已授权 Workspace Root 内操作，越界目录、安装依赖、联网或系统管理命令仍需明确批准。
 
-应用不再打包或注入 Codex Windows 沙箱运行器。开发服务是否成功由 Shell 退出状态和项目自身输出判断；Runtime 不通过端口扫描、预览等待或自动重启改变命令生命周期。
+应用不打包或注入额外的 Windows 沙箱运行器。开发服务是否成功由 Shell 退出状态和项目自身输出判断；Runtime 不通过端口扫描、预览等待或自动重启改变命令生命周期。
 
 命令记录中的 `sandboxMode` 与 `sandboxBackend` 用于区分 `workspace-write`、单次 `danger-full-access` 以及实际使用的 Windows 后端。
 - stdout/stderr 有大小上限并脱敏 Workspace 绝对路径；超时、停止和客户端中断都会清理进程树。
 - 每个批准只允许消费一次；失败后需要新请求或显式重试。
 
-## 需求—证据矩阵
+## 验证矩阵
 
-| 要求 | 自动化证据 | Windows 真机证据 |
+| 要求 | 自动化证据 | 桌面验证 |
 | --- | --- | --- |
 | 路径封闭 | 绝对路径、`..`、链接逃逸、敏感/忽略路径测试 | 真实 Workspace 读取与拒绝逃逸 |
 | 只经 ChangeSet 写入 | Write/Edit/NotebookEdit 均只生成关联 Execution 的提案 | Agent 提案进入 ChangeSet 面板 |
@@ -171,16 +173,4 @@ Planning → Searching → Reading → Editing → Waiting Approval | Waiting In
 | 阶段与日志 | 状态迁移、事件上限、Canvas 快照不含日志测试 | 执行节点阶段与详情展示 |
 | 恢复 | 活跃执行转 Interrupted，等待审批保留测试 | 执行中重启与审批中重启 |
 
-## 2026-08-12 Windows 验证记录
-
-- 在真实 Electron 开发进程重启后，使用绑定到本仓库的临时项目创建 `agent` Execution。
-- 真实调用 `list_directory`，确认工具结果、阶段和完成摘要写入独立 Agent 详情；临时项目随后已删除。
-- `npm run check` 通过：177 个 Vitest 文件、797 项测试与 14 项桌面进程测试。
-- `npm run build` 通过，包含 Agent API 路由、执行节点与统一服务端执行入口的 TypeScript 校验。
-- 前台窗口持续被用户切换，因此本轮没有继续自动点击命令审批按钮；该交互保留到最终桌面回归，未宣称已完成真机点击验证。
-
-## 2026-08-16 Shell 生命周期收敛
-
-- 删除模型侧后台进程枚举、`open_preview` 以及端口/进程树预览发现器；保留 cc-haha 语义的共享开发任务 `task_list`，不再把“启动开发模式”拆成重启、枚举、扫描和打开预览等多个 Agent 工具步骤。
-- Shell 只启动一次真实进程。短命令前台完成；超过交互预算后原进程后台化并返回稳定 taskId/outputFilePath；终态通过统一队列进入原 Turn，并在 Agent 空闲时自动恢复循环。
-- 预览入口只来自用户输入、Shell 输出或最终答复中真实出现的 loopback HTTP(S) URL；是否打开由用户点击或明确的 Browser 请求决定，不猜测端口。
+历史实现演进不作为当前验证证据。交付时应运行相关 Vitest、`npm run check`；发布候选还需按 [发布手册](release.md) 完成打包、桌面冒烟和必要真机验证，并记录本次结果。

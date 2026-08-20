@@ -5,8 +5,8 @@
 ## 开发环境
 
 - Node.js 22.12–24
-- npm 11
-- Windows 10/11 x64，或 macOS 12+ Intel x64
+- npm 11（以 `package.json` 的 `packageManager` 为准）
+- Windows 10/11 x64 是主要开发与发布环境；macOS 12+ Intel x64 保留按需 CI 构建和 Intel 真机验证路径
 
 ```bash
 npm ci
@@ -23,7 +23,7 @@ npm run desktop:dev
 | UI、组件、领域逻辑 | `npm run check` |
 | API、持久化、本地数据 | 相关回归测试 + `npm run verify` |
 | Electron、IPC、打包 | `npm run verify` + 对应平台目录包 + `npm run desktop:smoke` |
-| 发布配置 | Windows 与 macOS Intel 各自构建验证 |
+| 发布配置 | 当前 Windows 发布目标完成完整验证；修改 macOS 配置时另行执行 Intel 构建验证 |
 
 持久化格式变更必须包含旧数据 fixture、向前迁移和失败恢复测试。用户可见或跨进程交互如果无法由单元测试充分证明，应在 PR 中记录真机步骤和结果。
 

@@ -1,6 +1,8 @@
 # Global Agent 与并行 Sub-agent
 
-本文记录 AI Project Workspace Phase 5 的工程契约。Global Agent 是一次可审计、可停止的调度，不是永久聊天进程；每个 Sub-agent 复用 Phase 4 的受控 Agent Runtime。新任务统一由 Project Agent 在当前对话 Turn 内通过 `delegate_tasks` 创建并等待调度，不再要求用户切换入口。早期独立调度节点仅保留数据兼容与结果回看。
+文档状态：当前 Project Agent 派生调度与团队协作契约；“Global Agent”指持久 Orchestration 领域对象，不是独立用户入口。
+
+本文记录一次性并行 Sub-agent 调度的工程契约。一次调度可审计、可停止，但不是永久聊天进程；每个 Sub-agent 复用统一的受控 Agent Runtime。新任务由 Project Agent 在当前对话 Turn 内通过 `delegate_tasks` 创建并等待调度，不要求用户切换入口。早期独立 Global Agent 节点仅保留数据兼容与结果回看。
 
 ## 调度模型
 

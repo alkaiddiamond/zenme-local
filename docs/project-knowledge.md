@@ -1,5 +1,7 @@
 # Project Knowledge Graph 与向量检索
 
+文档状态：当前工程契约。
+
 Project Knowledge 是 `derived/knowledge/index.json` 中的可删除派生索引，不是项目真相源，也不进入普通本地备份。清除索引不会修改 Workspace、Canvas、Execution、ChangeSet 或 Project Memory，并可从这些来源完整重建。
 
 ## 索引内容

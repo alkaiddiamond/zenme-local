@@ -1,5 +1,7 @@
 # 故障排查
 
+文档状态：当前用户与维护者排查入口。
+
 ## 桌面窗口启动失败
 
 1. 运行 `npm run build`，确认 Next.js 生产构建成功。
@@ -15,7 +17,7 @@
 
 ## Windows 安装包被拦截
 
-内部未签名包可能触发 SmartScreen。正式发布包应验证 Authenticode 签名；不要建议普通用户长期关闭系统安全功能。
+未签名 Windows Alpha 包可能触发 SmartScreen。先确认安装包来自本仓库 Releases，并核对 Release 提供的 SHA-256 与签名状态；不要建议用户长期关闭系统安全功能。
 
 ## macOS 无法打开
 
