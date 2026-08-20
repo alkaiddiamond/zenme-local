@@ -14,15 +14,21 @@ export type AgentProjectContextLayer = {
 export type AgentConversationContextLayer = {
   conversationId?: string;
   events: ProjectAgentEvent[];
+  summary?: string;
 };
 
 export type AgentGraphContextLayer = {
   directParents: AgentContextEntry[];
   ancestors: AgentContextEntry[];
   selectedNodes: AgentContextEntry[];
+  connectedContext?: string;
 };
 
-export type AgentCurrentNodeContextLayer = AgentContextEntry | null;
+export type AgentCurrentNodeContextLayer = {
+  content: string;
+  nodeId?: string;
+  kind?: CanvasNodeData["kind"];
+} | null;
 
 export type AgentCurrentInstructionLayer = {
   prompt: string;
@@ -35,6 +41,35 @@ export type AgentContextLayers = {
   currentNode: AgentCurrentNodeContextLayer;
   instruction: AgentCurrentInstructionLayer;
 };
+
+export function createAgentContextLayers(input: {
+  projectSummary?: string;
+  conversationId?: string;
+  conversationSummary?: string;
+  conversationEvents?: ProjectAgentEvent[];
+  currentNodeContext?: string;
+  connectedGraphContext?: string;
+  prompt: string;
+}): AgentContextLayers {
+  return {
+    project: { summary: input.projectSummary },
+    conversation: {
+      conversationId: input.conversationId,
+      events: input.conversationEvents ?? [],
+      summary: input.conversationSummary,
+    },
+    graph: {
+      directParents: [],
+      ancestors: [],
+      selectedNodes: [],
+      connectedContext: input.connectedGraphContext,
+    },
+    currentNode: input.currentNodeContext
+      ? { content: input.currentNodeContext }
+      : null,
+    instruction: { prompt: input.prompt },
+  };
+}
 
 export type AgentContextSnapshot = {
   version: 1;

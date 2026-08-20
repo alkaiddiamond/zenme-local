@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   planProjectAgentCompaction,
   planProjectAgentConversationCompaction,
+  projectAgentEventForCompaction,
   projectProjectAgentToolResultsForModel,
   PROJECT_AGENT_TOOL_RESULT_CLEARED,
   thinProjectAgentToolResults,
@@ -96,6 +97,44 @@ describe("project agent context policy", () => {
     expect(plan?.eventsToSummarize.map((item) => item.turnId)).toEqual(["turn-a1", "turn-a1"]);
     expect(plan?.eventsToKeep.map((item) => item.turnId)).toEqual(["turn-a2", "turn-a2"]);
     expect(plan?.eventsToSummarize.some((item) => item.turnId === "turn-b1")).toBe(false);
+  });
+
+  it("estimates and projects compaction from model semantics instead of recovery snapshots", () => {
+    const first = turn("turn-a1", 1, "first semantic request");
+    first[0]!.conversationId = "conv-a";
+    first[0]!.data = {
+      contextSnapshot: {
+        version: 1,
+        instruction: { prompt: "first semantic request" },
+        currentNode: { content: "NODE_RECOVERY_ONLY_" + "n".repeat(40_000) },
+        graph: { connectedContext: "GRAPH_RECOVERY_ONLY_" + "g".repeat(40_000) },
+        legacy: { canvasContext: "LEGACY_RECOVERY_ONLY_" + "l".repeat(40_000) },
+      },
+      selectedNodeIds: ["node-a"],
+      fileDocumentIds: ["file-a"],
+    };
+    const second = turn("turn-a2", 3, "second semantic request");
+    second[0]!.conversationId = "conv-a";
+    const session = makeSession([...first, ...second]);
+    session.conversations = [{
+      id: "conv-a",
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    }];
+
+    const projected = projectAgentEventForCompaction(first[0]!);
+    expect(JSON.stringify(projected)).toContain("first semantic request");
+    expect(JSON.stringify(projected)).not.toContain("NODE_RECOVERY_ONLY_");
+    expect(JSON.stringify(projected)).not.toContain("GRAPH_RECOVERY_ONLY_");
+    expect(JSON.stringify(projected)).not.toContain("LEGACY_RECOVERY_ONLY_");
+
+    const plan = planProjectAgentConversationCompaction(session, "conv-a", {
+      minTokens: 1,
+      minTextMessages: 1,
+      maxTokens: 1,
+    });
+    expect(plan).not.toBeNull();
+    expect(plan!.sourceTokenEstimate).toBeLessThan(1_000);
   });
 
   it("keeps conversation-scoped turns out of project-level compaction", () => {

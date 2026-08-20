@@ -11,7 +11,12 @@ import {
 } from "@/lib/agent/execution-store";
 import { stopRunningAgentCommands } from "@/lib/agent/command-runtime";
 import { createProjectAgentWorktree, settleProjectAgentWorktree } from "@/lib/agent/project-agent-worktree";
-import { createAgentContextSnapshot, parseAgentContextSnapshot, type AgentContextSnapshot } from "@/lib/agent/context-model";
+import {
+  applyAgentContextSnapshot,
+  createAgentContextSnapshot,
+  parseAgentContextSnapshot,
+  type AgentContextSnapshot,
+} from "@/lib/agent/context-model";
 import type { AgentWorkspaceToolName } from "@/lib/agent/types";
 import { getConfirmedMemoryContext, listProjectMemories } from "@/lib/memory/repository";
 import { searchProjectKnowledge } from "@/lib/knowledge/index-store";
@@ -142,6 +147,26 @@ export async function createGlobalOrchestration(input: {
   if (tasks.length > maxSubagents) {
     throw new GlobalOrchestrationError("任务数量超过 Sub-agent 预算", "invalid_input");
   }
+  const requestedContextSnapshot = parseAgentContextSnapshot(input.contextSnapshot);
+  const resolvedContext = applyAgentContextSnapshot({
+    prompt: input.goal,
+    contextSnapshot: requestedContextSnapshot,
+    currentNodeContext: input.currentNodeContext,
+    connectedGraphContext: input.connectedGraphContext,
+    conversationId: input.conversationId,
+    selectedNodeIds: input.selectedNodeIds,
+    fileDocumentIds: input.fileDocumentIds,
+    canvasContext: input.canvasContext,
+  });
+  const contextSnapshot = requestedContextSnapshot ?? createAgentContextSnapshot({
+    prompt: input.goal,
+    currentNodeContext: resolvedContext.currentNodeContext,
+    connectedGraphContext: resolvedContext.connectedGraphContext,
+    conversationId: resolvedContext.conversationId,
+    selectedNodeIds: resolvedContext.selectedNodeIds,
+    fileDocumentIds: resolvedContext.fileDocumentIds,
+    canvasContext: resolvedContext.canvasContext,
+  });
   const orchestration: GlobalOrchestration = {
     version: GLOBAL_ORCHESTRATION_VERSION,
     id,
@@ -175,21 +200,13 @@ export async function createGlobalOrchestration(input: {
         reason: `分配给 Sub-agent「${task.title}」的 Workspace Root 与最小路径范围`,
       }))),
     ].slice(0, 1_000),
-    selectedNodeIds: dedupe(input.selectedNodeIds),
-    fileDocumentIds: dedupe(input.fileDocumentIds),
-    canvasContext: (input.canvasContext ?? "").slice(0, 2_000_000),
-    contextSnapshot: input.contextSnapshot ?? createAgentContextSnapshot({
-      prompt: input.goal,
-      currentNodeContext: input.currentNodeContext,
-      connectedGraphContext: input.connectedGraphContext,
-      conversationId: input.conversationId,
-      selectedNodeIds: input.selectedNodeIds,
-      fileDocumentIds: input.fileDocumentIds,
-      canvasContext: input.canvasContext,
-    }),
-    currentNodeContext: input.currentNodeContext?.slice(0, 2_000_000) || undefined,
-    connectedGraphContext: input.connectedGraphContext?.slice(0, 2_000_000) || undefined,
-    conversationId: input.conversationId?.trim() || undefined,
+    selectedNodeIds: dedupe(resolvedContext.selectedNodeIds),
+    fileDocumentIds: dedupe(resolvedContext.fileDocumentIds),
+    canvasContext: (resolvedContext.canvasContext ?? "").slice(0, 2_000_000),
+    contextSnapshot,
+    currentNodeContext: resolvedContext.currentNodeContext?.slice(0, 2_000_000) || undefined,
+    connectedGraphContext: resolvedContext.connectedGraphContext?.slice(0, 2_000_000) || undefined,
+    conversationId: resolvedContext.conversationId?.trim() || undefined,
     tasks,
     conflicts: plannedConflicts(tasks),
     applicationOrder: topologicalOrder(tasks),

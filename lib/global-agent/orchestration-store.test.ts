@@ -329,11 +329,19 @@ describe("Global Agent orchestration", { timeout: 15_000 }, () => {
       resultNodeId: "structured-global-node",
       triggerNodeId: "structured-source-node",
       goal: "检查结构化上下文",
-      currentNodeContext: "CURRENT_ORCHESTRATION_NODE",
-      connectedGraphContext: "CONNECTED_ORCHESTRATION_GRAPH",
-      conversationId: "orchestration-conversation",
-      selectedNodeIds: ["node-a"],
-      fileDocumentIds: ["file-a"],
+      currentNodeContext: "LEGACY_ORCHESTRATION_NODE",
+      connectedGraphContext: "LEGACY_ORCHESTRATION_GRAPH",
+      conversationId: "legacy-orchestration-conversation",
+      selectedNodeIds: ["legacy-node"],
+      fileDocumentIds: ["legacy-file"],
+      contextSnapshot: {
+        version: 1,
+        instruction: { prompt: "检查结构化上下文" },
+        currentNode: { content: "CURRENT_ORCHESTRATION_NODE" },
+        graph: { connectedContext: "CONNECTED_ORCHESTRATION_GRAPH" },
+        conversation: { conversationId: "orchestration-conversation" },
+        references: { selectedNodeIds: ["node-a"], fileDocumentIds: ["file-a"] },
+      },
       tasks: [{ title: "检查", instruction: "检查上下文", allowedPathPrefixes: ["src/a"] }],
     }, dataDir);
 
@@ -344,6 +352,13 @@ describe("Global Agent orchestration", { timeout: 15_000 }, () => {
       graph: { connectedContext: "CONNECTED_ORCHESTRATION_GRAPH" },
       conversation: { conversationId: "orchestration-conversation" },
       references: { selectedNodeIds: ["node-a"], fileDocumentIds: ["file-a"] },
+    });
+    expect(orchestration).toMatchObject({
+      currentNodeContext: "CURRENT_ORCHESTRATION_NODE",
+      connectedGraphContext: "CONNECTED_ORCHESTRATION_GRAPH",
+      conversationId: "orchestration-conversation",
+      selectedNodeIds: ["node-a"],
+      fileDocumentIds: ["file-a"],
     });
     await expect(getGlobalOrchestration(projectId, orchestration.id, dataDir)).resolves.toMatchObject({
       contextSnapshot: orchestration.contextSnapshot,

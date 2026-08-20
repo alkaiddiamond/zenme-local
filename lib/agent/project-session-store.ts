@@ -16,6 +16,7 @@ import {
   type ProjectAgentTaskItem,
 } from "@/lib/agent/project-session-types";
 import {
+  estimateProjectAgentCompactionTokens,
   estimateProjectAgentEventTokens,
   estimateProjectAgentTextTokens,
   projectProjectAgentToolResultsForModel,
@@ -598,6 +599,7 @@ export async function getProjectAgentModelContext(
   const conversationRuntimeState = getProjectAgentConversationRuntimeState(session, conversationId);
   const previouslyClearedEventIds = session.events.flatMap((event) =>
     event.type === "compact" && event.data?.kind === "microcompact" &&
+      (conversationId ? event.conversationId === conversationId : !event.conversationId) &&
       Array.isArray(event.data.clearedToolResultEventIds)
       ? event.data.clearedToolResultEventIds.filter((id): id is string => typeof id === "string")
       : [],
@@ -642,12 +644,12 @@ export async function getProjectAgentModelContext(
     estimatedConversationTokens: estimateProjectAgentTextTokens(context.summary) +
       estimateProjectAgentTextTokens(conversation?.summary ?? "") +
       estimateProjectAgentTextTokens(JSON.stringify(session.taskPlan)) + modelEvents.reduce(
-      (total, event) => total + estimateProjectAgentEventTokens(event),
+      (total, event) => total + estimateProjectAgentCompactionTokens(event),
       0,
     ),
     estimatedTokens: estimateProjectAgentTextTokens(context.summary) +
       estimateProjectAgentTextTokens(JSON.stringify(session.taskPlan)) + modelEvents.reduce(
-      (total, event) => total + estimateProjectAgentEventTokens(event),
+      (total, event) => total + estimateProjectAgentCompactionTokens(event),
       0,
     ),
   };

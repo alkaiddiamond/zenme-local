@@ -58,6 +58,8 @@ describe("text generation request boundary", () => {
 
     expect(nodeSubmitSource).toContain("collectAgentTurnReferences");
     expect(nodeSubmitSource).toContain("contextSnapshot: createAgentContextSnapshot");
+    expect(nodeSubmitSource).toContain("parseAgentContextSnapshot");
+    expect(nodeSubmitSource).toContain("applyAgentContextSnapshot");
     expect(nodeSubmitSource).toContain("fileDocumentIds: references.fileDocumentIds");
     expect(nodeSubmitSource).toContain("selectedNodeIds: references.selectedNodeIds");
     expect(nodeSubmitSource).not.toContain("selectedNodeIds: [sourceNode.id]");
@@ -118,10 +120,14 @@ describe("text generation request boundary", () => {
     expect(canvasSource).toContain("const resultNodeId = retryExistingTurn ? nodeId : crypto.randomUUID()");
     expect(canvasSource).toContain("resume: retryExistingTurn");
     expect(canvasSource).toContain("getProjectAgentSessionFromApi(projectId)");
-    expect(canvasSource).toContain("retryUserEvent.data.canvasContext");
-    expect(canvasSource).toContain("retryUserEvent.data.fileDocumentIds");
-    expect(canvasSource).toContain("retryUserEvent.data.selectedNodeIds");
-    expect(canvasSource).toContain("const persistedPrompt = retryUserEvent?.content?.trim() || undefined");
+    expect(canvasSource).toContain("parseAgentContextSnapshot(retryUserEvent?.data?.contextSnapshot)");
+    expect(canvasSource).toContain("applyAgentContextSnapshot({");
+    expect(canvasSource).toContain("prompt: retryUserEvent.content ?? \"\"");
+    expect(canvasSource).toContain("const persistedPrompt = retryPersistedContext?.prompt.trim() || undefined");
+    expect(canvasSource).toContain("const persistedCurrentNodeContext = retryPersistedContext?.currentNodeContext");
+    expect(canvasSource).toContain("const persistedConnectedGraphContext = retryPersistedContext?.connectedGraphContext");
+    expect(canvasSource).toContain("fileDocumentIds: retryPersistedContext?.fileDocumentIds ?? []");
+    expect(canvasSource).toContain("selectedNodeIds: retryPersistedContext?.selectedNodeIds ?? []");
     expect(canvasSource).toContain("如果当前节点包含问题，优先回答该问题");
     expect(canvasSource).toContain("originalSourceNode?.id ?? nodeId");
     expect(canvasSource).not.toContain("无法重试当前 Agent Turn：原始上游节点不存在");

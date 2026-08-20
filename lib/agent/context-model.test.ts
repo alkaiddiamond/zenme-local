@@ -2,11 +2,38 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyAgentContextSnapshot,
+  createAgentContextLayers,
   createAgentContextSnapshot,
   parseAgentContextSnapshot,
 } from "@/lib/agent/context-model";
 
 describe("agent context snapshot", () => {
+  it("builds the five runtime context layers explicitly", () => {
+    const layers = createAgentContextLayers({
+      projectSummary: "project background",
+      conversationSummary: "conversation summary",
+      conversationEvents: [{
+        id: "event-1",
+        sequence: 1,
+        turnId: "turn-1",
+        type: "user",
+        createdAt: "now",
+        content: "current request",
+      }],
+      currentNodeContext: "current node",
+      connectedGraphContext: "connected graph",
+      prompt: "current instruction",
+    });
+
+    expect(layers).toMatchObject({
+      project: { summary: "project background" },
+      conversation: { summary: "conversation summary", events: [{ turnId: "turn-1" }] },
+      graph: { connectedContext: "connected graph" },
+      currentNode: { content: "current node" },
+      instruction: { prompt: "current instruction" },
+    });
+  });
+
   it("prefers the structured snapshot while keeping legacy fields as fallback", () => {
     const snapshot = createAgentContextSnapshot({
       prompt: "structured prompt",

@@ -29,6 +29,7 @@ import {
 } from "@/lib/workspace/types";
 import { getConfirmedMemoryContext } from "@/lib/memory/repository";
 import {
+  applyAgentContextSnapshot,
   createAgentContextSnapshot,
   parseAgentContextSnapshot,
   type AgentContextSnapshot,
@@ -117,14 +118,25 @@ export async function createAgentExecution(input: {
   const now = new Date().toISOString();
   const projectMemories = limitMemoryContext(await getConfirmedMemoryContext(input.projectId, dataDir));
   const knowledgeContext = await resolveKnowledgeContext(input.projectId, input.instruction, dataDir);
-  const contextSnapshot = input.contextSnapshot ?? createAgentContextSnapshot({
+  const requestedSnapshot = parseAgentContextSnapshot(input.contextSnapshot);
+  const resolvedContext = applyAgentContextSnapshot({
     prompt: input.instruction,
+    contextSnapshot: requestedSnapshot,
     currentNodeContext: input.currentNodeContext,
     connectedGraphContext: input.connectedGraphContext,
     conversationId: input.conversationId,
     selectedNodeIds: input.selectedNodeIds,
     fileDocumentIds: input.fileDocumentIds,
     canvasContext: input.canvasContext,
+  });
+  const contextSnapshot = requestedSnapshot ?? createAgentContextSnapshot({
+    prompt: input.instruction,
+    currentNodeContext: resolvedContext.currentNodeContext,
+    connectedGraphContext: resolvedContext.connectedGraphContext,
+    conversationId: resolvedContext.conversationId,
+    selectedNodeIds: resolvedContext.selectedNodeIds,
+    fileDocumentIds: resolvedContext.fileDocumentIds,
+    canvasContext: resolvedContext.canvasContext,
   });
   const detail: AgentExecutionDetail = {
     version: AGENT_EXECUTION_DETAIL_VERSION,
@@ -138,12 +150,12 @@ export async function createAgentExecution(input: {
     triggerNodeId: input.triggerNodeId,
     context: {
       contextSnapshot,
-      selectedNodeIds: dedupeStrings(input.selectedNodeIds),
-      fileDocumentIds: dedupeStrings(input.fileDocumentIds),
-      canvasContext: (input.canvasContext ?? "").slice(0, 2_000_000),
-      currentNodeContext: input.currentNodeContext?.slice(0, 2_000_000) || undefined,
-      connectedGraphContext: input.connectedGraphContext?.slice(0, 2_000_000) || undefined,
-      conversationId: input.conversationId?.trim() || undefined,
+      selectedNodeIds: dedupeStrings(resolvedContext.selectedNodeIds),
+      fileDocumentIds: dedupeStrings(resolvedContext.fileDocumentIds),
+      canvasContext: (resolvedContext.canvasContext ?? "").slice(0, 2_000_000),
+      currentNodeContext: resolvedContext.currentNodeContext?.slice(0, 2_000_000) || undefined,
+      connectedGraphContext: resolvedContext.connectedGraphContext?.slice(0, 2_000_000) || undefined,
+      conversationId: resolvedContext.conversationId?.trim() || undefined,
       projectMemories,
       knowledgeContext,
       allowedPathPrefixes: dedupeStrings(input.allowedPathPrefixes),

@@ -41,6 +41,84 @@ export function estimateProjectAgentEventTokens(event: ProjectAgentEvent) {
   );
 }
 
+export function estimateProjectAgentCompactionTokens(event: ProjectAgentEvent) {
+  const projected = projectAgentEventForCompaction(event);
+  return projected ? estimateProjectAgentTextTokens(safeStringify(projected)) : 0;
+}
+
+export function projectAgentEventForCompaction(event: ProjectAgentEvent) {
+  if (event.type === "assistantDraft" || event.type === "thinking") return null;
+
+  const base = {
+    type: event.type,
+    ...(event.content?.trim() ? { content: event.content } : {}),
+  };
+  if (!event.data) return base;
+
+  if (event.type === "user" || event.type === "assistant") return base;
+  if (event.type === "toolCall") {
+    return {
+      ...base,
+      data: compactSemanticData(event.data, ["name", "arguments", "status"]),
+    };
+  }
+  if (event.type === "toolResult") {
+    return {
+      ...base,
+      data: compactSemanticData(event.data, [
+        "name",
+        "status",
+        "toolCallEventId",
+        "error",
+        "errorCode",
+        "reason",
+      ]),
+    };
+  }
+  if (event.type === "approval") {
+    return {
+      ...base,
+      data: compactSemanticData(event.data, [
+        "status",
+        "reason",
+        "commandRequestId",
+        "toolCallEventId",
+      ]),
+    };
+  }
+
+  return {
+    ...base,
+    ...(Object.keys(compactionSafeData(event.data)).length
+      ? { data: compactionSafeData(event.data) }
+      : {}),
+  };
+}
+
+function compactSemanticData(data: Record<string, unknown>, keys: readonly string[]) {
+  const result: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (data[key] !== undefined) result[key] = data[key];
+  }
+  return result;
+}
+
+function compactionSafeData(data: Record<string, unknown>) {
+  const excluded = new Set([
+    "contextSnapshot",
+    "canvasContext",
+    "currentNodeContext",
+    "connectedGraphContext",
+    "selectedNodeIds",
+    "fileDocumentIds",
+    "parentConversationIds",
+    "uiProjection",
+    "modelProjectionExcluded",
+    "model",
+  ]);
+  return Object.fromEntries(Object.entries(data).filter(([key]) => !excluded.has(key)));
+}
+
 export function planProjectAgentCompaction(
   session: ProjectAgentSession,
   config: {
@@ -94,7 +172,7 @@ function planAgentCompaction(
 
   for (let index = groups.length - 1; index >= 0; index -= 1) {
     const group = groups[index]!;
-    retainedTokenEstimate += group.reduce((total, event) => total + estimateProjectAgentEventTokens(event), 0);
+    retainedTokenEstimate += group.reduce((total, event) => total + estimateProjectAgentCompactionTokens(event), 0);
     retainedTextMessages += group.filter(isTextMessage).length;
     keepGroupIndex = index;
     const hasProtectedEarlierGroup = groups.slice(0, index).some((candidate) =>
@@ -121,11 +199,11 @@ function planAgentCompaction(
     eventsToKeep,
     compactedThroughSequence,
     sourceTokenEstimate: eventsToSummarize.reduce(
-      (total, event) => total + estimateProjectAgentEventTokens(event),
+      (total, event) => total + estimateProjectAgentCompactionTokens(event),
       estimateProjectAgentTextTokens(previousSummary),
     ),
     retainedTokenEstimate: eventsToKeep.reduce(
-      (total, event) => total + estimateProjectAgentEventTokens(event),
+      (total, event) => total + estimateProjectAgentCompactionTokens(event),
       0,
     ),
   };

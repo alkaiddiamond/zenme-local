@@ -111,7 +111,7 @@ import {
   getSelectionToolbarPosition,
 } from "@/components/zenme/canvas/derived-state";
 import { collectAgentTurnReferences } from "@/components/zenme/canvas/agent-context";
-import { createAgentContextSnapshot } from "@/lib/agent/context-model";
+import { applyAgentContextSnapshot, createAgentContextSnapshot, parseAgentContextSnapshot } from "@/lib/agent/context-model";
 import { resolveConversationLineage, resolveConversationRoute } from "@/lib/agent/conversation-lineage";
 import { projectConversationEvents } from "@/lib/agent/project-agent-transcript";
 import { consumeHomePromptRequest } from "@/components/zenme/canvas/home-prompt";
@@ -2648,6 +2648,27 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         ? retrySession?.events.find((event) => event.turnId === sourceNode.data.agentTurnId && event.type === "user")
         : undefined;
       if (retryExistingTurn && !retryUserEvent) throw new Error("无法重试当前 Agent Turn：原始请求快照不存在");
+      const retryContextSnapshot = parseAgentContextSnapshot(retryUserEvent?.data?.contextSnapshot);
+      const retryPersistedContext = retryUserEvent ? applyAgentContextSnapshot({
+        prompt: retryUserEvent.content ?? "",
+        contextSnapshot: retryContextSnapshot,
+        currentNodeContext: typeof retryUserEvent.data?.currentNodeContext === "string"
+          ? retryUserEvent.data.currentNodeContext
+          : undefined,
+        connectedGraphContext: typeof retryUserEvent.data?.connectedGraphContext === "string"
+          ? retryUserEvent.data.connectedGraphContext
+          : undefined,
+        conversationId: retryUserEvent.conversationId,
+        selectedNodeIds: Array.isArray(retryUserEvent.data?.selectedNodeIds)
+          ? retryUserEvent.data.selectedNodeIds.filter((value): value is string => typeof value === "string")
+          : [],
+        fileDocumentIds: Array.isArray(retryUserEvent.data?.fileDocumentIds)
+          ? retryUserEvent.data.fileDocumentIds.filter((value): value is string => typeof value === "string")
+          : [],
+        canvasContext: typeof retryUserEvent.data?.canvasContext === "string"
+          ? retryUserEvent.data.canvasContext
+          : undefined,
+      }) : undefined;
       const conversationSession = retrySession ?? await getProjectAgentSessionFromApi(projectId);
       const lineage = resolveConversationLineage({ edges: currentEdges, nodeId });
       const turnIdByNodeId = new Map(
@@ -2666,7 +2687,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         createConversationId: () => crypto.randomUUID(),
       });
       const conversationId = retryExistingTurn
-        ? retryUserEvent?.conversationId
+        ? retryPersistedContext?.conversationId
         : conversationRoute.conversationId;
       const parentTurnId = retryExistingTurn
         ? retryUserEvent?.parentTurnId
@@ -2687,22 +2708,15 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         : undefined;
       const persistedModel = typeof retryUserEvent?.data?.model === "string" ? retryUserEvent.data.model : undefined;
       const model = persistedModel || input?.model || sourceNode.data.textGenerationModel || defaultTextModel;
-      const persistedPrompt = retryUserEvent?.content?.trim() || undefined;
+      const persistedPrompt = retryPersistedContext?.prompt.trim() || undefined;
       const prompt = persistedPrompt || input?.prompt?.trim() ||
         "请直接处理当前节点表达的请求；如果当前节点包含问题，优先回答该问题。";
       const contextTokenBudget = getCanvasContextTokenBudget({
         contextWindow: configuredModelOptions.find((option) => option.id === model)?.contextWindow,
         prompt,
       });
-      const persistedCanvasContext = typeof retryUserEvent?.data?.canvasContext === "string"
-        ? retryUserEvent.data.canvasContext
-        : undefined;
-      const persistedCurrentNodeContext = typeof retryUserEvent?.data?.currentNodeContext === "string"
-        ? retryUserEvent.data.currentNodeContext
-        : undefined;
-      const persistedConnectedGraphContext = typeof retryUserEvent?.data?.connectedGraphContext === "string"
-        ? retryUserEvent.data.connectedGraphContext
-        : undefined;
+      const persistedCurrentNodeContext = retryPersistedContext?.currentNodeContext;
+      const persistedConnectedGraphContext = retryPersistedContext?.connectedGraphContext;
       const currentNodeContext = retryExistingTurn
         ? persistedCurrentNodeContext
         : limitTextGenerationContext([
@@ -2721,19 +2735,15 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
             transcriptTurnIds,
           }) : "";
       const context = retryExistingTurn
-        ? persistedCanvasContext
+        ? retryPersistedContext?.canvasContext
         : limitTextGenerationContext([
             currentNodeContext,
             connectedGraphContext,
           ], contextTokenBudget);
       const references = retryExistingTurn
         ? {
-            fileDocumentIds: Array.isArray(retryUserEvent?.data?.fileDocumentIds)
-              ? retryUserEvent.data.fileDocumentIds.filter((value): value is string => typeof value === "string")
-              : [],
-            selectedNodeIds: Array.isArray(retryUserEvent?.data?.selectedNodeIds)
-              ? retryUserEvent.data.selectedNodeIds.filter((value): value is string => typeof value === "string")
-              : [],
+            fileDocumentIds: retryPersistedContext?.fileDocumentIds ?? [],
+            selectedNodeIds: retryPersistedContext?.selectedNodeIds ?? [],
           }
         : collectAgentTurnReferences({
             edges: currentEdges,

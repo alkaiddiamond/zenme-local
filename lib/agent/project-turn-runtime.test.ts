@@ -1459,6 +1459,15 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
         sourceNodeId: `node-a-${index}`,
         type: "user",
         content: `A old ${index}`,
+        data: index === 0 ? {
+          contextSnapshot: {
+            version: 1,
+            instruction: { prompt: "A old 0" },
+            currentNode: { content: "NODE_SNAPSHOT_MUST_NOT_BE_COMPACTED" },
+            graph: { connectedContext: "GRAPH_SNAPSHOT_MUST_NOT_BE_COMPACTED" },
+            legacy: { canvasContext: "LEGACY_SNAPSHOT_MUST_NOT_BE_COMPACTED" },
+          },
+        } : undefined,
       }, dataDir);
       await appendProjectAgentEvent({
         projectId,
@@ -1490,7 +1499,13 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
       turnId: "conv-a-compact",
     }, {
       dataDir,
-      callModel: async () => ({ text: "A conversation summary", usage: null }),
+      callModel: async (input) => {
+        expect(input.context).toContain("A old 0");
+        expect(input.context).not.toContain("NODE_SNAPSHOT_MUST_NOT_BE_COMPACTED");
+        expect(input.context).not.toContain("GRAPH_SNAPSHOT_MUST_NOT_BE_COMPACTED");
+        expect(input.context).not.toContain("LEGACY_SNAPSHOT_MUST_NOT_BE_COMPACTED");
+        return { text: "A conversation summary", usage: null };
+      },
     });
 
     expect(result.status).toBe("completed");

@@ -480,6 +480,11 @@ describe("delegated Sub-agent runtime", { timeout: 15_000 }, () => {
       allowedTools: ["read_file"],
     }, dataDir);
 
+    expect(detail.context).toMatchObject({
+      currentNodeContext: "STRUCTURED_DELEGATED_NODE",
+      connectedGraphContext: "STRUCTURED_DELEGATED_GRAPH",
+      conversationId: "structured-delegated-conversation",
+    });
     const context = buildDelegatedSubagentContext(detail, "neverAsk");
     expect(context).toContain("STRUCTURED_DELEGATED_NODE");
     expect(context).toContain("STRUCTURED_DELEGATED_GRAPH");

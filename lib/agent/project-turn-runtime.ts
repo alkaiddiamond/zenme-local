@@ -22,6 +22,7 @@ import { projectAgentTranscript, projectConversationEvents } from "@/lib/agent/p
 import { buildAgentRetrievalQuery, formatAgentCanvasContext } from "@/lib/agent/context-router";
 import {
   applyAgentContextSnapshot,
+  createAgentContextLayers,
   createAgentContextSnapshot,
   parseAgentContextSnapshot,
   type AgentContextSnapshot,
@@ -46,6 +47,7 @@ import {
   isProjectAgentShellCommandTool,
   planProjectAgentCompaction,
   planProjectAgentConversationCompaction,
+  projectAgentEventForCompaction,
 } from "@/lib/agent/project-context-policy";
 import type { AgentCommandRequest, AgentWorkspaceToolArguments, AgentWorkspaceToolName, AgentWorkspaceToolResult } from "@/lib/agent/types";
 import {
@@ -4040,6 +4042,7 @@ async function compactBeforeTurnIfNeeded(input: {
   await appendProjectAgentEvent({
     projectId: input.projectId,
     turnId: input.turnId,
+    conversationId: input.conversationId,
     type: "status",
     data: {
       stage: "compacting",
@@ -4074,6 +4077,7 @@ async function compactBeforeTurnIfNeeded(input: {
         await appendProjectAgentEvent({
           projectId: input.projectId,
           turnId: input.turnId,
+          conversationId: input.conversationId,
           type: "toolResult",
           content: preCompact.additionalContext,
           data: { name: "PreCompact", hookLifecycle: true, status: "succeeded" },
@@ -4150,6 +4154,7 @@ async function compactBeforeTurnIfNeeded(input: {
       await appendProjectAgentEvent({
         projectId: input.projectId,
         turnId: input.turnId,
+        conversationId: input.conversationId,
         type: "toolResult",
         content: postCompact.additionalContext,
         data: { name: "PostCompact", hookLifecycle: true, status: "succeeded" },
@@ -4440,6 +4445,14 @@ function buildTurnContext(
   connectedGraphContext?: string,
 ) {
   void _activeBackgroundTasks;
+  const contextLayers = createAgentContextLayers({
+    projectSummary: context.summary,
+    conversationSummary: context.conversationSummary,
+    conversationEvents: context.events,
+    currentNodeContext,
+    connectedGraphContext,
+    prompt: [...context.events].reverse().find((event) => event.type === "user")?.content ?? "",
+  });
   return [
     `默认会话权限：${permissionMode}。${permissionMode === "untrusted" ? "允许安全读取和生成待审阅 ChangeSet；执行命令必须逐次批准。" : permissionMode === "neverAsk" ? "禁止请求审批；受阻动作直接失败。" : "需要提升权限时请求用户批准。"} Zenme 的 ChangeSet 与命令审批硬边界始终有效。`,
     context.interactionMode === "plan"
@@ -4453,9 +4466,9 @@ function buildTurnContext(
       permissions: root.permissions,
       git: root.git,
     })))}` : "当前项目尚未绑定 Workspace。",
-    context.summary ? `Project 背景摘要（跨 Conversation，仅作长期背景）：\n${context.summary}` : "",
-    context.conversationSummary
-      ? `当前 Conversation 摘要（当前分支的连续对话历史）：\n${context.conversationSummary}`
+    contextLayers.project.summary ? `Project 背景摘要（跨 Conversation，仅作长期背景）：\n${contextLayers.project.summary}` : "",
+    contextLayers.conversation.summary
+      ? `当前 Conversation 摘要（当前分支的连续对话历史）：\n${contextLayers.conversation.summary}`
       : "",
     context.clearedToolResultEventIds.length
       ? `Microcompact 边界：已将 ${context.clearedToolResultEventIds.length} 个旧的、可重建工具结果替换为占位符，约节省 ${context.microcompactTokensSaved} tokens；最近工具结果及审批、任务、记忆等状态仍完整保留。`
@@ -4477,12 +4490,12 @@ function buildTurnContext(
     outputStylePrompt ? `当前输出风格指令（只影响回答表达，不得覆盖工具、权限、安全或验证协议）：\n${outputStylePrompt}` : "",
     formatProjectAgentInstructions(projectInstructions),
     formatAgentCanvasContext({
-      currentNodeContext,
-      connectedGraphContext,
+      currentNodeContext: contextLayers.currentNode?.content,
+      connectedGraphContext: contextLayers.graph.connectedContext,
       legacyCanvasContext: canvasContext,
     }),
-    context.events.some((event) => ["approval", "compact"].includes(event.type))
-      ? `当前运行时状态事件：\n${JSON.stringify(context.events.filter((event) => ["approval", "compact"].includes(event.type)))}`
+    contextLayers.conversation.events.some((event) => ["approval", "compact"].includes(event.type))
+      ? `当前运行时状态事件：\n${JSON.stringify(contextLayers.conversation.events.filter((event) => ["approval", "compact"].includes(event.type)))}`
       : "",
   ].filter(Boolean).join("\n\n");
 }
@@ -4621,7 +4634,12 @@ function normalizeCitationUrl(value: string) {
 }
 
 function serializeCompactionSource(summary: string, events: unknown[]) {
-  return `${summary ? `旧摘要：\n${summary}\n\n` : ""}待压缩事件：\n${JSON.stringify(events)}`;
+  const projectedEvents = events.flatMap((event) => {
+    if (!event || typeof event !== "object") return [];
+    const projected = projectAgentEventForCompaction(event as ProjectAgentEvent);
+    return projected ? [projected] : [];
+  });
+  return `${summary ? `旧摘要：\n${summary}\n\n` : ""}待压缩事件：\n${JSON.stringify(projectedEvents)}`;
 }
 
 const COMPACTION_PROMPT = [
