@@ -91,7 +91,6 @@ export function createAgentContextSnapshot(input: {
   conversationId?: string;
   selectedNodeIds?: string[];
   fileDocumentIds?: string[];
-  canvasContext?: string;
 }): AgentContextSnapshot {
   return {
     version: 1,
@@ -105,7 +104,6 @@ export function createAgentContextSnapshot(input: {
         ...(input.fileDocumentIds?.length ? { fileDocumentIds: [...input.fileDocumentIds] } : {}),
       },
     } : {}),
-    ...(input.canvasContext ? { legacy: { canvasContext: input.canvasContext } } : {}),
   };
 }
 

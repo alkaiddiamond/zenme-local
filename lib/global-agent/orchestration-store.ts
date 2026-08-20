@@ -165,7 +165,6 @@ export async function createGlobalOrchestration(input: {
     conversationId: resolvedContext.conversationId,
     selectedNodeIds: resolvedContext.selectedNodeIds,
     fileDocumentIds: resolvedContext.fileDocumentIds,
-    canvasContext: resolvedContext.canvasContext,
   });
   const orchestration: GlobalOrchestration = {
     version: GLOBAL_ORCHESTRATION_VERSION,

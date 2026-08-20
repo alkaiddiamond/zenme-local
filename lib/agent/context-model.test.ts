@@ -42,7 +42,6 @@ describe("agent context snapshot", () => {
       conversationId: "conv-a",
       selectedNodeIds: ["node-a"],
       fileDocumentIds: ["file-a"],
-      canvasContext: "structured legacy context",
     });
 
     expect(applyAgentContextSnapshot({
@@ -61,7 +60,7 @@ describe("agent context snapshot", () => {
       conversationId: "conv-a",
       selectedNodeIds: ["node-a"],
       fileDocumentIds: ["file-a"],
-      canvasContext: "structured legacy context",
+      canvasContext: "legacy context",
     });
   });
 

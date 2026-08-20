@@ -22,7 +22,7 @@ Zenme 是一款**本地优先的 AI 无限画布桌面应用**：把提示词、
 </p>
 
 > [!IMPORTANT]
-> Zenme 当前处于 `v0.1.0 Alpha`。Windows 10/11 x64 是当前公开发布目标；数据格式、升级流程和部分交互仍可能调整。
+> Zenme 当前处于 `v0.1.x Alpha`。Windows 10/11 x64 是当前公开发布目标；数据格式、升级流程和部分交互仍可能调整。具体版本以 `package.json`、CHANGELOG 与发布标签为准。
 
 ---
 

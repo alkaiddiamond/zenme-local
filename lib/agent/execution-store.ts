@@ -136,7 +136,6 @@ export async function createAgentExecution(input: {
     conversationId: resolvedContext.conversationId,
     selectedNodeIds: resolvedContext.selectedNodeIds,
     fileDocumentIds: resolvedContext.fileDocumentIds,
-    canvasContext: resolvedContext.canvasContext,
   });
   const detail: AgentExecutionDetail = {
     version: AGENT_EXECUTION_DETAIL_VERSION,

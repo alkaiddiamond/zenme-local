@@ -10,7 +10,7 @@
 - 模型上下文按 `当前用户指令 > 当前节点 > 显式连线/选择的 Graph Context > 当前 Conversation 历史 > Project 背景` 排序。Project Memory、Workspace、Project Instructions、共享任务与 Project summary 跨 Conversation 保留；其他 Conversation 的 user/assistant/tool transcript 不因处于同一 Project 而自动进入当前模型输入。
 - Project Session 与 Conversation 都可独立压缩：Project compact 只处理未归属 Conversation 的 Project 级 Turn；Conversation compact 只处理当前 Conversation lineage，并保存自己的 summary、compact boundary 与失败熔断状态。原始事件始终保留，不因任何一种压缩改写或删除。
 - 画布只提供一种面向用户的 Agent 入口：创建 `textGeneration` 输入节点，并在其下游创建带 Turn 瀑布流的 AI 回复节点。浮动按钮、单节点动作和多选工具栏都只是在创建同一种输入节点；用户不需要预先区分聊天、Workspace Agent 或 Global Agent，统一 Project Agent 根据任务自主决定是否调用工具或 `delegate_tasks`。运行中只展开当前阶段并显示已完成步数，完成后收起工具、思考、状态与压缩事件为“执行记录”。旧 Agent Execution 与 Global Orchestration 节点继续兼容读取和渲染，但不再作为新任务入口。
-- 失败或主动停止的 AI 回复节点提供显式“重试”。重试复用原 `turnId/resultNodeId/conversationId` 并在原 AI 回复节点中恢复运行，读取原 user event 持久化的提示、模型、`currentNodeContext`、`connectedGraphContext`、legacy `canvasContext`、`selectedNodeIds` 与 `fileDocumentIds` 快照；失败状态和旧工具证据在同一 Turn 审计历史中保留，不再创建新的下游 AI 回复节点，也不按当前画布重新计算上下文。
+- 失败或主动停止的 AI 回复节点提供显式“重试”。重试复用原 `turnId/resultNodeId/conversationId` 并在原 AI 回复节点中恢复运行；当前版本以原 user event 持久化的 `contextSnapshot` 作为提示、Current Node、Connected Graph、Conversation 与引用文件/节点的权威快照，旧版本缺少结构化快照时才回退读取平行的 `currentNodeContext`、`connectedGraphContext`、legacy `canvasContext`、`selectedNodeIds` 与 `fileDocumentIds` 字段。失败状态和旧工具证据在同一 Turn 审计历史中保留，不再创建新的下游 AI 回复节点，也不按当前画布重新计算上下文。
 - 同一项目同一时刻只运行一个 Turn。不同项目可独立运行。
 - GPT-5.6/OpenAI-compatible Chat Completions 与 Responses 服务商使用原生 function/tool calling；Responses 事件会转换为统一工具调用流，再进入同一 Session、权限和执行循环。一次响应中的多个原生工具调用按 provider index 完整保留，主 Agent 和 Sub-agent 会处理完整批次后才再次请求模型，不再静默丢弃第二个及后续调用。模型只被允许批量发出相互独立的读取工具；写入、命令和交互动作仍逐次经过原有权限与顺序边界。不支持原生工具的服务商保留严格 JSON 决策协议作为兼容层，该协议不是第二个用户入口。
 - 历史 Workspace Agent / Global Agent 画布节点只保留既有记录读取、审计和必要停止操作，不再重新进入模型运行时。新任务只从 Project Agent Turn 创建；画布客户端只负责启动、恢复、轮询与展示当前 Turn，不解析模型决策，也不维护第二套权限、聊天消息或命令状态。
@@ -77,7 +77,6 @@ skill
 tool_search
 git_diff
 ask_user_question
-run_approved_command
 ```
 
 后台进程列表只属于运行时恢复和 UI 投影，不是 Agent 工具，也不会进入 ToolSearch 或工具协议。`skill` 对齐 cc-haha 的 Skill 语义：Runtime 从 Workspace 的 `.zenme/skills`、兼容目录 `.claude/skills` / `.agents/skills`，以及 Zenme 本地数据目录的 `skills` 中发现 `SKILL.md`。系统上下文只注入有界名称与描述；匹配任务时模型显式调用 `skill` 才加载完整指令和参数。技能文件经过真实路径边界检查，单文件限制为 100 KB。
@@ -100,11 +99,11 @@ run_approved_command
 
 审批瀑布流按 `commandRequestId` 归并事件，只展示仍未处理的命令。某条命令后续出现批准、拒绝、失败或成功事件后，其历史 `pending` 卡片立即失效；并行 Sub-agent 的其他未决命令仍按创建顺序继续展示。
 
-会话权限与 Codex 的三档语义对齐：`untrusted` 允许安全读取和创建仍待用户审阅的 ChangeSet，但每条命令都进入逐次审批；`onRequest` 可在 Workspace 范围内自动运行已声明且无需提升权限的项目脚本，其他命令请求审批；`neverAsk` 不弹审批，原本需要提升的操作直接失败。设置页只保存新 Session 的默认值；节点输入框中的选择持久化到当前 Project Agent Session，不会改写其他项目的默认权限。任何模式都不会让 Agent 绕过 ChangeSet 直接写 Workspace。Git 查询保持只读可用；`init/add/commit/branch/checkout/merge/rebase` 等本地写操作必须先在 Workspace 面板明确启用目标 Root 的 `gitWrite`，且执行前重新校验；`fetch/pull/push/remote/config/credential` 等联网或敏感操作即使已经启用 `gitWrite` 仍逐次审批，`reset --hard` 等破坏性命令直接拒绝。一次性授权的 Workspace 外目录只对该精确命令有效，不会静默转成项目级 Git 权限。
+会话权限与 Codex 的三档语义对齐：`untrusted` 允许安全读取和创建仍待用户审阅的 ChangeSet，但每条命令都进入逐次审批；`onRequest` 可在 Workspace 范围内自动运行已声明且无需提升权限的项目脚本，其他命令请求审批；`neverAsk` 不弹审批，原本需要提升的操作直接失败。设置页只保存新 Conversation 的默认值；节点输入框中的选择持久化到当前 Conversation runtime state，不会改写同一 Project 的其他独立 Conversation。任何模式都不会让 Agent 绕过 ChangeSet 直接写 Workspace。Git 查询保持只读可用；`init/add/commit/branch/checkout/merge/rebase` 等本地写操作必须先在 Workspace 面板明确启用目标 Root 的 `gitWrite`，且执行前重新校验；`fetch/pull/push/remote/config/credential` 等联网或敏感操作即使已经启用 `gitWrite` 仍逐次审批，`reset --hard` 等破坏性命令直接拒绝。一次性授权的 Workspace 外目录只对该精确命令有效，不会静默转成项目级 Git 权限。
 
 `web_search` 是可观测的候选来源发现工具，只把少量 URL 交给 Agent，检索服务返回的聚合正文不会进入模型上下文。`web_fetch` 必须同时提供 URL 与提取目标；它读取公开 HTTP(S) 页面后，在禁止自动联网的隔离模式中调用页面分析模型，产出页面级 `summary + claims + evidence/date`，原始正文不会进入主 Agent 会话。主 Agent 再跨页面综合、合并重复事实并处理来源冲突。“最近、新闻、影响、现状、进展、对比、核实”等开放性检索必须分析至少两个独立来源（候选充足时使用不同域名），指定单页问题可以只分析该来源。该门槛只约束后台取证，不规定最终展示多少链接；运行时还会拒绝引用未读取 URL 的回答。`web_fetch` 拒绝本机、私网、带凭据、异常端口、非文本和超限响应，并逐跳复核重定向目标。`ask_user_question` 会把结构化问题与最多三个选项写入时间线，并将 Turn 暂停为 `Waiting Input`；用户通过同一对话入口回答后恢复同一个 Turn。
 
-Plan Mode 对齐 cc-haha 的会话状态机，而不是额外建立“只生成计划”的对话入口。普通模式仅在实现路径存在重大歧义或高影响重构时向模型暴露 `enter_plan_mode`；调用后无需用户先确认，Project Session 立即切换为 `interactionMode=plan` 并继续同一 Turn。规划模式只向模型暴露读取、搜索、观察、提问、Todo、只读 MCP 与 `exit_plan_mode`，文件写入、Shell、Sub-agent 和有外部副作用的 MCP 同时在工具暴露层与运行时边界拒绝。`exit_plan_mode` 必须携带完整计划，AI 回复节点在原时间线内展示计划并等待用户批准；批准后恢复普通工具集并继续原 Execution，拒绝或补充反馈则保留规划模式和待修订计划。计划状态随项目 Session 持久化，重启或等待输入后不会丢失。
+Plan Mode 对齐 cc-haha 的 Conversation 状态机，而不是额外建立“只生成计划”的对话入口。普通模式仅在实现路径存在重大歧义或高影响重构时向模型暴露 `enter_plan_mode`；调用后无需用户先确认，当前 Conversation 的 runtime state 切换为 `interactionMode=plan` 并继续同一 Turn，不影响同一 Project 下其他独立 Conversation。规划模式只向模型暴露读取、搜索、观察、提问、Task、只读 MCP 与 `exit_plan_mode`，文件写入、Shell、Sub-agent 和有外部副作用的 MCP 同时在工具暴露层与运行时边界拒绝。`exit_plan_mode` 必须携带完整计划，AI 回复节点在原时间线内展示计划并等待用户批准；批准后恢复该 Conversation 的普通工具集并继续原 Execution，拒绝或补充反馈则保留规划模式和待修订计划。`interactionMode`、`activePlan`、会话权限、活动 worktree 与会话 Hook 状态均按 Conversation 持久化；Project Session 仍是事件总账和共享 Project 状态容器。旧单 Conversation Session 缺少 Conversation runtime state 时只通过兼容读取回退到历史 Project-level 字段。
 
 确定性网页路由只处理明确的搜索/联网请求，或“时间词 + 易变领域”（例如最新版本、近期新闻、当前价格）。单独出现“当前”“现在”不会触发联网，因此“解释当前项目”“检查现在的代码结构”等开发请求仍由统一 Project Agent 处理；模型在确有需要时仍可通过统一工具池自主调用网页工具。
 

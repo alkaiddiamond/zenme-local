@@ -2825,7 +2825,6 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
             conversationId,
             selectedNodeIds: references.selectedNodeIds,
             fileDocumentIds: references.fileDocumentIds,
-            canvasContext: context,
           }),
           canvasContext: context,
           currentNodeContext,

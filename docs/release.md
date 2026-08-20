@@ -9,7 +9,7 @@
 | Windows | x64 | Windows 10 | NSIS `.exe` |
 | macOS | Intel x64 | macOS 12 Monterey | 暂停发布 |
 
-Apple Silicon 原生包和 Linux 尚未进入 v0.1.0 发布范围。
+Apple Silicon 原生包和 Linux 尚未进入当前 v0.1.x 公开发布范围。
 
 ## 发布门禁
 

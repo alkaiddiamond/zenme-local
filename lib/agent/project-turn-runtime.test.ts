@@ -176,17 +176,21 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
       conversationId: "structured-conversation",
       content: "STRUCTURED_PROMPT",
       data: {
-        selectedNodeIds: ["structured-node-id"],
-        fileDocumentIds: ["structured-file-id"],
         contextSnapshot: {
           version: 1,
           instruction: { prompt: "STRUCTURED_PROMPT" },
           currentNode: { content: "STRUCTURED_NODE" },
           graph: { connectedContext: "STRUCTURED_GRAPH" },
           conversation: { conversationId: "structured-conversation" },
+          references: { selectedNodeIds: ["structured-node-id"], fileDocumentIds: ["structured-file-id"] },
         },
       },
     });
+    expect(userEvent?.data).not.toHaveProperty("selectedNodeIds");
+    expect(userEvent?.data).not.toHaveProperty("fileDocumentIds");
+    expect(userEvent?.data).not.toHaveProperty("canvasContext");
+    expect(userEvent?.data).not.toHaveProperty("currentNodeContext");
+    expect(userEvent?.data).not.toHaveProperty("connectedGraphContext");
   });
 
   it("does not expose blanket-denied tools to the model while retaining content-scoped rules", async () => {

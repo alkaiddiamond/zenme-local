@@ -63,7 +63,6 @@ describe("agent execution store", () => {
           graph: { connectedContext: "CONNECTED_GRAPH_LAYER" },
           conversation: { conversationId: "conversation-a" },
           references: { selectedNodeIds: ["node-a", "node-a", "node-b"], fileDocumentIds: ["file-a"] },
-          legacy: { canvasContext: "selected context" },
         },
         selectedNodeIds: ["node-a", "node-b"],
         fileDocumentIds: ["file-a"],
