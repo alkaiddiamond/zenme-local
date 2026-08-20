@@ -3607,7 +3607,6 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
               data: {
                 ...node.data,
                 externalTaskId: created.taskId,
-                providerTaskId: created.taskId,
               },
             }
           : node,

@@ -23,7 +23,7 @@
 - [发布手册](release.md)
 - [故障排查](troubleshooting.md)
 - [外部能力集成规范](external-capability-integration-spec.md)
-- [v0.1.0 里程碑](milestone-v0.1.0.md)
+- [历史里程碑：v0.1.0](milestone-v0.1.0.md)
 - [Codex 模型版本维护](api/chatgpt-codex-model-version-maintenance.md)
 
 代码行为、持久化格式、平台要求或发布流程变化时，应在同一改动中更新对应文档。

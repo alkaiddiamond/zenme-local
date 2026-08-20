@@ -60,7 +60,7 @@ describe("music workflow", () => {
 
   it("creates one deterministic player for a music asset", () => {
     const first = createMusicPlayerUpdate({
-      edges: [], musicNode, nodes: [musicNode], projectId: "project-1",
+      edges: [], sourceNode: musicNode, nodes: [musicNode], projectId: "project-1",
     });
     const player = first.createdNodes[0];
     expect(player.id).toBe("music-player:music-1");
@@ -74,7 +74,7 @@ describe("music workflow", () => {
 
     const repeated = createMusicPlayerUpdate({
       edges: first.createdEdges,
-      musicNode,
+      sourceNode: musicNode,
       nodes: [musicNode, player],
       projectId: "project-1",
     });
