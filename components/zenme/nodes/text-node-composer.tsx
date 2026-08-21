@@ -18,6 +18,7 @@ import type { CanvasNodeData } from "@/components/zenme/node-types";
 import { createImagePreview } from "@/components/zenme/canvas/files";
 import {
   rememberAiModelPreference,
+  rememberTextGenerationPreferences,
   useAiModelOptions,
 } from "@/components/zenme/use-ai-model-options";
 import { ZenmeModelPicker } from "@/components/zenme/visual-components";
@@ -163,6 +164,17 @@ export function TextNodeComposer({
     setPermissionMode(nextMode);
     setPermissionModeOverridden(true);
     setError(null);
+  }
+
+  function handleReasoningEffortChange(nextEffort: ZenmeReasoningEffort) {
+    setReasoningEffort(nextEffort);
+    void rememberTextGenerationPreferences({ reasoningEffort: nextEffort });
+  }
+
+  function handleModelSpeedChange() {
+    const nextSpeed = modelSpeed === "fast" ? "standard" : "fast";
+    setModelSpeed(nextSpeed);
+    void rememberTextGenerationPreferences({ modelSpeed: nextSpeed });
   }
 
   async function addImages(files: FileList | null) {
@@ -321,10 +333,10 @@ export function TextNodeComposer({
           </DropdownMenu>
         </div>
         <div className="flex items-center gap-1.5">
-          <select aria-label="推理强度" className="h-9 rounded-full border border-zinc-200 bg-white px-2 text-xs text-zinc-700 outline-none" onChange={(event) => setReasoningEffort(event.target.value as ZenmeReasoningEffort)} title="本轮推理强度" value={reasoningEffort}>
+          <select aria-label="推理强度" className="h-9 rounded-full border border-zinc-200 bg-white px-2 text-xs text-zinc-700 outline-none" onChange={(event) => handleReasoningEffortChange(event.target.value as ZenmeReasoningEffort)} title="本轮推理强度" value={reasoningEffort}>
             {REASONING_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
-          <button aria-pressed={modelSpeed === "fast"} className={`h-9 rounded-full border px-3 text-xs transition ${modelSpeed === "fast" ? "border-amber-300 bg-amber-50 text-amber-700" : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"}`} onClick={() => setModelSpeed((current) => current === "fast" ? "standard" : "fast")} title="快速模式可能消耗更多额度或产生更高费用" type="button">
+          <button aria-pressed={modelSpeed === "fast"} className={`h-9 rounded-full border px-3 text-xs transition ${modelSpeed === "fast" ? "border-amber-300 bg-amber-50 text-amber-700" : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"}`} onClick={handleModelSpeedChange} title="快速模式可能消耗更多额度或产生更高费用" type="button">
             {modelSpeed === "fast" ? "快速" : "标准"}
           </button>
           <ZenmeModelPicker

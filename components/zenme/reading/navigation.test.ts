@@ -4,6 +4,7 @@ import {
   buildReadingNavigationSections,
   findReadingNavigationIndex,
   getReadingActiveTitle,
+  isVirtualizedReadingFormat,
 } from "./navigation";
 
 describe("buildReadingNavigationSections", () => {
@@ -50,8 +51,8 @@ describe("buildReadingNavigationSections", () => {
         sections,
       }),
     ).toEqual([
-      { endIndex: 1, index: 0, title: "第一章" },
-      { endIndex: 2, index: 2, title: "第二章" },
+      { endIndex: 1, index: 0, pageNumber: 1, title: "第一章" },
+      { endIndex: 2, index: 2, pageNumber: 3, title: "第二章" },
     ]);
     expect(
       getReadingActiveTitle({
@@ -76,7 +77,54 @@ describe("buildReadingNavigationSections", () => {
         pdfPageCount: 0,
         sections,
       }),
-    ).toEqual([{ endIndex: 1, index: 0, title: "第一章" }]);
+    ).toEqual([
+      { endIndex: 1, index: 0, pageNumber: 1, title: "第一章" },
+    ]);
+  });
+
+  it("uses independently rendered DOCX pages for navigation", () => {
+    const sections = [
+      { index: 0, title: "第一章", html: "<h1>第一章</h1>", text: "第一章" },
+      { index: 1, title: "第一章 · 2", html: "<p>正文</p>", text: "正文" },
+    ];
+
+    expect(
+      buildReadingNavigationSections({
+        assetFormat: "docx",
+        pdfPageCount: 3,
+        sections,
+      }),
+    ).toEqual([
+      { endIndex: 0, index: 0, pageNumber: 1, title: "第 1 页" },
+      { endIndex: 1, index: 1, pageNumber: 2, title: "第 2 页" },
+      { endIndex: 2, index: 2, pageNumber: 3, title: "第 3 页" },
+    ]);
+    expect(
+      getReadingActiveTitle({
+        activeSection: 1,
+        assetFormat: "docx",
+        assetTitle: "产品方案",
+        pdfPageCount: 3,
+        sections,
+      }),
+    ).toBe("第 2 / 3 页");
+  });
+
+  it("uses mapped DOCX headings as the rendered-page directory", () => {
+    expect(
+      buildReadingNavigationSections({
+        assetFormat: "docx",
+        pdfPageCount: 5,
+        pdfOutlineSections: [
+          { index: 0, title: "第一章" },
+          { index: 3, title: "第二章" },
+        ],
+        sections: [],
+      }),
+    ).toEqual([
+      { endIndex: 2, index: 0, pageNumber: 1, title: "第一章" },
+      { endIndex: 4, index: 3, pageNumber: 4, title: "第二章" },
+    ]);
   });
 });
 
@@ -90,5 +138,15 @@ describe("findReadingNavigationIndex", () => {
 
     expect(findReadingNavigationIndex(sections, 37)).toBe(1);
     expect(findReadingNavigationIndex(sections, 71)).toBe(-1);
+  });
+});
+
+describe("isVirtualizedReadingFormat", () => {
+  it("uses fixed virtual page slots only for EPUB-like rendered formats", () => {
+    expect(isVirtualizedReadingFormat("epub")).toBe(true);
+    expect(isVirtualizedReadingFormat("markdown")).toBe(true);
+    expect(isVirtualizedReadingFormat("txt")).toBe(true);
+    expect(isVirtualizedReadingFormat("docx")).toBe(false);
+    expect(isVirtualizedReadingFormat("pdf")).toBe(false);
   });
 });

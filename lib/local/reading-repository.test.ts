@@ -13,6 +13,7 @@ import {
   saveLocalReadingProgress,
   updateLocalReadingNote,
   deleteLocalReadingNote,
+  detectLocalReadingFormat,
 } from "@/lib/local/reading-repository";
 import { createLocalProject } from "@/lib/local/project-repository";
 import { shouldRebuildTxtSections } from "@/lib/reading/parsers/txt-parser";
@@ -38,6 +39,11 @@ afterEach(async () => {
 });
 
 describe("local reading repository", () => {
+  it("recognizes DOCX as a reading format", () => {
+    expect(detectLocalReadingFormat("产品方案.DOCX")).toBe("docx");
+    expect(detectLocalReadingFormat("产品方案.doc")).toBeNull();
+  });
+
   it("imports Markdown assets as rendered, annotatable fixed pages", async () => {
     const asset = await createLocalReadingAsset(
       {

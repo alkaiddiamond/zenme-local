@@ -82,7 +82,7 @@ describe("dropped file canvas nodes", () => {
     ).toEqual([textFile]);
   });
 
-  it("keeps book nodes when reading registration fails", async () => {
+  it("keeps readable files as file nodes when reading registration fails", async () => {
     const createObjectUrl = vi
       .spyOn(URL, "createObjectURL")
       .mockReturnValue("blob:local-book");
@@ -111,11 +111,11 @@ describe("dropped file canvas nodes", () => {
       ).resolves.toMatchObject([
         {
           position: { x: 100, y: 200 },
-          type: "book",
+          type: "file",
           data: {
             fileId: "file-1",
             fileName: "地师.epub",
-            kind: "book",
+            kind: "file",
             originalUrl: "https://signed.example.test/book",
             readingError: "阅读资料存储路径无效，请重新上传文件",
             title: "地师.epub",
@@ -139,7 +139,7 @@ describe("dropped file canvas nodes", () => {
     );
   });
 
-  it("keeps ordinary reading registration errors visible on book nodes", async () => {
+  it("keeps ordinary reading registration errors visible on file nodes", async () => {
     const createObjectUrl = vi
       .spyOn(URL, "createObjectURL")
       .mockReturnValue("blob:local-book");
@@ -167,7 +167,7 @@ describe("dropped file canvas nodes", () => {
         }),
       ).resolves.toMatchObject([
         {
-          type: "book",
+          type: "file",
           data: {
             fileName: "notes.epub",
             readingError: "不支持的阅读文件类型",
@@ -190,7 +190,59 @@ describe("dropped file canvas nodes", () => {
     );
   });
 
-  it("marks non-book file nodes as failed when project upload fails", async () => {
+  it("uploads DOCX as a file node and registers it for reading", async () => {
+    const file = new File(["docx"], "产品方案.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    uploadProjectFileMock.mockResolvedValueOnce({
+      fileId: "file-docx",
+      originalPath: "user/project/original/file.docx",
+      originalUrl: "/api/projects/project-1/files/file-docx",
+      previewPath: null,
+    });
+    registerReadingAssetMock.mockResolvedValueOnce({
+      id: "asset-docx",
+      ownerId: "local",
+      projectId: "project-1",
+      title: "产品方案",
+      author: null,
+      format: "docx",
+      fileName: "产品方案.docx",
+      filePath: "original/产品方案.docx",
+      storagePath: "original/产品方案.docx",
+      coverPath: null,
+      createdAt: "2026-08-20T00:00:00.000Z",
+      updatedAt: "2026-08-20T00:00:00.000Z",
+    });
+
+    await expect(
+      createDroppedFileCanvasNodes({
+        files: [file],
+        onReadingError: vi.fn(),
+        position: { x: 10, y: 20 },
+        projectId: "project-1",
+      }),
+    ).resolves.toMatchObject([
+      {
+        type: "file",
+        data: {
+          fileName: "产品方案.docx",
+          kind: "file",
+          readingAssetId: "asset-docx",
+          title: "产品方案",
+        },
+      },
+    ]);
+    expect(registerReadingAssetMock).toHaveBeenCalledWith({
+      cover: undefined,
+      file,
+      fileName: "产品方案.docx",
+      nodeId: expect.any(String),
+      projectId: "project-1",
+    });
+  });
+
+  it("marks non-readable file nodes as failed when project upload fails", async () => {
     const onReadingError = vi.fn();
     const file = new File(["plain"], "brief.txt.backup", {
       type: "text/plain",

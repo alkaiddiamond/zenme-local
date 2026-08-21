@@ -2,6 +2,7 @@ import { AlertCircle, Check, Loader2, Pencil } from "lucide-react";
 
 import { getNodeBounds } from "./geometry";
 import type { CanvasNode, SaveStatus, Viewport } from "./types";
+import { isReadableFileName } from "./files";
 
 export function getSaveStatusTone(saveStatus: SaveStatus) {
   if (saveStatus === "已保存") {
@@ -54,10 +55,25 @@ export function canPrepareReadingAsset(node: CanvasNode | undefined) {
   return Boolean(
     node &&
       ((isReadableTextNode && node.data.plainText?.trim()) ||
-        (node.data.kind === "book" &&
+        ((node.data.kind === "book" || node.data.kind === "file") &&
           !node.data.readingAssetId &&
+          isReadableFileName(node.data.fileName) &&
           node.data.originalUrl &&
           node.data.fileName)),
+  );
+}
+
+export function canOpenReadingWorkspace(node: CanvasNode | undefined) {
+  if (!node) return false;
+  if (node.data.kind === "text" || node.data.kind === "markdown") {
+    return Boolean(node.data.plainText?.trim());
+  }
+  if (node.data.kind !== "book" && node.data.kind !== "file") {
+    return false;
+  }
+  return Boolean(
+    isReadableFileName(node.data.fileName) &&
+      (node.data.readingAssetId || node.data.originalUrl),
   );
 }
 

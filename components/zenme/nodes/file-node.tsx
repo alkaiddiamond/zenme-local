@@ -26,8 +26,21 @@ export function FileNode({ data, selected }: NodeProps) {
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{nodeData.title}</p>
+        <p className="mt-1 truncate text-xs text-zinc-500">
+          {getFileTypeLabel(nodeData.fileName)}
+        </p>
+        {nodeData.readingError ? (
+          <p className="mt-1 line-clamp-2 text-xs leading-4 text-red-600">
+            {nodeData.readingError}
+          </p>
+        ) : null}
       </div>
       <NodeActionHandle selected={Boolean(selected)} />
     </NodeFrame>
   );
+}
+
+function getFileTypeLabel(fileName: string | undefined) {
+  const extension = fileName?.match(/\.([^.]+)$/)?.[1]?.toUpperCase();
+  return extension ? `${extension} 文件` : "文件";
 }

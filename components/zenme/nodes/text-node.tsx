@@ -241,6 +241,33 @@ export function TextNode({ data, id, selected }: NodeProps) {
   }, [nodeData.codeLanguage]);
 
   useEffect(() => {
+    if (nodeData.aiStatus !== "generating") return;
+    const viewport = agentResponseRef.current;
+    if (!viewport) return;
+
+    let animationFrame: number | null = null;
+    const scheduleScrollToBottom = () => {
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(() => {
+        viewport.scrollTop = viewport.scrollHeight;
+        animationFrame = null;
+      });
+    };
+    const observer = new MutationObserver(scheduleScrollToBottom);
+    observer.observe(viewport, {
+      characterData: true,
+      childList: true,
+      subtree: true,
+    });
+    scheduleScrollToBottom();
+
+    return () => {
+      observer.disconnect();
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+    };
+  }, [nodeData.agentTurnId, nodeData.aiStatus]);
+
+  useEffect(() => {
     if (!lineNumbersVisible || !lineNumbersRef.current) return;
     replaceLineNumberRows(lineNumbersRef.current, plainText, displayMode);
   }, [displayMode, isEditing, lineNumbersVisible, plainText]);
@@ -1057,7 +1084,8 @@ export function TextNode({ data, id, selected }: NodeProps) {
                 <span className="mr-1 tabular-nums">{createdAtLabel}</span>
               ) : null}
               <button
-                aria-expanded={isResponseExpanded}
+                aria-expanded={isGenerating ? undefined : isResponseExpanded}
+                aria-label={isGenerating ? "正在生成回复" : isResponseExpanded ? "收起回复" : "展开全部回复"}
                 className="flex size-7 shrink-0 items-center justify-center rounded-md text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-900 focus-visible:bg-zinc-100 focus-visible:text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40"
                 disabled={isGenerating || (!nodeData.aiResponse && !nodeData.plainText)}
                 onClick={() => {
@@ -1066,10 +1094,12 @@ export function TextNode({ data, id, selected }: NodeProps) {
                     !isResponseExpanded,
                   );
                 }}
-                title={isResponseExpanded ? "收起回复" : "展开全部回复"}
+                title={isGenerating ? "正在生成回复" : isResponseExpanded ? "收起回复" : "展开全部回复"}
                 type="button"
               >
-                {isResponseExpanded ? (
+                {isGenerating ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : isResponseExpanded ? (
                   <Minimize2 className="size-4" />
                 ) : (
                   <Maximize2 className="size-4" />

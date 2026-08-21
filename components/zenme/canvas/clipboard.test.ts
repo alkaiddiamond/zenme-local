@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createCanvasNodeClipboardPayload,
   createPastedCanvasNodes,
+  getClipboardFiles,
   getClipboardImageFiles,
   hasSelectedClipboardText,
   parseCanvasNodeClipboardPayload,
@@ -154,6 +155,22 @@ describe("canvas clipboard", () => {
     });
 
     expect(files).toEqual([image]);
+  });
+
+  it("reads DOCX files copied from Windows Explorer", () => {
+    const document = new File(["docx"], "产品方案.docx", { type: "" });
+    const files = getClipboardFiles({
+      files: [] as unknown as FileList,
+      items: [
+        {
+          getAsFile: () => document,
+          kind: "file",
+          type: "",
+        },
+      ] as unknown as DataTransferItemList,
+    });
+
+    expect(files).toEqual([document]);
   });
 
   it("normalizes clipboard images that omit their MIME type and filename", () => {

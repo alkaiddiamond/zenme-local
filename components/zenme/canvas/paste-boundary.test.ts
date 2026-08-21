@@ -13,11 +13,11 @@ describe("canvas paste boundary", () => {
       canvasSource.indexOf('window.addEventListener("copy"'),
     );
     const editableGuard = handler.indexOf("isEditableClipboardEvent");
-    const imageInspection = handler.indexOf("getClipboardImageFiles");
+    const fileInspection = handler.indexOf("getClipboardFiles");
     const textNodeCreation = handler.indexOf("createTextCanvasNode");
 
     expect(editableGuard).toBeGreaterThanOrEqual(0);
-    expect(editableGuard).toBeLessThan(imageInspection);
+    expect(editableGuard).toBeLessThan(fileInspection);
     expect(editableGuard).toBeLessThan(textNodeCreation);
   });
 });

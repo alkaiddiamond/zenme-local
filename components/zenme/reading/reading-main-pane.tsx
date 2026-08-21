@@ -4,6 +4,7 @@ import type { MutableRefObject, UIEvent } from "react";
 import { useRef } from "react";
 import { OverlayScrollbars } from "@/components/zenme/nodes/overlay-scrollbar";
 
+import { DocxReadingView } from "./docx-reading-view";
 import { EpubPagedScrollView } from "./epub-paged-scroll-view";
 import { PdfReadingView } from "./pdf-reading-view";
 import type {
@@ -78,6 +79,16 @@ export function ReadingMainPane({
             onOutline={onOutline}
             onPageCount={onPageCount}
             pageRefs={sectionRefs}
+          />
+        ) : payload.asset.format === "docx" ? (
+          <DocxReadingView
+            assetId={assetId}
+            contentScale={contentScale}
+            onError={onError}
+            onOutline={onOutline}
+            onPageCount={onPageCount}
+            pageRefs={sectionRefs}
+            sections={payload.sections}
           />
         ) : (
           <EpubPagedScrollView

@@ -22,7 +22,7 @@ import {
   buildReadingNavigationSections,
   getReadingActiveTitle,
   getReadingSectionTitle,
-  isPagedReadingFormat,
+  isVirtualizedReadingFormat,
 } from "./reading/navigation";
 import { ReadingAnnotationOverlays } from "./reading/reading-annotation-overlays";
 import { ReadingMainPane } from "./reading/reading-main-pane";
@@ -329,7 +329,7 @@ export function ReadingWorkspace({
   }, [assetId]);
 
   useEffect(() => {
-    if (!payload || !isPagedReadingFormat(payload.asset.format)) {
+    if (!payload || !isVirtualizedReadingFormat(payload.asset.format)) {
       return;
     }
     requestAnimationFrame(() => {
@@ -377,7 +377,7 @@ export function ReadingWorkspace({
       activeSectionRef.current = index;
       setActiveSection(index);
       saveProgress(index, contentScale, 0);
-      if (payload && isPagedReadingFormat(payload.asset.format)) {
+      if (payload && isVirtualizedReadingFormat(payload.asset.format)) {
         scrollToEpubSection(
           readerScrollRef.current,
           index,
@@ -390,16 +390,16 @@ export function ReadingWorkspace({
         );
         return;
       }
-      const scrollToPdfPage = (behavior: ScrollBehavior) => {
+      const scrollToRenderedPage = (behavior: ScrollBehavior) => {
         scrollElementIntoContainer({
           behavior,
           container: readerScrollRef.current,
           target: sectionRefs.current[index],
         });
       };
-      scrollToPdfPage("smooth");
-      window.setTimeout(() => scrollToPdfPage("auto"), 120);
-      window.setTimeout(() => scrollToPdfPage("auto"), 360);
+      scrollToRenderedPage("smooth");
+      window.setTimeout(() => scrollToRenderedPage("auto"), 120);
+      window.setTimeout(() => scrollToRenderedPage("auto"), 360);
     },
     [
       activeSectionRef,
@@ -435,7 +435,7 @@ export function ReadingWorkspace({
       };
 
       const found = scrollToTarget();
-      if (!found && payload && isPagedReadingFormat(payload.asset.format)) {
+      if (!found && payload && isVirtualizedReadingFormat(payload.asset.format)) {
         scrollToEpubSection(
           readerScrollRef.current,
           note.sectionIndex,
@@ -476,31 +476,23 @@ export function ReadingWorkspace({
       return;
     }
 
-    if (isPagedReadingFormat(payload.asset.format)) {
+    const usesVirtualizedPages = isVirtualizedReadingFormat(
+      payload.asset.format,
+    );
+    let fallbackIndex = activeSection;
+    if (usesVirtualizedPages) {
       updatePagedVisibleRange(container, payload.sections.length);
-      const closestIndex = getClosestEpubSectionIndex({
+      fallbackIndex = getClosestEpubSectionIndex({
         clientHeight: container.clientHeight,
         contentScale,
         pageCount: payload.sections.length,
         scrollTop: container.scrollTop,
       });
-      if (closestIndex !== activeSection) {
-        activeSectionRef.current = closestIndex;
-        setActiveSection(closestIndex);
-      }
-      const scrollRatio = getCurrentScrollRatio();
-      if (
-        closestIndex !== lastSavedSection.current ||
-        Math.abs(scrollRatio - lastSavedScrollRatio.current) > 0.002
-      ) {
-        saveProgress(closestIndex, contentScale, scrollRatio);
-      }
-      return;
     }
 
     const closestIndex = getReadingSectionIndexNearViewportTop(
       container,
-      activeSection,
+      fallbackIndex,
     );
 
     if (closestIndex !== activeSection) {

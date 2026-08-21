@@ -3,6 +3,7 @@ import path from "path";
 import type { ReadingFormat } from "@/lib/reading/types";
 
 const STORAGE_EXTENSION_BY_FORMAT: Record<ReadingFormat, string> = {
+  docx: ".docx",
   epub: ".epub",
   markdown: ".md",
   pdf: ".pdf",

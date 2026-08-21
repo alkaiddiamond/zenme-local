@@ -86,7 +86,7 @@ import {
 import {
   createCanvasNodeClipboardPayload,
   createPastedCanvasNodes,
-  getClipboardImageFiles,
+  getClipboardFiles,
   hasSelectedClipboardText,
   parseCanvasNodeClipboardPayload,
   type CanvasNodeClipboardPayload,
@@ -1311,11 +1311,11 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         return;
       }
       const clipboardData = event.clipboardData;
-      const imageFiles = getClipboardImageFiles(clipboardData);
-      if (imageFiles.length > 0) {
+      const clipboardFiles = getClipboardFiles(clipboardData);
+      if (clipboardFiles.length > 0) {
         event.preventDefault();
-        const pastedImages = await createDroppedFileCanvasNodes({
-          files: imageFiles,
+        const pastedFiles = await createDroppedFileCanvasNodes({
+          files: clipboardFiles,
           onReadingError: setCanvasNotice,
           position: getClipboardPastePosition(),
           projectId,
@@ -1323,7 +1323,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         appendCanvasItems({
           currentEdges: edgesRef.current,
           currentNodes: nodesRef.current,
-          nodes: pastedImages,
+          nodes: pastedFiles,
         });
         return;
       }

@@ -121,7 +121,7 @@ describe("ChatGPT OAuth chat request", () => {
         },
       ],
       tool_choice: "auto",
-      parallel_tool_calls: true,
+      parallel_tool_calls: false,
       reasoning: { effort: "low", summary: "auto", context: "all_turns" },
       store: false,
       stream: true,
@@ -161,7 +161,7 @@ describe("ChatGPT OAuth chat request", () => {
     expect(body).toMatchObject({
       tools: [{ type: "function", name: "read_file", strict: false }],
       tool_choice: "auto",
-      parallel_tool_calls: true,
+      parallel_tool_calls: false,
     });
   });
 

@@ -6,6 +6,7 @@
 
 ### Added
 
+- 阅读文件统一使用文件节点，并新增无需外部办公软件的 DOCX 独立版式渲染、自动分页、标题目录、标注与连接阅读器能力，尽量保留页面尺寸、字体、页眉页脚等样式；旧书籍节点继续兼容读取。
 - 新增统一 Project Agent Turn：在 AI 回复节点内完成流式回答、工具调用、审批、提问、计划、重试、停止和运行中追加指令。
 - 新增本地 Workspace、多 Root、Live File、ChangeSet、Project Memory、Project Knowledge 与可选 Git Worktree 隔离。
 - 新增 Shell、代码诊断/语义导航、网页取证、隔离浏览器、Skill、MCP、Hooks、Workflow、Task V2、Sub-agent 和持续 Team 能力。

@@ -1,4 +1,4 @@
-export type ReadingFormat = "epub" | "markdown" | "pdf" | "txt";
+export type ReadingFormat = "docx" | "epub" | "markdown" | "pdf" | "txt";
 export type ReadingAnnotationColor = "yellow" | "red" | "blue" | "green" | "purple";
 export type ReadingAnnotationType = "highlight" | "underline" | "note" | "region";
 

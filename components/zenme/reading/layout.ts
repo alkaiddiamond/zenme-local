@@ -10,6 +10,7 @@ export function getNormalizedContentScale(nextScale: number) {
 export function supportsReadingContentScale(format: ReadingFormat | undefined) {
   return (
     format === "pdf" ||
+    format === "docx" ||
     format === "epub" ||
     format === "markdown" ||
     format === "txt"

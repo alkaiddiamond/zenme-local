@@ -87,6 +87,27 @@ describe("text node layout", () => {
     );
   });
 
+  it("shows generation progress in place of expand and follows streamed content", () => {
+    expect(textNodeSource).toContain(
+      'aria-label={isGenerating ? "正在生成回复"',
+    );
+    expect(textNodeSource).toContain(
+      'title={isGenerating ? "正在生成回复"',
+    );
+    expect(textNodeSource).toContain(
+      '<Loader2 className="size-4 animate-spin" />',
+    );
+    expect(textNodeSource).toContain(
+      "const observer = new MutationObserver(scheduleScrollToBottom)",
+    );
+    expect(textNodeSource).toContain(
+      "viewport.scrollTop = viewport.scrollHeight",
+    );
+    expect(textNodeSource).toContain(
+      "observer.observe(viewport,",
+    );
+  });
+
   it("uses non-layout overlay scrollbars for every text viewport", () => {
     expect(textNodeSource.match(/<OverlayScrollbars/g)).toHaveLength(4);
     expect(textNodeSource).toContain(

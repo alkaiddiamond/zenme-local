@@ -104,6 +104,11 @@ describe("text generation request boundary", () => {
     expect(source).toContain("reasoningEffort,");
     expect(source).toContain("modelSpeed,");
     expect(source).toContain("permissionMode,");
+    expect(source).toContain("handleReasoningEffortChange");
+    expect(source).toContain("rememberTextGenerationPreferences({ reasoningEffort: nextEffort })");
+    expect(source).toContain("handleModelSpeedChange");
+    expect(source).toContain("rememberTextGenerationPreferences({ modelSpeed: nextSpeed })");
+    expect(source).not.toContain("const preferenceSave =");
   });
 
   it("routes command approval through the Project Agent Turn runtime", () => {

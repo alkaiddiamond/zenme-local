@@ -19,4 +19,8 @@ describe("PDF render window", () => {
     expect(pageSource).toContain("textLayerRef.current?.replaceChildren() ".trim());
     expect(pageSource).toContain("{shouldRender ? (");
   });
+
+  it("marks every PDF page for shared current-page tracking", () => {
+    expect(pageSource).toContain("data-reading-section-index={pageIndex}");
+  });
 });
