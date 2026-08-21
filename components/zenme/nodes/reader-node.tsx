@@ -90,7 +90,7 @@ export function ReaderNode({ data, id, selected }: NodeProps) {
               {nodeData.title}
             </p>
             <p className="mt-2 text-xs leading-5 text-red-600">
-              该阅读器节点缺少阅读资料，请从图书节点重新打开。
+              该阅读器节点缺少阅读资料，请从源文件节点重新打开。
             </p>
           </div>
         )}

@@ -125,6 +125,7 @@ Original license files remain bundled with their packages. Electron distribution
 | @types/react | 19.2.17 | MIT | [source](https://github.com/DefinitelyTyped/DefinitelyTyped) |
 | @types/react-dom | 19.2.3 | MIT | [source](https://github.com/DefinitelyTyped/DefinitelyTyped) |
 | @types/wrap-ansi | 3.0.0 | MIT | [source](https://www.github.com/DefinitelyTyped/DefinitelyTyped) |
+| @xmldom/xmldom | 0.8.13 | MIT | [source](https://github.com/xmldom/xmldom) |
 | @xyflow/react | 12.11.1 | MIT | [source](https://github.com/xyflow/xyflow) |
 | @xyflow/system | 0.0.78 | MIT | [source](https://github.com/xyflow/xyflow) |
 | acorn | 8.18.0 | MIT | [source](https://github.com/acornjs/acorn) |
@@ -135,10 +136,13 @@ Original license files remain bundled with their packages. Electron distribution
 | ansi-regex | 5.0.1 | MIT | [source](https://github.com/chalk/ansi-regex) |
 | ansi-styles | 4.3.0 | MIT | [source](https://github.com/chalk/ansi-styles) |
 | anymatch | 3.1.3 | ISC | [source](https://github.com/micromatch/anymatch) |
+| argparse | 1.0.10 | MIT | [source](https://github.com/nodeca/argparse) |
 | argparse | 2.0.1 | Python-2.0 | [source](https://github.com/nodeca/argparse) |
 | aria-hidden | 1.2.6 | MIT | [source](https://github.com/theKashey/aria-hidden) |
+| base64-js | 1.5.1 | MIT | [source](https://github.com/beatgammit/base64-js) |
 | baseline-browser-mapping | 2.10.38 | Apache-2.0 | [source](https://github.com/web-platform-dx/baseline-browser-mapping) |
 | binary-extensions | 2.3.0 | MIT | [source](https://github.com/sindresorhus/binary-extensions) |
+| bluebird | 3.4.7 | MIT | [source](https://github.com/petkaantonov/bluebird) |
 | bmp-js | 0.1.0 | MIT | [source](https://github.com/shaozilee/bmp-js) |
 | braces | 3.0.3 | MIT | [source](https://github.com/micromatch/braces) |
 | caniuse-lite | 1.0.30001799 | CC-BY-4.0 | [source](https://github.com/browserslist/caniuse-lite) |
@@ -154,6 +158,7 @@ Original license files remain bundled with their packages. Electron distribution
 | commander | 13.1.0 | MIT | [source](https://github.com/tj/commander.js) |
 | commander | 8.3.0 | MIT | [source](https://github.com/tj/commander.js) |
 | content-type | 2.0.0 | MIT | [source](https://github.com/jshttp/content-type) |
+| core-util-is | 1.0.3 | MIT | [source](https://github.com/isaacs/core-util-is) |
 | cross-spawn | 7.0.6 | MIT | [source](https://github.com/moxystudio/node-cross-spawn) |
 | csstype | 3.2.3 | MIT | [source](https://github.com/frenic/csstype) |
 | d3-color | 3.1.0 | ISC | [source](https://github.com/d3/d3-color) |
@@ -168,6 +173,9 @@ Original license files remain bundled with their packages. Electron distribution
 | debug | 4.4.3 | MIT | [source](https://github.com/debug-js/debug) |
 | detect-libc | 2.1.2 | Apache-2.0 | [source](https://github.com/lovell/detect-libc) |
 | detect-node-es | 1.1.0 | MIT | [source](https://github.com/thekashey/detect-node) |
+| dingbat-to-unicode | 1.0.1 | BSD-2-Clause | [source](https://github.com/mwilliamson/dingbat-to-unicode) |
+| docx-preview | 0.4.0 | Apache-2.0 | [source](https://github.com/VolodymyrBaydalka/docxjs) |
+| duck | 0.1.12 | BSD | [source](https://github.com/mwilliamson/duck.js) |
 | electron | 42.6.1 | MIT | [source](https://github.com/electron/electron) |
 | emoji-regex | 8.0.0 | MIT | [source](https://github.com/mathiasbynens/emoji-regex) |
 | eventsource | 3.0.7 | MIT | [source](git://git@github.com/EventSource/eventsource) |
@@ -190,19 +198,26 @@ Original license files remain bundled with their packages. Electron distribution
 | idb-keyval | 6.2.5 | Apache-2.0 | [source](https://github.com/jakearchibald/idb-keyval) |
 | ieee754 | 1.2.1 | BSD-3-Clause | [source](https://github.com/feross/ieee754) |
 | ignore | 7.0.6 | MIT | [source](https://github.com/kaelzhang/node-ignore) |
+| immediate | 3.0.6 | MIT | [source](https://github.com/calvinmetcalf/immediate) |
+| inherits | 2.0.4 | ISC | [source](https://github.com/isaacs/inherits) |
 | is-binary-path | 2.1.0 | MIT | [source](https://github.com/sindresorhus/is-binary-path) |
 | is-extglob | 2.1.1 | MIT | [source](https://github.com/jonschlinkert/is-extglob) |
 | is-fullwidth-code-point | 3.0.0 | MIT | [source](https://github.com/sindresorhus/is-fullwidth-code-point) |
 | is-glob | 4.0.3 | MIT | [source](https://github.com/micromatch/is-glob) |
 | is-number | 7.0.0 | MIT | [source](https://github.com/jonschlinkert/is-number) |
 | is-url | 1.2.4 | MIT | [source](https://github.com/segmentio/is-url) |
+| isarray | 1.0.0 | MIT | [source](https://github.com/juliangruber/isarray) |
 | isexe | 2.0.0 | ISC | [source](https://github.com/isaacs/isexe) |
 | jose | 6.2.8 | MIT | [source](https://github.com/panva/jose) |
 | js-yaml | 4.3.1 | MIT | [source](https://github.com/nodeca/js-yaml) |
 | json-schema-traverse | 1.0.0 | MIT | [source](https://github.com/epoberezkin/json-schema-traverse) |
 | jsonfile | 6.2.1 | MIT | [source](https://github.com/jprichardson/node-jsonfile) |
+| jszip | 3.10.1 | (MIT OR GPL-3.0-or-later) | [source](https://github.com/Stuk/jszip) |
 | katex | 0.16.47 | MIT | [source](https://github.com/KaTeX/KaTeX) |
+| lie | 3.3.0 | MIT | [source](https://github.com/calvinmetcalf/lie) |
+| lop | 0.4.2 | BSD-2-Clause | [source](https://github.com/mwilliamson/lop) |
 | lucide-react | 0.511.0 | ISC | [source](https://github.com/lucide-icons/lucide) |
+| mammoth | 1.12.1 | BSD-2-Clause | [source](https://github.com/mwilliamson/mammoth.js) |
 | media-typer | 2.0.0 | MIT | [source](https://github.com/jshttp/media-typer) |
 | ms | 2.1.3 | MIT | [source](https://github.com/vercel/ms) |
 | music-metadata | 11.14.0 | MIT | [source](https://github.com/Borewit/music-metadata) |
@@ -213,6 +228,9 @@ Original license files remain bundled with their packages. Electron distribution
 | node-forge | 1.4.0 | (BSD-3-Clause OR GPL-2.0) | [source](https://github.com/digitalbazaar/forge) |
 | normalize-path | 3.0.0 | MIT | [source](https://github.com/jonschlinkert/normalize-path) |
 | opencollective-postinstall | 2.0.3 | MIT | [source](https://github.com/opencollective/opencollective-postinstall) |
+| option | 0.2.4 | BSD-2-Clause | [source](https://github.com/mwilliamson/node-options) |
+| pako | 1.0.11 | (MIT AND Zlib) | [source](https://github.com/nodeca/pako) |
+| path-is-absolute | 1.0.1 | MIT | [source](https://github.com/sindresorhus/path-is-absolute) |
 | path-key | 3.1.1 | MIT | [source](https://github.com/sindresorhus/path-key) |
 | pdfjs-dist | 6.2.108 | Apache-2.0 | [source](https://github.com/mozilla/pdf.js) |
 | picocolors | 1.1.1 | ISC | [source](https://github.com/alexeyraspopov/picocolors) |
@@ -220,22 +238,28 @@ Original license files remain bundled with their packages. Electron distribution
 | pkce-challenge | 5.0.1 | MIT | [source](https://github.com/crouchcd/pkce-challenge) |
 | postcss | 8.5.26 | MIT | [source](https://github.com/postcss/postcss) |
 | pretty-bytes | 5.6.0 | MIT | [source](https://github.com/sindresorhus/pretty-bytes) |
+| process-nextick-args | 2.0.1 | MIT | [source](https://github.com/calvinmetcalf/process-nextick-args) |
 | react | 19.2.7 | MIT | [source](https://github.com/facebook/react) |
 | react-dom | 19.2.7 | MIT | [source](https://github.com/facebook/react) |
 | react-remove-scroll | 2.7.2 | MIT | [source](https://github.com/theKashey/react-remove-scroll) |
 | react-remove-scroll-bar | 2.3.8 | MIT | [source](https://github.com/theKashey/react-remove-scroll-bar) |
 | react-style-singleton | 2.2.3 | MIT | [source](https://github.com/theKashey/react-style-singleton) |
+| readable-stream | 2.3.8 | MIT | [source](https://github.com/nodejs/readable-stream) |
 | readdirp | 3.6.0 | MIT | [source](https://github.com/paulmillr/readdirp) |
 | regenerator-runtime | 0.13.11 | MIT | [source](https://github.com/facebook/regenerator/tree/main/packages/runtime) |
 | require-from-string | 2.0.2 | MIT | [source](https://github.com/floatdrop/require-from-string) |
+| safe-buffer | 5.1.2 | MIT | [source](https://github.com/feross/safe-buffer) |
 | safer-buffer | 2.1.2 | MIT | [source](https://github.com/ChALkeR/safer-buffer) |
 | scheduler | 0.27.0 | MIT | [source](https://github.com/facebook/react) |
 | semver | 7.8.5 | ISC | [source](https://github.com/npm/node-semver) |
+| setimmediate | 1.0.5 | MIT | [source](https://github.com/YuzuJS/setImmediate) |
 | sharp | 0.35.3 | Apache-2.0 | [source](https://github.com/lovell/sharp) |
 | shebang-command | 2.0.0 | MIT | [source](https://github.com/kevva/shebang-command) |
 | shebang-regex | 3.0.0 | MIT | [source](https://github.com/sindresorhus/shebang-regex) |
 | signal-exit | 4.1.0 | ISC | [source](https://github.com/tapjs/signal-exit) |
 | source-map-js | 1.2.1 | BSD-3-Clause | [source](https://github.com/7rulnik/source-map-js) |
+| sprintf-js | 1.0.3 | BSD-3-Clause | [source](https://github.com/alexei/sprintf.js) |
+| string_decoder | 1.1.1 | MIT | [source](https://github.com/nodejs/string_decoder) |
 | string-width | 4.2.3 | MIT | [source](https://github.com/sindresorhus/string-width) |
 | strip-ansi | 6.0.1 | MIT | [source](https://github.com/chalk/strip-ansi) |
 | strtok3 | 10.3.5 | MIT | [source](https://github.com/Borewit/strtok3) |
@@ -243,6 +267,7 @@ Original license files remain bundled with their packages. Electron distribution
 | tailwind-merge | 3.6.0 | MIT | [source](https://github.com/dcastil/tailwind-merge) |
 | tesseract.js | 7.0.0 | Apache-2.0 | [source](https://github.com/naptha/tesseract.js) |
 | tesseract.js-core | 7.0.0 | Apache-2.0 | [source](https://github.com/naptha/tesseract.js-core) |
+| tmp | 0.2.7 | MIT | [source](https://github.com/raszi/node-tmp) |
 | to-regex-range | 5.0.1 | MIT | [source](https://github.com/micromatch/to-regex-range) |
 | token-types | 6.1.2 | MIT | [source](https://github.com/Borewit/token-types) |
 | tr46 | 0.0.3 | MIT | [source](https://github.com/Sebmaster/tr46.js) |
@@ -250,12 +275,14 @@ Original license files remain bundled with their packages. Electron distribution
 | type-fest | 0.21.3 | (MIT OR CC0-1.0) | [source](https://github.com/sindresorhus/type-fest) |
 | typescript | 5.9.3 | Apache-2.0 | [source](https://github.com/microsoft/TypeScript) |
 | uint8array-extras | 1.5.0 | MIT | [source](https://github.com/sindresorhus/uint8array-extras) |
+| underscore | 1.13.8 | MIT | [source](https://github.com/jashkenas/underscore) |
 | undici | 7.29.0 | MIT | [source](https://github.com/nodejs/undici) |
 | undici-types | 6.21.0 | MIT | [source](https://github.com/nodejs/undici) |
 | universalify | 2.0.1 | MIT | [source](https://github.com/RyanZim/universalify) |
 | use-callback-ref | 1.3.3 | MIT | [source](https://github.com/theKashey/use-callback-ref/) |
 | use-sidecar | 1.1.3 | MIT | [source](https://github.com/theKashey/use-sidecar) |
 | use-sync-external-store | 1.6.0 | MIT | [source](https://github.com/facebook/react) |
+| util-deprecate | 1.0.2 | MIT | [source](https://github.com/TooTallNate/util-deprecate) |
 | vscode-jsonrpc | 9.0.1 | MIT | [source](https://github.com/Microsoft/vscode-languageserver-node) |
 | vscode-languageserver-protocol | 3.18.2 | MIT | [source](https://github.com/Microsoft/vscode-languageserver-node) |
 | vscode-languageserver-types | 3.18.0 | MIT | [source](https://github.com/Microsoft/vscode-languageserver-node) |
@@ -265,6 +292,7 @@ Original license files remain bundled with their packages. Electron distribution
 | which | 2.0.2 | ISC | [source](https://github.com/isaacs/node-which) |
 | win-guid | 0.2.1 | MIT | [source](https://github.com/Borewit/win-guid) |
 | wrap-ansi | 6.2.0 | MIT | [source](https://github.com/chalk/wrap-ansi) |
+| xmlbuilder | 10.1.1 | MIT | [source](https://github.com/oozcitak/xmlbuilder-js) |
 | yoctocolors-cjs | 2.1.3 | MIT | [source](https://github.com/sindresorhus/yoctocolors) |
 | zlibjs | 0.3.1 | MIT | [source](https://github.com/imaya/zlib.js) |
 | zod | 3.25.76 | MIT | [source](https://github.com/colinhacks/zod) |

@@ -1,14 +1,19 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createModelOption,
   orderModelOptionsByPreference,
+  rememberTextGenerationPreferences,
   resolveAiModelOptionId,
 } from "./use-ai-model-options";
 import { createProviderModelReference } from "@/lib/ai/model-reference";
 
 describe("AI model option preferences", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   const models = [
     createModelOption("glm-4.5"),
     createModelOption("gpt-5.6-sol", "GPT-5.6-Sol"),
@@ -92,5 +97,29 @@ describe("AI model option preferences", () => {
         "glm-5.2",
       ),
     ).toBe(agentPlanModel);
+  });
+
+  it("persists reasoning and speed changes independently", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await rememberTextGenerationPreferences({
+      reasoningEffort: "xhigh",
+    });
+    await rememberTextGenerationPreferences({ modelSpeed: "fast" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/settings", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        defaultReasoningEffort: "xhigh",
+        thinkingEnabled: true,
+      }),
+    });
+    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/settings", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ defaultModelSpeed: "fast" }),
+    });
   });
 });

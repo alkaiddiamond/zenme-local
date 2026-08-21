@@ -430,6 +430,12 @@ html[data-theme="warm"] .hover\:text-zinc-800:hover { color: var(--color-text-pr
 html[data-theme="warm"] .hover\:border-zinc-300:hover,
 html[data-theme="warm"] .hover\:border-zinc-400:hover { border-color: var(--color-border-focus) !important; }
 
+html[data-theme="warm"] .zenme-reading-toc-item[data-active="true"] {
+  background-color: color-mix(in srgb, var(--color-brand) 14%, var(--color-surface-container-high)) !important;
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--color-brand) 72%, transparent);
+  color: var(--color-text-primary) !important;
+}
+
 html[data-theme="warm"] ::selection {
   background: rgba(202, 169, 142, 0.72);
   color: #302b24;
@@ -1272,6 +1278,30 @@ html.dark .zenme-canvas .zenme-image-source-handle {
 
 .zenme-canvas .zenme-reader-workspace .reading-prose-epub img {
   height: auto;
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-docx-scale {
+  transform-origin: top center;
+  zoom: var(--zenme-docx-scale, 1);
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-docx-wrapper {
+  align-items: center !important;
+  background: transparent !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 24px !important;
+  padding: 0 !important;
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-docx-page {
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12) !important;
+  margin: 0 !important;
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-docx-page img,
+.zenme-canvas .zenme-reader-workspace .zenme-docx-page svg {
+  max-width: 100%;
 }
 
 .zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer,

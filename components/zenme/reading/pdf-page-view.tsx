@@ -413,6 +413,7 @@ export const PdfPageView = memo(function PdfPageView({
   return (
     <section
       className="mx-auto"
+      data-reading-section-index={pageIndex}
       ref={pageRef}
       style={{ width: pageFrameSize.frameWidth }}
     >

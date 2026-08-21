@@ -9,7 +9,7 @@ import {
 import {
   createImagePreview,
   getReadingCoverUrl,
-  isBookFile,
+  isReadableFile,
 } from "./files";
 import {
   createBookCoverPreview,
@@ -74,10 +74,10 @@ export async function createDroppedFileCanvasNodes(input: {
         };
       }
       const isImage = file.type.startsWith("image/");
-      const isBook = isBookFile(file);
+      const isReadable = isReadableFile(file);
       const isMusic = file.type.startsWith("audio/");
       const preview = isImage ? await createImagePreview(file) : undefined;
-      const bookCover = isBook
+      const readingCover = isReadable
         ? await createBookCoverPreview(file)
         : undefined;
       let fileId: string | undefined;
@@ -85,7 +85,7 @@ export async function createDroppedFileCanvasNodes(input: {
       let readingAsset: ReadingAsset | null = null;
       let originalUrl = getDroppedFileOriginalUrl({
         file,
-        isBook,
+        isReadable,
         isImage,
         previewUrl,
       });
@@ -124,14 +124,14 @@ export async function createDroppedFileCanvasNodes(input: {
       }
 
       let readingError: string | undefined;
-      if (isBook) {
+      if (isReadable) {
         try {
           readingAsset = await registerReadingAsset({
             projectId: input.projectId,
             nodeId: id,
             file,
             fileName: file.name,
-            cover: bookCover,
+            cover: readingCover,
           });
         } catch (error) {
           readingError = getReadingApiErrorMessage(error, "阅读资料登记失败");
@@ -145,14 +145,14 @@ export async function createDroppedFileCanvasNodes(input: {
 
       return {
         id,
-        type: isImage ? "image" : isBook ? "book" : isMusic ? "music" : "file",
+        type: isImage ? "image" : isMusic ? "music" : "file",
         position: {
           x: input.position.x + index * 32,
           y: input.position.y + index * 32,
         },
         ...(imageSize ? { style: imageSize } : {}),
         data: {
-          kind: isImage ? "image" : isBook ? "book" : isMusic ? "music" : "file",
+          kind: isImage ? "image" : isMusic ? "music" : "file",
           title: readingAsset?.title ?? file.name,
           projectId: input.projectId,
           fileName: file.name,
@@ -252,7 +252,7 @@ export function getDroppedFiles(
 
 function getDroppedFileOriginalUrl(input: {
   file: File;
-  isBook: boolean;
+  isReadable: boolean;
   isImage: boolean;
   previewUrl?: string;
 }) {
@@ -260,7 +260,7 @@ function getDroppedFileOriginalUrl(input: {
     return URL.createObjectURL(input.file);
   }
 
-  if (input.isBook) {
+  if (input.isReadable) {
     return URL.createObjectURL(input.file);
   }
 

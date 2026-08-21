@@ -6,6 +6,10 @@ import {
   getModelIdFromReference,
   parseProviderModelReference,
 } from "@/lib/ai/model-reference";
+import type {
+  ZenmeModelSpeed,
+  ZenmeReasoningEffort,
+} from "@/lib/local/settings";
 
 export type AiModelOption = {
   contextWindow?: number;
@@ -67,6 +71,25 @@ export async function rememberAiModelPreference(
       : modality === "video"
         ? { lastVideoModelId: modelId }
         : { lastTextModelId: modelId }),
+  }).catch(() => undefined);
+}
+
+export async function rememberTextGenerationPreferences(input: {
+  modelSpeed?: ZenmeModelSpeed;
+  reasoningEffort?: ZenmeReasoningEffort;
+}) {
+  await fetch("/api/settings", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      ...(input.modelSpeed ? { defaultModelSpeed: input.modelSpeed } : {}),
+      ...(input.reasoningEffort
+        ? {
+            defaultReasoningEffort: input.reasoningEffort,
+            thinkingEnabled: true,
+          }
+        : {}),
+    }),
   }).catch(() => undefined);
 }
 

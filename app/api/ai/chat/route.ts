@@ -588,7 +588,7 @@ export function createOpenAiOAuthRequestBody(input: {
         ...createResponsesInputItems(input.messages, input.imageDataUrls, true),
       ],
       tool_choice: "auto" as const,
-      parallel_tool_calls: true,
+      parallel_tool_calls: false,
       reasoning: {
         effort: input.reasoningEffort ?? (input.thinkingEnabled === false ? "none" as const : "low" as const),
         ...(input.thinkingEnabled === false ? {} : { summary: "auto" as const }),

@@ -188,7 +188,7 @@ describe("reading asset client registration", () => {
     ).resolves.toBeNull();
   });
 
-  it("throws when the original book file cannot be fetched before registration", async () => {
+  it("throws when the original file cannot be fetched before registration", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { status: 404 }));
 
     await expect(
@@ -199,7 +199,7 @@ describe("reading asset client registration", () => {
         }),
         projectId: "project-1",
       }),
-    ).rejects.toThrow("无法读取原始图书文件");
+    ).rejects.toThrow("无法读取原始文件");
   });
 
   it("fetches original book files and registers them with the node metadata", async () => {

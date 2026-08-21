@@ -146,7 +146,7 @@ export function ZenmeModelPicker({
       >
         {visibleModels.map((option) => (
           <DropdownMenuItem
-            className="flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-sm text-zinc-700 focus:bg-zinc-100 focus:text-zinc-950"
+            className="flex cursor-pointer items-center justify-between rounded-lg px-3 py-2 text-xs text-zinc-700 focus:bg-zinc-100 focus:text-zinc-950"
             key={option.id}
             onSelect={() => onChange(option.id)}
           >

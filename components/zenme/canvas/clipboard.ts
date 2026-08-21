@@ -72,14 +72,22 @@ export function parseCanvasNodeClipboardPayload(value: string) {
 export function getClipboardImageFiles(
   clipboardData: Pick<DataTransfer, "files" | "items">,
 ) {
-  const itemImages = normalizeClipboardImageFiles(
+  return getClipboardFiles(clipboardData).filter((file) =>
+    file.type.startsWith("image/"),
+  );
+}
+
+export function getClipboardFiles(
+  clipboardData: Pick<DataTransfer, "files" | "items">,
+) {
+  const itemFiles = normalizeClipboardFiles(
     Array.from(clipboardData.items)
       .filter((item) => item.kind === "file")
       .map((item) => ({ file: item.getAsFile(), typeHint: item.type })),
   );
-  if (itemImages.length > 0) return itemImages;
+  if (itemFiles.length > 0) return itemFiles;
 
-  return normalizeClipboardImageFiles(
+  return normalizeClipboardFiles(
     Array.from(clipboardData.files).map((file) => ({
       file,
       typeHint: file.type,
@@ -87,7 +95,7 @@ export function getClipboardImageFiles(
   );
 }
 
-function normalizeClipboardImageFiles(
+function normalizeClipboardFiles(
   candidates: Array<{ file: File | null; typeHint: string }>,
 ) {
   const seen = new Set<string>();
@@ -95,7 +103,6 @@ function normalizeClipboardImageFiles(
   return candidates.flatMap(({ file, typeHint }, index) => {
     if (!file) return [];
     const mimeType = getClipboardImageMimeType(file, typeHint);
-    if (!mimeType) return [];
     const key = [
       file.name,
       file.size,
@@ -104,6 +111,8 @@ function normalizeClipboardImageFiles(
     ].join(":");
     if (seen.has(key)) return [];
     seen.add(key);
+
+    if (!mimeType) return [file];
 
     const extension = getClipboardImageExtension(mimeType);
     const fileName = file.name || `clipboard-${Date.now()}-${index + 1}.${extension}`;

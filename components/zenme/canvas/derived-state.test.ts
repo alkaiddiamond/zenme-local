@@ -2,6 +2,7 @@ import { AlertCircle, Check, Loader2, Pencil } from "lucide-react";
 import { describe, expect, it } from "vitest";
 
 import {
+  canOpenReadingWorkspace,
   canPrepareReadingAsset,
   getActionNode,
   getGroupableNodes,
@@ -90,7 +91,7 @@ describe("canvas derived state helpers", () => {
     expect(getActionNode({ nodes })).toBeUndefined();
   });
 
-  it("detects book nodes that need reading asset preparation", () => {
+  it("detects readable file nodes that need reading asset preparation", () => {
     expect(
       canPrepareReadingAsset(
         node({
@@ -160,6 +161,32 @@ describe("canvas derived state helpers", () => {
         }),
       ),
     ).toBe(false);
+  });
+
+  it("derives reader connection capability from the file extension", () => {
+    const docx = node({
+      data: {
+        fileName: "方案.docx",
+        kind: "file",
+        originalUrl: "blob:docx",
+      },
+      id: "docx-file",
+      type: "file",
+    });
+    const zip = node({
+      data: {
+        fileName: "archive.zip",
+        kind: "file",
+        originalUrl: "blob:zip",
+      },
+      id: "zip-file",
+      type: "file",
+    });
+
+    expect(canPrepareReadingAsset(docx)).toBe(true);
+    expect(canOpenReadingWorkspace(docx)).toBe(true);
+    expect(canPrepareReadingAsset(zip)).toBe(false);
+    expect(canOpenReadingWorkspace(zip)).toBe(false);
   });
 
   it("positions the selection toolbar above the selected node bounds", () => {

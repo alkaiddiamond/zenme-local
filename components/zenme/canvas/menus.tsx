@@ -27,6 +27,7 @@ import type {
   NodeActionMenuState,
 } from "@/components/zenme/canvas/types";
 import type { MusicChildNodeKind } from "@/components/zenme/node-types";
+import { canOpenReadingWorkspace } from "@/components/zenme/canvas/derived-state";
 
 type CanvasAddMenuProps = {
   menu: CanvasAddMenuState;
@@ -105,7 +106,7 @@ function NodeCreationMenuItems({
             title="文件夹"
           />
           <FloatingMenuItem
-            description="从系统选择图片、书籍或文件"
+            description="从系统选择图片或文件"
             icon={Upload}
             onClick={onUploadFiles}
             title="上传"
@@ -256,7 +257,7 @@ export function NodeActionMenu({
         primary
         title="继续对话或执行任务"
       />
-      {actionNode?.data.kind === "book" ? (
+      {canOpenReadingWorkspace(actionNode) ? (
         <FloatingMenuItem
           icon={BookOpen}
           onClick={onOpenReadingWorkspace}

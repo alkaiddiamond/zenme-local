@@ -131,15 +131,18 @@ export const ReadingTocSidebar = memo(function ReadingTocSidebar({
           >
             {visibleSections.map((section, offset) => {
               const index = visibleRange[0] + offset;
+              const isActive =
+                activeSection >= section.index &&
+                activeSection <= section.endIndex;
               return (
                 <button
-                  className={`absolute left-0 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs leading-4 ${
-                    activeSection >= section.index &&
-                    activeSection <= section.endIndex
+                  className={`zenme-reading-toc-item absolute left-0 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-xs leading-4 ${
+                    isActive
                       ? "bg-zinc-950 text-white"
                       : "text-zinc-700 hover:bg-zinc-100"
                   }`}
-                  key={section.index}
+                  data-active={isActive ? "true" : undefined}
+                  key={`${section.index}:${section.title}:${index}`}
                   onClick={() => onSectionSelect(section.index)}
                   style={{
                     height: READING_TOC_ROW_HEIGHT - 4,
@@ -153,7 +156,7 @@ export const ReadingTocSidebar = memo(function ReadingTocSidebar({
                   </span>
                   {section.pageNumber ? (
                     <span className="shrink-0 tabular-nums opacity-60">
-                      {section.pageNumber}
+                      {isActive ? activeSection + 1 : section.pageNumber}
                     </span>
                   ) : null}
                 </button>

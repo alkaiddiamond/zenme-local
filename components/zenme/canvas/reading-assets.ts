@@ -39,7 +39,7 @@ export async function prepareReadingAssetForCanvasNode(input: {
 
   const response = await fetch(originalUrl);
   if (!response.ok) {
-    throw new Error("无法读取原始图书文件");
+    throw new Error("无法读取原始文件");
   }
 
   const blob = await response.blob();

@@ -14,6 +14,7 @@ import {
   parseEpubSections,
   readEpubTitle,
 } from "@/lib/reading/parsers/epub-parser";
+import { parseDocxSections } from "@/lib/reading/parsers/docx-parser";
 import {
   decodeTxtBytes,
   parseTxtSections,
@@ -41,8 +42,10 @@ import {
   normalizeReadingType,
 } from "@/lib/reading/normalization";
 
+
 export function detectLocalReadingFormat(fileName: string): ReadingFormat | null {
   const ext = path.extname(fileName).toLowerCase();
+  if (ext === ".docx") return "docx";
   if (ext === ".epub") return "epub";
   if (ext === ".md" || ext === ".markdown") return "markdown";
   if (ext === ".pdf") return "pdf";
@@ -95,7 +98,7 @@ export async function createLocalReadingAsset(input: {
       createdAt: now,
       updatedAt: now,
     };
-    const sections = createSectionsForAsset(asset, input.bytes);
+    const sections = await createSectionsForAsset(asset, input.bytes);
 
     await writeJsonFile(resolveInside(assetDir, "asset.json"), asset);
     await writeJsonFile(resolveInside(assetDir, "sections.json"), sections);
@@ -464,9 +467,12 @@ async function writeBinaryFileAtomic(filePath: string, bytes: Buffer) {
   }
 }
 
-function createSectionsForAsset(asset: ReadingAsset, bytes: Buffer) {
+async function createSectionsForAsset(asset: ReadingAsset, bytes: Buffer) {
   if (asset.format === "pdf") {
     return [{ index: 0, title: asset.title, html: "", text: "" }];
+  }
+  if (asset.format === "docx") {
+    return parseDocxSections(bytes);
   }
   if (asset.format === "txt") {
     return parseTxtSections(decodeTxtBytes(bytes));
@@ -485,6 +491,9 @@ function readLocalTitle(bytes: Buffer, fileName: string, format: ReadingFormat) 
 }
 
 function getReadingFormatMimeType(format: ReadingFormat) {
+  if (format === "docx") {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
   if (format === "epub") return "application/epub+zip";
   if (format === "pdf") return "application/pdf";
   if (format === "markdown") return "text/markdown; charset=utf-8";
@@ -634,6 +643,7 @@ function normalizeReadingNotesScrollTop(value: unknown) {
 
 function isReadingFormat(value: unknown): value is ReadingFormat {
   return (
+    value === "docx" ||
     value === "epub" ||
     value === "markdown" ||
     value === "pdf" ||

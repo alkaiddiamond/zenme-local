@@ -14,10 +14,24 @@ export function dataUrlToBlob(dataUrl: string) {
   return new Blob([buffer], { type: mime });
 }
 
-export function isBookFile(file: File) {
-  const name = file.name.toLowerCase();
-  return (
-    name.endsWith(".epub") || name.endsWith(".pdf") || name.endsWith(".txt")
+const READING_FILE_EXTENSIONS = new Set([
+  ".docx",
+  ".epub",
+  ".markdown",
+  ".md",
+  ".pdf",
+  ".txt",
+]);
+
+export function isReadableFile(file: Pick<File, "name">) {
+  return isReadableFileName(file.name);
+}
+
+export function isReadableFileName(fileName: string | undefined) {
+  if (!fileName) return false;
+  const normalized = fileName.toLowerCase();
+  return Array.from(READING_FILE_EXTENSIONS).some((extension) =>
+    normalized.endsWith(extension),
   );
 }
 

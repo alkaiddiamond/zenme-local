@@ -235,9 +235,9 @@ export function readSelection(
   const selectedRanges = sectionElements
     .slice(startIndex, endIndex + 1)
     .flatMap((sectionElement) => {
-      const proseElement = sectionElement.querySelector(
-        ".reading-prose",
-      ) as HTMLElement | null;
+      const proseElement = sectionElement.matches(".reading-prose")
+        ? sectionElement
+        : (sectionElement.querySelector(".reading-prose") as HTMLElement | null);
       if (!proseElement) return [];
 
       const segmentRange = document.createRange();

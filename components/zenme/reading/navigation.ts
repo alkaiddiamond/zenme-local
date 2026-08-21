@@ -31,6 +31,15 @@ export function findReadingNavigationIndex(
 }
 
 export function isPagedReadingFormat(format: ReadingFormat) {
+  return (
+    format === "docx" ||
+    format === "epub" ||
+    format === "markdown" ||
+    format === "txt"
+  );
+}
+
+export function isVirtualizedReadingFormat(format: ReadingFormat) {
   return format === "epub" || format === "markdown" || format === "txt";
 }
 
@@ -43,7 +52,11 @@ export function getReadingActiveTitle(input: {
 }) {
   if (input.assetFormat === "pdf" || isPagedReadingFormat(input.assetFormat)) {
     const total =
-      input.assetFormat === "pdf" ? input.pdfPageCount : input.sections.length;
+      input.assetFormat === "pdf"
+        ? input.pdfPageCount
+        : input.assetFormat === "docx"
+          ? input.pdfPageCount || input.sections.length
+          : input.sections.length;
     return total > 0
       ? `第 ${input.activeSection + 1} / ${total} 页`
       : input.assetTitle;
@@ -58,7 +71,7 @@ export function getReadingSectionTitle(input: {
   index: number;
   sections: ReadingSection[];
 }) {
-  if (input.assetFormat === "pdf") {
+  if (input.assetFormat === "pdf" || input.assetFormat === "docx") {
     return `第 ${input.index + 1} 页`;
   }
 
@@ -92,6 +105,26 @@ export function buildReadingNavigationSections(input: {
     }));
   }
 
+  if (input.assetFormat === "docx" && input.pdfPageCount > 0) {
+    if (input.pdfOutlineSections?.length) {
+      return input.pdfOutlineSections.map((section, index, sections) => ({
+        endIndex: Math.max(
+          section.index,
+          (sections[index + 1]?.index ?? input.pdfPageCount) - 1,
+        ),
+        index: section.index,
+        pageNumber: section.index + 1,
+        title: section.title,
+      }));
+    }
+    return Array.from({ length: input.pdfPageCount }, (_, index) => ({
+      endIndex: index,
+      index,
+      pageNumber: index + 1,
+      title: `第 ${index + 1} 页`,
+    }));
+  }
+
   if (isPagedReadingFormat(input.assetFormat)) {
     return buildPagedNavigationSections(input.sections);
   }
@@ -117,6 +150,7 @@ function buildPagedNavigationSections(
       entries.push({
         endIndex: section.index,
         index: section.index,
+        pageNumber: section.index + 1,
         title,
       });
     }
