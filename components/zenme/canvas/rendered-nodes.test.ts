@@ -431,6 +431,69 @@ describe("rendered canvas nodes", () => {
       ]);
   });
 
+  it("renders completed image-generation results as image thumbnails", () => {
+    const renderedNodes = getRenderedCanvasNodes({
+      createNoteNode: vi.fn(),
+      edges: [
+        { source: "generated-a", target: "generation" },
+        { source: "generated-b", target: "generation" },
+      ],
+      nodes: [
+        node({
+          data: {
+            imageGenerationResult: true,
+            imagePrompt: "人物参考",
+            kind: "imageGeneration",
+            originalUrl: "/generated-a.png",
+            previewUrl: "/generated-a.webp",
+            title: "图片生成 A",
+          },
+          id: "generated-a",
+          type: "imageGeneration",
+        }),
+        node({
+          data: {
+            imageGenerationResult: true,
+            imagePrompt: "背景参考",
+            kind: "imageGeneration",
+            originalUrl: "/generated-b.png",
+            title: "图片生成 B",
+          },
+          id: "generated-b",
+          type: "imageGeneration",
+        }),
+        node({
+          data: { kind: "imageGeneration", title: "图片生成" },
+          id: "generation",
+          type: "imageGeneration",
+        }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+    const generation = renderedNodes.find((item) => item.id === "generation");
+
+    expect(generation?.data.imageReferences).toEqual([
+      {
+        nodeId: "generated-a",
+        title: "图片生成 A",
+        url: "/generated-a.webp",
+      },
+      {
+        nodeId: "generated-b",
+        title: "图片生成 B",
+        url: "/generated-b.png",
+      },
+    ]);
+    expect(generation?.data.imageTextReferences).toEqual([]);
+  });
+
   it("keeps an incoming image available as an @ candidate on a generated image", () => {
     const renderedNodes = getRenderedCanvasNodes({
       createNoteNode: vi.fn(),

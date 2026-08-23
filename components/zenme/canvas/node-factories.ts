@@ -22,6 +22,7 @@ import {
   readNodeSize,
 } from "./geometry";
 import type { CanvasNode } from "./types";
+import { isCanvasImageReferenceNode } from "./connections";
 
 const TEXT_NODE_DEFAULT_SIZE = { height: 176, width: 560 };
 const MANAGED_TEXT_NODE_DEFAULT_SIZE = { height: 380, width: 560 };
@@ -256,10 +257,7 @@ export function createReferencedImageGenerationCanvasNode(input: {
       kind: "imageGeneration",
       imageOperation: "generate",
       imageReferenceNodeIds:
-        input.sourceNode.data.kind === "image" &&
-        Boolean(
-          input.sourceNode.data.originalUrl || input.sourceNode.data.previewUrl,
-        )
+        isCanvasImageReferenceNode(input.sourceNode)
           ? [input.sourceNode.id]
           : [],
       imageOutputAspectRatio:

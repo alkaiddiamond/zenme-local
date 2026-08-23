@@ -9,6 +9,7 @@ import {
 } from "@/components/zenme/node-types";
 
 import {
+  createImageReferenceConnectionNodeUpdate,
   createNodeActionMenuFromConnectEnd,
   isCanvasConnectionValid,
   normalizeCanvasConnection,
@@ -371,6 +372,47 @@ describe("canvas state and context helpers", () => {
       target: "generator",
       targetHandle: null,
     });
+  });
+
+  it("selects every newly connected generated image as a reference", () => {
+    const firstImage = canvasNode({
+      data: {
+        imageGenerationResult: true,
+        kind: "imageGeneration",
+        previewUrl: "/first.webp",
+      },
+      id: "first-image",
+      type: "imageGeneration",
+    });
+    const secondImage = canvasNode({
+      data: {
+        imageGenerationResult: true,
+        kind: "imageGeneration",
+        previewUrl: "/second.webp",
+      },
+      id: "second-image",
+      type: "imageGeneration",
+    });
+    const generation = canvasNode({
+      data: {
+        imageReferenceNodeIds: ["first-image"],
+        kind: "imageGeneration",
+      },
+      id: "generation",
+      type: "imageGeneration",
+    });
+
+    const update = createImageReferenceConnectionNodeUpdate({
+      nodes: [firstImage, secondImage, generation],
+      sourceId: "second-image",
+      targetId: "generation",
+    });
+
+    expect(update.nextNodes.find((node) => node.id === "generation")?.data)
+      .toMatchObject({
+        imageReferenceNodeIds: ["first-image", "second-image"],
+      });
+    expect(update.nodeUpdates).toHaveLength(1);
   });
 
   it("only lets forward context connections snap to dedicated context targets", () => {

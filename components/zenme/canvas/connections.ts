@@ -11,8 +11,60 @@ import {
   NODE_RIGHT_HANDLE_ID,
 } from "@/components/zenme/node-types";
 
+import { createCanvasHistoryNodeSnapshot } from "./geometry";
 import { isTextGenerationContextNode } from "./text-generation-context";
 import { acceptsCanvasContext } from "./node-capabilities";
+
+export function isCanvasImageReferenceNode(node: CanvasNode | undefined) {
+  if (!node || !(node.data.originalUrl || node.data.previewUrl)) {
+    return false;
+  }
+
+  return node.data.kind === "image" || (
+    node.data.kind === "imageGeneration" &&
+    Boolean(node.data.imageGenerationResult)
+  );
+}
+
+export function createImageReferenceConnectionNodeUpdate(input: {
+  nodes: CanvasNode[];
+  sourceId: string;
+  targetId: string;
+}) {
+  const source = input.nodes.find((node) => node.id === input.sourceId);
+  const target = input.nodes.find((node) => node.id === input.targetId);
+  const supportsImageReferences =
+    target?.data.kind === "imageGeneration" ||
+    target?.data.kind === "videoGeneration" ||
+    (target?.data.kind === "image" && target.data.imageGenerated);
+  if (!isCanvasImageReferenceNode(source) || !target || !supportsImageReferences) {
+    return { nextNodes: input.nodes, nodeUpdates: [] };
+  }
+
+  const selectedIds = target.data.imageReferenceNodeIds ?? [];
+  if (selectedIds.includes(source.id)) {
+    return { nextNodes: input.nodes, nodeUpdates: [] };
+  }
+
+  const nextTarget: CanvasNode = {
+    ...target,
+    data: {
+      ...target.data,
+      imageReferenceNodeIds: [...selectedIds, source.id],
+    },
+  };
+
+  return {
+    nextNodes: input.nodes.map((node) =>
+      node.id === target.id ? nextTarget : node,
+    ),
+    nodeUpdates: [{
+      after: createCanvasHistoryNodeSnapshot(nextTarget),
+      before: createCanvasHistoryNodeSnapshot(target),
+      id: target.id,
+    }],
+  };
+}
 
 export function isCanvasConnectionValid(
   connection: Connection | Edge,

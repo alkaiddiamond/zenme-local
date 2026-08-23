@@ -11,6 +11,7 @@ import {
   READER_DEFAULT_SIZE,
 } from "./geometry";
 import { IMAGE_GENERATION_REQUEST_NODE_DEFAULT_SIZE } from "./node-factories";
+import { isCanvasImageReferenceNode } from "./connections";
 import type { CanvasNode } from "./types";
 import {
   deriveTaskRelationships,
@@ -381,7 +382,8 @@ export function getRenderedCanvasNodes({
   for (const edge of edges) {
     const source = nodeById.get(edge.source);
     const url = source?.data.originalUrl ?? source?.data.previewUrl;
-    if (source?.data.kind === "image" && url) {
+    const isImageReference = isCanvasImageReferenceNode(source);
+    if (source && url && isImageReference) {
       const references = imageReferencesByTargetId.get(edge.target) ?? [];
       references.push({
         nodeId: source.id,
@@ -391,7 +393,7 @@ export function getRenderedCanvasNodes({
       imageReferencesByTargetId.set(edge.target, references);
     }
 
-    if (source && hasCanvasNodeContextText(source)) {
+    if (source && !isImageReference && hasCanvasNodeContextText(source)) {
       const references = imageTextReferencesByTargetId.get(edge.target) ?? [];
       if (!references.some((reference) => reference.nodeId === source.id)) {
         references.push({

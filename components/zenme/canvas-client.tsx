@@ -49,6 +49,7 @@ import {
   NodeActionMenu,
 } from "@/components/zenme/canvas/menus";
 import {
+  createImageReferenceConnectionNodeUpdate,
   createNodeActionMenuFromConnectEnd,
   isCanvasConnectionValid,
   normalizeCanvasConnection,
@@ -1991,31 +1992,35 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       const createdEdges = nextEdges.filter(
         (edge) => !previousEdgeIds.has(edge.id),
       );
-      const taskNodeUpdate = isTaskConnection
+      const connectionNodeUpdate = isTaskConnection
         ? createTaskConnectionNodeUpdate({
             childId: targetNode.id,
             nodes,
             parentId: sourceNode.id,
           })
-        : { nextNodes: nodes, nodeUpdates: [] };
+        : createImageReferenceConnectionNodeUpdate({
+            nodes,
+            sourceId: normalizedConnection.source,
+            targetId: normalizedConnection.target,
+          });
 
       if (
         createdEdges.length === 0 &&
         deletedEdges.length === 0 &&
-        taskNodeUpdate.nodeUpdates.length === 0
+        connectionNodeUpdate.nodeUpdates.length === 0
       ) {
         return;
       }
 
       skipNextHistoryEntryCount.current += 1;
-      setNodes(taskNodeUpdate.nextNodes);
+      setNodes(connectionNodeUpdate.nextNodes);
       setEdges(nextEdges);
       pushMutateHistory({
         afterEdges: nextEdges,
-        afterNodes: taskNodeUpdate.nextNodes,
+        afterNodes: connectionNodeUpdate.nextNodes,
         createdEdges,
         deletedEdges,
-        nodeUpdates: taskNodeUpdate.nodeUpdates,
+        nodeUpdates: connectionNodeUpdate.nodeUpdates,
       });
     },
     [edges, nodes, pushMutateHistory, setEdges, setNodes],

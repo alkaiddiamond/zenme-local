@@ -428,6 +428,25 @@ describe("canvas node factories", () => {
     expect(result.edge).toEqual(expectedEdge("image-source", "image-generation-2"));
   });
 
+  it("selects a completed image-generation result as the initial reference", () => {
+    const sourceNode = {
+      ...textNode({ id: "generated-source" }),
+      type: "imageGeneration",
+      data: {
+        imageGenerationResult: true,
+        kind: "imageGeneration" as const,
+        previewUrl: "/generated.webp",
+        title: "图片生成",
+      },
+    } as CanvasNode;
+    const result = createReferencedImageGenerationCanvasNode({
+      id: "image-generation-from-result",
+      sourceNode,
+    });
+
+    expect(result.node.data.imageReferenceNodeIds).toEqual(["generated-source"]);
+  });
+
   it("connects an AI reply as text context without treating it as an image reference", () => {
     const sourceNode = {
       ...textNode({ id: "agent-source" }),
