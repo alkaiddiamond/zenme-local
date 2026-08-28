@@ -93,6 +93,10 @@ describe("text generation request boundary", () => {
     expect(source).toContain('aria-label="添加图片上下文"');
     expect(source).toContain("imageDataUrls: images.map");
     expect(source).toContain("nodeData.onStopTextGenerationNode?.(nodeId)");
+    expect(source).toContain('key="stop"');
+    expect(source).toContain('key="submit"');
+    expect(source).toContain('type="submit"');
+    expect(source.match(/event\.currentTarget\.form\?\.requestSubmit\(\);/g)).toHaveLength(1);
     expect(source).toContain("nodeData.onSteerTextGenerationNode?.(nodeId, nextPrompt)");
     expect(source).toContain('isGenerating ? "追加指令"');
     expect(source).toContain("createImagePreview(file)");

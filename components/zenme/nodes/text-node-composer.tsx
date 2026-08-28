@@ -346,27 +346,31 @@ export function TextNodeComposer({
             models={pickerModels}
             onChange={handleModelChange}
           />
-          <button
-            aria-busy={isGenerating}
-            aria-label={isGenerating && !hasSteeringPrompt ? "停止" : isGenerating ? "追加指令" : "提交"}
-            className={`flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition-colors hover:bg-zinc-800 active:bg-black focus-visible:outline-none focus-visible:shadow-[var(--shadow-focus-ring)] ${
-              isGenerating
-                ? "cursor-pointer"
-                : "disabled:cursor-not-allowed disabled:bg-zinc-300"
-            }`}
-            disabled={
-              !isGenerating && !configuredModels.some((option) => option.id === model)
-            }
-            onClick={isGenerating && !hasSteeringPrompt ? () => nodeData.onStopTextGenerationNode?.(nodeId) : undefined}
-            title={isGenerating && !hasSteeringPrompt ? "停止" : isGenerating ? "追加指令" : "提交"}
-            type={isGenerating && !hasSteeringPrompt ? "button" : "submit"}
-          >
-            {isGenerating && !hasSteeringPrompt ? (
+          {isGenerating && !hasSteeringPrompt ? (
+            <button
+              aria-busy
+              aria-label="停止"
+              className="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full bg-zinc-950 text-white transition-colors hover:bg-zinc-800 active:bg-black focus-visible:outline-none focus-visible:shadow-[var(--shadow-focus-ring)]"
+              key="stop"
+              onClick={() => nodeData.onStopTextGenerationNode?.(nodeId)}
+              title="停止"
+              type="button"
+            >
               <span aria-hidden="true" className="size-4 rounded-[2px] bg-white" />
-            ) : (
+            </button>
+          ) : (
+            <button
+              aria-busy={isGenerating}
+              aria-label={isGenerating ? "追加指令" : "提交"}
+              className="flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition-colors hover:bg-zinc-800 active:bg-black focus-visible:outline-none focus-visible:shadow-[var(--shadow-focus-ring)] disabled:cursor-not-allowed disabled:bg-zinc-300"
+              disabled={!configuredModels.some((option) => option.id === model)}
+              key="submit"
+              title={isGenerating ? "追加指令" : "提交"}
+              type="submit"
+            >
               <ArrowUp className="size-5" strokeWidth={1.75} />
-            )}
-          </button>
+            </button>
+          )}
         </div>
       </div>
     </form>
