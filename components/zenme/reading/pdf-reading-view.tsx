@@ -1,3 +1,4 @@
+import { useStoreApi } from "@xyflow/react";
 import { Loader2 } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 import type { MutableRefObject } from "react";
@@ -26,6 +27,7 @@ type PdfReadingViewProps = {
 };
 
 const EMPTY_PAGE_NOTES: ReadingNote[] = [];
+const CANVAS_ZOOM_RENDER_SETTLE_MS = 120;
 
 export const PdfReadingView = memo(function PdfReadingView({
   annotationResetKey,
@@ -39,8 +41,12 @@ export const PdfReadingView = memo(function PdfReadingView({
   onPageCount,
   pageRefs,
 }: PdfReadingViewProps) {
+  const canvasStore = useStoreApi();
   const [pdf, setPdf] = useState<PdfDocumentProxyLike | null>(null);
   const [pageAspectRatio, setPageAspectRatio] = useState<number | null>(null);
+  const [canvasScale, setCanvasScale] = useState(
+    () => canvasStore.getState().transform[2],
+  );
   const notesByPage = useMemo(() => {
     const next = new Map<number, ReadingNote[]>();
     for (const note of notes) {
@@ -51,6 +57,31 @@ export const PdfReadingView = memo(function PdfReadingView({
     }
     return next;
   }, [notes]);
+
+  useEffect(() => {
+    let observedScale = canvasStore.getState().transform[2];
+    let settleTimer: number | null = null;
+    const unsubscribe = canvasStore.subscribe((state) => {
+      const nextScale = state.transform[2];
+      if (nextScale === observedScale) return;
+
+      observedScale = nextScale;
+      if (settleTimer !== null) {
+        window.clearTimeout(settleTimer);
+      }
+      settleTimer = window.setTimeout(() => {
+        setCanvasScale(observedScale);
+        settleTimer = null;
+      }, CANVAS_ZOOM_RENDER_SETTLE_MS);
+    });
+
+    return () => {
+      if (settleTimer !== null) {
+        window.clearTimeout(settleTimer);
+      }
+      unsubscribe();
+    };
+  }, [canvasStore]);
 
   useEffect(() => {
     let cancelled = false;
@@ -122,6 +153,7 @@ export const PdfReadingView = memo(function PdfReadingView({
         <PdfPageView
           key={index}
           annotationResetKey={annotationResetKey}
+          canvasScale={canvasScale}
           contentScale={contentScale}
           fallbackAspectRatio={pageAspectRatio}
           focusedNoteId={focusedNoteId}

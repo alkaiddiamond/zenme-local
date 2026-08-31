@@ -4,6 +4,24 @@ import {
 } from "./constants";
 import type { PdfAnnotationDraft } from "./types";
 
+const PDF_MIN_OUTPUT_SCALE = 2;
+
+export function getPdfOutputScale(
+  devicePixelRatio: number | undefined,
+  canvasScale = 1,
+) {
+  const displayScale =
+    typeof devicePixelRatio === "number" &&
+    Number.isFinite(devicePixelRatio) &&
+    devicePixelRatio > 0
+      ? devicePixelRatio
+      : 1;
+  const viewportScale =
+    Number.isFinite(canvasScale) && canvasScale > 0 ? canvasScale : 1;
+
+  return Math.max(displayScale * viewportScale, PDF_MIN_OUTPUT_SCALE);
+}
+
 export function getPdfRelativePoint(input: {
   clientX: number;
   clientY: number;

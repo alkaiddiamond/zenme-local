@@ -14,6 +14,7 @@ import {
   READING_PAGE_HEADER_CLASSNAME,
 } from "./constants";
 import {
+  getPdfOutputScale,
   getPdfPageFrameSize,
   getPdfRegionAnnotationDraft,
   getPdfRelativePoint,
@@ -55,6 +56,7 @@ const MIN_DRAFT_RECT_SIZE = 0.015;
 
 type PdfPageViewProps = {
   annotationResetKey: number;
+  canvasScale: number;
   contentScale: number;
   fallbackAspectRatio?: number | null;
   focusedNoteId: string | null;
@@ -68,6 +70,7 @@ type PdfPageViewProps = {
 
 export const PdfPageView = memo(function PdfPageView({
   annotationResetKey,
+  canvasScale,
   contentScale,
   fallbackAspectRatio,
   focusedNoteId,
@@ -159,19 +162,29 @@ export const PdfPageView = memo(function PdfPageView({
       const baseViewport = page.getViewport({ scale: 1 });
       const scale = (PDF_PAGE_BASE_WIDTH / baseViewport.width) * contentScale;
       const viewport = page.getViewport({ scale });
-      const ratio = window.devicePixelRatio || 1;
+      const outputScale = getPdfOutputScale(
+        window.devicePixelRatio,
+        canvasScale,
+      );
       const context = canvas.getContext("2d");
       if (!context) return;
 
       setHasSelectableText(null);
       setTextSelectionPreviewRects(null);
-      canvas.width = Math.floor(viewport.width * ratio);
-      canvas.height = Math.floor(viewport.height * ratio);
+      canvas.width = Math.floor(viewport.width * outputScale);
+      canvas.height = Math.floor(viewport.height * outputScale);
       canvas.style.width = `${viewport.width}px`;
       canvas.style.height = `${viewport.height}px`;
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
       setPageSize({ height: viewport.height, width: viewport.width });
-      const renderTask = page.render({ canvas, canvasContext: context, viewport });
+      const renderTask = page.render({
+        canvas,
+        canvasContext: context,
+        transform:
+          outputScale === 1
+            ? undefined
+            : [outputScale, 0, 0, outputScale, 0, 0],
+        viewport,
+      });
       activeRenderTask.current = renderTask;
       renderQueue.current = renderTask.promise
         .then(() => undefined)
@@ -244,7 +257,7 @@ export const PdfPageView = memo(function PdfPageView({
       }
       resizeObserver?.disconnect();
     };
-  }, [contentScale, pageNumber, pdf, shouldRender]);
+  }, [canvasScale, contentScale, pageNumber, pdf, shouldRender]);
 
   useLazyPdfPageRender({
     pageRef,

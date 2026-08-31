@@ -71,6 +71,7 @@ export type PdfPageProxyLike = {
   render: (input: {
     canvas?: HTMLCanvasElement;
     canvasContext: CanvasRenderingContext2D;
+    transform?: number[];
     viewport: { height: number; width: number };
   }) => { cancel: () => void; promise: Promise<void> };
 };
