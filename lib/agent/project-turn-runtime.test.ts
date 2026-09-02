@@ -3653,7 +3653,7 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
     expect(modelPrompts[2]).toContain("不按固定来源数或关键词规则停止");
     const session = await getProjectAgentSession(projectId, dataDir);
     const searchResult = session.events.find((event) => event.type === "toolResult" && event.data?.name === "web_search");
-    expect(searchResult?.content).toBe("网页搜索完成，发现 2 个候选来源；来源需读取验证后才能引用。");
+    expect(searchResult?.content).toBe("网页搜索完成，发现 2 个候选来源；重要事实仍需读取正文验证。");
     expect(session.events.find((event) => event.type === "thinking")?.content).toContain("归纳、去重");
     expect(session.events.filter((event) => event.type === "assistant")).toHaveLength(1);
   });
@@ -3773,7 +3773,7 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
     expect(modelPrompts[2]).toContain("把这些数据视为当前 observation，自行判断下一步");
   });
 
-  it("rejects citations that were discovered but never fetched", async () => {
+  it("allows citations returned by web search without domain-specific URL mapping", async () => {
     const fetched = "https://news.example.com/fetched";
     const unfetched = "https://news.example.com/unfetched";
     let modelCall = 0;
@@ -3787,13 +3787,59 @@ describe("project agent turn runtime", { timeout: 15_000 }, () => {
         modelCall += 1;
         if (modelCall === 1) return { text: JSON.stringify({ type: "tool", name: "web_search", arguments: { query: "最新报道" } }), usage: null };
         if (modelCall === 2) return { text: JSON.stringify({ type: "tool", name: "web_fetch", arguments: { url: fetched, prompt: "提取报道事实" } }), usage: null };
-        if (modelCall === 3) return { text: `错误引用：[来源](${unfetched})`, usage: null };
-        return { text: `修正引用：[来源](${fetched})`, usage: null };
+        return { text: `检索来源：[来源](${unfetched})`, usage: null };
       },
     });
 
-    expect(result.answer).toBe(`修正引用：[来源](${fetched})`);
+    expect(result.answer).toBe(`检索来源：[来源](${unfetched})`);
+    expect(modelCall).toBe(3);
+  });
+
+  it("retries an unsupported citation once and then removes only the unverified link", async () => {
+    const source = "https://source.example.org/report";
+    const invented = "https://invented.example.org/report";
+    const prompts: string[] = [];
+    let modelCall = 0;
+    const result = await runProjectAgentTurn({ projectId, prompt: "查一下最近的报告", model }, {
+      dataDir,
+      executeTool: async (toolInput) => {
+        if (toolInput.name === "web_search") return { query: "最近的报告", sources: [source] } as never;
+        return { summary: "报告摘要", claims: [{ claim: "事实" }], contentType: "text/html", finalUrl: source, truncated: false } as never;
+      },
+      callModel: async (call) => {
+        modelCall += 1;
+        prompts.push(call.prompt);
+        if (modelCall === 1) return { text: JSON.stringify({ type: "tool", name: "web_search", arguments: { query: "最近的报告" } }), usage: null };
+        if (modelCall === 2) return { text: JSON.stringify({ type: "tool", name: "web_fetch", arguments: { url: source, prompt: "提取事实" } }), usage: null };
+        return { text: `报告结论。[错误来源](${invented})`, usage: null };
+      },
+    });
+
     expect(modelCall).toBe(4);
+    expect(prompts[3]).toContain("本轮网页工具未返回的来源");
+    expect(result.answer).toBe("报告结论。错误来源");
+  });
+
+  it("stops deterministically when the configured Agent Turn budget is exhausted", async () => {
+    let modelCalls = 0;
+    await expect(runProjectAgentTurn({ projectId, prompt: "持续检查项目状态", model }, {
+      dataDir,
+      maxTurns: 2,
+      callModel: async () => {
+        modelCalls += 1;
+        return { text: JSON.stringify({ type: "tool", name: "web_search", arguments: { query: "持续检查" } }), usage: null };
+      },
+      executeTool: async () => ({ query: "持续检查", sources: [] }) as never,
+    })).rejects.toMatchObject({
+      code: "tool_failed",
+      message: "Agent Turn 达到 2 轮安全上限",
+    });
+
+    expect(modelCalls).toBe(2);
+    const session = await getProjectAgentSession(projectId, dataDir);
+    expect(session.events.findLast((event) => event.type === "status")).toMatchObject({
+      data: { stage: "failed", error: "Agent Turn 达到 2 轮安全上限" },
+    });
   });
 
   it("feeds an unavailable web tool result back to the model", async () => {

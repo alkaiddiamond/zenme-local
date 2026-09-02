@@ -30,7 +30,6 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { useAiModelOptions } from "@/components/zenme/use-ai-model-options";
 import {
   CanvasAgentButton,
-  CanvasArchivePanel,
   CanvasBottomControls,
   CanvasNotice,
   CanvasSelectionToolbar,
@@ -39,6 +38,13 @@ import {
   EmptyCanvasHint,
 } from "@/components/zenme/canvas/controls";
 import { searchCanvasNodes } from "@/components/zenme/canvas/text-search";
+import {
+  createArchiveCanvasSelectionUpdate,
+  createRestoreCanvasSelectionUpdate,
+  getCanvasArchiveView,
+  resolveCanvasArchiveViewportTransition,
+  type CanvasArchiveViewMode,
+} from "@/components/zenme/canvas/archive";
 import { applyAgentDetailsFold, applyCanvasNodeLifecycle } from "@/components/zenme/canvas/convergence";
 import {
   getConnectedPlaceholderPosition,
@@ -71,6 +77,7 @@ import {
   saveProjectThumbnailToApi,
   uploadProjectFileToApi,
   updateExecutionAttemptInApi,
+  stopExecutionInApi,
   runProjectAgentTurnFromApi,
   steerProjectAgentTurnFromApi,
   stopProjectAgentTurnFromApi,
@@ -79,7 +86,7 @@ import type { ReadingAsset, ReadingNote } from "@/lib/reading/types";
 import { parseProviderModelReference } from "@/lib/ai/model-reference";
 import type { ZenmeModelSpeed, ZenmeReasoningEffort, ZenmeSessionPermissionMode } from "@/lib/local/settings";
 import { estimateTextTokenCount, getCanvasContextTokenBudget } from "@/lib/ai/context-budget";
-import { resolveNodeAgentTurnId } from "@/components/zenme/canvas/agent-turn-control";
+import { canStopNodeAgentTurn, resolveNodeAgentTurnId } from "@/components/zenme/canvas/agent-turn-control";
 import {
   createDroppedFileCanvasNodes,
   getDroppedFiles,
@@ -109,7 +116,6 @@ import {
   getGroupableNodes,
   getSaveStatusIcon,
   getSaveStatusTone,
-  getSelectionToolbarPosition,
 } from "@/components/zenme/canvas/derived-state";
 import { collectAgentTurnReferences } from "@/components/zenme/canvas/agent-context";
 import { applyAgentContextSnapshot, createAgentContextSnapshot, parseAgentContextSnapshot } from "@/lib/agent/context-model";
@@ -367,7 +373,8 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   const [autoSaveIntervalMs, setAutoSaveIntervalMs] = useState(5_000);
   const [lastSavedAt, setLastSavedAt] = useState<string>();
   const [isCanvasSearchOpen, setIsCanvasSearchOpen] = useState(false);
-  const [isCanvasArchiveOpen, setIsCanvasArchiveOpen] = useState(false);
+  const [canvasArchiveViewMode, setCanvasArchiveViewMode] =
+    useState<CanvasArchiveViewMode>("active");
   const [canvasSearchQuery, setCanvasSearchQuery] = useState("");
   const [canvasNotice, setCanvasNotice] = useState<string | null>(null);
   const [agentIsSubmitting, setAgentIsSubmitting] = useState(false);
@@ -380,11 +387,18 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     [configuredModelOptions],
   );
   const defaultTextModel = configuredModelOptions[0]?.id ?? "";
-  const canvasSearchResults = useMemo(
-    () => searchCanvasNodes(nodes.filter((node) => node.data.nodeLifecycle !== "archived"), canvasSearchQuery),
-    [canvasSearchQuery, nodes],
+  const canvasArchiveView = useMemo(
+    () => getCanvasArchiveView({ edges, mode: canvasArchiveViewMode, nodes }),
+    [canvasArchiveViewMode, edges, nodes],
   );
-  const archivedNodes = useMemo(() => nodes.filter((node) => node.data.nodeLifecycle === "archived"), [nodes]);
+  const canvasSearchResults = useMemo(
+    () => searchCanvasNodes(canvasArchiveView.nodes, canvasSearchQuery),
+    [canvasArchiveView.nodes, canvasSearchQuery],
+  );
+  const archivedNodeCount = useMemo(
+    () => nodes.filter((node) => node.data.nodeLifecycle === "archived").length,
+    [nodes],
+  );
   const closeCanvasSearch = useCallback(() => {
     setIsCanvasSearchOpen(false);
     setCanvasSearchQuery("");
@@ -428,11 +442,13 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   const edgesRef = useRef<Edge[]>(edges);
   const activeExecutionSourceNodeIdsRef = useRef(new Set<string>());
   const activeExecutionControllersRef = useRef(new Map<string, AbortController>());
+  const activeImageResultNodeIdsBySourceRef = useRef(new Map<string, string>());
   const activeVideoTaskControllersRef = useRef(new Map<string, AbortController>());
   const nodeAgentControllerRef = useRef<{
     controller: AbortController;
     resultNodeId: string;
     sourceNodeId: string;
+    startedAt: number;
     turnId: string;
   } | null>(null);
   const defaultTextModelRef = useRef(defaultTextModel);
@@ -441,9 +457,15 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   useEffect(() => () => {
     activeExecutionControllersRef.current.forEach((controller) => controller.abort());
     activeExecutionControllersRef.current.clear();
+    activeImageResultNodeIdsBySourceRef.current.clear();
     activeExecutionSourceNodeIdsRef.current.clear();
   }, [projectId]);
   const canvasViewportStateRef = useRef<Viewport>(canvasViewport);
+  const archivedCanvasViewportRef = useRef<Viewport | null>(null);
+  const canvasArchiveViewModeRef = useRef<CanvasArchiveViewMode>(
+    canvasArchiveViewMode,
+  );
+  const canvasArchiveViewportTransitionRef = useRef(0);
   const zoomLevelStateRef = useRef(zoomLevel);
   const canvasWheelZoomDelta = useRef(0);
   const canvasWheelZoomFrame = useRef<number | null>(null);
@@ -543,6 +565,17 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   }, [canvasViewport]);
 
   useEffect(() => {
+    canvasArchiveViewModeRef.current = canvasArchiveViewMode;
+  }, [canvasArchiveViewMode]);
+
+  useEffect(() => {
+    canvasArchiveViewportTransitionRef.current += 1;
+    archivedCanvasViewportRef.current = null;
+    canvasArchiveViewModeRef.current = "active";
+    setCanvasArchiveViewMode("active");
+  }, [projectId]);
+
+  useEffect(() => {
     zoomLevelStateRef.current = zoomLevel;
   }, [zoomLevel]);
 
@@ -564,6 +597,35 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       currentZoom === viewport.zoom ? currentZoom : viewport.zoom,
     );
   }, []);
+
+  const rememberCurrentViewViewport = useCallback((viewport: Viewport) => {
+    zoomLevelStateRef.current = viewport.zoom;
+    if (canvasArchiveViewModeRef.current === "archived") {
+      archivedCanvasViewportRef.current = viewport;
+      setZoomLevel((currentZoom) =>
+        currentZoom === viewport.zoom ? currentZoom : viewport.zoom,
+      );
+      return;
+    }
+    commitCanvasViewport(viewport);
+  }, [commitCanvasViewport]);
+
+  const stageCurrentViewViewport = useCallback((viewport: Viewport) => {
+    zoomLevelStateRef.current = viewport.zoom;
+    if (canvasArchiveViewModeRef.current === "archived") {
+      archivedCanvasViewportRef.current = viewport;
+    } else {
+      canvasViewportStateRef.current = viewport;
+    }
+  }, []);
+
+  const getNodesForArchiveViewMode = useCallback((
+    mode: CanvasArchiveViewMode = canvasArchiveViewModeRef.current,
+  ) => nodesRef.current.filter((node) =>
+    mode === "archived"
+      ? node.data.nodeLifecycle === "archived"
+      : node.data.nodeLifecycle !== "archived",
+  ), []);
 
   const refreshCanvasContentWorkset = useCallback((
     currentNodes: CanvasNode[],
@@ -593,18 +655,28 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     }));
   }, []);
 
-  const canvasNodeCount = nodes.length;
+  const canvasNodeCount = canvasArchiveView.nodes.length;
   useEffect(() => {
-    refreshCanvasContentWorkset(nodesRef.current);
-  }, [canvasNodeCount, refreshCanvasContentWorkset]);
+    refreshCanvasContentWorkset(
+      getNodesForArchiveViewMode(),
+      canvasArchiveViewMode === "archived"
+        ? archivedCanvasViewportRef.current ?? canvasViewportStateRef.current
+        : canvasViewportStateRef.current,
+    );
+  }, [
+    canvasArchiveViewMode,
+    canvasNodeCount,
+    getNodesForArchiveViewMode,
+    refreshCanvasContentWorkset,
+  ]);
 
   const finishCanvasWheelZoom = useCallback(() => {
     canvasWheelZoomTimer.current = null;
     isCanvasWheelZoomActive.current = false;
     const viewport = reactFlowRef.current?.getViewport();
     if (viewport) {
-      commitCanvasViewport(viewport);
-      refreshCanvasContentWorkset(nodesRef.current, viewport);
+      rememberCurrentViewViewport(viewport);
+      refreshCanvasContentWorkset(getNodesForArchiveViewMode(), viewport);
     }
     stopCanvasInteractionSample(viewportInteractionSample.current, {
       edges: edgesRef.current.length,
@@ -614,7 +686,11 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     isCanvasInteractionActive.current = false;
     setIsMiniMapSuspended(false);
     setIsViewportMoving(false);
-  }, [commitCanvasViewport, refreshCanvasContentWorkset]);
+  }, [
+    getNodesForArchiveViewMode,
+    refreshCanvasContentWorkset,
+    rememberCurrentViewViewport,
+  ]);
 
   useEffect(() => () => {
     if (canvasWheelZoomFrame.current !== null) {
@@ -861,8 +937,10 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     return nodeKindById;
   }, [edgeNodeKindSignature]);
   const selectedNodeIdsSignature = useMemo(
-    () => nodes.flatMap((node) => node.selected ? [node.id] : []).join("|"),
-    [nodes],
+    () => canvasArchiveView.nodes
+      .flatMap((node) => node.selected ? [node.id] : [])
+      .join("|"),
+    [canvasArchiveView.nodes],
   );
   const selectedNodeIds = useMemo(
     () => new Set(selectedNodeIdsSignature.split("|").filter(Boolean)),
@@ -871,9 +949,9 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   const renderableEdges = useMemo(
     () => getCanvasEdgeWorkset({
       activeNodeIds: activeCanvasContentNodeIds,
-      edges,
+      edges: canvasArchiveView.edges,
     }),
-    [activeCanvasContentNodeIds, edges],
+    [activeCanvasContentNodeIds, canvasArchiveView.edges],
   );
   const renderedEdges = useMemo(
     () => measureCanvasPerf(
@@ -1621,7 +1699,8 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       return;
     }
 
-    const includeThumbnail = Boolean(options?.includeThumbnail);
+    const includeThumbnail =
+      Boolean(options?.includeThumbnail) && canvasArchiveViewMode === "active";
 
     if (isCanvasSaveInFlight.current) {
       measureCanvasPerf(
@@ -1688,6 +1767,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     }
   }, [
     canvasPersistableSignature,
+    canvasArchiveViewMode,
     edges,
     nodes,
     projectId,
@@ -2034,7 +2114,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     }
 
     const nextViewport = createCanvasZoomViewport(reactFlow.getViewport(), zoom);
-    setCanvasViewport(nextViewport);
+    rememberCurrentViewViewport(nextViewport);
     void reactFlow.setViewport(nextViewport, {
       duration: getCanvasMotionDuration(120),
     });
@@ -2670,6 +2750,9 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         fileDocumentIds: Array.isArray(retryUserEvent.data?.fileDocumentIds)
           ? retryUserEvent.data.fileDocumentIds.filter((value): value is string => typeof value === "string")
           : [],
+        readingAssetIds: Array.isArray(retryUserEvent.data?.readingAssetIds)
+          ? retryUserEvent.data.readingAssetIds.filter((value): value is string => typeof value === "string")
+          : [],
         canvasContext: typeof retryUserEvent.data?.canvasContext === "string"
           ? retryUserEvent.data.canvasContext
           : undefined,
@@ -2744,6 +2827,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       const references = retryExistingTurn
         ? {
             fileDocumentIds: retryPersistedContext?.fileDocumentIds ?? [],
+            readingAssetIds: retryPersistedContext?.readingAssetIds ?? [],
             selectedNodeIds: retryPersistedContext?.selectedNodeIds ?? [],
           }
         : collectAgentTurnReferences({
@@ -2806,6 +2890,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         controller,
         resultNodeId,
         sourceNodeId: originalSourceNode?.id ?? nodeId,
+        startedAt: taskStartedAt,
         turnId,
       };
       try {
@@ -2826,8 +2911,10 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
             conversationId,
             selectedNodeIds: references.selectedNodeIds,
             fileDocumentIds: references.fileDocumentIds,
+            readingAssetIds: references.readingAssetIds,
           }),
           conversationId,
+          readingAssetIds: references.readingAssetIds,
           imageDataUrls: mergedImageDataUrls,
           model,
           modelSpeed: input?.modelSpeed,
@@ -2889,7 +2976,10 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     const active = nodeAgentControllerRef.current;
     const turnId = resolveNodeAgentTurnId({ active, nodeId, nodes: nodesRef.current });
     if (!turnId) return;
-    if (active?.turnId === turnId) active.controller.abort();
+    if (active?.turnId === turnId) {
+      if (!canStopNodeAgentTurn(active)) return;
+      active.controller.abort();
+    }
     void stopProjectAgentTurnFromApi(projectId, turnId).catch(() => undefined);
   }, [projectId]);
 
@@ -3129,10 +3219,13 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
 
       const executionController = createTimedExecutionController(5 * 60 * 1000);
       activeExecutionControllersRef.current.set(resultNodeId, executionController.controller);
+      activeImageResultNodeIdsBySourceRef.current.set(nodeId, resultNodeId);
       try {
         await persistExecutionTaskNodes(nodesRef.current);
         const imageDataUrls = await Promise.all(
-          referenceImageUrls.map((url) => fetchImageAsDataUrl(url)),
+          referenceImageUrls.map((url) =>
+            fetchImageAsDataUrl(url, executionController.controller.signal),
+          ),
         );
         const edited = await generateOrEditImage({
           aspectRatio,
@@ -3230,17 +3323,24 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         );
       } catch (error) {
         const timedOut = isExecutionTimeout(executionController.controller.signal);
+        const stopped = executionController.controller.signal.aborted && !timedOut;
         const message = timedOut
           ? "图片生成超过 5 分钟，已停止，请重试"
+          : stopped
+            ? "图片生成已停止"
           : error instanceof Error ? error.message : "图片编辑失败，请稍后重试";
         await updateExecutionAttemptInApi({
           ...executionIdentity,
           projectId,
-          status: timedOut ? "timedOut" : "failed",
+          status: timedOut ? "timedOut" : stopped ? "stopped" : "failed",
           error: {
-            code: timedOut ? "image_generation_timed_out" : "image_generation_failed",
+            code: timedOut
+              ? "image_generation_timed_out"
+              : stopped
+                ? "image_generation_stopped"
+                : "image_generation_failed",
             message,
-            retryable: true,
+            retryable: !stopped,
             stage: "submit",
           },
         }).catch(() => undefined);
@@ -3262,6 +3362,9 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       } finally {
         executionController.dispose();
         activeExecutionControllersRef.current.delete(resultNodeId);
+        if (activeImageResultNodeIdsBySourceRef.current.get(nodeId) === resultNodeId) {
+          activeImageResultNodeIdsBySourceRef.current.delete(nodeId);
+        }
         activeExecutionSourceNodeIdsRef.current.delete(nodeId);
       }
     },
@@ -3871,8 +3974,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           getCanvasWheelZoom(currentViewport.zoom, delta),
           point,
         );
-        canvasViewportStateRef.current = nextViewport;
-        zoomLevelStateRef.current = nextViewport.zoom;
+        stageCurrentViewViewport(nextViewport);
         void activeFlow.setViewport(nextViewport, { duration: 0 });
       });
     }
@@ -3983,7 +4085,11 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   );
 
   function handleCanvasDoubleClick(event: MouseEvent<HTMLDivElement>) {
-    if (!reactFlow || isEditableTarget(event.target)) {
+    if (
+      canvasArchiveViewMode === "archived" ||
+      !reactFlow ||
+      isEditableTarget(event.target)
+    ) {
       return;
     }
 
@@ -4326,7 +4432,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   async function handleDrop(event: React.DragEvent<HTMLDivElement>) {
     event.preventDefault();
 
-    if (!reactFlow) {
+    if (canvasArchiveViewMode === "archived" || !reactFlow) {
       return;
     }
 
@@ -4385,17 +4491,36 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   }, [saveStatus]);
 
   const groupableNodes = useMemo(
-    () => getGroupableNodes(nodes),
-    [nodes],
+    () => getGroupableNodes(canvasArchiveView.nodes),
+    [canvasArchiveView.nodes],
   );
 
-  const selectionToolbarPosition = useMemo(() => {
-    return getSelectionToolbarPosition({
-      canvasViewport,
-      groupableNodes,
-      nodes,
-    });
-  }, [canvasViewport, groupableNodes, nodes]);
+  const stopImageGenerationNode = useCallback((nodeId: string) => {
+    const resultNodeId = activeImageResultNodeIdsBySourceRef.current.get(nodeId) ?? nodeId;
+    const controller = activeExecutionControllersRef.current.get(resultNodeId);
+    if (!controller || controller.signal.aborted) return;
+    controller.abort(new DOMException("Image generation stopped", "AbortError"));
+
+    const executionId = nodesRef.current.find((node) => node.id === resultNodeId)
+      ?.data.executionId;
+    if (executionId) {
+      void stopExecutionInApi({ executionId, projectId }).catch(() => undefined);
+    }
+  }, [projectId]);
+  const selectedCanvasViewNodes = useMemo(
+    () => canvasArchiveView.nodes.filter((node) => node.selected),
+    [canvasArchiveView.nodes],
+  );
+  const selectedNodeUsesInlineToolbar =
+    selectedCanvasViewNodes.length === 1 &&
+    ["code", "markdown", "text"].includes(
+      selectedCanvasViewNodes[0]?.data.kind ?? "",
+    );
+  const showCanvasSelectionToolbar =
+    selectedCanvasViewNodes.length > 0 &&
+    (canvasArchiveViewMode === "archived" ||
+      selectedCanvasViewNodes.length >= 2 ||
+      !selectedNodeUsesInlineToolbar);
 
   const actionNode = useMemo(
     () => getActionNode({ nodeId: nodeActionMenu?.nodeId, nodes }),
@@ -4953,9 +5078,120 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     focusCanvasNode(nodeId);
   }, [focusCanvasNode]);
 
+  const archiveCanvasNodes = useCallback((nodeIds: Iterable<string>) => {
+    const update = createArchiveCanvasSelectionUpdate({
+      edges: edgesRef.current,
+      nodeIds,
+      nodes: nodesRef.current,
+    });
+    if (!update) return;
+
+    skipNextHistoryEntryCount.current += 1;
+    setNodes(update.nextNodes);
+    setEdges(update.nextEdges);
+    pushMutateHistory({
+      afterEdges: update.nextEdges,
+      afterNodes: update.nextNodes,
+      deletedEdges: update.deletedEdges,
+      nodeUpdates: update.nodeUpdates,
+    });
+    setCanvasNotice(`已归档 ${update.affectedNodeIds.size} 个节点`);
+  }, [pushMutateHistory, setEdges, setNodes]);
+
+  const restoreCanvasNodes = useCallback((nodeIds: Iterable<string>) => {
+    const update = createRestoreCanvasSelectionUpdate({
+      edges: edgesRef.current,
+      nodeIds,
+      nodes: nodesRef.current,
+    });
+    if (!update) return;
+
+    skipNextHistoryEntryCount.current += 1;
+    setNodes(update.nextNodes);
+    setEdges(update.nextEdges);
+    pushMutateHistory({
+      afterEdges: update.nextEdges,
+      afterNodes: update.nextNodes,
+      deletedEdges: update.deletedEdges,
+      nodeUpdates: update.nodeUpdates,
+    });
+    setCanvasNotice(`已恢复 ${update.affectedNodeIds.size} 个节点`);
+  }, [pushMutateHistory, setEdges, setNodes]);
+
   const updateNodeLifecycle = useCallback((nodeId: string, lifecycle: NonNullable<CanvasNodeData["nodeLifecycle"]>) => {
+    if (lifecycle === "archived") {
+      archiveCanvasNodes([nodeId]);
+      return;
+    }
     setNodes((current) => applyCanvasNodeLifecycle(current, nodeId, lifecycle));
-  }, [setNodes]);
+  }, [archiveCanvasNodes, setNodes]);
+
+  const toggleCanvasArchiveView = useCallback(() => {
+    const nextMode: CanvasArchiveViewMode =
+      canvasArchiveViewMode === "active" ? "archived" : "active";
+    const flow = reactFlowRef.current;
+    const currentViewport = flow?.getViewport();
+    if (currentViewport) rememberCurrentViewViewport(currentViewport);
+    const transitionId = canvasArchiveViewportTransitionRef.current + 1;
+    canvasArchiveViewportTransitionRef.current = transitionId;
+    canvasArchiveViewModeRef.current = nextMode;
+    setCanvasArchiveViewMode(nextMode);
+    setNodes((current) =>
+      current.map((node) => node.selected ? { ...node, selected: false } : node),
+    );
+    setNodeActionMenu(null);
+    setCanvasAddMenu(null);
+    setWorkspaceFilePosition(null);
+    closeCanvasSearch();
+    setActiveCanvasContentNodeIds(null);
+
+    window.requestAnimationFrame(() => {
+      void (async () => {
+        if (canvasArchiveViewportTransitionRef.current !== transitionId) return;
+        const activeFlow = reactFlowRef.current;
+        const visibleNodes = getNodesForArchiveViewMode(nextMode);
+        const transition = resolveCanvasArchiveViewportTransition({
+          activeViewport: canvasViewportStateRef.current,
+          archivedViewport: archivedCanvasViewportRef.current,
+          hasVisibleNodes: visibleNodes.length > 0,
+          nextMode,
+        });
+
+        if (activeFlow && transition.targetViewport) {
+          await activeFlow.setViewport(transition.targetViewport, {
+            duration: 0,
+          });
+          if (canvasArchiveViewportTransitionRef.current !== transitionId) return;
+          rememberCurrentViewViewport(transition.targetViewport);
+          refreshCanvasContentWorkset(visibleNodes, transition.targetViewport);
+        } else if (activeFlow && transition.shouldFitView) {
+          await activeFlow.fitView({
+            duration: 0,
+            nodes: visibleNodes.map((node) => ({ id: node.id })),
+            padding: 0.15,
+          });
+          if (canvasArchiveViewportTransitionRef.current !== transitionId) return;
+          const fittedViewport = activeFlow.getViewport();
+          rememberCurrentViewViewport(fittedViewport);
+          refreshCanvasContentWorkset(visibleNodes, fittedViewport);
+        } else {
+          refreshCanvasContentWorkset(
+            visibleNodes,
+            transition.targetViewport ?? canvasViewportStateRef.current,
+          );
+        }
+        if (nextMode === "active") scheduleThumbnailSave();
+      })();
+    });
+  }, [
+    canvasArchiveViewMode,
+    closeCanvasSearch,
+    getNodesForArchiveViewMode,
+    refreshCanvasContentWorkset,
+    rememberCurrentViewViewport,
+    scheduleThumbnailSave,
+    setNodes,
+  ]);
 
   const toggleAgentDetailsFolded = useCallback((nodeId: string, folded: boolean) => {
     setNodes((current) => applyAgentDetailsFold(current, nodeId, folded));
@@ -4972,9 +5208,10 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     () =>
       measureCanvasPerf("rendered canvas nodes", () => getRenderedCanvasNodes({
         activeContentNodeIds: activeCanvasContentNodeIds,
+        archiveViewMode: canvasArchiveViewMode,
         createNoteNode,
-        edges,
-        nodes,
+        edges: canvasArchiveView.edges,
+        nodes: canvasArchiveView.nodes,
         onCreateMusicChildNode: createMusicChild,
         onCreateMusicPlayerNode: createMusicPlayer,
         onEnsureMusicPlayback: ensureMusicPlayback,
@@ -4992,6 +5229,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         onCreateDerivedImageNode: createDerivedImageNode,
         onCreateTextChildNode: createTextChildNode,
         onSubmitImageNode: submitImageGenerationNode,
+        onStopImageGenerationNode: stopImageGenerationNode,
         onSubmitVideoNode: submitVideoGenerationNode,
         onSubmitTextGenerationNode: submitNodeToProjectAgent,
         onSteerTextGenerationNode: steerNodeProjectAgent,
@@ -5021,6 +5259,9 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       }),
     [
       activeCanvasContentNodeIds,
+      canvasArchiveView.edges,
+      canvasArchiveView.nodes,
+      canvasArchiveViewMode,
       createNoteNode,
       createMusicChild,
       createMusicPlayer,
@@ -5028,9 +5269,9 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       ensureMusicPlayback,
       ensureMusicWaveform,
       createTextChildNode,
-      edges,
-      nodes,
+      edges.length,
       locateMusicPlayer,
+      nodes.length,
       seekMusicPlayer,
       selectAdjacentMusicSource,
       selectMusicSource,
@@ -5042,6 +5283,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       projectId,
       resolveImageNodeDimensions,
       submitImageGenerationNode,
+      stopImageGenerationNode,
       submitVideoGenerationNode,
       submitNodeToProjectAgent,
       steerNodeProjectAgent,
@@ -5198,6 +5440,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           edgesFocusable
           edges={renderedEdges}
           elementsSelectable
+          nodesConnectable={canvasArchiveViewMode === "active"}
           nodeTypes={nodeTypes}
           nodes={displayedNodes}
           connectionRadius={CANVAS_CONNECTION_RADIUS}
@@ -5267,16 +5510,14 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
             setIsViewportMoving(true);
           }}
           onMove={(_event, viewport) => {
-            canvasViewportStateRef.current = viewport;
-            zoomLevelStateRef.current = viewport.zoom;
+            stageCurrentViewViewport(viewport);
             tickCanvasInteractionSample(viewportInteractionSample.current);
           }}
           onMoveEnd={(_event, viewport) => {
-            canvasViewportStateRef.current = viewport;
-            zoomLevelStateRef.current = viewport.zoom;
+            stageCurrentViewViewport(viewport);
             if (isCanvasWheelZoomActive.current) return;
-            commitCanvasViewport(viewport);
-            refreshCanvasContentWorkset(nodesRef.current, viewport);
+            rememberCurrentViewViewport(viewport);
+            refreshCanvasContentWorkset(getNodesForArchiveViewMode(), viewport);
             stopCanvasInteractionSample(viewportInteractionSample.current, {
               edges: edgesRef.current.length,
               nodes: nodesRef.current.length,
@@ -5338,7 +5579,9 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
             size={1}
             variant={BackgroundVariant.Dots}
           />
-          {nodes.length === archivedNodes.length ? <EmptyCanvasHint /> : null}
+          {canvasArchiveView.nodes.length === 0 ? (
+            <EmptyCanvasHint archiveView={canvasArchiveViewMode === "archived"} />
+          ) : null}
           {showMiniMap && isMiniMapSuspended ? (
             <div
               aria-hidden
@@ -5360,40 +5603,34 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
               zoomable
             />
           ) : null}
+          {showCanvasSelectionToolbar &&
+          !isNodeDragging &&
+          !isViewportMoving ? (
+            <CanvasSelectionToolbar
+              archiveViewActive={canvasArchiveViewMode === "archived"}
+              canGroupSelectedNodes={groupableNodes.length >= 2}
+              nodeIds={selectedCanvasViewNodes.map((node) => node.id)}
+              onArchiveSelectedNodes={() => archiveCanvasNodes(
+                selectedCanvasViewNodes.map((node) => node.id),
+              )}
+              onGroupSelectedNodes={groupSelectedNodes}
+              onRestoreSelectedNodes={() => restoreCanvasNodes(
+                selectedCanvasViewNodes.map((node) => node.id),
+              )}
+              showArchiveAction={!selectedNodeUsesInlineToolbar}
+            />
+          ) : null}
         </ReactFlow>
 
-        {selectionToolbarPosition &&
-        !isNodeDragging &&
-        !isViewportMoving ? (
-          <CanvasSelectionToolbar
-            left={selectionToolbarPosition.left}
-            onGroupSelectedNodes={groupSelectedNodes}
-            onStartAgentWithSelection={() => createUnifiedAgentPrompt(
-              nodesRef.current.filter((node) => node.selected).map((node) => node.id),
-            )}
-            top={selectionToolbarPosition.top}
-          />
-        ) : null}
-
         <CanvasSideToolbar
-          archivedCount={archivedNodes.length}
+          archiveViewActive={canvasArchiveViewMode === "archived"}
+          archivedCount={archivedNodeCount}
           onArrange={quickArrangeCanvas}
-          onOpenArchive={() => { setIsCanvasArchiveOpen(true); closeCanvasSearch(); }}
           onSave={() => void saveCanvas({ includeThumbnail: true })}
+          onToggleArchiveView={toggleCanvasArchiveView}
           onToggleSearch={toggleCanvasSearch}
           searchOpen={isCanvasSearchOpen}
         />
-
-        {isCanvasArchiveOpen ? (
-          <CanvasArchivePanel
-            items={archivedNodes.map((node) => ({ id: node.id, kind: node.data.kind, title: node.data.title || node.data.name || "未命名节点" }))}
-            onClose={() => setIsCanvasArchiveOpen(false)}
-            onRestore={(nodeId) => {
-              const node = nodesRef.current.find((item) => item.id === nodeId);
-              updateNodeLifecycle(nodeId, node?.data.nodeLifecycleBeforeArchive ?? "knowledge");
-            }}
-          />
-        ) : null}
 
         {isCanvasSearchOpen ? (
           <CanvasTextSearchPanel
@@ -5416,7 +5653,9 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           zoomLevel={zoomLevel}
         />
 
-        <CanvasAgentButton onCreateAgentPrompt={() => createUnifiedAgentPrompt()} />
+        {canvasArchiveViewMode === "active" ? (
+          <CanvasAgentButton onCreateAgentPrompt={() => createUnifiedAgentPrompt()} />
+        ) : null}
 
         {canvasNotice ? (
           <CanvasNotice
@@ -5425,7 +5664,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           />
         ) : null}
 
-        {canvasAddMenu ? (
+        {canvasArchiveViewMode === "active" && canvasAddMenu ? (
           <CanvasAddMenu
             menu={canvasAddMenu}
             onClose={() => setCanvasAddMenu(null)}
@@ -5443,7 +5682,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           />
         ) : null}
 
-        {workspaceFilePosition ? (
+        {canvasArchiveViewMode === "active" && workspaceFilePosition ? (
           <WorkspaceFilePicker
             onClose={() => setWorkspaceFilePosition(null)}
             onPick={createWorkspaceFileNode}
@@ -5451,7 +5690,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           />
         ) : null}
 
-        {nodeActionMenu ? (
+        {canvasArchiveViewMode === "active" && nodeActionMenu ? (
           <NodeActionMenu
             actionNode={actionNode}
             menu={nodeActionMenu}
@@ -5476,8 +5715,8 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   );
 }
 
-async function fetchImageAsDataUrl(url: string) {
-  const response = await fetch(url);
+async function fetchImageAsDataUrl(url: string, signal?: AbortSignal) {
+  const response = await fetch(url, { signal });
   if (!response.ok) {
     throw new Error("来源图片读取失败");
   }

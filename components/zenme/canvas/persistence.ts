@@ -214,6 +214,7 @@ export function getPersistableCanvasNodes(nodes: CanvasNode[]) {
         ([key, value]) =>
           key !== "hasIncomingEdge" &&
           key !== "hasOutgoingEdge" &&
+          key !== "hasRunningAgentTurn" &&
           key !== "isMultiSelection" &&
           key !== "canvasContentActive" &&
           key !== "taskParentName" &&

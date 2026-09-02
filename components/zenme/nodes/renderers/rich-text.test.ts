@@ -5,6 +5,7 @@ import {
   normalizeRichTextHtml,
   plainTextToRichTextHtml,
   plainTextToRichTextFragment,
+  ensureUrlWrappingInRichTextHtml,
   stripLegacyRichTextHtml,
 } from "./rich-text";
 
@@ -29,6 +30,43 @@ describe("rich text renderer helpers", () => {
   it("creates an inline paste fragment without browser block elements", () => {
     expect(plainTextToRichTextFragment("第一行\n第二行 <内容>")).toBe(
       "第一行<br>第二行 &lt;内容&gt;",
+    );
+  });
+
+  it("marks complete HTTP URLs for boundary-safe wrapping", () => {
+    expect(
+      plainTextToRichTextFragment(
+        "链接 https://example.com/search-card?a=1&b=2 后续文本",
+      ),
+    ).toBe(
+      '链接 <span class="zenme-wrappable-url">https://example.com/search-card?a=1&amp;b=2</span> 后续文本',
+    );
+    expect(
+      ensureUrlWrappingInRichTextHtml(
+        "<p>链接 https://example.com/search-card?a=1&amp;b=2 后续文本</p>",
+      ),
+    ).toBe(
+      '<p>链接 <span class="zenme-wrappable-url">https://example.com/search-card?a=1&amp;b=2</span> 后续文本</p>',
+    );
+  });
+
+  it("does not wrap an already marked URL again", () => {
+    const html =
+      '<p><span class="zenme-wrappable-url">https://example.com/a-b</span></p>';
+
+    expect(ensureUrlWrappingInRichTextHtml(html)).toBe(html);
+    expect(ensureUrlWrappingInRichTextHtml("<p>普通-连续内容</p>")).toBe(
+      "<p>普通-连续内容</p>",
+    );
+  });
+
+  it("migrates the short-lived non-wrapping URL marker", () => {
+    expect(
+      ensureUrlWrappingInRichTextHtml(
+        '<p><span class="zenme-nowrap-url">https://example.com/a-b</span></p>',
+      ),
+    ).toBe(
+      '<p><span class="zenme-wrappable-url">https://example.com/a-b</span></p>',
     );
   });
 

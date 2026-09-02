@@ -1,6 +1,7 @@
 import { modelOptions } from "@/lib/zenme";
 import type { ZenmeModelSpeed, ZenmeReasoningEffort } from "@/lib/local/settings";
 import type { ChatMessage } from "@/lib/ai/chat-message";
+import type { AgentFileAttachment } from "@/lib/ai/file-attachment";
 
 const DEFAULT_MODEL = "glm-4-flash";
 const MAX_MESSAGES = 1_000;
@@ -11,6 +12,8 @@ const MAX_REQUEST_TEXT_LENGTH = 8_000_000;
 const MAX_CHAT_IMAGES = 4;
 const MAX_CHAT_IMAGE_LENGTH = 12_000_000;
 const MAX_CHAT_IMAGES_TOTAL_LENGTH = 32_000_000;
+const MAX_CHAT_FILES = 4;
+const MAX_CHAT_FILES_TOTAL_LENGTH = 48_000_000;
 // OpenAI-compatible tool calling supports up to 128 function tools. Keep the
 // transport guard aligned with that provider boundary instead of the old
 // 32-tool MVP limit: the built-in Project Agent registry already contains more
@@ -31,6 +34,7 @@ export function resolveAiModel(model?: string, allowedModels = modelOptions) {
 
 export function validateChatBody(body: {
   imageDataUrls?: string[];
+  fileAttachments?: AgentFileAttachment[];
   model?: string;
   messages?: ChatMessage[];
   context?: string;
@@ -83,6 +87,22 @@ export function validateChatBody(body: {
     }
     if (body.imageDataUrls.reduce((total, image) => total + image.length, 0) > MAX_CHAT_IMAGES_TOTAL_LENGTH) {
       return "图片输入总大小过大";
+    }
+  }
+
+  if (body.fileAttachments !== undefined) {
+    if (!Array.isArray(body.fileAttachments) || body.fileAttachments.length > MAX_CHAT_FILES) {
+      return `单次对话最多支持 ${MAX_CHAT_FILES} 个文件`;
+    }
+    if (body.fileAttachments.some((file) =>
+      !file || typeof file.fileName !== "string" || !file.fileName.trim() || file.fileName.length > 512 ||
+      typeof file.mimeType !== "string" || !/^[a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+$/.test(file.mimeType) ||
+      typeof file.dataUrl !== "string" || !/^data:[a-zA-Z0-9.+-]+\/[a-zA-Z0-9.+-]+;base64,/.test(file.dataUrl)
+    )) {
+      return "文件输入格式不正确";
+    }
+    if (body.fileAttachments.reduce((total, file) => total + file.dataUrl.length, 0) > MAX_CHAT_FILES_TOTAL_LENGTH) {
+      return "文件输入总大小过大";
     }
   }
 

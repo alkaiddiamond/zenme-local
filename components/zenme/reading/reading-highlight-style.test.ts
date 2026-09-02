@@ -17,4 +17,16 @@ describe("reading highlight focus style", () => {
     expect(rule).not.toContain("box-shadow");
     expect(rule).not.toContain("#18181b");
   });
+
+  it("keeps selected PDF text transparent above the rendered canvas", () => {
+    const selectionRule = styles.match(
+      /\.zenme-pdf-text-layer ::selection\s*\{(?<body>[\s\S]*?)\}/,
+    )?.groups?.body;
+    const firefoxSelectionRule = styles.match(
+      /\.zenme-pdf-text-layer ::-moz-selection\s*\{(?<body>[\s\S]*?)\}/,
+    )?.groups?.body;
+
+    expect(selectionRule).toContain("color: transparent");
+    expect(firefoxSelectionRule).toContain("color: transparent");
+  });
 });

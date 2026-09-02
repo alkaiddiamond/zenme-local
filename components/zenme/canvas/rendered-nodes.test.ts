@@ -652,6 +652,8 @@ describe("rendered canvas nodes", () => {
     expect(renderedNodes.find((item) => item.id === "text")?.data.hasRunningGenerationChild).toBe(true);
     expect(renderedNodes.find((item) => item.id === "image")?.data.hasRunningGenerationChild).toBe(true);
     expect(renderedNodes.find((item) => item.id === "agent-running")?.data.hasRunningGenerationChild).toBe(true);
+    expect(renderedNodes.find((item) => item.id === "text")?.data.hasRunningAgentTurn).toBe(true);
+    expect(renderedNodes.find((item) => item.id === "image")?.data.hasRunningAgentTurn).toBe(true);
   });
 
   it("keeps persisted lyrics when the transient analysis result is absent after refresh", () => {
@@ -771,6 +773,26 @@ describe("rendered canvas nodes", () => {
     });
     expect(renderedNodes.map((item) => item.id)).toEqual(["active"]);
     expect(renderedNodes[0].data).toMatchObject({ hasIncomingEdge: false, onToggleAgentDetailsFolded, onUpdateNodeLifecycle });
+
+    const archivedViewNodes = getRenderedCanvasNodes({
+      archiveViewMode: "archived",
+      createNoteNode: vi.fn(),
+      edges: [{ source: "archived", target: "active" }],
+      nodes: [
+        node({ data: { kind: "agentExecution", nodeLifecycle: "archived" }, id: "archived", type: "agentExecution" }),
+        node({ data: { kind: "globalAgent", nodeLifecycle: "knowledge" }, id: "active", type: "globalAgent" }),
+      ],
+      onCreateTextChildNode: vi.fn(),
+      onSubmitImageNode: vi.fn(),
+      onSubmitTextGenerationNode: vi.fn(),
+      onUpdateImageNode: vi.fn(),
+      onUpdateTextGenerationNode: vi.fn(),
+      onUpdateTextNode: vi.fn(),
+      projectId: "project",
+      toggleReaderCollapse: vi.fn(),
+    });
+    expect(archivedViewNodes.map((item) => item.id)).toEqual(["archived"]);
+    expect(archivedViewNodes[0].data.hasOutgoingEdge).toBe(false);
   });
 
 });

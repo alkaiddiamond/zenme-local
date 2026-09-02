@@ -29,8 +29,30 @@ describe("canvas side toolbar", () => {
     expect(source).not.toContain('title="运行 Global Agent"');
     expect(source).not.toContain('title="开启 Agent 对话"');
     expect(source).not.toContain("onOpenAgent");
-    expect(source).toContain("onStartAgentWithSelection");
-    expect(source).toContain("对话或执行");
+    expect(source).not.toContain("onStartAgentWithSelection");
+    expect(source).not.toContain("对话或执行");
+  });
+
+  it("offers archive actions above selections and toggles the archive canvas from the last side control", () => {
+    expect(source).toContain("onArchiveSelectedNodes");
+    expect(source).toContain("showArchiveAction");
+    expect(source).toContain("onRestoreSelectedNodes");
+    expect(source).toContain("归档");
+    expect(source).toContain("恢复");
+    expect(source).toContain("onToggleArchiveView");
+    expect(source).toContain('aria-pressed={archiveViewActive}');
+    expect(source).toContain("返回普通视图");
+    expect(source).toContain("进入归档视图");
+    expect(canvasClientSource).toContain("createArchiveCanvasSelectionUpdate");
+    expect(canvasClientSource).toContain("createRestoreCanvasSelectionUpdate");
+    expect(canvasClientSource).toContain(
+      "showArchiveAction={!selectedNodeUsesInlineToolbar}",
+    );
+    expect(canvasClientSource).toContain("showCanvasSelectionToolbar &&");
+    expect(source).toContain("<ZenmeNodeToolbar");
+    expect(source).toContain("nodeId={nodeIds}");
+    expect(source).toContain('ZenmeNodeToolbarButton label="归档"');
+    expect(canvasClientSource).not.toContain("selectionToolbarPosition");
   });
 
   it("renders a full-text search panel with accessible controls", () => {

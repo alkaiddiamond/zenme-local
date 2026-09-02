@@ -110,6 +110,7 @@ describe("agent context helpers", () => {
       nodes: [prompt, fileA, fileAlias, note],
     })).toEqual({
       fileDocumentIds: ["document-a"],
+      readingAssetIds: [],
       selectedNodeIds: ["prompt", "file-a", "file-alias", "note"],
     });
   });
@@ -137,7 +138,35 @@ describe("agent context helpers", () => {
       nodes: [prompt, archived],
     })).toEqual({
       fileDocumentIds: [],
+      readingAssetIds: [],
       selectedNodeIds: ["prompt"],
+    });
+  });
+
+  it("collects original reading assets from connected notes and readers", () => {
+    const prompt = node({ id: "prompt" });
+    const note = node({
+      data: { kind: "note", readingAssetId: "asset-pdf" },
+      id: "note",
+      type: "note",
+    });
+    const reader = node({
+      data: { kind: "reader", readingAssetId: "asset-pdf" },
+      id: "reader",
+      type: "reader",
+    });
+
+    expect(collectAgentTurnReferences({
+      edges: [
+        { id: "reader-note", source: "reader", target: "note" },
+        { id: "note-prompt", source: "note", target: "prompt" },
+      ],
+      nodeId: "prompt",
+      nodes: [prompt, note, reader],
+    })).toEqual({
+      fileDocumentIds: [],
+      readingAssetIds: ["asset-pdf"],
+      selectedNodeIds: ["prompt", "note", "reader"],
     });
   });
 });

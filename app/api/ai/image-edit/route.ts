@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       operation: body.operation,
       prompt,
       quality: body.quality,
+      signal: request.signal,
     });
     return NextResponse.json({
       b64Json: result.b64Json,
@@ -55,6 +56,9 @@ export async function POST(request: Request) {
       usage: result.usage,
     });
   } catch (error) {
+    if (request.signal.aborted) {
+      return NextResponse.json({ error: "图片生成已停止" }, { status: 499 });
+    }
     console.error("[image-api] Image request failed", error);
     const message = error instanceof ImageGenerationServiceError
       ? error.publicMessage

@@ -71,6 +71,26 @@ describe("AI request policy", () => {
     })).toBe("单次对话最多支持 4 张图片");
   });
 
+  it("accepts bounded original file attachments", () => {
+    expect(validateChatBody({
+      fileAttachments: [{
+        dataUrl: "data:application/pdf;base64,JVBERi0=",
+        fileName: "manual.pdf",
+        mimeType: "application/pdf",
+      }],
+      messages: [{ role: "user", content: "分析文件" }],
+    })).toBeNull();
+
+    expect(validateChatBody({
+      fileAttachments: [{
+        dataUrl: "https://example.com/manual.pdf",
+        fileName: "manual.pdf",
+        mimeType: "application/pdf",
+      }],
+      messages: [{ role: "user", content: "分析文件" }],
+    })).toBe("文件输入格式不正确");
+  });
+
   it("accepts the complete Project Agent registry and guards the provider limit", () => {
     const tools = createNativeAgentTools();
     expect(tools.length).toBeGreaterThan(32);

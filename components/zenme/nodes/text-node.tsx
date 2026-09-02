@@ -43,6 +43,7 @@ import {
   normalizeRichTextHtml,
   plainTextToRichTextHtml,
   plainTextToRichTextFragment,
+  ensureUrlWrappingInRichTextHtml,
   stripLegacyRichTextHtml,
 } from "@/components/zenme/nodes/renderers/rich-text";
 import { TextNodeComposer } from "@/components/zenme/nodes/text-node-composer";
@@ -60,6 +61,7 @@ import {
 } from "@/components/zenme/nodes/text-editor-keyboard";
 import { writeTextToClipboard } from "@/lib/clipboard";
 import { getProjectAgentSessionFromApi } from "@/lib/zenme-api";
+import { useEditorFocusReturn } from "@/components/zenme/nodes/editor-focus-return";
 
 type TextDisplayMode = "code" | "markdown" | "plain";
 
@@ -103,10 +105,17 @@ export function TextNode({ data, id, selected }: NodeProps) {
   const textScrollStateRef = useRef(nodeData.textScrollState ?? {});
   const updateTextNodeRef = useRef(nodeData.onUpdateTextNode);
   const isSwitchingMode = useRef(false);
+  const preserveEditorFocus = useEditorFocusReturn([
+    editorRef,
+    markdownEditorRef,
+    codeEditorRef,
+  ]);
   const initialRichTextHtml = useMemo(
     () =>
-      normalizeRichTextHtml(
-        nodeData.richTextHtml || plainTextToRichTextHtml(nodeData.plainText),
+      ensureUrlWrappingInRichTextHtml(
+        normalizeRichTextHtml(
+          nodeData.richTextHtml || plainTextToRichTextHtml(nodeData.plainText),
+        ),
       ),
     [nodeData.plainText, nodeData.richTextHtml],
   );
@@ -736,6 +745,9 @@ export function TextNode({ data, id, selected }: NodeProps) {
             lineNumbersVisible={lineNumbersVisible}
             markdownEditing={isEditing}
             mode={displayMode}
+            onArchive={nodeData.nodeLifecycle !== "archived"
+              ? () => nodeData.onUpdateNodeLifecycle?.(id, "archived")
+              : undefined}
             onBold={() =>
               displayMode === "markdown"
                 ? insertMarkdownMarkup("**", "**", "粗体文本")
@@ -786,17 +798,19 @@ export function TextNode({ data, id, selected }: NodeProps) {
                 autoCorrect="off"
                 className={`zenme-overlay-scroll-container zenme-text-node-editor nodrag nowheel h-full min-h-[176px] overflow-auto rounded-xl py-5 text-base leading-7 text-zinc-800 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)] ${
                   lineNumbersVisible
-                    ? "whitespace-pre-wrap break-words pl-14 pr-6"
-                    : "px-6"
+                    ? "whitespace-pre-wrap pl-14 pr-6"
+                    : "whitespace-pre-wrap px-6"
                 }`}
                 contentEditable
                 data-placeholder={isEditing ? "" : "点击此处编辑文本"}
-                onBlur={() => {
+                onBlur={(event) => {
+                  const shouldRestoreFocus = preserveEditorFocus(event.currentTarget);
                   if (isSwitchingMode.current) {
                     return;
                   }
-                  setIsEditing(false);
                   syncEditorContent();
+                  if (shouldRestoreFocus) return;
+                  setIsEditing(false);
                   clearEditorSelection();
                 }}
                 onFocus={() => setIsEditing(true)}
@@ -865,14 +879,16 @@ export function TextNode({ data, id, selected }: NodeProps) {
                     ? "text-zinc-800"
                     : "pointer-events-none invisible"
                 }`}
-                onBlur={() => {
+                onBlur={(event) => {
+                  const shouldRestoreFocus = preserveEditorFocus(event.currentTarget);
                   if (isSwitchingMode.current) {
                     return;
                   }
                   const nextText = markdownEditorRef.current?.value ?? latestTextRef.current;
-                  setIsEditing(false);
                   rememberText(nextText);
                   syncPlainTextContent(nextText);
+                  if (shouldRestoreFocus) return;
+                  setIsEditing(false);
                   markdownEditorRef.current?.setSelectionRange(
                     markdownEditorRef.current.selectionEnd,
                     markdownEditorRef.current.selectionEnd,
@@ -937,14 +953,16 @@ export function TextNode({ data, id, selected }: NodeProps) {
                     ? "text-zinc-800"
                     : "cursor-text text-transparent selection:bg-transparent"
                 }`}
-                onBlur={() => {
+                onBlur={(event) => {
+                  const shouldRestoreFocus = preserveEditorFocus(event.currentTarget);
                   if (isSwitchingMode.current) {
                     return;
                   }
                   const nextText = codeEditorRef.current?.value ?? latestTextRef.current;
-                  setIsEditing(false);
                   rememberText(nextText);
                   syncPlainTextContent(nextText);
+                  if (shouldRestoreFocus) return;
+                  setIsEditing(false);
                 }}
                 onChange={(event) => {
                   const nextText = event.target.value;

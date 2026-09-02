@@ -17,9 +17,11 @@ import {
   deriveTaskRelationships,
 } from "./task-relationships";
 import { hasCanvasNodeContextText } from "./text-generation-context";
+import type { CanvasArchiveViewMode } from "./archive";
 
 type RenderedCanvasNodeInput = {
   activeContentNodeIds?: ReadonlySet<string> | null;
+  archiveViewMode?: CanvasArchiveViewMode;
   createNoteNode: (
     note: ReadingNote,
     asset: ReadingAsset,
@@ -101,6 +103,7 @@ type RenderedCanvasNodeInput = {
   ) => Promise<void> | void;
   onSteerTextGenerationNode?: NonNullable<CanvasNodeData["onSteerTextGenerationNode"]>;
   onStopTextGenerationNode?: NonNullable<CanvasNodeData["onStopTextGenerationNode"]>;
+  onStopImageGenerationNode?: NonNullable<CanvasNodeData["onStopImageGenerationNode"]>;
   onSubmitImageNode: (
     nodeId: string,
     input?: Parameters<NonNullable<CanvasNodeData["onSubmitImageNode"]>>[1],
@@ -150,6 +153,7 @@ type RenderedNodeCacheEntry = {
   onSubmitTextGenerationNode?: RenderedCanvasNodeInput["onSubmitTextGenerationNode"];
   onSteerTextGenerationNode?: RenderedCanvasNodeInput["onSteerTextGenerationNode"];
   onStopTextGenerationNode?: RenderedCanvasNodeInput["onStopTextGenerationNode"];
+  onStopImageGenerationNode?: RenderedCanvasNodeInput["onStopImageGenerationNode"];
   onSubmitImageNode?: RenderedCanvasNodeInput["onSubmitImageNode"];
   onSubmitVideoNode?: RenderedCanvasNodeInput["onSubmitVideoNode"];
   onUpdateVideoNode?: RenderedCanvasNodeInput["onUpdateVideoNode"];
@@ -180,6 +184,7 @@ function hasSameSharedDerivedState(left: CanvasNode, right: CanvasNode) {
   return left.data.canvasContentActive === right.data.canvasContentActive &&
     left.data.hasIncomingEdge === right.data.hasIncomingEdge &&
     left.data.hasOutgoingEdge === right.data.hasOutgoingEdge &&
+    left.data.hasRunningAgentTurn === right.data.hasRunningAgentTurn &&
     left.data.hasRunningGenerationChild === right.data.hasRunningGenerationChild &&
     left.data.isMultiSelection === right.data.isMultiSelection;
 }
@@ -189,6 +194,7 @@ function getSharedDerivedStateKey(node: CanvasNode) {
     node.data.canvasContentActive === false ? 0 : 1,
     node.data.hasIncomingEdge ? 1 : 0,
     node.data.hasOutgoingEdge ? 1 : 0,
+    node.data.hasRunningAgentTurn ? 1 : 0,
     node.data.hasRunningGenerationChild ? 1 : 0,
     node.data.isMultiSelection ? 1 : 0,
   ].join("");
@@ -227,6 +233,7 @@ function setDependencyCachedNode(
 
 export function getRenderedCanvasNodes({
   activeContentNodeIds,
+  archiveViewMode = "active",
   createNoteNode,
   edges,
   nodes,
@@ -254,6 +261,7 @@ export function getRenderedCanvasNodes({
   onSubmitTextGenerationNode,
   onSteerTextGenerationNode,
   onStopTextGenerationNode,
+  onStopImageGenerationNode,
   onUpdateImageNode,
   onUpdateVideoNode,
   onUpdateTextGenerationNode,
@@ -272,7 +280,11 @@ export function getRenderedCanvasNodes({
   projectId,
   toggleReaderCollapse,
 }: RenderedCanvasNodeInput) {
-  nodes = nodes.filter((node) => node.data.nodeLifecycle !== "archived");
+  nodes = nodes.filter((node) =>
+    archiveViewMode === "archived"
+      ? node.data.nodeLifecycle === "archived"
+      : node.data.nodeLifecycle !== "archived",
+  );
   const visibleNodeIds = new Set(nodes.map((node) => node.id));
   edges = edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target));
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
@@ -360,6 +372,9 @@ export function getRenderedCanvasNodes({
   );
   const hasMultipleSelectedNodes =
     nodes.filter((node) => node.selected).length > 1;
+  const hasRunningAgentTurn = nodes.some(
+    (node) => node.data.aiStatus === "generating",
+  );
   const runningGenerationSourceIds = new Set<string>();
   for (const edge of edges) {
     const target = nodeById.get(edge.target);
@@ -418,6 +433,7 @@ export function getRenderedCanvasNodes({
       ...nodeWithoutGroupDragLimit,
       data: {
         ...nodeWithoutGroupDragLimit.data,
+        onUpdateNodeLifecycle,
         projectId,
         canvasContentActive:
           activeContentNodeIds === null || activeContentNodeIds === undefined
@@ -429,6 +445,7 @@ export function getRenderedCanvasNodes({
               node.data.videoStatus === "generating",
         hasIncomingEdge: connectedNodeIdsByDirection.incoming.has(node.id),
         hasOutgoingEdge: connectedNodeIdsByDirection.outgoing.has(node.id),
+        hasRunningAgentTurn,
         isMultiSelection:
           hasMultipleSelectedNodes && Boolean(node.selected),
         hasRunningGenerationChild:
@@ -489,7 +506,7 @@ export function getRenderedCanvasNodes({
         ...(
           nodeWithoutGroupDragLimit.data.kind === "agentExecution" ||
           nodeWithoutGroupDragLimit.data.kind === "globalAgent"
-            ? { onUpdateNodeLifecycle, onToggleAgentDetailsFolded }
+            ? { onToggleAgentDetailsFolded }
             : {}
         ),
       },
@@ -880,6 +897,7 @@ export function getRenderedCanvasNodes({
 
       if (
         cached?.onSubmitImageNode === onSubmitImageNode &&
+        cached.onStopImageGenerationNode === onStopImageGenerationNode &&
         cached.onToggleImagePromptExpanded === onToggleImagePromptExpanded &&
         cached.onUpdateImageNode === onUpdateImageNode &&
         cached.sourceEdges === edges &&
@@ -894,6 +912,7 @@ export function getRenderedCanvasNodes({
         data: {
           ...nodeWithConnectionState.data,
           onSubmitImageNode,
+          onStopImageGenerationNode,
           onToggleImagePromptExpanded,
           onUpdateImageNode,
         },
@@ -902,6 +921,7 @@ export function getRenderedCanvasNodes({
       renderedNodeCache.set(node, {
         node: renderedImageGenerationNode,
         onSubmitImageNode,
+        onStopImageGenerationNode,
         onToggleImagePromptExpanded,
         onUpdateImageNode,
         sourceEdges: edges,
@@ -977,6 +997,7 @@ export function getRenderedCanvasNodes({
 
       if (
         cached?.onSubmitImageNode === onSubmitImageNode &&
+        cached.onStopImageGenerationNode === onStopImageGenerationNode &&
         cached.onCreateDerivedImageNode === onCreateDerivedImageNode &&
         cached.onUpdateImageNode === onUpdateImageNode &&
         cached.sourceEdges === edges &&
@@ -992,6 +1013,7 @@ export function getRenderedCanvasNodes({
           ...generatedImageNode.data,
           onCreateDerivedImageNode,
           onSubmitImageNode,
+          onStopImageGenerationNode,
           onUpdateImageNode,
         },
       };
@@ -1000,6 +1022,7 @@ export function getRenderedCanvasNodes({
         node: renderedGeneratedImageNode,
         onCreateDerivedImageNode,
         onSubmitImageNode,
+        onStopImageGenerationNode,
         onUpdateImageNode,
         sourceEdges: edges,
         sourceNodes: nodes,

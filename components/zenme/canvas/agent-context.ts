@@ -31,9 +31,13 @@ export function collectAgentTurnReferences(input: {
       ? [node.data.workspaceFileDocumentId]
       : [],
   ))];
+  const readingAssetIds = [...new Set(referencedNodes.flatMap((node) =>
+    node.data.readingAssetId ? [node.data.readingAssetId] : [],
+  ))];
 
   return {
     fileDocumentIds,
+    readingAssetIds,
     selectedNodeIds: referencedNodes.map((node) => node.id),
   };
 }

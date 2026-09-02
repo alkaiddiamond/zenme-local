@@ -23,8 +23,44 @@ export function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
+const URL_TEXT_PATTERN = /https?:\/\/[^\s<]+/gi;
+const WRAPPABLE_URL_CLASS = "zenme-wrappable-url";
+
+function wrapUrlText(value: string) {
+  return value.replace(
+    URL_TEXT_PATTERN,
+    (url) => `<span class="${WRAPPABLE_URL_CLASS}">${url}</span>`,
+  );
+}
+
+export function ensureUrlWrappingInRichTextHtml(html: string) {
+  const protectedUrls: string[] = [];
+  const protectedHtml = html.replace(
+    /<span\s+class=(['"])(?:zenme-nowrap-url|zenme-wrappable-url)\1\s*>[\s\S]*?<\/span>/gi,
+    (span) => {
+      const canonicalSpan = span.replace(
+        /zenme-nowrap-url/gi,
+        WRAPPABLE_URL_CLASS,
+      );
+      const index = protectedUrls.push(canonicalSpan) - 1;
+      return `\uE000${index}\uE001`;
+    },
+  );
+  const wrappedHtml = protectedHtml
+    .split(/(<[^>]+>)/g)
+    .map((part) => (part.startsWith("<") ? part : wrapUrlText(part)))
+    .join("");
+
+  return wrappedHtml.replace(/\uE000(\d+)\uE001/g, (_match, index: string) =>
+    protectedUrls[Number(index)] ?? "",
+  );
+}
+
 export function plainTextToRichTextFragment(value: string) {
-  return escapeHtml(value).replace(/\r\n?|\n/g, "<br>");
+  return ensureUrlWrappingInRichTextHtml(escapeHtml(value)).replace(
+    /\r\n?|\n/g,
+    "<br>",
+  );
 }
 
 function removeRedundantEditorSpans(value: string) {

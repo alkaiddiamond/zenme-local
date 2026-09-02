@@ -55,7 +55,7 @@ const definitions = [
     (value) => isObject(value) && optionalString(value.server) && optionalString(value.rootId)),
   define("read_mcp_resource", "从指定的已启用 MCP 服务读取一个资源；MCP 进程受 Workspace Root cwd 限定，文本内容有长度限制，二进制只返回元数据。对应 cc-haha/Codex 的 ReadMcpResource。", "read", true, { server: "filesystem", uri: "file:///workspace/README.md", rootId: "workspace-root-id" },
     (value) => isObject(value) && requiredString(value.server) && requiredString(value.uri) && optionalString(value.rootId)),
-  define("web_search", "发现互联网候选来源 URL；结果未经阅读验证，不能直接作为答案或引用。随后必须用 web_fetch 阅读采用的来源。", "read", false, { query: "latest release", model: "provider:model" },
+  define("web_search", "发现互联网候选来源 URL；返回的 URL 可以作为引用候选，但重要事实必须随后用 web_fetch 阅读正文验证。", "read", false, { query: "latest release", model: "provider:model" },
     (value) => isObject(value) && requiredString(value.query) && optionalString(value.model)),
   define("web_fetch", "读取公开 HTTP(S) 网页，并由页面分析模型按 prompt 提取相关摘要与事实；不会把整页正文交给主 Agent。", "read", false, { url: "https://example.com/docs", prompt: "提取与用户问题直接相关的事实、日期和结论", maxCharacters: 40_000 },
     (value) => isObject(value) && requiredString(value.url) && requiredString(value.prompt) && optionalString(value.model) && optionalInteger(value.maxCharacters)),

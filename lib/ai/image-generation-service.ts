@@ -46,6 +46,7 @@ export type GenerateConfiguredImageInput = {
   operation?: "edit" | "generate";
   prompt: string;
   quality?: string;
+  signal?: AbortSignal;
 };
 
 export type GeneratedConfiguredImage = {
@@ -102,6 +103,7 @@ export async function generateConfiguredImage(
     prompt,
     provider,
     quality: input.quality,
+    signal: input.signal,
   };
   const result = provider.apiFormat === "openai_oauth"
     ? await generateWithChatGpt(request)
@@ -141,7 +143,7 @@ async function generateWithVolcengineAgentPlan(input: ImageProviderRequest) {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify(createVolcengineAgentPlanImageRequestBody(input)),
-      signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS),
+      signal: createImageRequestSignal(input.signal),
       ...getProxyFetchOptions(input.provider.baseUrl, input.provider.networkProxy),
     },
   );
@@ -199,7 +201,7 @@ async function generateWithChatGpt(input: ImageProviderRequest) {
       stream: true,
       store: false,
     }),
-    signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS),
+    signal: createImageRequestSignal(input.signal),
     ...getProxyFetchOptions(RESPONSES_URL, input.provider.networkProxy),
   });
   if (!upstream.ok || !upstream.body) {
@@ -240,7 +242,7 @@ async function generateWithOpenRouter(input: ImageProviderRequest) {
       output_format: "png",
       n: 1,
     }),
-    signal: AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS),
+    signal: createImageRequestSignal(input.signal),
     ...getProxyFetchOptions(baseUrl, input.provider.networkProxy),
   });
   const payload = (await upstream.json().catch(() => null)) as OpenRouterImageResponse | null;
@@ -266,7 +268,13 @@ type ImageProviderRequest = {
   prompt: string;
   provider: ModelProviderConfig;
   quality?: string;
+  signal?: AbortSignal;
 };
+
+function createImageRequestSignal(signal?: AbortSignal) {
+  const timeoutSignal = AbortSignal.timeout(IMAGE_REQUEST_TIMEOUT_MS);
+  return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+}
 
 async function readUpstreamError(response: Response) {
   const text = await response.text().catch(() => "");

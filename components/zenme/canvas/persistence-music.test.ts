@@ -40,6 +40,23 @@ describe("music canvas persistence", () => {
     expect(persisted.data.isMultiSelection).toBeUndefined();
   });
 
+  it("removes the derived running Agent state from canvas snapshots", () => {
+    const node: CanvasNode = {
+      id: "text-1",
+      type: "text",
+      position: { x: 0, y: 0 },
+      data: {
+        hasRunningAgentTurn: true,
+        kind: "text",
+        title: "文本",
+      },
+    };
+
+    const [persisted] = getPersistableCanvasNodes([node]);
+
+    expect(persisted.data.hasRunningAgentTurn).toBeUndefined();
+  });
+
   it("removes derived task parent presentation state from snapshots", () => {
     const node: CanvasNode = {
       id: "task-1",

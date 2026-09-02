@@ -33,11 +33,19 @@ describe("canvas pan performance", () => {
       canvasClientSource.indexOf("onMoveEnd={"),
       canvasClientSource.indexOf("minZoom="),
     );
+    const stageViewport = canvasClientSource.slice(
+      canvasClientSource.indexOf("const stageCurrentViewViewport"),
+      canvasClientSource.indexOf("const getNodesForArchiveViewMode"),
+    );
 
-    expect(moveHandler).toContain("canvasViewportStateRef.current = viewport");
+    expect(moveHandler).toContain("stageCurrentViewViewport(viewport)");
     expect(moveHandler).not.toContain("setCanvasViewport");
     expect(moveHandler).not.toContain("setZoomLevel");
-    expect(moveEndHandler).toContain("commitCanvasViewport(viewport)");
+    expect(stageViewport).toContain("canvasViewportStateRef.current = viewport");
+    expect(stageViewport).toContain("archivedCanvasViewportRef.current = viewport");
+    expect(stageViewport).not.toContain("setCanvasViewport");
+    expect(stageViewport).not.toContain("setZoomLevel");
+    expect(moveEndHandler).toContain("rememberCurrentViewViewport(viewport)");
   });
 
   it("keeps nodes mounted while the viewport moves", () => {
@@ -107,7 +115,7 @@ describe("canvas pan performance", () => {
     expect(movingReaderRule).toContain("pointer-events: none");
     expect(movingReaderRule).not.toContain("opacity");
     expect(movingReaderRule).not.toContain("content-visibility");
-    expect(canvasClientSource).toContain("selectionToolbarPosition &&");
+    expect(canvasClientSource).toContain("showCanvasSelectionToolbar &&");
     expect(canvasClientSource).toContain("!isNodeDragging &&");
     expect(canvasClientSource).toContain("!isViewportMoving ?");
   });

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createLocalReadingAsset,
   createLocalReadingNote,
+  getLocalReadingAsset,
   getLocalReadingAssetFile,
   getLocalReadingProgress,
   getLocalReadingSections,
@@ -42,6 +43,35 @@ describe("local reading repository", () => {
   it("recognizes DOCX as a reading format", () => {
     expect(detectLocalReadingFormat("产品方案.DOCX")).toBe("docx");
     expect(detectLocalReadingFormat("产品方案.doc")).toBeNull();
+  });
+
+  it("recovers valid reading metadata quarantined by an older schema", async () => {
+    const asset = await createLocalReadingAsset(
+      {
+        projectId,
+        nodeId: "legacy-reader-node",
+        fileName: "legacy.txt",
+        mimeType: "text/plain",
+        bytes: Buffer.from("legacy reading content"),
+      },
+      dataDir,
+    );
+    const assetDir = path.join(
+      dataDir,
+      "projects",
+      projectId,
+      "reading",
+      asset.id,
+    );
+    const assetPath = path.join(assetDir, "asset.json");
+    const quarantinedPath = `${assetPath}.invalid-1700000000000-abcdef`;
+    await fs.rename(assetPath, quarantinedPath);
+
+    await expect(getLocalReadingAsset(asset.id, dataDir)).resolves.toEqual(asset);
+    await expect(
+      fs.readFile(assetPath, "utf8").then((value) => JSON.parse(value)),
+    ).resolves.toEqual(asset);
+    await expect(fs.stat(quarantinedPath)).resolves.toBeDefined();
   });
 
   it("imports Markdown assets as rendered, annotatable fixed pages", async () => {

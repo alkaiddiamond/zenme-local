@@ -53,6 +53,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       selectedNodeIds: stringArray(body.selectedNodeIds),
       sourceNodeId: optionalString(body.sourceNodeId),
       fileDocumentIds: stringArray(body.fileDocumentIds),
+      readingAssetIds: stringArray(body.readingAssetIds),
       imageDataUrls: stringArray(body.imageDataUrls),
       turnId: optionalString(body.turnId),
       reasoningEffort: optionalReasoningEffort(body.reasoningEffort),

@@ -308,6 +308,7 @@ export type CanvasNodeData = {
   hasOutgoingEdge?: boolean;
   isMultiSelection?: boolean;
   hasRunningGenerationChild?: boolean;
+  hasRunningAgentTurn?: boolean;
   onUpdateProjectTag?: (action: ProjectTagAction) => void;
   onUpdateTaskNode?: (
     nodeId: string,
@@ -464,6 +465,7 @@ export type CanvasNodeData = {
       quality?: string;
     },
   ) => Promise<void> | void;
+  onStopImageGenerationNode?: (nodeId: string) => void;
   onUpdateVideoNode?: (
     nodeId: string,
     updates: Partial<

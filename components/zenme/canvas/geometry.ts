@@ -544,6 +544,7 @@ function getSerializableRecord<T extends Record<string, unknown>>(record: T) {
       ([key, value]) =>
         key !== "hasIncomingEdge" &&
         key !== "hasOutgoingEdge" &&
+        key !== "hasRunningAgentTurn" &&
         key !== "hasRunningGenerationChild" &&
         key !== "musicCurrentTime" &&
         key !== "musicIsPlaying" &&

@@ -487,23 +487,29 @@ export function ImageNode({ data, id, selected }: NodeProps) {
                   aria-busy={isSubmissionLocked}
                   aria-label={
                     isSubmissionLocked
-                      ? "正在编辑图片"
+                      ? "停止图片生成"
                       : isGeneratedImage
                         ? "重新编辑图片"
                         : "编辑图片"
                   }
                   className={`flex size-9 shrink-0 items-center justify-center rounded-full bg-zinc-950 text-white transition-colors hover:bg-zinc-800 active:bg-black focus-visible:outline-none focus-visible:shadow-[var(--shadow-focus-ring)] ${
                     isSubmissionLocked
-                      ? "cursor-wait"
+                      ? "cursor-pointer"
                       : "disabled:cursor-not-allowed disabled:bg-zinc-300"
                   }`}
                   disabled={
-                    isSubmissionLocked ||
-                    !prompt.trim() ||
-                    !imageModelOptions.some((option) => option.id === model)
+                    !isSubmissionLocked && (
+                      !prompt.trim() ||
+                      !imageModelOptions.some((option) => option.id === model)
+                    )
                   }
-                  title={isGeneratedImage ? "重新编辑图片" : "编辑图片"}
-                  type="submit"
+                  onClick={isSubmissionLocked
+                    ? () => nodeData.onStopImageGenerationNode?.(id)
+                    : undefined}
+                  title={isSubmissionLocked
+                    ? "停止图片生成"
+                    : isGeneratedImage ? "重新编辑图片" : "编辑图片"}
+                  type={isSubmissionLocked ? "button" : "submit"}
                 >
                   {isSubmissionLocked ? (
                     <span aria-hidden="true" className="size-4 rounded-[2px] bg-white" />

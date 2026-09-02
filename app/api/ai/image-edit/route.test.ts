@@ -104,4 +104,35 @@ describe("Volcengine Agent Plan image request", () => {
       response_format: "b64_json",
     });
   });
+
+  it("aborts the upstream image request when the client request is cancelled", async () => {
+    let upstreamSignal: AbortSignal | undefined;
+    const upstreamFetch = vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+      upstreamSignal = init?.signal ?? undefined;
+      return new Promise<Response>((_resolve, reject) => {
+        upstreamSignal?.addEventListener("abort", () => reject(upstreamSignal?.reason), {
+          once: true,
+        });
+      });
+    });
+    vi.stubGlobal("fetch", upstreamFetch);
+    const controller = new AbortController();
+
+    const responsePromise = POST(new Request("http://localhost/api/ai/image-edit", {
+      body: JSON.stringify({
+        model: "volcengine-agent-plan:doubao-seedream-5.0-lite",
+        prompt: "生成一张测试图片",
+      }),
+      method: "POST",
+      signal: controller.signal,
+    }));
+    await vi.waitFor(() => expect(upstreamFetch).toHaveBeenCalledTimes(1));
+
+    controller.abort(new DOMException("Stopped", "AbortError"));
+    const response = await responsePromise;
+
+    expect(upstreamSignal?.aborted).toBe(true);
+    expect(response.status).toBe(499);
+    await expect(response.json()).resolves.toEqual({ error: "图片生成已停止" });
+  });
 });

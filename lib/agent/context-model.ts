@@ -80,6 +80,7 @@ export type AgentContextSnapshot = {
   references?: {
     selectedNodeIds?: string[];
     fileDocumentIds?: string[];
+    readingAssetIds?: string[];
   };
   legacy?: { canvasContext?: string };
 };
@@ -91,6 +92,7 @@ export function createAgentContextSnapshot(input: {
   conversationId?: string;
   selectedNodeIds?: string[];
   fileDocumentIds?: string[];
+  readingAssetIds?: string[];
 }): AgentContextSnapshot {
   return {
     version: 1,
@@ -98,10 +100,11 @@ export function createAgentContextSnapshot(input: {
     ...(input.currentNodeContext ? { currentNode: { content: input.currentNodeContext } } : {}),
     ...(input.connectedGraphContext ? { graph: { connectedContext: input.connectedGraphContext } } : {}),
     ...(input.conversationId ? { conversation: { conversationId: input.conversationId } } : {}),
-    ...((input.selectedNodeIds?.length || input.fileDocumentIds?.length) ? {
+    ...((input.selectedNodeIds?.length || input.fileDocumentIds?.length || input.readingAssetIds?.length) ? {
       references: {
         ...(input.selectedNodeIds?.length ? { selectedNodeIds: [...input.selectedNodeIds] } : {}),
         ...(input.fileDocumentIds?.length ? { fileDocumentIds: [...input.fileDocumentIds] } : {}),
+        ...(input.readingAssetIds?.length ? { readingAssetIds: [...input.readingAssetIds] } : {}),
       },
     } : {}),
   };
@@ -114,6 +117,7 @@ export function applyAgentContextSnapshot<T extends {
   conversationId?: string;
   selectedNodeIds?: string[];
   fileDocumentIds?: string[];
+  readingAssetIds?: string[];
   canvasContext?: string;
   contextSnapshot?: AgentContextSnapshot;
 }>(input: T): T {
@@ -127,6 +131,7 @@ export function applyAgentContextSnapshot<T extends {
     conversationId: snapshot.conversation?.conversationId ?? input.conversationId,
     selectedNodeIds: snapshot.references?.selectedNodeIds ?? input.selectedNodeIds,
     fileDocumentIds: snapshot.references?.fileDocumentIds ?? input.fileDocumentIds,
+    readingAssetIds: snapshot.references?.readingAssetIds ?? input.readingAssetIds,
     canvasContext: snapshot.legacy?.canvasContext ?? input.canvasContext,
   };
 }
@@ -147,6 +152,7 @@ export function parseAgentContextSnapshot(value: unknown): AgentContextSnapshot 
     ? {
         selectedNodeIds: stringValues(value.references.selectedNodeIds),
         fileDocumentIds: stringValues(value.references.fileDocumentIds),
+        readingAssetIds: stringValues(value.references.readingAssetIds),
       }
     : undefined;
   const legacy = isRecord(value.legacy) && typeof value.legacy.canvasContext === "string"

@@ -42,6 +42,7 @@ describe("agent context snapshot", () => {
       conversationId: "conv-a",
       selectedNodeIds: ["node-a"],
       fileDocumentIds: ["file-a"],
+      readingAssetIds: ["asset-a"],
     });
 
     expect(applyAgentContextSnapshot({
@@ -51,6 +52,7 @@ describe("agent context snapshot", () => {
       conversationId: "legacy-conversation",
       selectedNodeIds: ["legacy-node"],
       fileDocumentIds: ["legacy-file"],
+      readingAssetIds: ["legacy-asset"],
       canvasContext: "legacy context",
       contextSnapshot: snapshot,
     })).toMatchObject({
@@ -60,6 +62,7 @@ describe("agent context snapshot", () => {
       conversationId: "conv-a",
       selectedNodeIds: ["node-a"],
       fileDocumentIds: ["file-a"],
+      readingAssetIds: ["asset-a"],
       canvasContext: "legacy context",
     });
   });
@@ -71,7 +74,7 @@ describe("agent context snapshot", () => {
       currentNode: { content: "current node" },
       graph: { connectedContext: "graph" },
       conversation: { conversationId: "conv-a" },
-      references: { selectedNodeIds: ["a", 1], fileDocumentIds: ["f"] },
+      references: { selectedNodeIds: ["a", 1], fileDocumentIds: ["f"], readingAssetIds: ["r", 2] },
       legacy: { canvasContext: "legacy" },
       unknown: "ignored",
     })).toEqual({
@@ -80,7 +83,7 @@ describe("agent context snapshot", () => {
       currentNode: { content: "current node" },
       graph: { connectedContext: "graph" },
       conversation: { conversationId: "conv-a" },
-      references: { selectedNodeIds: ["a"], fileDocumentIds: ["f"] },
+      references: { selectedNodeIds: ["a"], fileDocumentIds: ["f"], readingAssetIds: ["r"] },
       legacy: { canvasContext: "legacy" },
     });
     expect(parseAgentContextSnapshot({ version: 2, instruction: { prompt: "x" } })).toBeUndefined();

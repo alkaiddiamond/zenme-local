@@ -18,6 +18,7 @@ import {
 import { TextNodeComposer } from "@/components/zenme/nodes/text-node-composer";
 import { OverlayScrollbars } from "@/components/zenme/nodes/overlay-scrollbar";
 import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
+import { useEditorFocusReturn } from "@/components/zenme/nodes/editor-focus-return";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -32,6 +33,7 @@ const MAX_TAG_LENGTH = 24;
 export function ManagedTextNode({ data, id, selected }: NodeProps) {
   const nodeData = data as CanvasNodeData;
   const contentEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const preserveEditorFocus = useEditorFocusReturn([contentEditorRef]);
   const latestContentRef = useRef(nodeData.plainText ?? "");
   const syncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const tagInputRef = useRef<HTMLInputElement | null>(null);
@@ -419,9 +421,11 @@ export function ManagedTextNode({ data, id, selected }: NodeProps) {
             autoCorrect="off"
             className="zenme-overlay-scroll-container zenme-managed-text-editor nodrag nowheel absolute inset-0 size-full resize-none overflow-auto bg-transparent px-5 py-4 text-base leading-7 text-zinc-800 outline-none placeholder:text-zinc-400"
             defaultValue={nodeData.plainText ?? ""}
-            onBlur={() => {
-              setIsEditingContent(false);
+            onBlur={(event) => {
+              const shouldRestoreFocus = preserveEditorFocus(event.currentTarget);
               flushContent();
+              if (shouldRestoreFocus) return;
+              setIsEditingContent(false);
             }}
             onChange={(event) => {
               const nextContent = event.target.value;

@@ -424,15 +424,59 @@ async function listReadingAssetLocations(dataDir: string) {
 }
 
 async function readAssetJson(assetDir: string) {
+  const assetPath = resolveInside(assetDir, "asset.json");
   const asset = await readJsonFile<ReadingAsset | null>(
-    resolveInside(assetDir, "asset.json"),
+    assetPath,
     {
       defaultValue: null,
       normalize: normalizeAsset,
     },
   );
-  if (!asset) throw new Error("阅读资料不存在");
-  return asset;
+  if (asset) return asset;
+
+  const recovered = await recoverQuarantinedAssetJson(assetDir);
+  if (!recovered) throw new Error("阅读资料不存在");
+  await writeJsonFile(assetPath, recovered);
+  return recovered;
+}
+
+async function recoverQuarantinedAssetJson(assetDir: string) {
+  let entries: Array<import("node:fs").Dirent>;
+  try {
+    entries = await fs.readdir(assetDir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  const expectedAssetId = path.basename(assetDir);
+  const expectedProjectId = path.basename(path.dirname(path.dirname(assetDir)));
+  const candidates = entries
+    .filter(
+      (entry) => entry.isFile() && entry.name.startsWith("asset.json.invalid-"),
+    )
+    .sort((left, right) => right.name.localeCompare(left.name));
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(
+        await fs.readFile(resolveInside(assetDir, candidate.name), "utf8"),
+      );
+      const recovered = normalizeAsset(parsed);
+      if (
+        !recovered ||
+        recovered.id !== expectedAssetId ||
+        recovered.projectId !== expectedProjectId
+      ) {
+        continue;
+      }
+      await fs.access(resolveInside(assetDir, recovered.filePath));
+      return recovered;
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }
 
 async function readNotes(assetDir: string) {

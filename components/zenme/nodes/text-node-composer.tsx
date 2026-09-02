@@ -90,7 +90,9 @@ export function TextNodeComposer({
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const isGenerating = isSubmitting || Boolean(nodeData.hasRunningGenerationChild);
+  const isGenerating = isSubmitting || Boolean(
+    nodeData.hasRunningGenerationChild || nodeData.hasRunningAgentTurn,
+  );
   const hasSteeringPrompt = Boolean(prompt.trim());
   const configuredModels = useAiModelOptions();
   const preferredModel = configuredModels[0]?.id ?? "";

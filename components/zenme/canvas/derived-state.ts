@@ -1,7 +1,6 @@
 import { AlertCircle, Check, Loader2, Pencil } from "lucide-react";
 
-import { getNodeBounds } from "./geometry";
-import type { CanvasNode, SaveStatus, Viewport } from "./types";
+import type { CanvasNode, SaveStatus } from "./types";
 import { isReadableFileName } from "./files";
 
 export function getSaveStatusTone(saveStatus: SaveStatus) {
@@ -75,28 +74,4 @@ export function canOpenReadingWorkspace(node: CanvasNode | undefined) {
     isReadableFileName(node.data.fileName) &&
       (node.data.readingAssetId || node.data.originalUrl),
   );
-}
-
-export function getSelectionToolbarPosition(input: {
-  canvasViewport: Viewport;
-  groupableNodes: CanvasNode[];
-  nodes: CanvasNode[];
-}) {
-  if (input.groupableNodes.length < 2) {
-    return null;
-  }
-
-  const bounds = input.groupableNodes.map((node) =>
-    getNodeBounds(node, input.nodes),
-  );
-  const minX = Math.min(...bounds.map((bound) => bound.x));
-  const minY = Math.min(...bounds.map((bound) => bound.y));
-  const maxX = Math.max(...bounds.map((bound) => bound.x + bound.width));
-
-  return {
-    left:
-      input.canvasViewport.x +
-      ((minX + maxX) / 2) * input.canvasViewport.zoom,
-    top: input.canvasViewport.y + minY * input.canvasViewport.zoom - 62,
-  };
 }

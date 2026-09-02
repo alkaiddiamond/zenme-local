@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import {
   AlertCircle,
   Archive,
+  ArchiveRestore,
   Bot,
   Crosshair,
   EyeOff,
@@ -21,63 +22,81 @@ import {
   ZenmeControlButton,
   ZenmeIconButton,
 } from "@/components/zenme/visual-components";
+import {
+  ZenmeNodeToolbar,
+  ZenmeNodeToolbarButton,
+  ZenmeNodeToolbarDivider,
+} from "@/components/zenme/nodes/node-toolbar";
 import type { CanvasTextSearchResult } from "@/components/zenme/canvas/text-search";
 import { OverlayScrollArea } from "@/components/zenme/overlay-scroll-area";
 
 type CanvasSelectionToolbarProps = {
-  left: number;
+  archiveViewActive: boolean;
+  canGroupSelectedNodes: boolean;
+  nodeIds: string[];
+  onArchiveSelectedNodes: () => void;
   onGroupSelectedNodes: () => void;
-  onStartAgentWithSelection: () => void;
-  top: number;
+  onRestoreSelectedNodes: () => void;
+  showArchiveAction: boolean;
 };
 
 export function CanvasSelectionToolbar({
-  left,
+  archiveViewActive,
+  canGroupSelectedNodes,
+  nodeIds,
+  onArchiveSelectedNodes,
   onGroupSelectedNodes,
-  onStartAgentWithSelection,
-  top,
+  onRestoreSelectedNodes,
+  showArchiveAction,
 }: CanvasSelectionToolbarProps) {
   return (
-    <div
-      className="zenme-shadow-canvas fixed z-30 flex -translate-x-1/2 items-center gap-1 rounded-full border border-zinc-200 bg-white/95 p-1.5 text-zinc-800 backdrop-blur"
+    <ZenmeNodeToolbar
       data-canvas-selection-toolbar
       data-thumbnail-hidden="true"
-      style={{ left, top }}
+      isVisible
+      nodeId={nodeIds}
     >
-      <button
-        className="inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium transition hover:bg-zinc-100 hover:text-zinc-950"
-        onClick={onStartAgentWithSelection}
-        type="button"
-      >
-        <Bot className="size-4 text-zinc-500" />
-        对话或执行
-      </button>
-      <button
-        className="inline-flex h-9 items-center gap-2 rounded-full px-4 text-sm font-medium transition hover:bg-zinc-100 hover:text-zinc-950"
-        onClick={onGroupSelectedNodes}
-        type="button"
-      >
-        <GroupIcon className="size-4 text-zinc-500" />
-        打组
-      </button>
-    </div>
+      {archiveViewActive ? (
+        <ZenmeNodeToolbarButton label="恢复" onPress={onRestoreSelectedNodes}>
+          <ArchiveRestore className="size-4" />
+        </ZenmeNodeToolbarButton>
+      ) : (
+        <>
+          {canGroupSelectedNodes ? (
+            <ZenmeNodeToolbarButton label="打组" onPress={onGroupSelectedNodes}>
+              <GroupIcon className="size-4" />
+            </ZenmeNodeToolbarButton>
+          ) : null}
+          {showArchiveAction ? (
+            <>
+              {canGroupSelectedNodes ? <ZenmeNodeToolbarDivider /> : null}
+              <ZenmeNodeToolbarButton label="归档" onPress={onArchiveSelectedNodes}>
+                <Archive className="size-4" />
+              </ZenmeNodeToolbarButton>
+            </>
+          ) : null}
+        </>
+      )}
+    </ZenmeNodeToolbar>
   );
 }
 
 type CanvasSideToolbarProps = {
+  archiveViewActive: boolean;
   archivedCount: number;
   onArrange: () => void;
-  onOpenArchive: () => void;
   onSave: () => void;
+  onToggleArchiveView: () => void;
   onToggleSearch: () => void;
   searchOpen: boolean;
 };
 
 export function CanvasSideToolbar({
+  archiveViewActive,
   archivedCount,
   onArrange,
-  onOpenArchive,
   onSave,
+  onToggleArchiveView,
   onToggleSearch,
   searchOpen,
 }: CanvasSideToolbarProps) {
@@ -94,27 +113,30 @@ export function CanvasSideToolbar({
       >
         <SearchIcon className="size-5" />
       </ZenmeIconButton>
-      <ZenmeIconButton onClick={onArrange} title="快速整理画布">
-        <Sparkles className="size-5" />
-      </ZenmeIconButton>
+      {!archiveViewActive ? (
+        <ZenmeIconButton onClick={onArrange} title="快速整理画布">
+          <Sparkles className="size-5" />
+        </ZenmeIconButton>
+      ) : null}
       <ZenmeIconButton onClick={onSave} title="手动保存">
         <Save className="size-5" />
       </ZenmeIconButton>
-      {archivedCount > 0 ? (
-        <ZenmeIconButton onClick={onOpenArchive} title={`归档内容（${archivedCount}）`}>
-          <span className="relative"><Archive className="size-5" /><span className="absolute -right-2 -top-2 min-w-4 rounded-full bg-zinc-900 px-1 text-center text-[9px] leading-4 text-white">{archivedCount}</span></span>
-        </ZenmeIconButton>
-      ) : null}
+      <ZenmeIconButton
+        aria-pressed={archiveViewActive}
+        onClick={onToggleArchiveView}
+        title={archiveViewActive ? "返回普通视图" : `进入归档视图（${archivedCount}）`}
+      >
+        <span className="relative">
+          {archiveViewActive ? <ArchiveRestore className="size-5" /> : <Archive className="size-5" />}
+          {!archiveViewActive && archivedCount > 0 ? (
+            <span className="absolute -right-2 -top-2 min-w-4 rounded-full bg-zinc-900 px-1 text-center text-[9px] leading-4 text-white">
+              {archivedCount}
+            </span>
+          ) : null}
+        </span>
+      </ZenmeIconButton>
     </div>
   );
-}
-
-export function CanvasArchivePanel({ items, onClose, onRestore }: {
-  items: Array<{ id: string; kind: string; title: string }>;
-  onClose: () => void;
-  onRestore: (nodeId: string) => void;
-}) {
-  return <section aria-label="画布归档" className="zenme-shadow-dropdown absolute left-[76px] top-1/2 z-30 flex max-h-[min(520px,calc(100%-2rem))] w-[360px] -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white/95 backdrop-blur" data-thumbnail-hidden="true"><header className="flex items-center gap-2 border-b border-zinc-100 p-3"><Archive className="size-4" /><div className="flex-1"><h2 className="text-sm font-medium">归档内容</h2><p className="text-[11px] text-zinc-500">保留追溯记录，但不显示在主画布或普通上下文。</p></div><button aria-label="关闭归档" className="rounded p-1 hover:bg-zinc-100" onClick={onClose} type="button"><X className="size-4" /></button></header><OverlayScrollArea className="min-h-0 flex-1" contentKey={items.map((item) => item.id).join("|")} viewportClassName="h-full overflow-auto p-2">{items.map((item) => <div className="mb-1 flex items-center gap-2 rounded-lg px-3 py-2 hover:bg-zinc-50" key={item.id}><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{item.title}</p><p className="text-[10px] uppercase text-zinc-500">{item.kind}</p></div><button className="rounded border border-zinc-200 px-2 py-1 text-xs hover:bg-white" onClick={() => onRestore(item.id)} type="button">恢复</button></div>)}{items.length === 0 ? <p className="p-6 text-center text-sm text-zinc-500">暂无归档内容</p> : null}</OverlayScrollArea></section>;
 }
 
 type CanvasTextSearchPanelProps = {
@@ -344,14 +366,23 @@ export function CanvasNotice({ message, onClose }: CanvasNoticeProps) {
   );
 }
 
-export function EmptyCanvasHint() {
+export function EmptyCanvasHint({ archiveView = false }: { archiveView?: boolean }) {
   return (
     <div
       className="pointer-events-none absolute left-1/2 top-1/2 z-10 w-[420px] max-w-[calc(100vw-96px)] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-zinc-200 bg-white/80 px-6 py-5 text-center text-sm leading-6 text-zinc-500"
       data-thumbnail-hidden="true"
     >
-      <p>双击画布创建一个节点</p>
-      <p>或上传一本书、一张图片、一段文字...</p>
+      {archiveView ? (
+        <>
+          <p>暂无归档内容</p>
+          <p>返回普通视图，选中节点后即可归档</p>
+        </>
+      ) : (
+        <>
+          <p>双击画布创建一个节点</p>
+          <p>或上传一本书、一张图片、一段文字...</p>
+        </>
+      )}
     </div>
   );
 }

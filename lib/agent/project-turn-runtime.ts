@@ -70,6 +70,12 @@ import {
 } from "@/lib/agent/tool-registry";
 import { getZenmeDataDir } from "@/lib/local/data-dir";
 import { getLocalSettings } from "@/lib/local/settings";
+import type { AgentFileAttachment } from "@/lib/ai/file-attachment";
+import {
+  loadReadingFileAttachments,
+  MAX_AGENT_READING_ATTACHMENTS,
+  ReadingFileAttachmentError,
+} from "@/lib/agent/reading-file-attachments";
 import { getLocalWorkspaceBinding } from "@/lib/local/workspace-repository";
 import { resolveProviderModelSelection } from "@/lib/ai/provider-model-resolution";
 import { getRelevantConfirmedMemoryContext } from "@/lib/memory/repository";
@@ -138,9 +144,10 @@ import {
   type ProjectPermissionRule,
 } from "@/lib/agent/project-permission-rules";
 
-// Keep a finite fail-safe for malformed providers, but do not truncate normal
-// multi-step development work or synthesize terminal answers from repeated results.
-const MAX_AGENT_TOOL_TURNS = 200;
+// Keep the model/tool loop finite. The limit is configurable by callers that
+// need a different budget, while production uses a conservative default.
+const DEFAULT_MAX_AGENT_TURNS = 64;
+const MAX_RESEARCH_ANSWER_RETRIES = 1;
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 const MAX_OUTPUT_TOKENS_RECOVERY_LIMIT = 3;
 const ESCALATED_MAX_OUTPUT_TOKENS = 64_000;
@@ -247,6 +254,7 @@ export async function startProjectAgentTurnRun(input: {
   selectedNodeIds?: string[];
   sourceNodeId?: string;
   fileDocumentIds?: string[];
+  readingAssetIds?: string[];
   imageDataUrls?: string[];
   turnId?: string;
   reasoningEffort?: ZenmeReasoningEffort;
@@ -260,6 +268,7 @@ export async function startProjectAgentTurnRun(input: {
   executeTool?: typeof executeAgentWorkspaceTool;
   listMcpTools?: typeof listProjectMcpTools;
   callMcpTool?: typeof callProjectMcpTool;
+  maxTurns?: number;
 } = {}) {
   const dataDir = options.dataDir ?? getZenmeDataDir();
   const projectRuntimeKey = `${dataDir}\u0000${input.projectId}`;
@@ -539,6 +548,7 @@ export async function runProjectAgentTurn(input: {
   selectedNodeIds?: string[];
   sourceNodeId?: string;
   fileDocumentIds?: string[];
+  readingAssetIds?: string[];
   imageDataUrls?: string[];
   signal?: AbortSignal;
   turnId?: string;
@@ -553,6 +563,7 @@ export async function runProjectAgentTurn(input: {
   executeTool?: typeof executeAgentWorkspaceTool;
   listMcpTools?: typeof listProjectMcpTools;
   callMcpTool?: typeof callProjectMcpTool;
+  maxTurns?: number;
 } = {}) {
   input = applyAgentContextSnapshot(input);
   const dataDir = options.dataDir ?? getZenmeDataDir();
@@ -560,6 +571,10 @@ export async function runProjectAgentTurn(input: {
   const executeTool = options.executeTool ?? executeAgentWorkspaceTool;
   const listMcpTools = options.listMcpTools ?? listProjectMcpTools;
   const callMcpTool = options.callMcpTool ?? callProjectMcpTool;
+  const maxTurns = options.maxTurns ?? DEFAULT_MAX_AGENT_TURNS;
+  if (!Number.isSafeInteger(maxTurns) || maxTurns < 1) {
+    throw new ProjectAgentTurnError("Agent Turn 预算无效", "invalid_input");
+  }
   const projectRuntimeKey = `${dataDir}\u0000${input.projectId}`;
   validateTurnInput(input);
   if (runtime.activeProjects.has(projectRuntimeKey)) {
@@ -576,9 +591,22 @@ export async function runProjectAgentTurn(input: {
   let approvedBrowserAction: Record<string, unknown> | undefined;
   let approvedWorkflowAction: Record<string, unknown> | undefined;
   let approvedMcpAction: { name: McpToolName; arguments: Record<string, unknown> } | undefined;
+  let readingFileAttachments: AgentFileAttachment[] = [];
   const loadedInstructionPaths = new Set<string>();
   try {
     await clearProjectAgentAnswerDraft({ projectId: input.projectId, turnId }, dataDir);
+    try {
+      readingFileAttachments = await loadReadingFileAttachments({
+        assetIds: input.readingAssetIds,
+        dataDir,
+        projectId: input.projectId,
+      });
+    } catch (error) {
+      if (error instanceof ReadingFileAttachmentError) {
+        throw new ProjectAgentTurnError(error.message, "invalid_input", error);
+      }
+      throw error;
+    }
     const submittedPrompt = input.prompt;
     const manualCompactInstructions = !input.resume
       ? projectCompactInstructions(submittedPrompt)
@@ -653,6 +681,7 @@ export async function runProjectAgentTurn(input: {
           conversationId: input.conversationId,
           selectedNodeIds: dedupeStrings(input.selectedNodeIds),
           fileDocumentIds: dedupeStrings(input.fileDocumentIds),
+          readingAssetIds: dedupeStrings(input.readingAssetIds),
         }),
         parentConversationIds: dedupeStrings(input.parentConversationIds),
         imageCount: input.imageDataUrls?.length ?? 0,
@@ -1695,7 +1724,7 @@ export async function runProjectAgentTurn(input: {
     let maxOutputTokensRecoveryCount = 0;
     let maxOutputTokensRecoveryInstruction: string | undefined;
 
-    for (let iteration = 0; iteration < MAX_AGENT_TOOL_TURNS; iteration += 1) {
+    for (let iteration = 0; iteration < maxTurns; iteration += 1) {
       const activeJob = runtime.jobs.get(projectRuntimeKey);
       await activeJob?.pendingSteering;
       await drainProjectAgentQueuedMessages(input.projectId, turnId, dataDir);
@@ -1817,6 +1846,7 @@ export async function runProjectAgentTurn(input: {
               ...observedImages,
               ...(browserScreenshot ? [browserScreenshot] : []),
             ]),
+            fileAttachments: readingFileAttachments,
             model: input.model,
             messages: [
               ...projectAgentTranscript(projectConversationEvents(modelContext.events, input.conversationId, {
@@ -2489,13 +2519,15 @@ export async function runProjectAgentTurn(input: {
         );
       const decision = parsedDecision;
       if (!decision) {
-        const answer = response?.text ?? "";
+        let answer = response?.text ?? "";
         const researchIssue = validateResearchAnswer(answer, research);
-        if (researchIssue) {
+        if (researchIssue && research.answerRetryCount < MAX_RESEARCH_ANSWER_RETRIES) {
           await answerDraftReporter?.clear();
+          research.answerRetryCount += 1;
           research.correction = researchIssue;
           continue;
         }
+        if (researchIssue) answer = removeUnverifiedResearchLinks(answer, research);
         if (!await prepareMainCompletion(answer)) {
           await answerDraftReporter?.clear();
           continue;
@@ -2513,13 +2545,16 @@ export async function runProjectAgentTurn(input: {
         return { turnId, status: "completed" as const, answer, executionId };
       }
       if (decision.type === "complete") {
-        const researchIssue = validateResearchAnswer(decision.summary, research);
-        if (researchIssue) {
+        let answer = decision.summary;
+        const researchIssue = validateResearchAnswer(answer, research);
+        if (researchIssue && research.answerRetryCount < MAX_RESEARCH_ANSWER_RETRIES) {
           await answerDraftReporter?.clear();
+          research.answerRetryCount += 1;
           research.correction = researchIssue;
           continue;
         }
-        if (!await prepareMainCompletion(decision.summary)) {
+        if (researchIssue) answer = removeUnverifiedResearchLinks(answer, research);
+        if (!await prepareMainCompletion(answer)) {
           await answerDraftReporter?.clear();
           continue;
         }
@@ -2527,13 +2562,13 @@ export async function runProjectAgentTurn(input: {
           await answerDraftReporter?.clear();
           continue;
         }
-        await runMainLifecycle("SessionEnd", { result: decision.summary });
-        await appendProjectAgentEvent({ projectId: input.projectId, turnId, type: "assistant", content: decision.summary }, dataDir);
+        await runMainLifecycle("SessionEnd", { result: answer });
+        await appendProjectAgentEvent({ projectId: input.projectId, turnId, type: "assistant", content: answer }, dataDir);
         await answerDraftReporter?.clear();
         await appendProjectAgentEvent({ projectId: input.projectId, turnId, type: "status", data: { stage: "completed" } }, dataDir);
-        await finishExecutionIfNeeded(input.projectId, executionId, decision.summary, dataDir);
+        await finishExecutionIfNeeded(input.projectId, executionId, answer, dataDir);
         await scheduleProjectAutoDream({ projectId: input.projectId, model: input.model, callModel, dataDir });
-        return { turnId, status: "completed" as const, answer: decision.summary, executionId };
+        return { turnId, status: "completed" as const, answer, executionId };
       }
 
       await answerDraftReporter?.clear();
@@ -3300,7 +3335,7 @@ export async function runProjectAgentTurn(input: {
         continue;
       }
     }
-    throw new ProjectAgentTurnError("Agent 工具调用轮数达到安全上限", "tool_failed");
+    throw new ProjectAgentTurnError(`Agent Turn 达到 ${maxTurns} 轮安全上限`, "tool_failed");
   } catch (error) {
     const failureMessage = error instanceof Error ? error.message : "项目 Agent 执行失败";
     if (!input.signal?.aborted) {
@@ -4667,13 +4702,13 @@ function buildTurnInstruction(
   return [
     `当前用户请求：${prompt}`,
     "如果可以直接回答，返回普通文本，或返回 {\"type\":\"complete\",\"summary\":\"...\"}。",
-    "web_search 用于发现未知候选 URL；若已经有明确 URL，可直接用 web_fetch 读取。web_search 结果只是发现信息，不等于已读取页面正文。",
+    "web_search 用于发现未知候选 URL；若已经有明确 URL，可直接用 web_fetch 读取。web_search 返回的来源可以作为引用候选，但搜索摘要不等于已读取页面正文。",
     research.usedSearch
       ? `本轮已搜索 ${research.searchQueries.size} 个查询并读取 ${research.fetchedEvidence.length} 个页面。把这些数据视为当前 observation，自行判断下一步。`
       : "本轮尚未使用网页工具。",
     "web_search 只发现候选 URL，web_fetch 才读取页面正文。自行根据问题风险、证据质量和冲突情况决定是否继续检索，不按固定来源数或关键词规则停止。",
     "必须用 web_fetch 阅读实际采用的页面。读取完成后，基于正文进行综合总结：直接回答用户问题，提炼共同事实，合并重复信息，区分时间与事件，并在来源冲突时明确说明。",
-    "最终回答不得复述 web_search 列表、工具输出或逐条摘抄网页。来源链接不是回答主体；可以不附链接。若附链接，只能引用本轮 web_fetch 成功读取的页面。",
+    "最终回答不得复述 web_search 列表、工具输出或逐条摘抄网页。来源链接不是回答主体；可以不附链接。若附链接，只能引用本轮 web_search 或 web_fetch 实际返回的 URL。",
     research.correction ? `上一次完成回答被运行时拒绝：${research.correction} 请继续调用必要工具后重新作答。` : "",
     "workspace_status 提供 Workspace/Git 状态摘要；git_diff 读取 Git 变更正文。根据当前问题选择需要的观察工具，不要把其中一个当成另一个的固定前置步骤。",
     "仅当缺少的信息会显著改变结果且不能通过工具发现时，调用 ask_user_question；当前 Turn 会暂停，用户回答后会作为工具结果写回并继续同一 Turn。",
@@ -4692,7 +4727,7 @@ function buildTurnInstruction(
 type TurnResearchState = {
   usedSearch: boolean;
   searchQueries: Set<string>;
-  fetchedUrls: Set<string>;
+  citationUrls: Set<string>;
   fetchedEvidence: Array<{
     url: string;
     title?: string;
@@ -4700,15 +4735,17 @@ type TurnResearchState = {
     claims: unknown[];
   }>;
   correction: string;
+  answerRetryCount: number;
 };
 
 function createTurnResearchState(): TurnResearchState {
   return {
     usedSearch: false,
     searchQueries: new Set<string>(),
-    fetchedUrls: new Set<string>(),
+    citationUrls: new Set<string>(),
     fetchedEvidence: [],
     correction: "",
+    answerRetryCount: 0,
   };
 }
 
@@ -4723,13 +4760,23 @@ function updateTurnResearchState(
     state.usedSearch = true;
     const query = typeof argumentsValue.query === "string" ? argumentsValue.query.trim().toLocaleLowerCase() : "";
     if (query) state.searchQueries.add(query);
+    if (isObject(output) && Array.isArray(output.sources)) {
+      for (const source of output.sources) {
+        const url = typeof source === "string"
+          ? source
+          : isObject(source) && typeof source.url === "string"
+            ? source.url
+            : "";
+        if (url) state.citationUrls.add(normalizeCitationUrl(url));
+      }
+    }
     return;
   }
   if (name !== "web_fetch" || !isObject(output)) return;
   const requestedUrl = typeof argumentsValue.url === "string" ? argumentsValue.url : "";
   const finalUrl = typeof output.finalUrl === "string" ? output.finalUrl : "";
-  if (requestedUrl) state.fetchedUrls.add(normalizeCitationUrl(requestedUrl));
-  if (finalUrl) state.fetchedUrls.add(normalizeCitationUrl(finalUrl));
+  if (requestedUrl) state.citationUrls.add(normalizeCitationUrl(requestedUrl));
+  if (finalUrl) state.citationUrls.add(normalizeCitationUrl(finalUrl));
   state.fetchedEvidence.push({
     url: finalUrl || requestedUrl,
     ...(typeof output.title === "string" ? { title: output.title } : {}),
@@ -4739,12 +4786,30 @@ function updateTurnResearchState(
 }
 
 function validateResearchAnswer(answer: string, state: TurnResearchState) {
-  if (!state.usedSearch) return "";
+  if (!state.usedSearch && state.citationUrls.size === 0) return "";
+  const unverified = unverifiedResearchUrls(answer, state);
+  if (unverified.length) return `最终答案引用了本轮网页工具未返回的来源：${unverified.slice(0, 3).join("、")}`;
+  return "";
+}
+
+function unverifiedResearchUrls(answer: string, state: TurnResearchState) {
   const citedUrls = [...new Set(answer.match(/https?:\/\/[^\s<>)\]}"']+/g) ?? [])]
     .map((url) => normalizeCitationUrl(url));
-  const unverified = citedUrls.filter((url) => !state.fetchedUrls.has(url));
-  if (unverified.length) return `最终答案引用了未经 web_fetch 读取的来源：${unverified.slice(0, 3).join("、")}`;
-  return "";
+  return citedUrls.filter((url) => !state.citationUrls.has(url));
+}
+
+function removeUnverifiedResearchLinks(answer: string, state: TurnResearchState) {
+  const unverified = new Set(unverifiedResearchUrls(answer, state));
+  if (!unverified.size) return answer;
+  return answer
+    .replace(/\[([^\]]+)]\((https?:\/\/[^\s)]+)\)/g, (match, label: string, url: string) =>
+      unverified.has(normalizeCitationUrl(url)) ? label : match)
+    .replace(/<?https?:\/\/[^\s<>)\]}"']+>?/g, (url) => {
+      const bareUrl = url.startsWith("<") && url.endsWith(">") ? url.slice(1, -1) : url;
+      return unverified.has(normalizeCitationUrl(bareUrl)) ? "" : url;
+    })
+    .replace(/[ \t]+([，。；：！？,.!?;:])/g, "$1")
+    .trim();
 }
 
 function normalizeCitationUrl(value: string) {
@@ -4855,7 +4920,7 @@ function summarizeToolResult(name: string, output: unknown) {
   }
   if (name === "web_search" && isObject(output)) {
     const sources = Array.isArray(output.sources) ? output.sources : [];
-    return `网页搜索完成，发现 ${sources.length} 个候选来源；来源需读取验证后才能引用。`;
+    return `网页搜索完成，发现 ${sources.length} 个候选来源；重要事实仍需读取正文验证。`;
   }
   if (name === "web_fetch" && isObject(output)) {
     const title = typeof output.title === "string" ? output.title : "网页";
@@ -5256,12 +5321,21 @@ function browserInteractionDescription(operation: string, target: string) {
   return `向${target}发送按键`;
 }
 
-function validateTurnInput(input: { imageDataUrls?: string[]; projectId: string; prompt: string; model: string; turnId?: string; questionAnswer?: ProjectAgentQuestionAnswer }) {
+function validateTurnInput(input: { imageDataUrls?: string[]; readingAssetIds?: string[]; projectId: string; prompt: string; model: string; turnId?: string; questionAnswer?: ProjectAgentQuestionAnswer }) {
   if (!input.projectId || !input.prompt?.trim() || input.prompt.length > 200_000 || !input.model?.trim()) {
     throw new ProjectAgentTurnError("项目 Agent Turn 参数无效", "invalid_input");
   }
   if (input.turnId !== undefined && (!input.turnId.trim() || input.turnId.length > 200)) {
     throw new ProjectAgentTurnError("项目 Agent Turn 标识无效", "invalid_input");
+  }
+  if (
+    input.readingAssetIds &&
+    (input.readingAssetIds.length > MAX_AGENT_READING_ATTACHMENTS ||
+      input.readingAssetIds.some((value) =>
+        typeof value !== "string" || !value.trim() || value.length > 200
+      ))
+  ) {
+    throw new ProjectAgentTurnError("项目 Agent 阅读资料上下文无效", "invalid_input");
   }
   if (input.questionAnswer && (
     typeof input.questionAnswer.eventId !== "string" || !input.questionAnswer.eventId.trim() ||

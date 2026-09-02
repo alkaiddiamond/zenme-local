@@ -224,6 +224,21 @@ describe("direct image editing workflow", () => {
     );
   });
 
+  it("turns the busy image action into an enabled stop control", () => {
+    for (const source of [imageNodeSource, imageGenerationNodeSource]) {
+      expect(source).toContain('"停止图片生成"');
+      expect(source).toContain("nodeData.onStopImageGenerationNode?.(id)");
+      expect(source).toContain('type={isSubmissionLocked ? "button" : "submit"}');
+      expect(source).toContain("!isSubmissionLocked && (");
+    }
+    expect(canvasClientSource).toContain(
+      'controller.abort(new DOMException("Image generation stopped", "AbortError"))',
+    );
+    expect(canvasClientSource).toContain(
+      'status: timedOut ? "timedOut" : stopped ? "stopped" : "failed"',
+    );
+  });
+
   it("does not clear an already-selected reference when chosen from the picker", () => {
     expect(imageGenerationNodeSource).toContain(
       "if (!selected && !(mentionOnly && handled)) {",

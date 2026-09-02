@@ -10,6 +10,7 @@ import {
   createOpenAiChatCompletionRequestBody,
   createOpenAiOAuthRequestBody,
   createVolcengineAgentPlanResponsesRequestBody,
+  fetchProviderChatCompletion,
   fitChatContextToModel,
   retryOpenAiOAuthRequestAfterTokenInvalidation,
   shouldAllowAutomaticWebSearch,
@@ -25,6 +26,40 @@ describe("project agent system prompt", () => {
     expect(prompt).toContain("不得输出私有思维链");
     expect(prompt.indexOf("每个 Turn 都在内部执行以下决策循环"))
       .toBeLessThan(prompt.indexOf("当前有效事件：[]"));
+  });
+});
+
+describe("provider request cancellation", () => {
+  it("forwards the turn abort signal to an OpenAI-compatible provider", async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async () => new Response("data: [DONE]\n\n", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      await fetchProviderChatCompletion({
+        allowWebSearch: false,
+        messages: [{ role: "user", content: "继续" }],
+        provider: {
+          apiKey: "test-key",
+          apiFormat: "custom",
+          authType: "bearer",
+          baseUrl: "https://provider.example/v1",
+          id: "provider",
+          model: "model",
+          name: "Provider",
+          networkProxy: { mode: "direct", noProxy: "", url: "" },
+        },
+        signal: controller.signal,
+        systemContent: "系统提示",
+      });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://provider.example/v1/chat/completions",
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 
@@ -143,6 +178,31 @@ describe("ChatGPT OAuth chat request", () => {
       content: [
         { type: "input_text", text: "识别图片内容" },
         { type: "input_image", image_url: "data:image/png;base64,aW1hZ2U=" },
+      ],
+    });
+  });
+
+  it("adds original PDF files to the GPT-5.6 user message", () => {
+    const body = createOpenAiOAuthRequestBody({
+      fileAttachments: [{
+        dataUrl: "data:application/pdf;base64,JVBERi0=",
+        fileName: "manual.pdf",
+        mimeType: "application/pdf",
+      }],
+      messages: [{ role: "user", content: "总结文档" }],
+      provider: { model: "gpt-5.6-sol" },
+      systemContent: "系统提示",
+    });
+
+    expect(body.input[1]).toMatchObject({
+      role: "user",
+      content: [
+        { type: "input_text", text: "总结文档" },
+        {
+          type: "input_file",
+          file_data: "data:application/pdf;base64,JVBERi0=",
+          filename: "manual.pdf",
+        },
       ],
     });
   });
@@ -354,6 +414,34 @@ describe("Anthropic native Agent tools", () => {
         { role: "user", content: [{ type: "text", text: "检查项目" }] },
         { role: "assistant", content: [{ type: "tool_use", id: "call-1", name: "workspace_status", input: {} }] },
         { role: "user", content: [{ type: "tool_result", tool_use_id: "call-1", content: "项目正常" }] },
+      ],
+    });
+  });
+
+  it("adds original PDFs as Anthropic document blocks", () => {
+    const body = createAnthropicMessagesRequestBody({
+      fileAttachments: [{
+        dataUrl: "data:application/pdf;base64,JVBERi0=",
+        fileName: "manual.pdf",
+        mimeType: "application/pdf",
+      }],
+      messages: [{ role: "user", content: "总结文档" }],
+      provider: { model: "claude-sonnet" },
+      systemContent: "系统提示",
+    });
+
+    expect(body.messages[0]).toMatchObject({
+      role: "user",
+      content: [
+        { type: "text", text: "总结文档" },
+        {
+          type: "document",
+          source: {
+            type: "base64",
+            media_type: "application/pdf",
+            data: "JVBERi0=",
+          },
+        },
       ],
     });
   });

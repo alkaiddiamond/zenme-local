@@ -1,8 +1,7 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
-import { useViewport } from "@xyflow/react";
 import {
+  Archive,
   Bold,
   Code2,
   Eye,
@@ -13,12 +12,19 @@ import {
   Underline,
 } from "lucide-react";
 
+import {
+  ZenmeNodeToolbar,
+  ZenmeNodeToolbarButton,
+  ZenmeNodeToolbarDivider,
+} from "@/components/zenme/nodes/node-toolbar";
+
 type InlineFormatToolbarProps = {
   codeLanguage?: string;
   lineNumbersVisible?: boolean;
   mode?: "code" | "markdown" | "plain";
   markdownEditing?: boolean;
   onBold: () => void;
+  onArchive?: () => void;
   onChangeCodeLanguage?: (language: string) => void;
   onChangeMode?: (mode: "code" | "markdown" | "plain") => void;
   onCode: () => void;
@@ -52,6 +58,7 @@ export function InlineFormatToolbar({
   lineNumbersVisible,
   mode,
   markdownEditing,
+  onArchive,
   onBold,
   onChangeCodeLanguage,
   onChangeMode,
@@ -62,49 +69,39 @@ export function InlineFormatToolbar({
   onToggleMarkdownEditing,
   onUnderline,
 }: InlineFormatToolbarProps) {
-  const { zoom } = useViewport();
   const shouldShowModeControls = mode && onChangeMode;
-  const toolbarScale = 1 / Math.max(zoom, 0.2);
-  const toolbarStyle: CSSProperties = {
-    top: `${-56 / Math.max(zoom, 0.2)}px`,
-    transform: `translateX(-50%) scale(${toolbarScale})`,
-    transformOrigin: "top center",
-  };
 
   return (
-    <div
-      className="zenme-node-floating-control zenme-shadow-canvas nodrag nowheel absolute left-1/2 z-20 flex max-w-[calc(100vw-48px)] items-center gap-1 overflow-hidden rounded-full border border-zinc-200 bg-white/95 p-1.5 text-zinc-600 backdrop-blur"
-      style={toolbarStyle}
-    >
-      <InlineFormatButton label="Bold" onPress={onBold}>
+    <ZenmeNodeToolbar>
+      <ZenmeNodeToolbarButton label="Bold" onPress={onBold}>
         <Bold className="size-4" />
-      </InlineFormatButton>
-      <InlineFormatButton label="Italic" onPress={onItalic}>
+      </ZenmeNodeToolbarButton>
+      <ZenmeNodeToolbarButton label="Italic" onPress={onItalic}>
         <Italic className="size-4" />
-      </InlineFormatButton>
-      <InlineFormatButton label="Underline" onPress={onUnderline}>
+      </ZenmeNodeToolbarButton>
+      <ZenmeNodeToolbarButton label="Underline" onPress={onUnderline}>
         <Underline className="size-4" />
-      </InlineFormatButton>
-      <InlineFormatButton label="Mark as code" onPress={onCode}>
+      </ZenmeNodeToolbarButton>
+      <ZenmeNodeToolbarButton label="Mark as code" onPress={onCode}>
         <Code2 className="size-4" />
-      </InlineFormatButton>
-      <InlineFormatButton label="创建画布节点" onPress={onCreateNode}>
+      </ZenmeNodeToolbarButton>
+      <ZenmeNodeToolbarButton label="创建画布节点" onPress={onCreateNode}>
         <Plus className="size-4" />
-      </InlineFormatButton>
+      </ZenmeNodeToolbarButton>
       {onToggleLineNumbers ? (
-        <InlineFormatButton
+        <ZenmeNodeToolbarButton
           active={lineNumbersVisible}
           label={lineNumbersVisible ? "隐藏行号" : "显示行号"}
           onPress={onToggleLineNumbers}
         >
           <ListOrdered className="size-4" />
-        </InlineFormatButton>
+        </ZenmeNodeToolbarButton>
       ) : null}
       {shouldShowModeControls ? (
         <>
-          <span className="mx-1 h-6 w-px bg-zinc-200" />
+          <ZenmeNodeToolbarDivider />
           {mode === "markdown" && onToggleMarkdownEditing ? (
-            <InlineFormatButton
+            <ZenmeNodeToolbarButton
               label={markdownEditing ? "预览 Markdown" : "编辑 Markdown 源码"}
               onPress={() => onToggleMarkdownEditing(!markdownEditing)}
             >
@@ -113,7 +110,7 @@ export function InlineFormatToolbar({
               ) : (
                 <Pencil className="size-4" />
               )}
-            </InlineFormatButton>
+            </ZenmeNodeToolbarButton>
           ) : null}
           <TextModeButton
             active={mode === "plain"}
@@ -147,36 +144,15 @@ export function InlineFormatToolbar({
           ) : null}
         </>
       ) : null}
-    </div>
-  );
-}
-
-function InlineFormatButton({
-  active = false,
-  children,
-  label,
-  onPress,
-}: {
-  active?: boolean;
-  children: ReactNode;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <button
-      aria-pressed={active}
-      className={`flex size-7 items-center justify-center rounded-full transition hover:bg-zinc-100 hover:text-zinc-950 ${
-        active ? "bg-zinc-950 text-white hover:bg-zinc-800 hover:text-white" : ""
-      }`}
-      onMouseDown={(event) => {
-        event.preventDefault();
-        onPress();
-      }}
-      title={label}
-      type="button"
-    >
-      {children}
-    </button>
+      {onArchive ? (
+        <>
+          <ZenmeNodeToolbarDivider />
+          <ZenmeNodeToolbarButton label="归档" onPress={onArchive}>
+            <Archive className="size-4" />
+          </ZenmeNodeToolbarButton>
+        </>
+      ) : null}
+    </ZenmeNodeToolbar>
   );
 }
 

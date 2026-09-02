@@ -16,12 +16,14 @@ import {
 import { renderMarkdown } from "@/components/zenme/nodes/renderers/markdown";
 import { stripLegacyRichTextHtml } from "@/components/zenme/nodes/renderers/rich-text";
 import { OverlayScrollbars } from "@/components/zenme/nodes/overlay-scrollbar";
+import { useEditorFocusReturn } from "@/components/zenme/nodes/editor-focus-return";
 
 export function MarkdownNode({ data, id, selected }: NodeProps) {
   const nodeData = data as CanvasNodeData;
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const markdownPreviewRef = useRef<HTMLDivElement | null>(null);
   const editorSyncTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preserveEditorFocus = useEditorFocusReturn([editorRef]);
   const initialMarkdown = useMemo(
     () => nodeData.plainText ?? stripLegacyRichTextHtml(nodeData.richTextHtml),
     [nodeData.plainText, nodeData.richTextHtml],
@@ -141,6 +143,9 @@ export function MarkdownNode({ data, id, selected }: NodeProps) {
       />
       {selected || isEditing ? (
         <InlineFormatToolbar
+          onArchive={nodeData.nodeLifecycle !== "archived"
+            ? () => nodeData.onUpdateNodeLifecycle?.(id, "archived")
+            : undefined}
           onBold={() => insertMarkdownMarkup("**", "**", "粗体文本")}
           onCode={() => insertMarkdownMarkup("`", "`", "code")}
           onCreateNode={createNodeFromSelection}
@@ -173,9 +178,10 @@ export function MarkdownNode({ data, id, selected }: NodeProps) {
           className={`zenme-overlay-scroll-container zenme-markdown-editor nodrag nowheel absolute inset-0 resize-none overflow-auto bg-transparent px-6 pb-10 pt-5 text-base leading-7 caret-zinc-950 outline-none ${
             isEditing ? "text-zinc-800" : "text-transparent"
           }`}
-          onBlur={() => {
-            setIsEditing(false);
+          onBlur={(event) => {
             syncMarkdownContent(editorRef.current?.value ?? markdown);
+            if (preserveEditorFocus(event.currentTarget)) return;
+            setIsEditing(false);
             clearEditorSelection();
           }}
           onChange={(event) => {

@@ -270,6 +270,7 @@ describe("canvas geometry helpers", () => {
       ...node({
         data: {
           hasIncomingEdge: true,
+          hasRunningAgentTurn: true,
           musicCurrentTime: 42,
           musicIsPlaying: true,
           musicLoopMode: "all",
@@ -301,6 +302,7 @@ describe("canvas geometry helpers", () => {
     );
 
     expect(signature).not.toContain("hasIncomingEdge");
+    expect(signature).not.toContain("hasRunningAgentTurn");
     expect(signature).not.toContain("measured");
     expect(signature).not.toContain("musicCurrentTime");
     expect(signature).not.toContain("musicIsPlaying");

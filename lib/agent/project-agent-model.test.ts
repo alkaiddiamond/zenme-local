@@ -88,6 +88,57 @@ describe("project agent model stream", () => {
     expect(postAiChatMock).toHaveBeenCalledTimes(1);
   });
 
+  it("forwards original file attachments to the chat transport", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    postAiChatMock.mockImplementationOnce(async (request: Request) => {
+      requestBody = await request.json() as Record<string, unknown>;
+      return new Response([
+        'data: {"choices":[{"delta":{"content":"已读取"}}]}',
+        "data: [DONE]",
+        "",
+      ].join("\n\n"), { status: 200 });
+    });
+
+    await callProjectAgentModel({
+      context: "",
+      fileAttachments: [{
+        dataUrl: "data:application/pdf;base64,JVBERi0=",
+        fileName: "manual.pdf",
+        mimeType: "application/pdf",
+      }],
+      model: "test:model",
+      prompt: "总结文档",
+    });
+
+    expect(requestBody?.fileAttachments).toEqual([{
+      dataUrl: "data:application/pdf;base64,JVBERi0=",
+      fileName: "manual.pdf",
+      mimeType: "application/pdf",
+    }]);
+  });
+
+  it("cancels an open model response stream when the turn is stopped", async () => {
+    const controller = new AbortController();
+    let streamCancelled = false;
+    postAiChatMock.mockResolvedValueOnce(new Response(new ReadableStream<Uint8Array>({
+      cancel() {
+        streamCancelled = true;
+      },
+    }), { status: 200 }));
+
+    const result = callProjectAgentModel({
+      context: "",
+      model: "test:model",
+      prompt: "继续",
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    controller.abort();
+
+    await expect(result).rejects.toMatchObject({ name: "AbortError" });
+    expect(streamCancelled).toBe(true);
+  });
+
   it("does not retry a transient stream error after user-visible output has started", async () => {
     postAiChatMock.mockResolvedValueOnce(new Response([
       'data: {"choices":[{"delta":{"content":"已经输出"}}]}',

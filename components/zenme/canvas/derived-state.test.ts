@@ -8,7 +8,6 @@ import {
   getGroupableNodes,
   getSaveStatusIcon,
   getSaveStatusTone,
-  getSelectionToolbarPosition,
 } from "./derived-state";
 import type { CanvasNode, SaveStatus } from "./types";
 
@@ -187,45 +186,5 @@ describe("canvas derived state helpers", () => {
     expect(canOpenReadingWorkspace(docx)).toBe(true);
     expect(canPrepareReadingAsset(zip)).toBe(false);
     expect(canOpenReadingWorkspace(zip)).toBe(false);
-  });
-
-  it("positions the selection toolbar above the selected node bounds", () => {
-    const nodes = [
-      node({
-        id: "a",
-        position: { x: 20, y: 40 },
-        selected: true,
-        style: { height: 60, width: 80 },
-      }),
-      node({
-        id: "b",
-        position: { x: 180, y: 120 },
-        selected: true,
-        style: { height: 80, width: 100 },
-      }),
-    ];
-
-    expect(
-      getSelectionToolbarPosition({
-        canvasViewport: { x: 10, y: 20, zoom: 2 },
-        groupableNodes: nodes,
-        nodes,
-      }),
-    ).toEqual({
-      left: 310,
-      top: 38,
-    });
-  });
-
-  it("does not show the selection toolbar for fewer than two groupable nodes", () => {
-    const selected = node({ id: "selected", selected: true });
-
-    expect(
-      getSelectionToolbarPosition({
-        canvasViewport: { x: 0, y: 0, zoom: 1 },
-        groupableNodes: [selected],
-        nodes: [selected],
-      }),
-    ).toBeNull();
   });
 });

@@ -258,6 +258,7 @@ export async function runProjectAgentTurnFromApi(input: {
   conversationId?: string;
   parentConversationIds?: string[];
   fileDocumentIds?: string[];
+  readingAssetIds?: string[];
   imageDataUrls?: string[];
   model: string;
   projectId: string;
@@ -292,6 +293,7 @@ export async function runProjectAgentTurnFromApi(input: {
         conversationId: input.conversationId,
         parentConversationIds: input.parentConversationIds,
         fileDocumentIds: input.fileDocumentIds,
+        readingAssetIds: input.readingAssetIds,
         imageDataUrls: input.imageDataUrls,
         model: input.model,
         prompt: input.prompt,

@@ -5,6 +5,7 @@ import { createNativeAgentTools, type NativeAgentTool } from "@/lib/agent/tool-r
 import type { AgentWorkspaceToolName } from "@/lib/agent/types";
 import { MAX_AGENT_TOOLS } from "@/lib/ai/request-policy";
 import type { ChatMessage } from "@/lib/ai/chat-message";
+import type { AgentFileAttachment } from "@/lib/ai/file-attachment";
 
 export type ProjectAgentModelResponse = {
   text: string;
@@ -42,6 +43,7 @@ const DEFAULT_TRANSIENT_MODEL_RETRY_DELAYS_MS = [1_000, 2_000, 4_000] as const;
 export async function callProjectAgentModel(input: {
   context: string;
   imageDataUrls?: string[];
+  fileAttachments?: AgentFileAttachment[];
   model: string;
   prompt: string;
   thinkingEnabled?: boolean;
@@ -81,6 +83,7 @@ export async function callProjectAgentModel(input: {
         body: JSON.stringify({
           context: input.context,
           imageDataUrls: input.imageDataUrls,
+          fileAttachments: input.fileAttachments,
           messages: input.messages?.length
             ? input.messages
             : [{ role: "user", content: input.prompt }],
@@ -101,6 +104,7 @@ export async function callProjectAgentModel(input: {
       }
       const headerUsage = normalizeHeaderUsage(response.headers.get("x-zenme-token-usage"));
       const result = await readModelStream(response.body, {
+        signal: input.signal,
         onThinkingDelta: async (delta) => {
           emittedObservableOutput = true;
           await input.onThinkingDelta?.(delta);
@@ -215,12 +219,21 @@ export function fitProjectAgentTools(
 export async function readModelStream(
   body: ReadableStream<Uint8Array>,
   options: {
+    signal?: AbortSignal;
     onThinkingDelta?: (delta: string) => void | Promise<void>;
     onTextDelta?: (delta: string) => void | Promise<void>;
     onToolCallComplete?: (toolCall: { name: string; arguments: unknown }, index: number) => void;
   } = {},
 ) {
   const reader = body.getReader();
+  const abortStream = () => {
+    void reader.cancel(options.signal?.reason).catch(() => undefined);
+  };
+  if (options.signal?.aborted) {
+    abortStream();
+    throw projectAgentAbortReason(options.signal);
+  }
+  options.signal?.addEventListener("abort", abortStream, { once: true });
   const decoder = new TextDecoder();
   let buffer = "";
   let text = "";
@@ -228,64 +241,72 @@ export async function readModelStream(
   let usage: StreamTokenUsage | null = null;
   const toolCalls = new Map<number, { name: string; arguments: string }>();
   const deliveredToolCalls = new Set<number>();
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value, { stream: !done });
-    const events = buffer.split(/\r?\n\r?\n/);
-    buffer = done ? "" : events.pop() ?? "";
-    for (const event of events) {
-      for (const line of event.split(/\r?\n/)) {
-        if (!line.startsWith("data:")) continue;
-        const data = line.slice(5).trim();
-        if (!data || data === "[DONE]") continue;
-        try {
-          const payload = JSON.parse(data) as {
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (options.signal?.aborted) throw projectAgentAbortReason(options.signal);
+      buffer += decoder.decode(value, { stream: !done });
+      const events = buffer.split(/\r?\n\r?\n/);
+      buffer = done ? "" : events.pop() ?? "";
+      for (const event of events) {
+        for (const line of event.split(/\r?\n/)) {
+          if (options.signal?.aborted) throw projectAgentAbortReason(options.signal);
+          if (!line.startsWith("data:")) continue;
+          const data = line.slice(5).trim();
+          if (!data || data === "[DONE]") continue;
+          try {
+            const payload = JSON.parse(data) as {
             choices?: Array<{ delta?: { content?: unknown; tool_calls?: Array<{ index?: number; function?: { name?: unknown; arguments?: unknown } }> }; finish_reason?: unknown }>;
             error?: unknown;
             usage?: unknown;
             zenme?: { type?: unknown; delta?: unknown; index?: unknown; name?: unknown; arguments?: unknown };
-          };
-          if (typeof payload.error === "string") {
-            throw new ProjectAgentModelStreamError(
-              payload.error,
-              isMaxOutputTokensMessage(payload.error) ? "max_output_tokens" : "stream_error",
-              text,
-              thinkingSummary,
-              usage,
-            );
-          }
-          if (payload.zenme?.type === "thinking_delta" && typeof payload.zenme.delta === "string") {
-            thinkingSummary += payload.zenme.delta;
-            await options.onThinkingDelta?.(payload.zenme.delta);
-          }
-          if (payload.zenme?.type === "tool_call_done" && typeof payload.zenme.index === "number" &&
-            typeof payload.zenme.name === "string" && typeof payload.zenme.arguments === "string") {
-            deliverToolCall(payload.zenme.index, payload.zenme.name, payload.zenme.arguments, deliveredToolCalls, options.onToolCallComplete);
-          }
-          const delta = payload.choices?.[0]?.delta?.content;
-          if (typeof delta === "string") {
-            text += delta;
-            await options.onTextDelta?.(delta);
-          }
-          for (const call of payload.choices?.[0]?.delta?.tool_calls ?? []) {
-            const index = typeof call.index === "number" ? call.index : 0;
-            const current = toolCalls.get(index) ?? { name: "", arguments: "" };
-            if (typeof call.function?.name === "string") current.name += call.function.name;
-            if (typeof call.function?.arguments === "string") current.arguments += call.function.arguments;
-            toolCalls.set(index, current);
-          }
-          if (payload.choices?.[0]?.finish_reason === "tool_calls") {
-            for (const [index, call] of toolCalls) {
-              deliverToolCall(index, call.name, call.arguments, deliveredToolCalls, options.onToolCallComplete);
+            };
+            if (typeof payload.error === "string") {
+              throw new ProjectAgentModelStreamError(
+                payload.error,
+                isMaxOutputTokensMessage(payload.error) ? "max_output_tokens" : "stream_error",
+                text,
+                thinkingSummary,
+                usage,
+              );
             }
+            if (payload.zenme?.type === "thinking_delta" && typeof payload.zenme.delta === "string") {
+              thinkingSummary += payload.zenme.delta;
+              await options.onThinkingDelta?.(payload.zenme.delta);
+              if (options.signal?.aborted) throw projectAgentAbortReason(options.signal);
+            }
+            if (payload.zenme?.type === "tool_call_done" && typeof payload.zenme.index === "number" &&
+              typeof payload.zenme.name === "string" && typeof payload.zenme.arguments === "string") {
+              deliverToolCall(payload.zenme.index, payload.zenme.name, payload.zenme.arguments, deliveredToolCalls, options.onToolCallComplete);
+            }
+            const delta = payload.choices?.[0]?.delta?.content;
+            if (typeof delta === "string") {
+              text += delta;
+              await options.onTextDelta?.(delta);
+              if (options.signal?.aborted) throw projectAgentAbortReason(options.signal);
+            }
+            for (const call of payload.choices?.[0]?.delta?.tool_calls ?? []) {
+              const index = typeof call.index === "number" ? call.index : 0;
+              const current = toolCalls.get(index) ?? { name: "", arguments: "" };
+              if (typeof call.function?.name === "string") current.name += call.function.name;
+              if (typeof call.function?.arguments === "string") current.arguments += call.function.arguments;
+              toolCalls.set(index, current);
+            }
+            if (payload.choices?.[0]?.finish_reason === "tool_calls") {
+              for (const [index, call] of toolCalls) {
+                deliverToolCall(index, call.name, call.arguments, deliveredToolCalls, options.onToolCallComplete);
+              }
+            }
+            usage = normalizeStreamTokenUsage(payload.usage) ?? usage;
+          } catch (error) {
+            if (error instanceof Error && error.message !== "Unexpected end of JSON input") throw error;
           }
-          usage = normalizeStreamTokenUsage(payload.usage) ?? usage;
-        } catch (error) {
-          if (error instanceof Error && error.message !== "Unexpected end of JSON input") throw error;
         }
       }
+      if (done) break;
     }
-    if (done) break;
+  } finally {
+    options.signal?.removeEventListener("abort", abortStream);
   }
   const orderedToolCalls = [...toolCalls.entries()].sort(([left], [right]) => left - right).map(([, call]) => call);
   const firstToolCall = orderedToolCalls[0];
@@ -308,6 +329,12 @@ export async function readModelStream(
     ...(parsedToolCalls.length > 1 ? { toolCalls: parsedToolCalls } : {}),
     usage,
   };
+}
+
+function projectAgentAbortReason(signal: AbortSignal) {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException("Aborted", "AbortError");
 }
 
 function deliverToolCall(

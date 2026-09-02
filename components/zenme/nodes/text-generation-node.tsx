@@ -28,7 +28,9 @@ export function TextGenerationNode({ data, id, selected }: NodeProps) {
   const pickerModels = configuredModels;
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const isGenerating = isSubmitting || Boolean(nodeData.hasRunningGenerationChild);
+  const isGenerating = isSubmitting || Boolean(
+    nodeData.hasRunningGenerationChild || nodeData.hasRunningAgentTurn,
+  );
 
   useEffect(() => {
     setPrompt(nodeData.textGenerationPrompt ?? "");

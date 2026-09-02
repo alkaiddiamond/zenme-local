@@ -743,6 +743,13 @@ html[data-theme="warm"] ::selection {
   caret-color: currentColor !important;
 }
 
+.zenme-canvas .zenme-text-node-editor .zenme-wrappable-url,
+.zenme-canvas .zenme-text-node-editor .zenme-nowrap-url {
+  overflow-wrap: anywhere;
+  white-space: normal;
+  word-break: break-all;
+}
+
 .zenme-canvas .zenme-managed-text-editor {
   caret-color: #18181b !important;
   cursor: text !important;
@@ -1363,6 +1370,12 @@ html.dark .zenme-canvas .zenme-image-source-handle {
 
 .zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer ::selection {
   background: transparent;
+  color: transparent;
+}
+
+.zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer ::-moz-selection {
+  background: transparent;
+  color: transparent;
 }
 
 .zenme-canvas .zenme-reader-workspace .zenme-pdf-text-layer br::selection,

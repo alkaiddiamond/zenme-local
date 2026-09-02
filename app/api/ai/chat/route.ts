@@ -36,6 +36,7 @@ import {
 import { PROJECT_AGENT_SYSTEM_PROMPT } from "@/lib/agent/project-agent-prompt";
 import type { NativeAgentTool } from "@/lib/agent/tool-registry";
 import type { ChatMessage } from "@/lib/ai/chat-message";
+import type { AgentFileAttachment } from "@/lib/ai/file-attachment";
 
 type ChatMode = "chat" | "project_agent" | "agent_planning" | "web_extraction";
 
@@ -72,6 +73,7 @@ export async function POST(request: Request) {
 
     const body = (await request.json()) as {
       imageDataUrls?: string[];
+      fileAttachments?: AgentFileAttachment[];
       model?: string;
       messages?: ChatMessage[];
       context?: string;
@@ -116,6 +118,7 @@ export async function POST(request: Request) {
     const upstream = await fetchProviderChatCompletion({
       allowWebSearch: shouldAllowAutomaticWebSearch(body.mode),
       imageDataUrls: body.imageDataUrls,
+      fileAttachments: body.fileAttachments,
       messages: body.messages,
       provider: providerConfig,
       systemContent,
@@ -124,6 +127,7 @@ export async function POST(request: Request) {
       modelSpeed,
       maxOutputTokens: body.maxOutputTokens,
       agentTools: body.mode === "project_agent" ? body.agentTools : undefined,
+      signal: request.signal,
     });
 
     if ("error" in upstream) {
@@ -173,7 +177,8 @@ export async function POST(request: Request) {
           : {}),
       },
     });
-  } catch {
+  } catch (error) {
+    if (request.signal.aborted) throw error;
     return NextResponse.json(
       { error: AI_PROVIDER_ERROR_MESSAGE },
       { status: 500 },
@@ -347,9 +352,10 @@ function createProviderHeaders(provider: Exclude<ChatProviderConfig, { error: st
   return headers;
 }
 
-async function fetchProviderChatCompletion(input: {
+export async function fetchProviderChatCompletion(input: {
   allowWebSearch: boolean;
   imageDataUrls?: string[];
+  fileAttachments?: AgentFileAttachment[];
   messages: ChatMessage[];
   provider: Exclude<ChatProviderConfig, { error: string }>;
   systemContent: string;
@@ -358,8 +364,23 @@ async function fetchProviderChatCompletion(input: {
   modelSpeed?: ZenmeModelSpeed;
   maxOutputTokens?: number;
   agentTools?: NativeAgentTool[];
+  signal?: AbortSignal;
 }): Promise<Response | { error: string }> {
   try {
+    if (
+      input.fileAttachments?.length &&
+      !["openai_oauth", "volcengine_agent_plan", "anthropic"].includes(
+        input.provider.apiFormat,
+      )
+    ) {
+      return { error: `${input.provider.name} 当前接口不支持原文件附件，请改用 Responses API 模型。` };
+    }
+    if (
+      input.provider.apiFormat === "anthropic" &&
+      input.fileAttachments?.some((file) => file.mimeType !== "application/pdf")
+    ) {
+      return { error: "Anthropic 当前仅支持将 PDF 阅读资料作为原文件附件。" };
+    }
     if (input.provider.apiFormat === "openai_oauth") {
       const tokens = await ensureFreshOpenAiTokens();
       if (!tokens) {
@@ -381,6 +402,7 @@ async function fetchProviderChatCompletion(input: {
           input.provider.baseUrl,
           input.provider.networkProxy,
         ),
+        signal: input.signal,
       });
       if (!response.ok || !response.body) return response;
       return new Response(anthropicMessagesToChatStream(response.body), {
@@ -400,6 +422,7 @@ async function fetchProviderChatCompletion(input: {
           input.provider.baseUrl,
           input.provider.networkProxy,
         ),
+        signal: input.signal,
       });
     }
 
@@ -411,8 +434,10 @@ async function fetchProviderChatCompletion(input: {
         input.provider.baseUrl,
         input.provider.networkProxy,
       ),
+      signal: input.signal,
     });
   } catch (error) {
+    if (input.signal?.aborted) throw error;
     console.warn("[Zenme AI] provider request threw", {
       errorType: error instanceof Error ? error.name : typeof error,
       model: input.provider.model,
@@ -437,6 +462,7 @@ async function fetchOpenAiOAuthChat(
     modelSpeed?: ZenmeModelSpeed;
     maxOutputTokens?: number;
     agentTools?: NativeAgentTool[];
+    signal?: AbortSignal;
   },
   tokens: NonNullable<Awaited<ReturnType<typeof ensureFreshOpenAiTokens>>>,
 ): Promise<Response | { error: string }> {
@@ -452,6 +478,7 @@ async function fetchOpenAiOAuthChat(
         requestBody: baseRequestBody,
         tokens,
         networkProxy: input.provider.networkProxy,
+        signal: input.signal,
       })
     : undefined;
   const requestBody = createOpenAiOAuthRequestBody(input, webContext);
@@ -467,6 +494,7 @@ async function fetchOpenAiOAuthChat(
     },
     body: JSON.stringify(requestBody),
     ...getProxyFetchOptions(RESPONSES_URL, input.provider.networkProxy),
+    signal: input.signal,
   });
 
   return retryOpenAiOAuthRequestAfterTokenInvalidation(
@@ -506,6 +534,7 @@ async function fetchOpenAiWebContext(input: {
   requestBody: Record<string, unknown>;
   tokens: NonNullable<Awaited<ReturnType<typeof ensureFreshOpenAiTokens>>>;
   networkProxy: ModelProviderConfig["networkProxy"];
+  signal?: AbortSignal;
 }) {
   try {
     const response = await fetch(SEARCH_URL, {
@@ -526,6 +555,7 @@ async function fetchOpenAiWebContext(input: {
         max_output_tokens: 10_000,
       }),
       ...getProxyFetchOptions(SEARCH_URL, input.networkProxy),
+      signal: input.signal,
     });
     if (!response.ok) return undefined;
     const payload = await response.json() as { output?: unknown };
@@ -539,6 +569,7 @@ async function fetchOpenAiWebContext(input: {
 
 export function createVolcengineAgentPlanResponsesRequestBody(input: {
   imageDataUrls?: string[];
+  fileAttachments?: AgentFileAttachment[];
   messages: ChatMessage[];
   provider: { model: string };
   systemContent: string;
@@ -551,7 +582,12 @@ export function createVolcengineAgentPlanResponsesRequestBody(input: {
   return {
     model: input.provider.model,
     instructions: input.systemContent,
-    input: createResponsesInputItems(input.messages, input.imageDataUrls),
+    input: createResponsesInputItems(
+      input.messages,
+      input.imageDataUrls,
+      false,
+      input.fileAttachments,
+    ),
     stream: true,
     store: false,
     ...(input.maxOutputTokens ? { max_output_tokens: input.maxOutputTokens } : {}),
@@ -562,6 +598,7 @@ export function createVolcengineAgentPlanResponsesRequestBody(input: {
 export function createOpenAiOAuthRequestBody(input: {
   allowWebSearch?: boolean;
   imageDataUrls?: string[];
+  fileAttachments?: AgentFileAttachment[];
   messages: ChatMessage[];
   provider: { model: string };
   systemContent: string;
@@ -585,7 +622,12 @@ export function createOpenAiOAuthRequestBody(input: {
               : input.systemContent,
           }],
         },
-        ...createResponsesInputItems(input.messages, input.imageDataUrls, true),
+        ...createResponsesInputItems(
+          input.messages,
+          input.imageDataUrls,
+          true,
+          input.fileAttachments,
+        ),
       ],
       tool_choice: "auto" as const,
       parallel_tool_calls: false,
@@ -607,7 +649,12 @@ export function createOpenAiOAuthRequestBody(input: {
   return {
     model: input.provider.model,
     instructions: input.systemContent,
-    input: createResponsesInputItems(input.messages, input.imageDataUrls),
+    input: createResponsesInputItems(
+      input.messages,
+      input.imageDataUrls,
+      false,
+      input.fileAttachments,
+    ),
     stream: true,
     store: false,
     ...(input.maxOutputTokens ? { max_output_tokens: input.maxOutputTokens } : {}),
@@ -665,6 +712,7 @@ function createResponsesInputItems(
   messages: ChatMessage[],
   imageDataUrls: string[] = [],
   forceContentArray = false,
+  fileAttachments: AgentFileAttachment[] = [],
 ) {
   const filtered = messages.filter((message) => message.role !== "system");
   const lastUserIndex = findLastUserMessageIndex(filtered);
@@ -682,7 +730,8 @@ function createResponsesInputItems(
       items.push({
         type: "message" as const,
         role: message.role,
-        content: forceContentArray || (index === lastUserIndex && imageDataUrls.length)
+        content: forceContentArray ||
+          (index === lastUserIndex && (imageDataUrls.length || fileAttachments.length))
           ? [
               {
                 type: message.role === "assistant" ? "output_text" as const : "input_text" as const,
@@ -692,6 +741,13 @@ function createResponsesInputItems(
                 ? imageDataUrls.map((imageUrl) => ({
                     type: "input_image" as const,
                     image_url: imageUrl,
+                  }))
+                : []),
+              ...(index === lastUserIndex
+                ? fileAttachments.map((file) => ({
+                    type: "input_file" as const,
+                    file_data: file.dataUrl,
+                    filename: file.fileName,
                   }))
                 : []),
             ]
@@ -742,7 +798,11 @@ function createOpenAiChatMessages(messages: ChatMessage[], imageDataUrls: string
   });
 }
 
-function createAnthropicMessages(messages: ChatMessage[], imageDataUrls: string[] = []) {
+function createAnthropicMessages(
+  messages: ChatMessage[],
+  imageDataUrls: string[] = [],
+  fileAttachments: AgentFileAttachment[] = [],
+) {
   const filtered = messages.filter((message) => message.role !== "system");
   const lastUserIndex = findLastUserMessageIndex(filtered);
 
@@ -764,6 +824,17 @@ function createAnthropicMessages(messages: ChatMessage[], imageDataUrls: string[
             type: "base64" as const,
             media_type: match?.[1] ?? "image/png",
             data: match?.[2] ?? "",
+          },
+        };
+      }));
+      content.push(...fileAttachments.map((file) => {
+        const base64 = file.dataUrl.slice(file.dataUrl.indexOf(",") + 1);
+        return {
+          type: "document" as const,
+          source: {
+            type: "base64" as const,
+            media_type: file.mimeType,
+            data: base64,
           },
         };
       }));
@@ -791,6 +862,7 @@ function createAnthropicMessages(messages: ChatMessage[], imageDataUrls: string[
 
 export function createAnthropicMessagesRequestBody(input: {
   imageDataUrls?: string[];
+  fileAttachments?: AgentFileAttachment[];
   messages: ChatMessage[];
   provider: { model: string };
   systemContent: string;
@@ -800,7 +872,11 @@ export function createAnthropicMessagesRequestBody(input: {
 }) {
   return {
     max_tokens: input.maxOutputTokens ?? 4096,
-    messages: createAnthropicMessages(input.messages, input.imageDataUrls),
+    messages: createAnthropicMessages(
+      input.messages,
+      input.imageDataUrls,
+      input.fileAttachments,
+    ),
     model: input.provider.model,
     stream: true,
     system: input.systemContent,
