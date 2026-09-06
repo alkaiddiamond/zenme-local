@@ -2463,13 +2463,24 @@ describe("approved agent commands", { timeout: 15_000 }, () => {
     }
   }, 90_000);
 
-  it("provides a Corepack pnpm bridge to package-script descendants when pnpm is not installed", async () => {
+  it.each([false, true])("isolates the Corepack pnpm bridge for package-script descendants (pnpm installed: %s)", async (pnpmInstalled) => {
     if (process.platform !== "win32") return;
     const corepackDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "zenme-corepack-shim-"));
-    const corepackPath = path.join(corepackDirectory, "corepack.cmd");
+    const nodeDirectory = path.join(corepackDirectory, "nodejs");
+    const corepackPath = path.join(nodeDirectory, "corepack.cmd");
     const previousPath = process.env.PATH;
+    const previousProgramFiles = process.env.ProgramFiles;
+    const previousNpmExecPath = process.env.npm_execpath;
+    const previousExecPath = process.execPath;
     const packageJsonPath = path.join(workspaceRoot, "package.json");
     try {
+      // Isolate both installation-first Corepack lookup and the Node directory
+      // added to child PATH; neither may discover the host's package managers.
+      await fs.mkdir(nodeDirectory, { recursive: true });
+      await fs.link(previousExecPath, path.join(nodeDirectory, "node.exe"));
+      process.env.npm_execpath = previousNpmExecPath ?? path.join(path.dirname(previousExecPath), "node_modules", "npm", "bin", "npm-cli.js");
+      process.execPath = path.join(nodeDirectory, "node.exe");
+      process.env.ProgramFiles = corepackDirectory;
       const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf8")) as { scripts: Record<string, string>; packageManager?: string };
       packageJson.packageManager = "pnpm@11.16.0";
       packageJson.scripts.bridge = "pnpm --version";
@@ -2477,11 +2488,15 @@ describe("approved agent commands", { timeout: 15_000 }, () => {
       await fs.writeFile(corepackPath, [
         "@echo off",
         "if /I not \"%1\"==\"pnpm\" exit /b 2",
+        "if not \"%2\"==\"--version\" exit /b 3",
         "echo corepack-pnpm-bridge",
         "exit /b 0",
         "",
       ].join("\r\n"));
-      process.env.PATH = [corepackDirectory, path.dirname(process.execPath), process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32") : ""]
+      if (pnpmInstalled) {
+        await fs.writeFile(path.join(nodeDirectory, "pnpm.cmd"), "@echo off\r\necho installed-pnpm\r\nexit /b 0\r\n");
+      }
+      process.env.PATH = [nodeDirectory, process.env.SystemRoot ? path.join(process.env.SystemRoot, "System32") : ""]
         .filter(Boolean)
         .join(path.delimiter);
 
@@ -2491,11 +2506,23 @@ describe("approved agent commands", { timeout: 15_000 }, () => {
       await approveAgentCommand(projectId, executionId, command.id, dataDir);
       const result = await runApprovedAgentCommand({ projectId, executionId, commandId: command.id }, dataDir);
       expect(result).toMatchObject({ status: "succeeded", exitCode: 0 });
-      expect(result.stdout).toContain("corepack-pnpm-bridge");
-      await expect(fs.access(path.join(dataDir, "agent-command-shims", "corepack", "pnpm.cmd"))).resolves.toBeUndefined();
+      const bridgePath = path.join(dataDir, "agent-command-shims", "corepack", "pnpm.cmd");
+      if (pnpmInstalled) {
+        expect(result.stdout).toContain("installed-pnpm");
+        expect(result.stdout).not.toContain("corepack-pnpm-bridge");
+        await expect(fs.access(bridgePath)).rejects.toMatchObject({ code: "ENOENT" });
+      } else {
+        expect(result.stdout).toContain("corepack-pnpm-bridge");
+        expect(await fs.readFile(bridgePath, "utf8")).toContain(corepackPath);
+      }
     } finally {
+      process.execPath = previousExecPath;
       if (previousPath === undefined) delete process.env.PATH;
       else process.env.PATH = previousPath;
+      if (previousProgramFiles === undefined) delete process.env.ProgramFiles;
+      else process.env.ProgramFiles = previousProgramFiles;
+      if (previousNpmExecPath === undefined) delete process.env.npm_execpath;
+      else process.env.npm_execpath = previousNpmExecPath;
       await fs.rm(corepackDirectory, { force: true, recursive: true });
     }
   }, 90_000);

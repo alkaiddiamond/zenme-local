@@ -7,9 +7,9 @@
 本次快照用于交接已知验证结果，不代表后续版本的实时状态，也不豁免后续验证要求。
 
 - 通过：ESLint、Vitest 1,551 项、桌面 Node 测试 25 项、生产构建、Windows 目录包构建。Vitest 另有 1 项跳过。
-- 失败：`lib/agent/workspace-tools.test.ts` 的 Corepack pnpm bridge 用例。期望 `corepack-pnpm-bridge`，实际输出本机 pnpm 的 `11.16.0`；此前验证已出现同样失败，尚未修复。
+- 已修复（2026-09-06）：`lib/agent/workspace-tools.test.ts` 的 Corepack pnpm bridge 测试隔离不完整。测试只替换 PATH，但运行时优先查找 `ProgramFiles/nodejs/corepack.cmd`，因此调用了真实 Corepack，输出本机 pnpm 的 `11.16.0`。现使用临时安装目录与 Node 运行时路径，覆盖“缺少 pnpm 时创建 bridge”和“已有 pnpm 时不覆盖”两种情况；不更改生产命令解析逻辑。相关 4 项测试通过，日志见 `.logs/pnpm-bridge-after.log`。
 - 失败：Windows `npm run desktop:smoke`。应用页面完成 Browser 验证，但 Workspace 阶段报告 `Workspace smoke test command failed: unknown error`；原因尚未确认，不能据此认定完整桌面流程通过。
-- `npm run check` 因上述 Vitest 用例失败未全绿；桌面 Node 测试和生产构建已单独执行。未重新运行完整 `npm run verify`，也未进行 macOS Intel 真机验证；当前提交仅为历史改动检查点，不是发布验收。
+- 后续验证（2026-09-06）：修复测试隔离后，`npm run verify` 完整通过，包含 ESLint、Vitest 1,553 项通过 / 1 项跳过、桌面 Node 测试 25 项通过及生产构建，日志见 `.logs/pnpm-bridge-verify.log`。本轮未重新执行 Windows 打包与冒烟检查，未进行 macOS Intel 真机验证；前述桌面冒烟失败仍待单独处理，不能据此宣称发布验收通过。
 
 维护者本地日志位于 `.logs/reading-position-check.log`、`.logs/reading-position-desktop-tests.log` 和 `.logs/history-cleanup-{build,pack,smoke}.log`；日志不纳入版本控制。后续修复相关问题时应更新本节，避免将已解决的问题继续当作当前阻塞。
 
