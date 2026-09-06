@@ -45,6 +45,8 @@ Project Knowledge Graph 与向量库位于 `derived/`，只从现有真相源重
 
 ## 约束
 
+阅读器的选区浮层在 `data-reading-annotation-layer` 内绝对定位。浏览器 `Range` 返回的是变换后的视口坐标；文本及 PDF 选区必须以标注层的 `getBoundingClientRect()` 与 `offsetWidth/offsetHeight` 换算回本地布局坐标，再计算居中、上下间距及边缘限制。浮层的显式宽高与定位常量保持一致，避免画布缩放和显示缩放下重复放大位置或产生尺寸误差。该换算只影响临时控件位置，不改变持久化高亮矩形和文字锚点。
+
 - BrowserWindow 不获得 Node.js 能力，IPC 只暴露明确白名单。
 - 本地 API 复用统一 loopback、同源和错误响应边界。
 - 业务数据不写入源码仓库或 Next.js 构建目录。

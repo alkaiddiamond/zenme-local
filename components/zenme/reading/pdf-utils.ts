@@ -106,10 +106,11 @@ export function readPdfTextSelection(input: {
     rect,
     rects: relativeRects,
     selectedText: text,
-    ...(annotationLayerRect
+    ...(annotationLayer && annotationLayerRect
       ? getAnnotationPalettePosition({
           selectionBounds,
           containerRect: annotationLayerRect,
+          containerSize: { width: annotationLayer.offsetWidth, height: annotationLayer.offsetHeight },
         })
       : { x: 12, y: 12 }),
   };

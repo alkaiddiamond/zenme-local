@@ -312,6 +312,7 @@ export function readSelection(
     })),
     ...getAnnotationPalettePosition({
       containerRect: annotationLayerRect,
+      containerSize: { width: annotationLayer.offsetWidth, height: annotationLayer.offsetHeight },
       selectionBounds,
     }),
   };
@@ -319,34 +320,42 @@ export function readSelection(
 
 export function getAnnotationPalettePosition(input: {
   containerRect: Pick<DOMRect, "height" | "left" | "top" | "width">;
+  containerSize: Pick<DOMRect, "height" | "width">;
   selectionBounds: Pick<DOMRect, "bottom" | "left" | "right" | "top">;
 }) {
-  const { containerRect, selectionBounds } = input;
+  const { containerRect, containerSize, selectionBounds } = input;
+  // Client rects include the canvas transform; CSS left/top use the layer's
+  // untransformed layout coordinates, just like the palette dimensions.
+  const scaleX = containerSize.width > 0 && containerRect.width > 0
+    ? containerRect.width / containerSize.width
+    : 1;
+  const scaleY = containerSize.height > 0 && containerRect.height > 0
+    ? containerRect.height / containerSize.height
+    : 1;
   const selectionCenter =
-    selectionBounds.left + (selectionBounds.right - selectionBounds.left) / 2;
+    ((selectionBounds.left + selectionBounds.right) / 2 - containerRect.left) / scaleX;
   const minX = ANNOTATION_PALETTE_MARGIN;
   const maxX = Math.max(
     ANNOTATION_PALETTE_MARGIN,
-    containerRect.width - ANNOTATION_PALETTE_WIDTH - ANNOTATION_PALETTE_MARGIN,
+    containerSize.width - ANNOTATION_PALETTE_WIDTH - ANNOTATION_PALETTE_MARGIN,
   );
   const x = Math.min(
     Math.max(
       minX,
-      selectionCenter - containerRect.left - ANNOTATION_PALETTE_WIDTH / 2,
+      selectionCenter - ANNOTATION_PALETTE_WIDTH / 2,
     ),
     maxX,
   );
 
   const topY =
-    selectionBounds.top -
-    containerRect.top -
+    (selectionBounds.top - containerRect.top) / scaleY -
     ANNOTATION_PALETTE_HEIGHT -
     ANNOTATION_PALETTE_GAP;
   const bottomY =
-    selectionBounds.bottom - containerRect.top + ANNOTATION_PALETTE_GAP;
+    (selectionBounds.bottom - containerRect.top) / scaleY + ANNOTATION_PALETTE_GAP;
   const maxY = Math.max(
     ANNOTATION_PALETTE_MARGIN,
-    containerRect.height -
+    containerSize.height -
       ANNOTATION_PALETTE_HEIGHT -
       ANNOTATION_PALETTE_MARGIN,
   );

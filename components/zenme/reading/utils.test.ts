@@ -3,10 +3,46 @@ import { describe, expect, it, vi } from "vitest";
 import type { ReadingNote } from "@/lib/reading/types";
 
 import {
+  getAnnotationPalettePosition,
   getReadingSectionIndexNearViewportTop,
   getReadingTextSample,
   indexReadingNotesBySection,
 } from "./utils";
+
+describe("reading annotation palette positioning", () => {
+  function positionAtScale(scale: number, bounds: { left: number; right: number; top: number; bottom: number }) {
+    const input = {
+      containerRect: { left: -140, top: 75, width: 800 * scale, height: 600 * scale },
+      containerSize: { width: 800, height: 600 },
+      selectionBounds: {
+        left: -140 + bounds.left * scale,
+        right: -140 + bounds.right * scale,
+        top: 75 + bounds.top * scale,
+        bottom: 75 + bounds.bottom * scale,
+      },
+    };
+    return getAnnotationPalettePosition(input);
+  }
+
+  it.each([0.5, 1, 1.5, 2])("centers above a multiline selection at canvas scale %s", (scale) => {
+    expect(positionAtScale(scale, { left: 180, right: 560, top: 300, bottom: 360 }))
+      .toEqual({ x: 280, y: 250 });
+  });
+
+  it.each([0.5, 2])("uses local space to decide whether the palette fits above at scale %s", (scale) => {
+    expect(positionAtScale(scale, { left: 180, right: 560, top: 80, bottom: 100 }))
+      .toEqual({ x: 280, y: 30 });
+    expect(positionAtScale(scale, { left: 180, right: 560, top: 20, bottom: 60 }))
+      .toEqual({ x: 280, y: 72 });
+  });
+
+  it.each([0.5, 2])("keeps the palette inside both horizontal edges at scale %s", (scale) => {
+    expect(positionAtScale(scale, { left: 0, right: 40, top: 300, bottom: 330 }))
+      .toEqual({ x: 12, y: 250 });
+    expect(positionAtScale(scale, { left: 750, right: 800, top: 300, bottom: 330 }))
+      .toEqual({ x: 608, y: 250 });
+  });
+});
 
 describe("reading viewport helpers", () => {
   it("finds the current section with viewport hit testing", () => {

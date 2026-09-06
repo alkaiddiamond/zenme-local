@@ -2,7 +2,7 @@ import { X } from "lucide-react";
 
 import type { ReadingAnnotationColor } from "@/lib/reading/types";
 
-import { HIGHLIGHT_OPTIONS, HIGHLIGHT_STYLES } from "./constants";
+import { ANNOTATION_PALETTE_HEIGHT, ANNOTATION_PALETTE_WIDTH, HIGHLIGHT_OPTIONS, HIGHLIGHT_STYLES } from "./constants";
 
 type ReadingAnnotationPaletteProps = {
   disabled: boolean;
@@ -26,7 +26,7 @@ export function ReadingAnnotationPalette({
   return (
     <div
       className="zenme-shadow-dropdown absolute z-20 flex items-center gap-1 rounded-lg border border-zinc-200 bg-white p-1"
-      style={{ left: x, top: y }}
+      style={{ left: x, top: y, width: ANNOTATION_PALETTE_WIDTH, height: ANNOTATION_PALETTE_HEIGHT }}
     >
       {HIGHLIGHT_OPTIONS.map((option) => (
         <button
