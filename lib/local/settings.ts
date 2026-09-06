@@ -323,6 +323,7 @@ function createDefaultModelProviders(): ModelProviderConfig[] {
 // ChatGPT OAuth 的模型清单会随账户订阅变化；仅将已由 Responses
 // image_generation 工具支持的模型标记为候选，最终仍以同步清单为准。
 export const CHATGPT_IMAGE_MODEL_IDS = new Set([
+  "gpt-6-astra",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-luna",

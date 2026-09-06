@@ -201,7 +201,7 @@ describe("local settings", () => {
     ]);
   });
 
-  it("marks the ChatGPT models available to free accounts as image-capable", async () => {
+  it("adds image capability to saved ChatGPT models with hosted image generation support", async () => {
     await fs.writeFile(
       getLocalSettingsPath(dataDir),
       JSON.stringify({
@@ -218,6 +218,7 @@ describe("local settings", () => {
             enabled: true,
             modelMapping: { main: "gpt-5.6-terra" },
             models: [
+              "gpt-6-astra",
               "gpt-5.6-terra",
               "gpt-5.6-luna",
               "gpt-5.5",

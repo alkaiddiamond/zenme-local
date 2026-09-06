@@ -450,6 +450,10 @@ export async function fetchProviderChatCompletion(input: {
   }
 }
 
+function usesOpenAiResponsesLite(model: string) {
+  return model.startsWith("gpt-5.6-") || model === "gpt-6-astra";
+}
+
 async function fetchOpenAiOAuthChat(
   input: {
     allowWebSearch: boolean;
@@ -466,7 +470,7 @@ async function fetchOpenAiOAuthChat(
   },
   tokens: NonNullable<Awaited<ReturnType<typeof ensureFreshOpenAiTokens>>>,
 ): Promise<Response | { error: string }> {
-  const responsesLite = input.provider.model.startsWith("gpt-5.6-");
+  const responsesLite = usesOpenAiResponsesLite(input.provider.model);
   const commands = responsesLite && input.allowWebSearch
     ? createOpenAiWebSearchCommands(input.messages)
     : null;
@@ -608,7 +612,7 @@ export function createOpenAiOAuthRequestBody(input: {
   maxOutputTokens?: number;
   agentTools?: NativeAgentTool[];
 }, webContext?: string) {
-  if (input.provider.model.startsWith("gpt-5.6-")) {
+  if (usesOpenAiResponsesLite(input.provider.model)) {
     return {
       model: input.provider.model,
       input: [
@@ -632,7 +636,11 @@ export function createOpenAiOAuthRequestBody(input: {
       tool_choice: "auto" as const,
       parallel_tool_calls: false,
       reasoning: {
-        effort: input.reasoningEffort ?? (input.thinkingEnabled === false ? "none" as const : "low" as const),
+        effort: input.reasoningEffort ?? (
+          input.thinkingEnabled === false && input.provider.model !== "gpt-6-astra"
+            ? "none" as const
+            : "low" as const
+        ),
         ...(input.thinkingEnabled === false ? {} : { summary: "auto" as const }),
         context: "all_turns" as const,
       },

@@ -20,6 +20,7 @@
 - [安全模型](security-model.md)
 - [发布手册](release.md)
 - [故障排查](troubleshooting.md)
+- [ChatGPT 模型同步兼容版本](api/chatgpt-codex-model-version-maintenance.md)
 
 产品需求、设计、路线图和研究资料只维护在相邻 `../zenme-doc`。旧里程碑、一次性验收矩阵、外部项目对照和已经完成的模型维护记录不在本目录长期复制；需要审计时通过 Git 历史查看对应版本。
 

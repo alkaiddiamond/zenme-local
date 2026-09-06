@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createNativeAgentTools } from "@/lib/agent/tool-registry";
+import * as openAiOAuth from "@/lib/ai/openai-oauth";
 
 import {
   anthropicMessagesToChatStream,
@@ -30,6 +31,47 @@ describe("project agent system prompt", () => {
 });
 
 describe("provider request cancellation", () => {
+  it("sends Astra through Responses Lite with native Agent tools and web context", async () => {
+    const tokens = { accessToken: "test-token", refreshToken: "test-refresh", expiresAt: Date.now() + 3_600_000 };
+    const tokenSpy = vi.spyOn(openAiOAuth, "ensureFreshOpenAiTokens").mockResolvedValue(tokens);
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ output: "Source https://example.com" }))
+      .mockResolvedValueOnce(new Response("data: [DONE]\n\n"));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    try {
+      await fetchProviderChatCompletion({
+        allowWebSearch: true,
+        messages: [{ role: "user", content: "总结 https://example.com 上的新闻" }],
+        provider: {
+          apiKey: "", apiFormat: "openai_oauth", authType: "none",
+          baseUrl: "https://chatgpt.com/backend-api/codex", id: "chatgpt-official",
+          model: "gpt-6-astra", name: "ChatGPT",
+          networkProxy: { mode: "direct", noProxy: "", url: "" },
+        },
+        systemContent: "系统提示",
+        agentTools: [{ name: "read_file", description: "Read file", parameters: { type: "object" } }],
+        signal: controller.signal,
+      });
+      expect(fetchMock.mock.calls[0]?.[0]).toBe(openAiOAuth.SEARCH_URL);
+      expect(fetchMock.mock.calls[1]?.[0]).toBe(openAiOAuth.RESPONSES_URL);
+      const request = fetchMock.mock.calls[1]?.[1];
+      expect(request).toMatchObject({
+        headers: { "x-openai-internal-codex-responses-lite": "true" },
+        signal: controller.signal,
+      });
+      const body = JSON.parse(request?.body as string);
+      expect(body).toMatchObject({
+        model: "gpt-6-astra", reasoning: { effort: "low" },
+        tools: [{ type: "function", name: "read_file", strict: false }],
+      });
+      expect(body.input[0].content[0].text).toContain("Source https://example.com");
+    } finally {
+      tokenSpy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("forwards the turn abort signal to an OpenAI-compatible provider", async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn(async () => new Response("data: [DONE]\n\n", { status: 200 }));
@@ -133,16 +175,16 @@ describe("ChatGPT OAuth chat request", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
-  it("uses the official Responses Lite shape for GPT-5.6 models", () => {
+  it.each(["gpt-5.6-sol", "gpt-6-astra"])("uses the Responses Lite shape for %s", (model) => {
     expect(createOpenAiOAuthRequestBody({
       messages: [
         { role: "system", content: "旧系统提示" },
         { role: "user", content: "查询最新世界杯信息" },
       ],
-      provider: { model: "gpt-5.6-sol" },
+      provider: { model },
       systemContent: "新系统提示",
     })).toMatchObject({
-      model: "gpt-5.6-sol",
+      model,
       input: [
         {
           type: "message",
@@ -242,10 +284,10 @@ describe("ChatGPT OAuth chat request", () => {
     ]));
   });
 
-  it("uses selectable GPT-5.6 reasoning effort and fast service tier", () => {
+  it.each(["gpt-5.6-sol", "gpt-6-astra"])("uses selectable reasoning effort and fast service tier for %s", (model) => {
     const body = createOpenAiOAuthRequestBody({
       messages: [{ role: "user", content: "深入检查" }],
-      provider: { model: "gpt-5.6-sol" },
+      provider: { model },
       reasoningEffort: "xhigh",
       modelSpeed: "fast",
       systemContent: "系统提示",
@@ -268,6 +310,19 @@ describe("ChatGPT OAuth chat request", () => {
     expect(body).toMatchObject({ reasoning: { effort: "none" } });
     expect((body as { reasoning: { effort: string; summary?: string } }).reasoning).not.toHaveProperty("summary");
     expect(body).not.toHaveProperty("service_tier");
+  });
+
+  it("keeps Astra at low effort when legacy thinking is disabled", () => {
+    const body = createOpenAiOAuthRequestBody({
+      messages: [{ role: "user", content: "快速回答" }],
+      provider: { model: "gpt-6-astra" },
+      systemContent: "系统提示",
+      thinkingEnabled: false,
+    });
+    expect(body).toMatchObject({ reasoning: { effort: "low" } });
+    expect(body).not.toHaveProperty("reasoning.summary");
+    expect(body).not.toHaveProperty("service_tier");
+    expect(body).not.toHaveProperty("temperature");
   });
 
   it("adds prefetched web context without declaring a reserved tool", () => {

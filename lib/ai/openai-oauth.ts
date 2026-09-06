@@ -19,8 +19,10 @@ const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const CALLBACK_PORT = 1455;
 const CALLBACK_PATH = "/auth/callback";
 const REDIRECT_URI = `http://localhost:${CALLBACK_PORT}${CALLBACK_PATH}`;
-const CODEX_CLIENT_VERSION = "0.146.0";
-const CODEX_RUNTIME_VERSION = "0.146.0-alpha.3.1";
+// Verified against the account models and Responses endpoints; see
+// docs/api/chatgpt-codex-model-version-maintenance.md before changing.
+const CODEX_CLIENT_VERSION = "0.153.4";
+const CODEX_RUNTIME_VERSION = "0.153.4";
 const MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLIENT_VERSION}`;
 export const RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
 export const SEARCH_URL = "https://chatgpt.com/backend-api/codex/alpha/search";
