@@ -470,6 +470,7 @@ export function ImageGenerationNode({ data, id, selected }: NodeProps) {
 
 export function ImageReferencePicker({
   candidates,
+  fixedReferences = [],
   mentionOnly = false,
   onChange,
   onOpenChange,
@@ -484,6 +485,7 @@ export function ImageReferencePicker({
   textReferences = [],
 }: {
   candidates: NonNullable<CanvasNodeData["imageReferenceCandidates"]>;
+  fixedReferences?: NonNullable<CanvasNodeData["imageReferences"]>;
   mentionOnly?: boolean;
   onChange: (nodeIds: string[]) => void;
   onOpenChange?: (open: boolean) => void;
@@ -509,6 +511,15 @@ export function ImageReferencePicker({
   onOpenChangeRef.current = onOpenChange;
   const selectedIds = references.map((reference) => reference.nodeId);
   const selectedTextIds = textReferences.map((reference) => reference.nodeId);
+  const fixedReferenceIds = new Set(
+    fixedReferences.map((reference) => reference.nodeId),
+  );
+  const visibleReferences = [
+    ...fixedReferences,
+    ...references.filter(
+      (reference) => !fixedReferenceIds.has(reference.nodeId),
+    ),
+  ];
   const normalizedQuery = query.trim().toLowerCase();
   const filteredCandidates = candidates.filter((candidate) =>
     candidate.title.toLowerCase().includes(normalizedQuery),
@@ -560,7 +571,7 @@ export function ImageReferencePicker({
   }
 
   const referenceSummary = [
-    references.length > 0 ? `${references.length} 张图片` : "",
+    visibleReferences.length > 0 ? `${visibleReferences.length} 张图片` : "",
     textReferences.length > 0 ? `${textReferences.length} 条文本` : "",
   ].filter(Boolean).join("、");
 
@@ -571,7 +582,7 @@ export function ImageReferencePicker({
     >
       {showReferenceBar ? (
       <div className="flex min-h-11 flex-wrap items-center gap-2">
-        {references.map((reference) => (
+        {visibleReferences.map((reference) => (
           <div
             className="group/reference-item nodrag nowheel relative size-11 shrink-0 overflow-hidden rounded-md border border-zinc-200 bg-zinc-100 shadow-sm"
             key={reference.nodeId}
@@ -585,14 +596,16 @@ export function ImageReferencePicker({
               loading="lazy"
               src={reference.url}
             />
-            <button
-              aria-label={`取消引用 ${reference.title}`}
-              className="absolute right-0.5 top-0.5 hidden size-4 items-center justify-center rounded-full bg-zinc-950/80 text-white group-hover/reference-item:flex"
-              onClick={() => toggleReference(reference.nodeId)}
-              type="button"
-            >
-              <X className="size-2.5" />
-            </button>
+            {!fixedReferenceIds.has(reference.nodeId) ? (
+              <button
+                aria-label={`取消引用 ${reference.title}`}
+                className="absolute right-0.5 top-0.5 hidden size-4 items-center justify-center rounded-full bg-zinc-950/80 text-white group-hover/reference-item:flex"
+                onClick={() => toggleReference(reference.nodeId)}
+                type="button"
+              >
+                <X className="size-2.5" />
+              </button>
+            ) : null}
           </div>
         ))}
         {textReferences.map((reference) => (
@@ -817,6 +830,17 @@ export const ImagePromptEditor = forwardRef<ImagePromptEditorHandle, {
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.nativeEvent.isComposing) return;
+    if (event.key === "Backspace") {
+      const editor = editorRef.current;
+      const selection = window.getSelection();
+      const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+      const referenceChip = getImagePromptReferenceBeforeCaret(range, editor);
+      if (referenceChip) {
+        event.preventDefault();
+        removeImagePromptReferenceChip(referenceChip, editor);
+        return;
+      }
+    }
     if (event.key === "@") {
       event.preventDefault();
       const selection = window.getSelection();
@@ -895,9 +919,71 @@ function getTypedImageReferenceTriggerRange(
   return triggerRange;
 }
 
+function getImagePromptReferenceBeforeCaret(
+  selectionRange: Range | null,
+  editor: HTMLDivElement | null,
+) {
+  if (
+    !selectionRange ||
+    !selectionRange.collapsed ||
+    !editor?.contains(selectionRange.startContainer)
+  ) {
+    return null;
+  }
+
+  const container = selectionRange.startContainer;
+  const offset = selectionRange.startOffset;
+  let candidate: Node | null = null;
+
+  if (container.nodeType === Node.TEXT_NODE) {
+    const text = container.textContent ?? "";
+    if (offset === 0) {
+      candidate = container.previousSibling;
+    } else if (offset === 1 && text[0] === "\u00a0") {
+      candidate = container.previousSibling;
+    } else {
+      return null;
+    }
+  } else {
+    candidate = container.childNodes[offset - 1] ?? null;
+  }
+
+  return candidate instanceof HTMLElement && candidate.dataset.imagePromptReferenceId
+    ? candidate
+    : null;
+}
+
+function removeImagePromptReferenceChip(
+  chip: HTMLElement,
+  editor: HTMLDivElement | null,
+) {
+  const parent = chip.parentNode;
+  if (!parent || !editor?.contains(chip)) return;
+
+  const chipIndex = Array.prototype.indexOf.call(parent.childNodes, chip) as number;
+  const nextSibling = chip.nextSibling;
+  if (
+    nextSibling?.nodeType === Node.TEXT_NODE &&
+    nextSibling.textContent?.startsWith("\u00a0")
+  ) {
+    nextSibling.textContent = nextSibling.textContent.slice(1);
+    if (!nextSibling.textContent) nextSibling.remove();
+  }
+  chip.remove();
+
+  editor.focus();
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.setStart(parent, Math.min(chipIndex, parent.childNodes.length));
+  range.collapse(true);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  editor.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function createImagePromptReferenceChip(reference: ImagePromptReference) {
   const chip = document.createElement("span");
-  chip.className = "mx-0.5 inline-flex max-w-44 items-center gap-1 rounded-md bg-zinc-100 px-1.5 py-0.5 align-middle text-xs font-medium text-zinc-700";
+  chip.className = "group relative mx-0.5 inline-flex max-w-44 items-center gap-1 rounded-md bg-zinc-100 py-0.5 pl-1.5 pr-2 align-middle text-xs font-medium text-zinc-700";
   chip.contentEditable = "false";
   chip.dataset.imagePromptReferenceId = reference.nodeId;
   chip.dataset.imagePromptReferenceKind = reference.kind;
@@ -919,6 +1005,24 @@ function createImagePromptReferenceChip(reference: ImagePromptReference) {
   label.className = "truncate";
   label.textContent = reference.title;
   chip.append(label);
+
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "absolute -right-1.5 -top-1.5 hidden size-4 items-center justify-center rounded-full bg-zinc-700 text-[11px] leading-none text-white shadow-sm hover:bg-zinc-950 group-hover:flex";
+  removeButton.ariaLabel = `删除引用：${reference.title}`;
+  removeButton.title = "删除引用";
+  removeButton.textContent = "×";
+  removeButton.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  removeButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const editor = chip.closest<HTMLDivElement>('[contenteditable="true"]');
+    removeImagePromptReferenceChip(chip, editor);
+  });
+  chip.append(removeButton);
   return chip;
 }
 

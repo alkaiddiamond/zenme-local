@@ -55,6 +55,13 @@ describe("direct image editing workflow", () => {
     );
   });
 
+  it("lets the image prompt composer grow vertically without shrinking below its original height", () => {
+    expect(imageNodeSource).toContain(
+      "h-[220px] min-h-[220px] w-[640px] max-w-[calc(100vw-48px)] resize-y",
+    );
+    expect(imageNodeSource).toContain("resize-y flex-col overflow-hidden");
+  });
+
   it("uses the same neutral frame for uploaded and generated images", () => {
     expect(imageNodeSource).toContain(
       'rounded-xl border bg-zinc-100 ${',
@@ -64,6 +71,21 @@ describe("direct image editing workflow", () => {
       'isGeneratedImage ? "bg-zinc-950"',
     );
     expect(imageNodeSource).not.toContain("min-w-[220px]");
+  });
+
+  it("shows the current uploaded or generated image as the fixed first reference", () => {
+    expect(imageNodeSource).toContain(
+      "fixedReferences={displayImageUrl ? [{",
+    );
+    expect(imageNodeSource).toContain("nodeId: id");
+    expect(imageNodeSource).toContain("title: imageTitle");
+    expect(imageNodeSource).toContain("url: displayImageUrl");
+    expect(imageGenerationNodeSource).toContain(
+      "...fixedReferences,",
+    );
+    expect(imageGenerationNodeSource).toContain(
+      "!fixedReferenceIds.has(reference.nodeId) ? (",
+    );
   });
 
   it("sends upstream text context with a connected image-generation request", () => {
@@ -270,6 +292,24 @@ describe("direct image editing workflow", () => {
     );
     expect(canvasClientSource).toContain("expandImagePromptMentions({");
     expect(canvasClientSource).toContain("mergeReferenceNodeIds(");
+  });
+
+  it("removes inline image references from either their hover action or Backspace", () => {
+    expect(imageGenerationNodeSource).toContain('event.key === "Backspace"');
+    expect(imageGenerationNodeSource).toContain(
+      "getImagePromptReferenceBeforeCaret(range, editor)",
+    );
+    expect(imageGenerationNodeSource).toContain(
+      "removeImagePromptReferenceChip(referenceChip, editor)",
+    );
+    expect(imageGenerationNodeSource).toContain("group-hover:flex");
+    expect(imageGenerationNodeSource).toContain("删除引用：${reference.title}");
+    expect(imageGenerationNodeSource).toContain(
+      "removeImagePromptReferenceChip(chip, editor)",
+    );
+    expect(imageGenerationNodeSource).toContain(
+      'editor.dispatchEvent(new Event("input", { bubbles: true }))',
+    );
   });
 
   it("creates connected non-destructive image nodes from brush and crop tools", () => {

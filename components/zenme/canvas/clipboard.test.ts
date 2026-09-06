@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   createCanvasNodeClipboardPayload,
   createPastedCanvasNodes,
+  getCanvasClipboardImageUrl,
   getClipboardFiles,
   getClipboardImageFiles,
   hasSelectedClipboardText,
@@ -56,6 +57,31 @@ describe("canvas clipboard", () => {
       { x: 700, y: 640 },
     ]);
     expect(pasted.every((item) => item.selected === false)).toBe(true);
+  });
+
+  it("exposes the original image only for a single copied image node", () => {
+    const imagePayload = createCanvasNodeClipboardPayload([
+      node({
+        data: {
+          kind: "image",
+          originalUrl: "/api/projects/project/files/image",
+          previewUrl: "/api/projects/project/files/image/preview",
+          title: "图片",
+        },
+        id: "image",
+        selected: true,
+        type: "image",
+      }),
+    ]);
+    expect(getCanvasClipboardImageUrl(imagePayload!)).toBe(
+      "/api/projects/project/files/image",
+    );
+
+    const multiplePayload = createCanvasNodeClipboardPayload([
+      node({ id: "image", selected: true, data: { kind: "image", previewUrl: "/image" } }),
+      node({ id: "text", selected: true }),
+    ]);
+    expect(getCanvasClipboardImageUrl(multiplePayload!)).toBeNull();
   });
 
   it("preserves copied group relationships but creates new ids", () => {

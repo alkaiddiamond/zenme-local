@@ -69,6 +69,15 @@ export function parseCanvasNodeClipboardPayload(value: string) {
   }
 }
 
+export function getCanvasClipboardImageUrl(
+  payload: CanvasNodeClipboardPayload,
+) {
+  if (payload.nodes.length !== 1) return null;
+  const node = payload.nodes[0];
+  if (node.data.kind !== "image") return null;
+  return node.data.originalUrl ?? node.data.previewUrl ?? null;
+}
+
 export function getClipboardImageFiles(
   clipboardData: Pick<DataTransfer, "files" | "items">,
 ) {

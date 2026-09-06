@@ -329,13 +329,18 @@ export function ImageNode({ data, id, selected }: NodeProps) {
           !nodeData.isMultiSelection &&
           !isRenaming ? (
             <div
-              className="zenme-node-floating-control zenme-shadow-canvas nodrag nowheel absolute left-1/2 z-30 flex min-h-[220px] w-[640px] max-w-[calc(100vw-48px)] flex-col rounded-xl border border-zinc-200 bg-white p-3 text-zinc-950"
+              className="zenme-node-floating-control zenme-shadow-canvas nodrag nowheel absolute left-1/2 z-30 flex h-[220px] min-h-[220px] w-[640px] max-w-[calc(100vw-48px)] resize-y flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 text-zinc-950"
               onClick={(event) => event.stopPropagation()}
               onMouseDown={(event) => event.stopPropagation()}
               style={composerStyle}
             >
               <ImageReferencePicker
                 candidates={nodeData.imageReferenceCandidates ?? []}
+                fixedReferences={displayImageUrl ? [{
+                  nodeId: id,
+                  title: imageTitle,
+                  url: displayImageUrl,
+                }] : []}
                 onChange={(nodeIds) =>
                   nodeData.onUpdateImageNode?.(id, { imageReferenceNodeIds: nodeIds })
                 }

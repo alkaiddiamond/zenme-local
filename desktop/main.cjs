@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, shell } = require("electron");
 const { spawn, spawnSync } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -548,6 +548,23 @@ function registerIpcHandlers() {
       throw new TypeError("Clipboard text must be a string");
     }
     clipboard.writeText(value);
+    return true;
+  });
+  ipcMain.handle("zenme:write-clipboard-image", (_event, input) => {
+    if (
+      !input ||
+      typeof input !== "object" ||
+      !(input.bytes instanceof ArrayBuffer) ||
+      typeof input.fallbackText !== "string"
+    ) {
+      throw new TypeError("Clipboard image input is invalid");
+    }
+    if (input.bytes.byteLength < 1 || input.bytes.byteLength > 50 * 1024 * 1024) {
+      throw new RangeError("Clipboard image size is invalid");
+    }
+    const image = nativeImage.createFromBuffer(Buffer.from(input.bytes));
+    if (image.isEmpty()) throw new TypeError("Clipboard image is invalid");
+    clipboard.write({ image, text: input.fallbackText });
     return true;
   });
   ipcMain.handle("zenme:open-external", async (_event, rawUrl) => {

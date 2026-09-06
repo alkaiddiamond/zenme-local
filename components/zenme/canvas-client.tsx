@@ -94,6 +94,7 @@ import {
 import {
   createCanvasNodeClipboardPayload,
   createPastedCanvasNodes,
+  getCanvasClipboardImageUrl,
   getClipboardFiles,
   hasSelectedClipboardText,
   parseCanvasNodeClipboardPayload,
@@ -101,6 +102,7 @@ import {
   ZENME_NODE_CLIPBOARD_MIME,
   ZENME_NODE_CLIPBOARD_PREFIX,
 } from "@/components/zenme/canvas/clipboard";
+import { writeImageToClipboard } from "@/lib/clipboard";
 import { parseDroppedReadingNotePayload } from "@/components/zenme/canvas/drop-payload";
 import { shouldPreventNativeCanvasAuxClick } from "@/components/zenme/canvas/pointer";
 import {
@@ -1343,10 +1345,10 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         hasSelectedClipboardText(window.getSelection()) ||
         !event.clipboardData
       ) {
-        return false;
+        return null;
       }
       const payload = createCanvasNodeClipboardPayload(nodesRef.current);
-      if (!payload) return false;
+      if (!payload) return null;
       const marker = `${ZENME_NODE_CLIPBOARD_PREFIX}${crypto.randomUUID()}`;
       nodeClipboard.current = { marker, payload };
       event.preventDefault();
@@ -1355,7 +1357,20 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         JSON.stringify(payload),
       );
       event.clipboardData.setData("text/plain", marker);
-      return true;
+      const imageUrl = getCanvasClipboardImageUrl(payload);
+      if (imageUrl) {
+        void fetch(imageUrl)
+          .then((response) => {
+            if (!response.ok) throw new Error("图片读取失败");
+            return response.blob();
+          })
+          .then((blob) => writeImageToClipboard(blob, marker))
+          .then((copied) => {
+            if (!copied) setCanvasNotice("图片未能写入系统剪贴板");
+          })
+          .catch(() => setCanvasNotice("图片未能写入系统剪贴板"));
+      }
+      return { marker, payload };
     }
 
     function handleCopy(event: ClipboardEvent) {
@@ -1382,7 +1397,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       });
     }
 
-  async function handlePaste(event: ClipboardEvent) {
+    async function handlePaste(event: ClipboardEvent) {
       if (
         !event.clipboardData ||
         isEditableClipboardEvent(event, document.activeElement)
@@ -1390,23 +1405,6 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         return;
       }
       const clipboardData = event.clipboardData;
-      const clipboardFiles = getClipboardFiles(clipboardData);
-      if (clipboardFiles.length > 0) {
-        event.preventDefault();
-        const pastedFiles = await createDroppedFileCanvasNodes({
-          files: clipboardFiles,
-          onReadingError: setCanvasNotice,
-          position: getClipboardPastePosition(),
-          projectId,
-        });
-        appendCanvasItems({
-          currentEdges: edgesRef.current,
-          currentNodes: nodesRef.current,
-          nodes: pastedFiles,
-        });
-        return;
-      }
-
       const customPayload = parseCanvasNodeClipboardPayload(
         clipboardData.getData(ZENME_NODE_CLIPBOARD_MIME),
       );
@@ -1429,6 +1427,23 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           currentEdges: edgesRef.current,
           currentNodes: nodesRef.current,
           nodes: pastedNodes,
+        });
+        return;
+      }
+
+      const clipboardFiles = getClipboardFiles(clipboardData);
+      if (clipboardFiles.length > 0) {
+        event.preventDefault();
+        const pastedFiles = await createDroppedFileCanvasNodes({
+          files: clipboardFiles,
+          onReadingError: setCanvasNotice,
+          position,
+          projectId,
+        });
+        appendCanvasItems({
+          currentEdges: edgesRef.current,
+          currentNodes: nodesRef.current,
+          nodes: pastedFiles,
         });
         return;
       }
@@ -3688,7 +3703,9 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
     activeExecutionControllersRef.current.set(resultNodeId, submitController.controller);
     try {
       await persistExecutionTaskNodes(nodesRef.current);
-      const imageDataUrls = await Promise.all(referenceUrls.map(fetchImageAsDataUrl));
+      const imageDataUrls = await Promise.all(
+        referenceUrls.map((url) => fetchImageAsDataUrl(url)),
+      );
       const created = await createVideoTask({
         duration,
         generateAudio,

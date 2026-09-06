@@ -38,4 +38,5 @@ contextBridge.exposeInMainWorld("zenmeDesktop", {
   selectDataDir: () => ipcRenderer.invoke("zenme:select-data-dir"),
   toggleMaximizeWindow: () => ipcRenderer.invoke("zenme:toggle-maximize-window"),
   writeClipboardText: (text) => ipcRenderer.invoke("zenme:write-clipboard-text", text),
+  writeClipboardImage: (input) => ipcRenderer.invoke("zenme:write-clipboard-image", input),
 });

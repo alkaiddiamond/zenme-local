@@ -37,7 +37,7 @@ export function createImageReferenceConnectionNodeUpdate(input: {
     target?.data.kind === "imageGeneration" ||
     target?.data.kind === "videoGeneration" ||
     (target?.data.kind === "image" && target.data.imageGenerated);
-  if (!isCanvasImageReferenceNode(source) || !target || !supportsImageReferences) {
+  if (!source || !isCanvasImageReferenceNode(source) || !target || !supportsImageReferences) {
     return { nextNodes: input.nodes, nodeUpdates: [] };
   }
 
