@@ -8,8 +8,8 @@
 
 - 通过：ESLint、Vitest 1,551 项、桌面 Node 测试 25 项、生产构建、Windows 目录包构建。Vitest 另有 1 项跳过。
 - 已修复（2026-09-06）：`lib/agent/workspace-tools.test.ts` 的 Corepack pnpm bridge 测试隔离不完整。测试只替换 PATH，但运行时优先查找 `ProgramFiles/nodejs/corepack.cmd`，因此调用了真实 Corepack，输出本机 pnpm 的 `11.16.0`。现使用临时安装目录与 Node 运行时路径，覆盖“缺少 pnpm 时创建 bridge”和“已有 pnpm 时不覆盖”两种情况；不更改生产命令解析逻辑。相关 4 项测试通过，日志见 `.logs/pnpm-bridge-after.log`。
-- 失败：Windows `npm run desktop:smoke`。应用页面完成 Browser 验证，但 Workspace 阶段报告 `Workspace smoke test command failed: unknown error`；原因尚未确认，不能据此认定完整桌面流程通过。
-- 后续验证（2026-09-06）：修复测试隔离后，`npm run verify` 完整通过，包含 ESLint、Vitest 1,553 项通过 / 1 项跳过、桌面 Node 测试 25 项通过及生产构建，日志见 `.logs/pnpm-bridge-verify.log`。本轮未重新执行 Windows 打包与冒烟检查，未进行 macOS Intel 真机验证；前述桌面冒烟失败仍待单独处理，不能据此宣称发布验收通过。
+- 已修复（2026-09-06）：Windows `npm run desktop:smoke` 原先直接启动 `npm.cmd`，返回 `EINVAL`，但错误输出遗漏了启动异常，只显示 `unknown error`。现通过 npm 提供的绝对 Node/npm CLI 路径执行工作区脚本，无需 shell 字符串拼接；保留启动错误、限定测试命令超时，并在预览结束时清理 Windows 子进程树。重新生成的 Windows 目录包已通过 Browser 与 Workspace 完整冒烟检查，日志见 `.logs/workspace-smoke-pack.log` 和 `.logs/workspace-smoke-after.log`。
+- 后续验证（2026-09-06）：修复测试隔离与冒烟命令启动后，`npm run verify` 完整通过，包含 ESLint、Vitest 1,553 项通过 / 1 项跳过、桌面 Node 测试 29 项通过及生产构建，日志见 `.logs/workspace-smoke-verify.log`。Windows 目录包与完整冒烟检查通过。未进行安装、升级、卸载、发布审计及 macOS Intel 真机验证，不能据此宣称发布验收通过。
 
 维护者本地日志位于 `.logs/reading-position-check.log`、`.logs/reading-position-desktop-tests.log` 和 `.logs/history-cleanup-{build,pack,smoke}.log`；日志不纳入版本控制。后续修复相关问题时应更新本节，避免将已解决的问题继续当作当前阻塞。
 

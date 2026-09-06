@@ -50,6 +50,8 @@ npm run desktop:dist:win
 
 目录包可以使用 `npm run desktop:pack && npm run desktop:smoke` 自动检查，但不能替代安装、升级和卸载测试。
 
+冒烟检查使用临时数据与 Workspace 目录，并通过启动命令继承的 `npm_node_execpath` / `npm_execpath` 运行工作区测试和预览；请使用 `npm run desktop:smoke`，确保检查环境安装了 Node.js 与 npm。Windows 下直接调用 Node 和 npm CLI，不通过 shell 启动 `npm.cmd`；检查结束时清理预览子进程树。此要求仅适用于开发者的冒烟检查环境，不为普通用户的应用启动新增 Node/npm 安装要求。
+
 ## macOS Intel x64
 
 必须在 Intel macOS runner 或 Intel 真机执行：

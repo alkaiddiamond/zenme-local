@@ -101,8 +101,8 @@ test("packaged desktop starts standalone server while development keeps next dev
   assert.match(desktopMain, /LOCAL_MODEL_OCR_LANG_PATH/);
   assert.match(desktopMain, /verifyPackagedWorkspaceFlow/);
   assert.match(desktopMain, /body: \{ rootPath: workspaceRoot \}/);
-  assert.match(desktopMain, /spawnSync\(npmExecutable, \["test"\]/);
-  assert.match(desktopMain, /spawn\(npmExecutable, \["run", "preview"\]/);
+  assert.match(desktopMain, /spawnSync\(nodeExecutable, \[npmCli, "test"\]/);
+  assert.match(desktopMain, /spawn\(nodeExecutable, \[npmCli, "run", "preview"\]/);
   assert.match(desktopMain, /verifyBrowserText\(previewUrl, "beta"\)/);
   assert.match(desktopMain, /verifyBrowserText\(previewUrl, "gamma"\)/);
   assert.match(desktopMain, /\[zenme-smoke\] failed/);

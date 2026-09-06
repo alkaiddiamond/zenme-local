@@ -265,6 +265,10 @@ function stopLocalServer() {
   if (!serverProcess) return;
   const child = serverProcess;
   serverProcess = null;
+  stopChildProcess(child);
+}
+
+function stopChildProcess(child) {
   if (process.platform === "win32" && child.pid) {
     spawnSync("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
       windowsHide: true,
@@ -469,28 +473,46 @@ async function verifyPackagedWorkspaceFlow(baseUrl, workspaceRoot, previewUrl) {
   }
   fs.writeFileSync(valuePath, "beta\n", "utf8");
 
-  const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
-  const testResult = spawnSync(npmExecutable, ["test"], {
+  // The smoke runner inherits these installation-owned paths from npm. Invoke
+  // its JS entry point directly: Windows cannot spawn a .cmd without a shell.
+  const nodeExecutable = process.env.npm_node_execpath;
+  const npmCli = process.env.npm_execpath;
+  if (!nodeExecutable || !npmCli || !path.isAbsolute(nodeExecutable) || !path.isAbsolute(npmCli) ||
+      !/^node(?:\.exe)?$/i.test(path.basename(nodeExecutable)) || path.basename(npmCli) !== "npm-cli.js" ||
+      !fs.existsSync(nodeExecutable) || !fs.existsSync(npmCli)) {
+    throw new Error("Workspace smoke requires Node/npm installation paths; run npm run desktop:smoke");
+  }
+  const testResult = spawnSync(nodeExecutable, [npmCli, "test"], {
     cwd: workspaceRoot,
     encoding: "utf8",
+    timeout: 15_000,
     windowsHide: true,
   });
   if (testResult.status !== 0 || !String(testResult.stdout ?? "").includes("workspace-test-ok")) {
-    throw new Error(`Workspace smoke test command failed: ${String(testResult.stderr ?? testResult.stdout ?? "unknown error")}`);
+    const details = [testResult.error?.message, testResult.stderr, testResult.stdout].filter(Boolean).join("\n");
+    throw new Error(`Workspace smoke test command failed (exit ${testResult.status}): ${details || "no command output"}`);
   }
-  const previewProcess = spawn(npmExecutable, ["run", "preview"], {
+  const previewProcess = spawn(nodeExecutable, [npmCli, "run", "preview"], {
     cwd: workspaceRoot,
     windowsHide: true,
     stdio: "ignore",
   });
+  let previewError = null;
+  previewProcess.once("error", (error) => { previewError = error; });
+  const checkPreviewProcess = () => {
+    if (previewError) throw previewError;
+    if (previewProcess.exitCode !== null || previewProcess.signalCode !== null) {
+      throw new Error(`Workspace smoke preview exited (code ${previewProcess.exitCode}, signal ${previewProcess.signalCode})`);
+    }
+  };
   try {
-    await waitForSmokePreview(previewUrl, "beta");
+    await waitForSmokePreview(previewUrl, "beta", checkPreviewProcess);
     await verifyBrowserText(previewUrl, "beta");
     fs.writeFileSync(valuePath, "gamma\n", "utf8");
-    await waitForSmokePreview(previewUrl, "gamma");
+    await waitForSmokePreview(previewUrl, "gamma", checkPreviewProcess);
     await verifyBrowserText(previewUrl, "gamma");
   } finally {
-    previewProcess.kill();
+    stopChildProcess(previewProcess);
   }
 
   if (fs.readFileSync(path.join(workspaceRoot, "src", "value.txt"), "utf8").trim() !== "gamma") {
@@ -499,14 +521,18 @@ async function verifyPackagedWorkspaceFlow(baseUrl, workspaceRoot, previewUrl) {
   console.log(`[zenme-workspace] packaged smoke verified ${workspaceRoot}`);
 }
 
-async function waitForSmokePreview(url, expectedText) {
+async function waitForSmokePreview(url, expectedText, checkPreviewProcess) {
   const deadline = Date.now() + 15_000;
   let lastError = null;
   while (Date.now() < deadline) {
+    checkPreviewProcess();
     try {
       const response = await fetch(url);
       const text = await response.text();
-      if (response.ok && text.trim() === expectedText) return;
+      if (response.ok && text.trim() === expectedText) {
+        checkPreviewProcess();
+        return;
+      }
       lastError = new Error(`Unexpected preview response ${response.status}: ${text}`);
     } catch (error) {
       lastError = error;
