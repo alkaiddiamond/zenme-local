@@ -85,7 +85,7 @@ ask_user_question
 
 `browser` 补齐 cc-haha WebBrowser 与 Codex 开发预览验证的核心闭环。Electron 主进程为每个 Agent Execution 创建独立、无用户登录态的隐藏 Chromium 会话；顶层导航只接受 `localhost`、`127.0.0.1` 或 `::1` 的 HTTP(S) 地址，新窗口、权限请求和外部导航全部拒绝。模型不能执行任意 JavaScript 或 CSS selector，只能先读取由固定脚本生成的有界页面文本与可交互元素引用，再调用 `click/type/press` 操作该引用；引用随每次 snapshot 重建，失效时必须重新观察。`navigate` 必须接收用户或 Shell 输出提供的明确 URL，不接受后台任务 ID，也不扫描端口或等待猜测出的预览服务。`screenshot` 或 `includeScreenshot` 会把当前页面 PNG 作为下一轮原生多模态输入；Base64 只存在于当前内存推理轮次，Session、Execution 和 Canvas 仅保存尺寸、页面标题、URL、文本与元素元数据。`untrusted` 会话允许观察页面，但 `click/type/press` 会转成当前主 Turn 的一次性确认，用户批准后自动恢复同一 Execution 并只执行原精确动作；Sub-agent 无权直接向用户提问，因此在该模式下遇到交互动作会明确停止并交回主 Agent。最多保留 8 个浏览器会话，空闲 10 分钟自动销毁；桌面应用退出时统一关闭。普通 Web/CLI 开发环境没有 Electron 控制器时明确返回不可用，不伪装验证成功。
 
-`write_file`、`edit_file`、`notebook_edit` 与 `apply_patch` 统一先形成 ChangeSet，保留基线哈希、原子应用与回退证据；敏感路径、链接逃逸、跨 Root 和 Sub-agent 范围外路径在写盘前拒绝。`read_file` 除 400 行分页边界外，对实际返回内容采用与 cc-haha 相同的 25K token 上限，巨型单行 JSON/日志会要求缩小行范围或先搜索，不能直接灌入模型上下文。`code_diagnostics`、`code_intelligence` 与 `view_image` 分别提供编辑后诊断、语义导航和原生多模态观察，持久层不保存图片 base64。`shell_command` 对齐 cc-haha 的 Shell 生命周期：短命令前台完成，15 秒未退出时同一进程原地转后台；显式后台立即返回同一进程的稳定 `taskId` 与 `outputFilePath`。模型没有后台进程枚举、端口扫描、服务重启或 `open_preview` 工具；`task_output/task_stop` 只接受 Shell 已返回的已知 ID。后台终态进入统一消息队列；当前循环仍在运行时于下一次迭代注入，循环已经结束时自动恢复原 Turn，让模型依据终态继续完成用户目标。后台输出停滞 45 秒且末行匹配常见交互提示时只通知一次，Agent 应停止原任务并使用管道输入或非交互参数重试。开发预览仅使用用户输入、Shell 输出或最终答复中真实出现的 loopback URL；Browser 必须接收明确 URL。`glob_files/search_files/read_file` 继续受 Root 与路径边界约束。共享开发计划只使用 `task_create/task_get/task_list/task_update`。`tool_search` 只发现当前注册表中真实可调用的工具；MCP 与重型内置工具在当前 Turn 内按需激活，恢复同一 Turn 时复用激活结果。
+`write_file`、`edit_file`、`notebook_edit` 与 `apply_patch` 统一先形成 ChangeSet，保留基线哈希、原子应用与回退证据；敏感路径、链接逃逸、跨 Root 和 Sub-agent 范围外路径在写盘前拒绝。`read_file` 除 400 行分页边界外，对实际返回内容采用与 cc-haha 相同的 25K token 上限，巨型单行 JSON/日志会要求缩小行范围或先搜索，不能直接灌入模型上下文。`code_diagnostics`、`code_intelligence` 与 `view_image` 分别提供编辑后诊断、语义导航和原生多模态观察，持久层不保存图片 base64。`shell_command` 对齐 cc-haha 的 Shell 生命周期：短命令前台完成，15 秒未退出时同一进程原地转后台；显式后台立即返回同一进程的稳定 `taskId` 与 `outputFilePath`。模型没有后台进程枚举、端口扫描、服务重启或 `open_preview` 工具；`task_output/task_stop` 只接受 Shell 已返回的已知 ID。后台终态进入统一消息队列；当前循环仍在运行时于下一次迭代注入，循环已经结束时自动恢复原 Turn，让模型依据终态继续完成用户目标。后台输出停滞 45 秒且末行匹配常见交互提示时只通知一次，Agent 应停止原任务并使用管道输入或非交互参数重试。开发预览仅使用用户输入、Shell 输出或最终答复中真实出现的 loopback URL；Browser 必须接收明确 URL。`glob_files/search_files/read_file` 支持外部绝对路径，仍遵守敏感文件、内部数据及 Sub-agent 任务范围边界。共享开发计划只使用 `task_create/task_get/task_list/task_update`。`tool_search` 只发现当前注册表中真实可调用的工具；MCP 与重型内置工具在当前 Turn 内按需激活，恢复同一 Turn 时复用激活结果。
 
 所有文本/JSON 工具结果还会经过统一的大结果边界：默认超过 100,000 字符（搜索结果为 20,000 字符）时，完整结果写入项目内部 `agent-tool-results`，Execution 与模型上下文只保存有界预览、原始大小和当前 Execution 可读取的精确路径。`read_file` 自身不进入该持久化流程，避免 Read→结果文件→Read 的循环；图片、Browser、Shell 和 TaskOutput 继续使用各自的二进制或输出文件协议。
 
@@ -139,7 +139,8 @@ Planning → Searching → Reading → Editing → Waiting Approval | Waiting In
 ## 路径与权限
 
 - 每个文件、检索、诊断和命令工具按目标 Root ID 独立检查 `resolved` 与 capability；主根不可用不会隐式授予附加根，也不会让已授权的附加根失去独立身份。
-- 文件工具路径只接受规范化 Workspace 相对路径；绝对路径、`..`、NUL 和链接逃逸均拒绝。命令可提出 Workspace 外绝对 `cwd`，但必须由用户批准单次执行或加入项目附加 root，并在执行前复核目录身份。
+- `read_file/list_directory` 的 `relativePath` 与 `glob_files/search_files` 的 `pathPrefix` 接受本机绝对路径，可直接读取、浏览和搜索 Workspace 外的目录，无需先添加 Root；绝对路径请求的文件结果也返回绝对路径，可继续交给 `read_file`。相对路径仍以 Workspace 为边界，拒绝 `..`、NUL 和链接逃逸。绝对路径按真实路径复核敏感文件和 Zenme 内部数据边界；内部任务输出仍仅允许读取当前 Execution 已返回的路径。外部递归搜索跳过链接与生成目录，最多访问 2,000 个目录项，并保留搜索结果、字节与文本读取上限。分配了 Root 或路径范围的 Sub-agent 不能借绝对路径越界。
+- 专用写入与图片、诊断工具继续使用 Workspace 相对路径。外部写入可使用命令的绝对 `cwd`，按现有流程批准单次执行，并在执行前复核目录身份；不会静默添加项目 Root 或改变会话权限。
 - 图片观察额外限制源文件为 20 MiB、输入为 4000 万像素、处理后为 8 MiB；模型每轮最多接收 4 张、合计 3200 万字符的数据 URL。原始图片与转换结果都不会写入项目持久化数据。
 - 忽略目录和敏感文件不会出现在 Agent 列表、搜索、读取、Diff 或提案中。
 - `apply_patch` 与 `propose_patch` 继续复用 ChangeSet 的 `write`、`delete`、基线哈希和原子应用边界；补丁解析不会直接修改 Workspace。
@@ -155,7 +156,7 @@ Planning → Searching → Reading → Editing → Waiting Approval | Waiting In
 
 ### Windows 命令隔离
 
-原生 Windows 默认不启用进程沙箱，命令由工具白名单、声明脚本校验、Workspace 路径校验、会话权限与高风险命令审批共同约束。这样 Vite、tsx、esbuild、Turbo 等真实开发进程树可以正常工作；文件工具仍只能在已授权 Workspace Root 内操作，越界目录、安装依赖、联网或系统管理命令仍需明确批准。
+原生 Windows 默认不启用进程沙箱，命令由工具白名单、声明脚本校验、Workspace 路径校验、会话权限与高风险命令审批共同约束。这样 Vite、tsx、esbuild、Turbo 等真实开发进程树可以正常工作；读取、目录和搜索工具支持外部绝对路径，外部目录中的命令、安装依赖、联网或系统管理命令仍需明确批准。
 
 应用不打包或注入额外的 Windows 沙箱运行器。开发服务是否成功由 Shell 退出状态和项目自身输出判断；Runtime 不通过端口扫描、预览等待或自动重启改变命令生命周期。
 

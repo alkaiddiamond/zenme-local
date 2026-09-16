@@ -148,7 +148,7 @@ export const PdfReadingView = memo(function PdfReadingView({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+    <div className="mx-auto flex w-max min-w-full flex-col gap-6">
       {Array.from({ length: pdf.numPages }, (_, index) => (
         <PdfPageView
           key={index}

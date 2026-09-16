@@ -1,5 +1,7 @@
 "use client";
 
+import { mergeComposerReadingAssets } from "@/components/zenme/nodes/composer-attachments";
+
 import {
   type ChangeEvent,
   type MouseEvent,
@@ -2463,7 +2465,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
       input: {
         file: File;
         height: number;
-        operation: "brush" | "crop";
+        operation: "brush" | "crop" | "edit";
         width: number;
       },
     ) => {
@@ -2501,7 +2503,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
           position,
           previewUrl: upload.previewUrl,
           sourceNode,
-          title: input.operation === "brush" ? "图片标记" : "图片裁剪",
+          title: input.operation === "edit" ? "图片编辑" : input.operation === "brush" ? "图片标记" : "图片裁剪",
           width: input.width,
         });
         appendCanvasItems({
@@ -2732,11 +2734,12 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   }, [setNodes]);
 
   const submitNodeToProjectAgent = useCallback(
-    async (nodeId: string, input?: { imageDataUrls?: string[]; model?: string; retryExistingTurn?: boolean; modelSpeed?: ZenmeModelSpeed; permissionMode?: ZenmeSessionPermissionMode; prompt?: string; reasoningEffort?: ZenmeReasoningEffort }) => {
+    async (nodeId: string, input?: { imageDataUrls?: string[]; readingAssetIds?: string[]; model?: string; retryExistingTurn?: boolean; modelSpeed?: ZenmeModelSpeed; permissionMode?: ZenmeSessionPermissionMode; prompt?: string; reasoningEffort?: ZenmeReasoningEffort }) => {
       const currentNodes = reactFlow?.getNodes() ?? nodesRef.current;
       const currentEdges = reactFlow?.getEdges() ?? edgesRef.current;
       const sourceNode = currentNodes.find((node) => node.id === nodeId);
-      if (!sourceNode || agentIsSubmitting) return;
+      if (!sourceNode) throw new Error("当前节点已不存在，无法发送消息");
+      if (agentIsSubmitting) throw new Error("当前有任务正在提交或运行，请稍后重试");
       const retryExistingTurn = input?.retryExistingTurn === true &&
         sourceNode.data.kind === "agent" &&
         typeof sourceNode.data.agentTurnId === "string";
@@ -2850,6 +2853,9 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
             nodeId,
             nodes: currentNodes,
           });
+      if (!retryExistingTurn) {
+        references.readingAssetIds = mergeComposerReadingAssets(references.readingAssetIds, input?.readingAssetIds);
+      }
       const upstreamImageUrls = originalSourceNode
         ? collectTextGenerationImageUrls({
             edges: currentEdges,
@@ -2977,6 +2983,8 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
         } : node);
         nodesRef.current = nextNodes;
         setNodes(nextNodes);
+        // Let the composer retain attachments when submission or execution fails.
+        throw error;
       } finally {
         setAgentIsSubmitting(false);
         if (nodeAgentControllerRef.current?.controller === controller) {
@@ -4530,7 +4538,7 @@ function CanvasClientInner({ projectId }: CanvasClientProps) {
   );
   const selectedNodeUsesInlineToolbar =
     selectedCanvasViewNodes.length === 1 &&
-    ["code", "markdown", "text"].includes(
+    ["code", "image", "markdown", "text", "video"].includes(
       selectedCanvasViewNodes[0]?.data.kind ?? "",
     );
   const showCanvasSelectionToolbar =

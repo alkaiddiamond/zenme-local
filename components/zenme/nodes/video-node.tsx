@@ -32,6 +32,7 @@ import {
 import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
 import { ImageReferencePicker } from "@/components/zenme/nodes/image-edit-node";
 import { ImageTaskTiming } from "@/components/zenme/nodes/image-task-timing";
+import { TextNodeComposer } from "@/components/zenme/nodes/text-node-composer";
 import { rememberAiModelPreference, useAiModelOptions } from "@/components/zenme/use-ai-model-options";
 import { ZenmeModelPicker } from "@/components/zenme/visual-components";
 import {
@@ -284,6 +285,9 @@ export function VideoNode({ data, id, selected }: NodeProps) {
           </div>
         </form>
       )}
+      {isResult && selected && !isRenaming && !nodeData.isMultiSelection ? (
+        <TextNodeComposer nodeData={nodeData} nodeId={id} resizable />
+      ) : null}
       <NodeResizer
         color="#a1a1aa"
         handleClassName="zenme-text-resize-handle"

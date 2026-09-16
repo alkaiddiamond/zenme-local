@@ -45,6 +45,12 @@ Project Knowledge Graph 与向量库位于 `derived/`，只从现有真相源重
 
 ## 约束
 
+视频结果节点复用 `TextNodeComposer` 的可调高模式和统一 Project Agent Turn。草稿沿用 `textGenerationPrompt/textGenerationModel`，不覆盖 `videoPrompt/videoModel`；视频节点与上游引用纳入会话快照，文本上下文只描述节点元数据和生成设置，明确未提供视频画面及音轨，不引入视频解析或新的媒体输入协议。
+
+图片的裁剪、普通画笔与蒙版笔共用本地图片编辑器。裁剪框、笔触预览和绘制图层仅存在于编辑会话内；每次落笔固定大小与透明度，抬笔后合入绘制图层，后续调节不改变旧笔触。导出时将原图与绘制结果一并裁剪、合成为 PNG，复用派生图片节点创建及连线边界，不修改源图、不持久化独立蒙版或可调图层。
+
+节点对话控件的附件复用统一 Agent Turn：图片经 `createImagePreview` 生成受控尺寸的视觉输入；TXT、Markdown、PDF、DOCX、EPUB 经现有阅读资料登记接口保存，再将 `readingAssetIds` 与上游引用去重合入请求及 `contextSnapshot`，不新建附件存储结构。控件内文件粘贴停止向画布传播，普通文字仍使用原生粘贴。附件准备期间阻止提交，失败保留草稿；运行中的 steering 只接收文字，因此不得把带附件草稿当作纯文字追加。前端限制单次 4 张图片、4 个文档且文档合计不超过 32 MB，后端继续执行项目归属、大小与类型校验。移除待发附件仅移除本轮引用，不删除已登记的阅读资料。
+
 阅读器的选区浮层在 `data-reading-annotation-layer` 内绝对定位。浏览器 `Range` 返回的是变换后的视口坐标；文本及 PDF 选区必须以标注层的 `getBoundingClientRect()` 与 `offsetWidth/offsetHeight` 换算回本地布局坐标，再计算居中、上下间距及边缘限制。浮层的显式宽高与定位常量保持一致，避免画布缩放和显示缩放下重复放大位置或产生尺寸误差。该换算只影响临时控件位置，不改变持久化高亮矩形和文字锚点。
 
 - BrowserWindow 不获得 Node.js 能力，IPC 只暴露明确白名单。

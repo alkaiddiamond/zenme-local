@@ -62,6 +62,8 @@ describe("text generation request boundary", () => {
     expect(nodeSubmitSource).toContain("applyAgentContextSnapshot");
     expect(nodeSubmitSource).toContain("fileDocumentIds: references.fileDocumentIds");
     expect(nodeSubmitSource).toContain("selectedNodeIds: references.selectedNodeIds");
+    expect(nodeSubmitSource).toContain("mergeComposerReadingAssets(references.readingAssetIds, input?.readingAssetIds)");
+    expect(nodeSubmitSource).toContain("readingAssetIds: references.readingAssetIds");
     expect(nodeSubmitSource).not.toContain("selectedNodeIds: [sourceNode.id]");
   });
 
@@ -90,8 +92,14 @@ describe("text generation request boundary", () => {
 
     expect(source).toContain('aria-label="节点对话框"');
     expect(source).toContain('aria-label="会话权限"');
-    expect(source).toContain('aria-label="添加图片上下文"');
-    expect(source).toContain("imageDataUrls: images.map");
+    expect(source).toContain('aria-label="添加附件"');
+    expect(source).toContain("...composerAttachmentPayload(attachments)");
+    expect(source).toContain("onPaste={handlePaste}");
+    expect(source).toContain("getClipboardFiles(event.clipboardData)");
+    expect(source).toContain("event.stopPropagation()");
+    expect(source).toContain("isPreparingAttachments");
+    expect(source).toContain("setAttachments(submittedAttachments)");
+    expect(source).toContain("attachments.length");
     expect(source).toContain("nodeData.onStopTextGenerationNode?.(nodeId)");
     expect(source).toContain('key="stop"');
     expect(source).toContain('key="submit"');
@@ -99,7 +107,7 @@ describe("text generation request boundary", () => {
     expect(source.match(/event\.currentTarget\.form\?\.requestSubmit\(\);/g)).toHaveLength(1);
     expect(source).toContain("nodeData.onSteerTextGenerationNode?.(nodeId, nextPrompt)");
     expect(source).toContain('isGenerating ? "追加指令"');
-    expect(source).toContain("createImagePreview(file)");
+    expect(source).toContain("prepareComposerAttachment(file");
     expect(source).toContain('fetch("/api/settings"');
     expect(source).not.toContain("updateProjectAgentSessionPermissionFromApi");
     expect(source).not.toContain("defaultSessionPermissionMode: nextMode");

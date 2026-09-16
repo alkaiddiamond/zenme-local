@@ -443,6 +443,7 @@ export function createTextGenerationNodeDataUpdate(input: {
       "text",
       "managedText",
       "textGeneration",
+      "video",
     ]),
   });
 }

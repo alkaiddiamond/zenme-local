@@ -6,7 +6,6 @@ import { type NodeProps, useUpdateNodeInternals, useViewport } from "@xyflow/rea
 import {
   ArrowUp,
   Brush,
-  Crop,
   Download,
   ImageIcon,
   Loader2,
@@ -40,7 +39,6 @@ import {
 import { EditableNodeTitle } from "@/components/zenme/nodes/editable-node-title";
 import {
   ImageTransformEditor,
-  type ImageTransformMode,
 } from "@/components/zenme/nodes/image-transform-editor";
 import { ImageTaskTiming } from "@/components/zenme/nodes/image-task-timing";
 import { ImageCameraControlPicker } from "@/components/zenme/nodes/image-camera-control-picker";
@@ -92,7 +90,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
   const [referencePickerRequest, setReferencePickerRequest] = useState(0);
   const promptEditorRef = useRef<ImagePromptEditorHandle>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [transformMode, setTransformMode] = useState<ImageTransformMode>();
+  const [isTransformOpen, setIsTransformOpen] = useState(false);
   const [detectedAspectRatio, setDetectedAspectRatio] = useState<number | undefined>(
     nodeData.imageAspectRatio,
   );
@@ -225,8 +223,7 @@ export function ImageNode({ data, id, selected }: NodeProps) {
 
   const imageControls = imageUrl ? (
     <ImageNodeControls
-      onBrush={() => setTransformMode("brush")}
-      onCrop={() => setTransformMode("crop")}
+      onEdit={() => setIsTransformOpen(true)}
       onDownload={() => void downloadImage()}
       onOpenPreview={() => setIsPreviewOpen(true)}
     />
@@ -250,20 +247,19 @@ export function ImageNode({ data, id, selected }: NodeProps) {
     ) : null;
 
   const transformOverlay =
-    transformMode && imageUrl ? (
+    isTransformOpen && imageUrl ? (
       <ImageTransformEditor
         imageUrl={imageUrl}
-        mode={transformMode}
         onApply={async (input) => {
           if (!nodeData.onCreateDerivedImageNode) {
             throw new Error("画布暂不支持创建处理后的图片节点");
           }
           await nodeData.onCreateDerivedImageNode(id, {
             ...input,
-            operation: transformMode,
+            operation: "edit",
           });
         }}
-        onClose={() => setTransformMode(undefined)}
+        onClose={() => setIsTransformOpen(false)}
         title={imageTitle}
       />
     ) : null;
@@ -334,105 +330,114 @@ export function ImageNode({ data, id, selected }: NodeProps) {
               onMouseDown={(event) => event.stopPropagation()}
               style={composerStyle}
             >
-              <ImageReferencePicker
-                candidates={nodeData.imageReferenceCandidates ?? []}
-                fixedReferences={displayImageUrl ? [{
-                  nodeId: id,
-                  title: imageTitle,
-                  url: displayImageUrl,
-                }] : []}
-                onChange={(nodeIds) =>
-                  nodeData.onUpdateImageNode?.(id, { imageReferenceNodeIds: nodeIds })
-                }
-                onTextChange={(nodeIds) =>
-                  nodeData.onUpdateImageNode?.(id, {
-                    imageTextReferenceNodeIds: nodeIds,
-                  })
-                }
-                mentionOnly
-                onOpenChange={(open) => {
-                  if (!open) promptEditorRef.current?.clearPendingReference();
-                }}
-                onSelect={(reference) => {
-                  const content = promptEditorRef.current?.insertPendingReference({
-                    ...reference,
-                    kind: "image",
-                  });
-                  if (!content) return false;
-                  setPrompt(content.prompt);
-                  setPromptMentions(content.mentions);
-                  nodeData.onUpdateImageNode?.(id, {
-                    imagePrompt: content.prompt,
-                    imagePromptMentions: content.mentions,
-                  });
-                  return true;
-                }}
-                onTextSelect={(reference) => {
-                  const content = promptEditorRef.current?.insertPendingReference({
-                    ...reference,
-                    kind: "text",
-                  });
-                  if (!content) return false;
-                  setPrompt(content.prompt);
-                  setPromptMentions(content.mentions);
-                  nodeData.onUpdateImageNode?.(id, {
-                    imagePrompt: content.prompt,
-                    imagePromptMentions: content.mentions,
-                  });
-                  return true;
-                }}
-                openRequest={referencePickerRequest}
-                references={nodeData.imageReferences ?? []}
-                required={false}
-                textCandidates={nodeData.imageTextReferenceCandidates ?? []}
-                textReferences={nodeData.imageTextReferences ?? []}
-              />
-              <ImagePromptEditor
-                candidates={nodeData.imageReferenceCandidates ?? []}
-                className="relative min-h-24 flex-1"
-                mentions={promptMentions}
-                onBlur={(nextPrompt, nextMentions) => {
-                  setPrompt(nextPrompt);
-                  setPromptMentions(nextMentions);
-                  nodeData.onUpdateImageNode?.(id, {
-                    imageCameraControl: cameraControl,
-                    imageOutputAspectRatio: aspectRatio,
-                    imageModel: model,
-                    imagePrompt: nextPrompt,
-                    imagePromptMentions: nextMentions,
-                    imageQuality: quality,
-                  });
-                }}
-                onChange={(nextPrompt, nextMentions) => {
-                  setPrompt(nextPrompt);
-                  setPromptMentions(nextMentions);
-                }}
-                onReferenceRequest={() =>
-                  setReferencePickerRequest((current) => current + 1)
-                }
-                placeholder={
-                  isGeneratedImage
-                    ? "继续描述想如何编辑这张图片"
-                    : "描述想如何编辑这张图片"
-                }
-                prompt={prompt}
-                ref={promptEditorRef}
-                textCandidates={nodeData.imageTextReferenceCandidates ?? []}
-                viewportClassName="zenme-text-ai-input absolute inset-0 overflow-auto whitespace-pre-wrap break-words bg-transparent px-1 py-1 text-sm leading-6 text-zinc-900 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
-              />
-              {nodeData.imageError ? (
-                <p className="mt-2 rounded-md bg-red-50 px-2 py-1.5 text-xs leading-5 text-red-600">
-                  {nodeData.imageError}
-                </p>
-              ) : null}
-              {isSubmissionLocked ? (
-                <div className="mt-2 flex items-center gap-2 px-1 text-xs text-zinc-500">
-                  <Loader2 className="size-3.5 animate-spin" />
-                  {imageModelLabel} 正在编辑，原图会保留到新图完成
+              <OverlayScrollArea
+                aria-label="图片生成输入区"
+                className="min-h-0 flex-1"
+                role="region"
+                viewportClassName="flex h-full flex-col overflow-y-auto"
+              >
+                <div className="shrink-0">
+                  <ImageReferencePicker
+                    candidates={nodeData.imageReferenceCandidates ?? []}
+                    fixedReferences={displayImageUrl ? [{
+                      nodeId: id,
+                      title: imageTitle,
+                      url: displayImageUrl,
+                    }] : []}
+                    onChange={(nodeIds) =>
+                      nodeData.onUpdateImageNode?.(id, { imageReferenceNodeIds: nodeIds })
+                    }
+                    onTextChange={(nodeIds) =>
+                      nodeData.onUpdateImageNode?.(id, {
+                        imageTextReferenceNodeIds: nodeIds,
+                      })
+                    }
+                    mentionOnly
+                    onOpenChange={(open) => {
+                      if (!open) promptEditorRef.current?.clearPendingReference();
+                    }}
+                    onSelect={(reference) => {
+                      const content = promptEditorRef.current?.insertPendingReference({
+                        ...reference,
+                        kind: "image",
+                      });
+                      if (!content) return false;
+                      setPrompt(content.prompt);
+                      setPromptMentions(content.mentions);
+                      nodeData.onUpdateImageNode?.(id, {
+                        imagePrompt: content.prompt,
+                        imagePromptMentions: content.mentions,
+                      });
+                      return true;
+                    }}
+                    onTextSelect={(reference) => {
+                      const content = promptEditorRef.current?.insertPendingReference({
+                        ...reference,
+                        kind: "text",
+                      });
+                      if (!content) return false;
+                      setPrompt(content.prompt);
+                      setPromptMentions(content.mentions);
+                      nodeData.onUpdateImageNode?.(id, {
+                        imagePrompt: content.prompt,
+                        imagePromptMentions: content.mentions,
+                      });
+                      return true;
+                    }}
+                    openRequest={referencePickerRequest}
+                    references={nodeData.imageReferences ?? []}
+                    required={false}
+                    textCandidates={nodeData.imageTextReferenceCandidates ?? []}
+                    textReferences={nodeData.imageTextReferences ?? []}
+                  />
                 </div>
-              ) : null}
-              <div className="mt-auto flex items-end justify-between gap-3 pt-3">
-                <div className="flex min-w-0 items-center gap-2">
+                <ImagePromptEditor
+                  candidates={nodeData.imageReferenceCandidates ?? []}
+                  className="relative min-h-24 shrink-0 flex-1"
+                  mentions={promptMentions}
+                  onBlur={(nextPrompt, nextMentions) => {
+                    setPrompt(nextPrompt);
+                    setPromptMentions(nextMentions);
+                    nodeData.onUpdateImageNode?.(id, {
+                      imageCameraControl: cameraControl,
+                      imageOutputAspectRatio: aspectRatio,
+                      imageModel: model,
+                      imagePrompt: nextPrompt,
+                      imagePromptMentions: nextMentions,
+                      imageQuality: quality,
+                    });
+                  }}
+                  onChange={(nextPrompt, nextMentions) => {
+                    setPrompt(nextPrompt);
+                    setPromptMentions(nextMentions);
+                  }}
+                  onReferenceRequest={() =>
+                    setReferencePickerRequest((current) => current + 1)
+                  }
+                  placeholder={
+                    isGeneratedImage
+                      ? "继续描述想如何编辑这张图片"
+                      : "描述想如何编辑这张图片"
+                  }
+                  prompt={prompt}
+                  ref={promptEditorRef}
+                  textCandidates={nodeData.imageTextReferenceCandidates ?? []}
+                  viewportClassName="zenme-text-ai-input absolute inset-0 overflow-auto whitespace-pre-wrap break-words bg-transparent px-1 py-1 text-sm leading-6 text-zinc-900 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)]"
+                />
+                {nodeData.imageError ? (
+                  <p className="mt-2 shrink-0 break-words rounded-md bg-red-50 px-2 py-1.5 text-xs leading-5 text-red-600">
+                    {nodeData.imageError}
+                  </p>
+                ) : null}
+                {isSubmissionLocked ? (
+                  <div className="mt-2 flex shrink-0 items-center gap-2 px-1 text-xs text-zinc-500" role="status">
+                    <Loader2 className="size-3.5 shrink-0 animate-spin" />
+                    <span className="min-w-0 break-words">{imageModelLabel} 正在编辑，原图会保留到新图完成</span>
+                  </div>
+                ) : null}
+              </OverlayScrollArea>
+              <div className="mt-auto flex shrink-0 items-end justify-between gap-3 pt-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <ZenmeModelPicker
                     compact
                     icon={<Sparkles className="size-3.5" />}
@@ -601,13 +606,11 @@ export function ImageNode({ data, id, selected }: NodeProps) {
 }
 
 function ImageNodeControls({
-  onBrush,
-  onCrop,
+  onEdit,
   onDownload,
   onOpenPreview,
 }: {
-  onBrush: () => void;
-  onCrop: () => void;
+  onEdit: () => void;
   onDownload: () => void;
   onOpenPreview: () => void;
 }) {
@@ -618,22 +621,13 @@ function ImageNodeControls({
       onMouseDown={(event) => event.stopPropagation()}
     >
       <button
-        aria-label="画笔标记"
+        aria-label="编辑图片"
         className="flex size-9 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-950 focus-visible:bg-zinc-100 focus-visible:text-zinc-950"
-        onClick={onBrush}
-        title="画笔标记"
+        onClick={onEdit}
+        title="编辑图片"
         type="button"
       >
         <Brush className="size-4" />
-      </button>
-      <button
-        aria-label="裁剪图片"
-        className="flex size-9 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-950 focus-visible:bg-zinc-100 focus-visible:text-zinc-950"
-        onClick={onCrop}
-        title="裁剪图片"
-        type="button"
-      >
-        <Crop className="size-4" />
       </button>
       <button
         className="flex size-9 items-center justify-center rounded-full text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-950 focus-visible:bg-zinc-100 focus-visible:text-zinc-950"

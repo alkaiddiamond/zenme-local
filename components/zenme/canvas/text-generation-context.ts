@@ -19,6 +19,8 @@ const TEXT_GENERATION_CONTEXT_NODE_KINDS = new Set([
   "textGeneration",
   "managedText",
   "lyrics",
+  "video",
+  "videoGeneration",
 ]);
 
 const CONTEXT_TRUNCATION_MARKER = "\n\n[其余上下文因长度限制已省略]";
@@ -233,7 +235,10 @@ export function hasCanvasNodeContextText(node: CanvasNode) {
     case "note":
     case "book":
     case "image":
+    case "video":
       return true;
+    case "videoGeneration":
+      return Boolean(data.videoPrompt);
     case "lyrics":
       return Boolean(data.musicLyrics?.some((line) => line.text));
     case "imageGeneration":
@@ -346,6 +351,19 @@ export function getCanvasNodeContextText(node: CanvasNode) {
   if (node.data.kind === "textGeneration") {
     const prompt = node.data.textGenerationPrompt?.trim();
     return prompt ? `文本生成节点「${title}」\n${prompt}` : "";
+  }
+
+  if (node.data.kind === "video" || node.data.kind === "videoGeneration") {
+    return [
+      `视频${node.data.kind === "videoGeneration" ? "生成" : ""}节点「${title}」`,
+      node.data.videoPrompt ? `生成提示词：${node.data.videoPrompt}` : "",
+      node.data.fileName ? `文件名：${node.data.fileName}` : "",
+      node.data.videoStatus ? `状态：${node.data.videoStatus}` : "",
+      node.data.videoDuration ? `生成时长设置：${node.data.videoDuration} 秒` : "",
+      node.data.videoResolution ? `清晰度设置：${node.data.videoResolution}` : "",
+      node.data.videoRatio ? `画幅设置：${node.data.videoRatio}` : "",
+      "这里只提供节点信息与生成设置，未提供视频画面或音轨；不要将生成提示词当作实际视频内容。",
+    ].filter(Boolean).join("\n");
   }
 
   return "";

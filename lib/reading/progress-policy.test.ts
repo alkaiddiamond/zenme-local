@@ -10,8 +10,12 @@ describe("reading progress policy", () => {
   it("normalizes content scale to the supported reader range", () => {
     expect(normalizeReadingContentScale(1.26)).toBe(1.3);
     expect(normalizeReadingContentScale(0.1)).toBe(0.8);
-    expect(normalizeReadingContentScale(8)).toBe(1.8);
+    expect(normalizeReadingContentScale(8)).toBe(2.5);
     expect(normalizeReadingContentScale(Number.NaN)).toBe(0.8);
+  });
+
+  it.each([1, 1.8, 1.9, 2.4, 2.5])("preserves saved content scale %s up to 250%", (scale) => {
+    expect(normalizeReadingContentScale(scale)).toBe(scale);
   });
 
   it("normalizes scroll ratio and section index values", () => {

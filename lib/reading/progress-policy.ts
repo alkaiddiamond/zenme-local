@@ -1,5 +1,5 @@
 const CONTENT_SCALE_MIN = 0.75;
-const CONTENT_SCALE_MAX = 1.8;
+const CONTENT_SCALE_MAX = 2.5;
 
 export function normalizeReadingContentScale(value: number) {
   return Math.round(clamp(value, CONTENT_SCALE_MIN, CONTENT_SCALE_MAX) * 10) / 10;

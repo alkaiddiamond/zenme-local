@@ -102,6 +102,7 @@ import { persistedWorkspaceImageObservation, readWorkspaceImage } from "@/lib/ag
 import { editAgentImages, generateAgentImages } from "@/lib/agent/image-tools";
 import { controlBrowserPreview } from "@/lib/agent/browser-control";
 import { estimateTextTokenCount } from "@/lib/ai/context-budget";
+import { isInsideLocalDirectory, listAgentLocalEntries, resolveAgentLocalReadPath } from "@/lib/agent/local-file-access";
 import {
   getProjectAgentPlanFilePath,
   isProjectAgentPlanVirtualPath,
@@ -1826,6 +1827,27 @@ async function assertExecutionToolScope(
     }
   }
   const prefixes = detail.context.allowedPathPrefixes ?? [];
+  // Absolute local reads must not bypass a delegated execution's root/prefix
+  // assignment (read_file historically exempted owned task-output paths).
+  if (["read_file", "list_directory", "glob_files", "search_files"].includes(input.name)) {
+    const args = input.arguments as { relativePath?: string; pathPrefix?: string; rootId?: string };
+    const candidate = args.relativePath ?? args.pathPrefix;
+    if (candidate && path.isAbsolute(candidate)) {
+      if (input.name === "read_file" && await resolveOwnedTaskOutputPath(input.projectId, input.executionId, candidate, dataDir)) return;
+      const root = await requireReadableRoot(input.projectId, dataDir, args.rootId);
+      const localPath = await resolveLocalReadPath(candidate, dataDir);
+      if (detail.context.workspaceRootId || (prefixes.length > 0 && !prefixes.includes("."))) {
+        if (!isInsideLocalDirectory(root.realPath, localPath)) {
+          throw new AgentWorkspaceToolError("Sub-agent 路径超出任务范围", "invalid_arguments");
+        }
+        const relativePath = path.relative(root.realPath, localPath).replaceAll("\\", "/") || ".";
+        if (prefixes.length && !prefixes.some((prefix) => isWithinPrefix(relativePath, normalizeRelativePath(prefix, true)))) {
+          throw new AgentWorkspaceToolError("Sub-agent 路径超出任务范围", "invalid_arguments");
+        }
+      }
+      return;
+    }
+  }
   if (prefixes.length === 0 || prefixes.includes(".")) return;
   for (const candidate of toolPaths(input.name, input.arguments)) {
     const relativePath = normalizeRelativePath(candidate, true);
@@ -2232,6 +2254,10 @@ async function listDirectory(
   args: AgentWorkspaceToolArguments["list_directory"],
   dataDir: string,
 ): Promise<AgentWorkspaceToolResult["list_directory"]> {
+  if (args.relativePath && path.isAbsolute(args.relativePath)) {
+    const { entries } = await listAgentLocalEntries(args.relativePath, dataDir, false, MAX_GLOB_RESULTS);
+    return { entries: entries.map((entry) => ({ kind: entry.kind, relativePath: entry.absolutePath })) };
+  }
   const relativePath = normalizeRelativePath(args.relativePath ?? ".", true);
   const root = await requireReadableRoot(projectId, dataDir, args.rootId);
   const entries = await listWorkspaceFiles(projectId, dataDir, root.id);
@@ -2252,13 +2278,19 @@ async function globFiles(
   args: AgentWorkspaceToolArguments["glob_files"],
   dataDir: string,
 ): Promise<AgentWorkspaceToolResult["glob_files"]> {
-  const pathPrefix = args.pathPrefix ? normalizeRelativePath(args.pathPrefix, true) : ".";
+  const localDirectory = args.pathPrefix && path.isAbsolute(args.pathPrefix) ? args.pathPrefix : null;
+  const pathPrefix = !localDirectory && args.pathPrefix ? normalizeRelativePath(args.pathPrefix, true) : ".";
   const pattern = normalizeGlobPattern(args.pattern);
   const requestedMax = args.maxResults ?? 200;
   if (!Number.isInteger(requestedMax) || requestedMax < 1 || requestedMax > MAX_GLOB_RESULTS) {
     throw new AgentWorkspaceToolError("Glob 结果上限无效", "invalid_arguments");
   }
   const matcher = globToRegExp(pattern);
+  if (localDirectory) {
+    const { entries, truncated } = await listAgentLocalEntries(localDirectory, dataDir, true, MAX_SEARCH_FILES);
+    const matches = entries.filter((entry) => entry.kind === "file" && matcher.test(entry.relativePath));
+    return { paths: matches.slice(0, requestedMax).map((entry) => entry.absolutePath), truncated: truncated || matches.length > requestedMax };
+  }
   const prefix = pathPrefix === "." ? "" : `${pathPrefix}/`;
   const roots = await requireReadableRoots(projectId, dataDir, args.rootId);
   const candidates = (await Promise.all(roots.map(async (root) => (await listWorkspaceFiles(projectId, dataDir, root.id))
@@ -2288,14 +2320,19 @@ async function searchFiles(
   if (typeof args.query !== "string" || !args.query.trim() || args.query.length > 1_000) {
     throw new AgentWorkspaceToolError("搜索词无效", "invalid_arguments");
   }
-  const roots = await requireReadableRoots(projectId, dataDir, args.rootId);
-  const pathPrefix = args.pathPrefix ? normalizeRelativePath(args.pathPrefix, true) : ".";
+  const localDirectory = args.pathPrefix && path.isAbsolute(args.pathPrefix) ? args.pathPrefix : null;
+  const roots = localDirectory ? [] : await requireReadableRoots(projectId, dataDir, args.rootId);
+  const pathPrefix = !localDirectory && args.pathPrefix ? normalizeRelativePath(args.pathPrefix, true) : ".";
   const requestedMax = args.maxResults ?? 50;
   if (!Number.isInteger(requestedMax) || requestedMax < 1 || requestedMax > MAX_SEARCH_RESULTS) {
     throw new AgentWorkspaceToolError("搜索结果上限无效", "invalid_arguments");
   }
   const query = args.query.toLocaleLowerCase();
-  const entries = (await Promise.all(roots.map(async (root) => (await listWorkspaceFiles(projectId, dataDir, root.id))
+  const localEntries = localDirectory ? await listAgentLocalEntries(localDirectory, dataDir, true, MAX_SEARCH_FILES) : null;
+  const entries = localEntries ? localEntries.entries.filter((entry) => entry.kind === "file").map((entry) => ({
+    relativePath: entry.absolutePath,
+    root: { realPath: localDirectory!, primary: true, id: "" },
+  })) : (await Promise.all(roots.map(async (root) => (await listWorkspaceFiles(projectId, dataDir, root.id))
     .filter((entry) => entry.kind === "file" && !entry.sensitive)
     .filter((entry) => pathPrefix === "." || entry.relativePath === pathPrefix || entry.relativePath.startsWith(`${pathPrefix}/`))
     .map((entry) => ({ ...entry, root })))))
@@ -2303,13 +2340,15 @@ async function searchFiles(
     .slice(0, MAX_SEARCH_FILES);
   const matches: AgentWorkspaceToolResult["search_files"]["matches"] = [];
   let scannedBytes = 0;
-  let truncated = false;
+  let truncated = localEntries?.truncated ?? false;
   for (const entry of entries) {
     if (matches.length >= requestedMax || scannedBytes >= MAX_SEARCH_BYTES) {
       truncated = true;
       break;
     }
-    const filePath = await resolveExistingWorkspacePath(entry.root.realPath, entry.relativePath);
+    const filePath = localDirectory
+      ? await resolveLocalReadPath(entry.relativePath, dataDir)
+      : await resolveExistingWorkspacePath(entry.root.realPath, entry.relativePath);
     const stat = await fs.stat(filePath);
     if (!stat.isFile() || stat.size > MAX_WORKSPACE_TEXT_BYTES || scannedBytes + stat.size > MAX_SEARCH_BYTES) continue;
     const buffer = await fs.readFile(filePath);
@@ -2326,12 +2365,12 @@ async function searchFiles(
         text: lines[index].slice(0, 500),
       });
       if (matches.length >= requestedMax) {
-        truncated = index + 1 < lines.length || entries.at(-1) !== entry;
+        truncated = truncated || index + 1 < lines.length || entries.at(-1) !== entry;
         break;
       }
     }
   }
-  return { ...(args.rootId && !roots[0].primary ? { rootId: roots[0].id } : {}), matches, truncated };
+  return { ...(args.rootId && roots[0] && !roots[0].primary ? { rootId: roots[0].id } : {}), matches, truncated };
 }
 
 async function readFile(
@@ -2365,10 +2404,12 @@ async function readFile(
   const taskOutputPath = path.isAbsolute(args.relativePath)
     ? await resolveOwnedTaskOutputPath(projectId, executionId, args.relativePath, dataDir)
     : null;
-  const relativePath = taskOutputPath ? args.relativePath : normalizeRelativePath(args.relativePath);
+  const localPath = !taskOutputPath && path.isAbsolute(args.relativePath)
+    ? await resolveLocalReadPath(args.relativePath, dataDir) : null;
+  const relativePath = taskOutputPath || localPath ? args.relativePath : normalizeRelativePath(args.relativePath);
   if (!taskOutputPath) assertNotSensitive(relativePath);
-  const root = taskOutputPath ? null : await requireReadableRoot(projectId, dataDir, args.rootId);
-  const filePath = taskOutputPath ?? await resolveExistingWorkspacePath(root!.realPath, relativePath);
+  const root = taskOutputPath || localPath ? null : await requireReadableRoot(projectId, dataDir, args.rootId);
+  const filePath = taskOutputPath ?? localPath ?? await resolveExistingWorkspacePath(root!.realPath, relativePath);
   const stat = await fs.stat(filePath);
   const pdf = !taskOutputPath && path.extname(filePath).toLocaleLowerCase() === ".pdf";
   const maxReadableBytes = taskOutputPath ? 64 * 1024 * 1024 : pdf ? 32 * 1024 * 1024 : MAX_WORKSPACE_TEXT_BYTES;
@@ -2476,10 +2517,14 @@ async function resolveOwnedTaskOutputPath(
     .filter((event) => event.data?.executionId === executionId)
     .map((event) => event.data?.output)
     .find((output) => isPersistedAgentToolResult(output) && path.resolve(output.outputFilePath) === requested);
-  if (!isPersistedAgentToolResult(turnResult)) {
-    throw new AgentWorkspaceToolError("只能读取当前 Agent Execution 返回的任务输出文件", "invalid_arguments");
+  return isPersistedAgentToolResult(turnResult) ? turnResult.outputFilePath : null;
+}
+
+async function resolveLocalReadPath(requestedPath: string, dataDir: string) {
+  try { return await resolveAgentLocalReadPath(requestedPath, dataDir); }
+  catch (error) {
+    throw new AgentWorkspaceToolError(error instanceof Error ? error.message : "本地文件不可读", "invalid_arguments");
   }
-  return turnResult.outputFilePath;
 }
 
 async function writeFile(

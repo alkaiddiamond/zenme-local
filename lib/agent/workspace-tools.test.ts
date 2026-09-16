@@ -137,6 +137,94 @@ afterEach(async () => {
 });
 
 describe("agent workspace tools", { timeout: 15_000 }, () => {
+  it("reads and discovers local files outside the workspace without adding roots", async () => {
+    outsideRoot = await fs.realpath(outsideRoot);
+    await fs.mkdir(path.join(outsideRoot, "nested"));
+    await fs.writeFile(path.join(outsideRoot, "nested", "note.txt"), "external needle\n");
+    await fs.writeFile(path.join(outsideRoot, ".env"), "PRIVATE=hidden\n");
+    const listed = await executeAgentWorkspaceTool({
+      projectId, executionId, name: "list_directory", arguments: { relativePath: outsideRoot },
+    }, dataDir);
+    expect(listed.entries).toEqual(expect.arrayContaining([
+      { kind: "file", relativePath: path.join(outsideRoot, "escape.txt") },
+      { kind: "directory", relativePath: path.join(outsideRoot, "nested") },
+    ]));
+    expect(listed.entries.some((entry) => entry.relativePath.endsWith(".env"))).toBe(false);
+    const globbed = await executeAgentWorkspaceTool({
+      projectId, executionId, name: "glob_files", arguments: { pathPrefix: outsideRoot, pattern: "**/*.txt" },
+    }, dataDir);
+    expect(globbed.paths).toEqual(expect.arrayContaining([path.join(outsideRoot, "nested", "note.txt")]));
+    const searched = await executeAgentWorkspaceTool({
+      projectId, executionId, name: "search_files", arguments: { pathPrefix: outsideRoot, query: "external needle" },
+    }, dataDir);
+    expect(searched.matches).toEqual([{ relativePath: path.join(outsideRoot, "nested", "note.txt"), line: 1, text: "external needle" }]);
+    await expect(executeAgentWorkspaceTool({
+      projectId, executionId, name: "read_file", arguments: { relativePath: searched.matches[0].relativePath },
+    }, dataDir)).resolves.toMatchObject({ content: "external needle\n" });
+    expect((await getLocalWorkspaceBinding(projectId, dataDir))?.additionalRoots ?? []).toEqual([]);
+  });
+
+  it("reads absolute PDF paths outside the workspace", async () => {
+    const filePath = path.join(outsideRoot, "guide.pdf");
+    await fs.writeFile(filePath, createSinglePageTextPdf("external pdf"));
+    await expect(executeAgentWorkspaceTool({
+      projectId, executionId, name: "read_file", arguments: { relativePath: filePath, pages: "1" },
+    }, dataDir)).resolves.toMatchObject({ content: expect.stringContaining("external pdf") });
+  });
+
+  it("allows external reads in neverAsk mode and keeps absolute reads within assigned prefixes", async () => {
+    const noApproval = await createAgentExecution({
+      projectId, instruction: "Read local file", resultNodeId: "local-result", triggerNodeId: "local-request",
+      selectedNodeIds: [], fileDocumentIds: [], permissionMode: "neverAsk",
+    }, dataDir);
+    await expect(executeAgentWorkspaceTool({
+      projectId, executionId: noApproval.detail.id, name: "read_file",
+      arguments: { relativePath: path.join(outsideRoot, "escape.txt") },
+    }, dataDir)).resolves.toMatchObject({ content: "outside\n" });
+    const scoped = await createAgentExecution({
+      projectId, instruction: "Read src", resultNodeId: "prefix-result", triggerNodeId: "prefix-request",
+      selectedNodeIds: [], fileDocumentIds: [], allowedPathPrefixes: ["src"],
+    }, dataDir);
+    await expect(executeAgentWorkspaceTool({
+      projectId, executionId: scoped.detail.id, name: "read_file",
+      arguments: { relativePath: path.join(workspaceRoot, "src", "alpha.ts") },
+    }, dataDir)).resolves.toMatchObject({ content: expect.stringContaining("alpha") });
+    await expect(executeAgentWorkspaceTool({
+      projectId, executionId: scoped.detail.id, name: "read_file",
+      arguments: { relativePath: path.join(workspaceRoot, "README.md") },
+    }, dataDir)).rejects.toThrow(/任务范围/);
+  });
+
+  it("keeps sensitive files and internal data protected during absolute local reads", async () => {
+    await fs.writeFile(path.join(outsideRoot, ".env"), "PRIVATE=hidden\n");
+    for (const relativePath of [path.join(outsideRoot, ".env"), path.join(dataDir, "internal.json")]) {
+      await expect(executeAgentWorkspaceTool({
+        projectId, executionId, name: "read_file", arguments: { relativePath },
+      }, dataDir)).rejects.toThrow();
+    }
+    await fs.symlink(dataDir, path.join(outsideRoot, "internal-link"), process.platform === "win32" ? "junction" : "dir");
+    await expect(executeAgentWorkspaceTool({
+      projectId, executionId, name: "list_directory", arguments: { relativePath: path.join(outsideRoot, "internal-link") },
+    }, dataDir)).rejects.toThrow(/内部数据/);
+  });
+
+  it("does not let scoped agents use absolute local paths to bypass their root", async () => {
+    const binding = (await getLocalWorkspaceBinding(projectId, dataDir))!;
+    const child = await createAgentExecution({
+      projectId, instruction: "Scoped task", resultNodeId: "scoped-result", triggerNodeId: "scoped-request",
+      selectedNodeIds: [], fileDocumentIds: [], workspaceRootId: binding.id, allowedPathPrefixes: ["."],
+    }, dataDir);
+    for (const name of ["read_file", "list_directory", "glob_files", "search_files"] as const) {
+      const argumentsValue = name === "read_file" ? { relativePath: path.join(outsideRoot, "escape.txt") }
+        : name === "list_directory" ? { relativePath: outsideRoot }
+        : name === "glob_files" ? { pathPrefix: outsideRoot, pattern: "**/*" }
+        : { pathPrefix: outsideRoot, query: "outside" };
+      await expect(executeAgentWorkspaceTool({
+        projectId, executionId: child.detail.id, name, arguments: argumentsValue,
+      }, dataDir)).rejects.toThrow(/任务范围/);
+    }
+  });
+
   it("extracts selected PDF pages through read_file", async () => {
     await fs.writeFile(path.join(workspaceRoot, "guide.pdf"), createSinglePageTextPdf("hello pdf"));
 

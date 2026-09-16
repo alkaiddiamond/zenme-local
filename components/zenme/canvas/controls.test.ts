@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 
 import { describe, expect, it } from "vitest";
 
@@ -60,6 +61,28 @@ describe("canvas side toolbar", () => {
     expect(source).toContain('aria-label="搜索画布内容"');
     expect(source).toContain("找到 {results.length} 个节点");
     expect(source).toContain("onFocusNode(result.id)");
+  });
+
+  it.each([
+    { kinds: ["image"], mode: "active", visible: false },
+    { kinds: ["video"], mode: "active", visible: false },
+    { kinds: ["video", "image"], mode: "active", visible: true },
+    { kinds: ["video"], mode: "archived", visible: true },
+    { kinds: ["text"], mode: "active", visible: false },
+    { kinds: ["image", "text"], mode: "active", visible: true },
+    { kinds: ["image", "image"], mode: "active", visible: true },
+    { kinds: ["image"], mode: "archived", visible: true },
+    { kinds: [], mode: "active", visible: false },
+  ])("keeps selection actions scoped correctly for $kinds in $mode", ({ kinds, mode, visible }) => {
+    const policy = canvasClientSource.slice(
+      canvasClientSource.indexOf("const selectedNodeUsesInlineToolbar ="),
+      canvasClientSource.indexOf("const actionNode = useMemo"),
+    );
+    const actual = runInNewContext(`${policy}\nshowCanvasSelectionToolbar`, {
+      selectedCanvasViewNodes: kinds.map((kind) => ({ data: { kind } })),
+      canvasArchiveViewMode: mode,
+    });
+    expect(actual).toBe(visible);
   });
 
   it("closes search after choosing a result or clicking outside", () => {

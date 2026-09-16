@@ -62,6 +62,15 @@ describe("direct image editing workflow", () => {
     expect(imageNodeSource).toContain("resize-y flex-col overflow-hidden");
   });
 
+  it("keeps generation feedback inside a scrollable body and the action row visible", () => {
+    expect(imageNodeSource).toContain('aria-label="图片生成输入区"');
+    expect(imageNodeSource).toContain('viewportClassName="flex h-full flex-col overflow-y-auto"');
+    expect(imageNodeSource).toContain('className="relative min-h-24 shrink-0 flex-1"');
+    expect(imageNodeSource).toContain('className="mt-auto flex shrink-0 items-end justify-between gap-3 pt-3"');
+    expect(imageNodeSource).toContain('className="flex min-w-0 flex-wrap items-center gap-2"');
+    expect(imageNodeSource).toContain('role="status"');
+  });
+
   it("uses the same neutral frame for uploaded and generated images", () => {
     expect(imageNodeSource).toContain(
       'rounded-xl border bg-zinc-100 ${',
@@ -313,8 +322,10 @@ describe("direct image editing workflow", () => {
   });
 
   it("creates connected non-destructive image nodes from brush and crop tools", () => {
-    expect(imageNodeSource).toContain('onBrush={() => setTransformMode("brush")}');
-    expect(imageNodeSource).toContain('onCrop={() => setTransformMode("crop")}');
+    expect(imageNodeSource).toContain('onEdit={() => setIsTransformOpen(true)}');
+    expect(imageNodeSource).toContain('operation: "edit"');
+    expect(imageNodeSource).not.toContain('aria-label="画笔标记"');
+    expect(imageNodeSource).not.toContain('aria-label="裁剪图片"');
     expect(imageNodeSource).toContain("onCreateDerivedImageNode(id");
     expect(canvasClientSource).toContain("createDerivedImageChildCanvasNode({");
     expect(canvasClientSource).toContain("edges: [result.edge]");

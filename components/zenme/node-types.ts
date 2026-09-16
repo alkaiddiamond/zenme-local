@@ -368,7 +368,7 @@ export type CanvasNodeData = {
     input: {
       file: File;
       height: number;
-      operation: "brush" | "crop";
+      operation: "brush" | "crop" | "edit";
       width: number;
     },
   ) => Promise<void> | void;
@@ -420,6 +420,7 @@ export type CanvasNodeData = {
     nodeId: string,
     input?: {
       imageDataUrls?: string[];
+      readingAssetIds?: string[];
       model?: string;
       retryExistingTurn?: boolean;
       modelSpeed?: import("@/lib/local/settings").ZenmeModelSpeed;

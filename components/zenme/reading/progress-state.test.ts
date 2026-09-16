@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { CONTENT_SCALE_STEP } from "./constants";
+import { getNormalizedContentScale } from "./layout";
+
 import {
   canPersistReadingProgress,
   getScrollRatioFromElement,
@@ -7,6 +10,24 @@ import {
 } from "./progress-state";
 
 describe("reading progress state helpers", () => {
+  it("allows zooming from 180% to 250% and clamps further increases", () => {
+    let scale = 1.8;
+    for (const expected of [1.9, 2, 2.1, 2.2, 2.3, 2.4, 2.5, 2.5]) {
+      scale = getNormalizedContentScale(scale + CONTENT_SCALE_STEP);
+      expect(scale).toBe(expected);
+    }
+  });
+
+  it("restores saved 250% zoom without reducing it", () => {
+    expect(normalizeLoadedReadingProgress({
+      assetId: "asset-1",
+      contentScale: 2.5,
+      sectionIndex: 3,
+      scrollRatio: 0.4,
+      updatedAt: "2026-09-16T00:00:00.000Z",
+    })).toEqual({ contentScale: 2.5, sectionIndex: 3, scrollRatio: 0.4 });
+  });
+
   it("does not persist default progress before the requested asset has loaded", () => {
     expect(canPersistReadingProgress(null, "asset-1")).toBe(false);
     expect(canPersistReadingProgress("asset-2", "asset-1")).toBe(false);
@@ -78,7 +99,7 @@ describe("reading progress state helpers", () => {
         updatedAt: "2026-06-28T01:00:00.000Z",
       }),
     ).toEqual({
-      contentScale: 1.8,
+      contentScale: 2.5,
       scrollRatio: 0,
       sectionIndex: 0,
     });

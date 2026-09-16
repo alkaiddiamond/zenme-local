@@ -17,6 +17,13 @@ const readingViewSource = readFileSync(
 );
 
 describe("PDF render window", () => {
+  it("centers the full scaled page stack without a narrower width cap", () => {
+    expect(readingViewSource).toContain(
+      'className="mx-auto flex w-max min-w-full flex-col gap-6"',
+    );
+    expect(readingViewSource).not.toContain("max-w-5xl");
+  });
+
   it("releases canvases and text layers after pages leave the render margin", () => {
     expect(lazyRenderSource).toContain(
       "setShouldRender(entries.some((entry) => entry.isIntersecting))",

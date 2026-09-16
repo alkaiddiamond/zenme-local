@@ -53,5 +53,5 @@ export const READING_PAGE_FOOTER_CLASSNAME =
   "flex shrink-0 items-center border-t border-zinc-100 px-1 text-zinc-400";
 
 export const CONTENT_SCALE_MIN = 0.75;
-export const CONTENT_SCALE_MAX = 1.8;
+export const CONTENT_SCALE_MAX = 2.5;
 export const CONTENT_SCALE_STEP = 0.1;
