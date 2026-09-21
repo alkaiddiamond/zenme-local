@@ -2,7 +2,9 @@
 
 文档状态：当前 Workspace 工程契约。
 
-产品依据：相邻 `../zenme-doc/AI Project Workspace 开发指导.md`
+本文中的 Root 身份、相对路径与 capability 约束适用于 Workspace API 和使用这些边界的工具。统一 Project Agent 的读取、目录浏览和搜索另支持外部绝对路径；该读取不会自动添加 Root 或授予写入能力，详见 [Agent 路径与权限](agent-workspace-runtime.md#路径与权限) 和 [安全模型](security-model.md)。
+
+产品依据：[当前 PRD](../../zenme-doc/prd.md)；[AI Project Workspace 开发指导](../../zenme-doc/AI%20Project%20Workspace%20开发指导.md) 仅保留历史设计背景。
 
 ## 用户结果与非目标
 
@@ -90,7 +92,7 @@ projects/{projectId}/
 
 ## API 与 IPC 边界
 
-Renderer 不能静默提交任意路径来模拟一次用户授权。主 Workspace 绑定仍必须经过系统目录选择器；Agent 产生的外部目录请求必须进入 AI 回复节点审批记录，并只能选择“本次命令”或“加入当前项目”。
+Renderer 不能静默提交任意路径来模拟一次用户授权。主 Workspace 绑定仍必须经过系统目录选择器；Agent 产生的外部目录命令授权请求必须进入 AI 回复节点审批记录，并只能选择“本次命令”或“加入当前项目”。外部绝对路径读取不经过该命令授权流程，继续受前述读取边界约束。
 
 1. `zenme:bind-project-workspace`：Electron 显示系统目录选择器，并由主进程使用只存在于主进程与本地服务中的启动期 secret 调用绑定 API；Renderer 不接触绝对路径或 secret。
 2. `POST /api/projects/{projectId}/workspace`：只接受带正确桌面启动期 secret 的主进程请求，创建或重新关联 Binding。

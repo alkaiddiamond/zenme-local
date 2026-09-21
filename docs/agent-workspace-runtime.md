@@ -136,6 +136,10 @@ Planning → Searching → Reading → Editing → Waiting Approval | Waiting In
 - Project Agent Turn 的轮询同时核对服务端作业注册表；事件流仍显示运行、但当前实例已无对应作业时，会补写 `Failed` 终态并提示重试，避免重启后永久停留在“Agent 正在处理”。轮询任何已有终态 Turn 时还会按稳定 `turnId/resultNodeId` 幂等对账对应的运行中 Agent Execution，因此旧版本遗留的 `running`/`waitingApproval` 幽灵记录会自愈为相同的成功、失败或停止终态，不要求破坏性数据迁移。
 - 重试复用同一 Execution 并创建新的 Attempt，历史工具事件不覆盖。
 
+## 配置监听生命周期
+
+配置变更监听器使用独立的关闭状态：释放时先禁止后续事件与排队通知，在每个异步 Hook、配置读取及监听目录解析完成后复核该状态。已经关闭的运行时不得更新配置代数或调用 `watcher.add()`；Chokidar 的 `add()` 会重新打开已关闭的监听器，因此仅调用 `watcher.close()` 不能阻止未完成的重载重新注册监听。
+
 ## 路径与权限
 
 - 每个文件、检索、诊断和命令工具按目标 Root ID 独立检查 `resolved` 与 capability；主根不可用不会隐式授予附加根，也不会让已授权的附加根失去独立身份。

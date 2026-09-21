@@ -45,6 +45,8 @@ Project Knowledge Graph 与向量库位于 `derived/`，只从现有真相源重
 
 ## 约束
 
+Workspace 文件 API 和专用写入工具使用授权 Root 内的相对路径。Agent 的 `read_file/list_directory/glob_files/search_files` 另有外部绝对路径读取入口，复用 `lib/agent/local-file-access.ts` 校验敏感文件和内部数据边界，并继续执行 Sub-agent 分配范围检查；外部读取不建立持久化 Workspace 绑定。
+
 视频结果节点复用 `TextNodeComposer` 的可调高模式和统一 Project Agent Turn。草稿沿用 `textGenerationPrompt/textGenerationModel`，不覆盖 `videoPrompt/videoModel`；视频节点与上游引用纳入会话快照，文本上下文只描述节点元数据和生成设置，明确未提供视频画面及音轨，不引入视频解析或新的媒体输入协议。
 
 图片的裁剪、普通画笔与蒙版笔共用本地图片编辑器。裁剪框、笔触预览和绘制图层仅存在于编辑会话内；每次落笔固定大小与透明度，抬笔后合入绘制图层，后续调节不改变旧笔触。导出时将原图与绘制结果一并裁剪、合成为 PNG，复用派生图片节点创建及连线边界，不修改源图、不持久化独立蒙版或可调图层。

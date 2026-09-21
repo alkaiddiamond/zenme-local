@@ -27,6 +27,12 @@ npm run desktop:dev
 
 持久化格式变更必须包含旧数据 fixture、向前迁移和失败恢复测试。用户可见或跨进程交互如果无法由单元测试充分证明，应在 PR 中记录真机步骤和结果。
 
+桌面开发前请设置独立的 `ZENME_DATA_DIR`，例如在 PowerShell 中执行 `$env:ZENME_DATA_DIR = Join-Path $env:LOCALAPPDATA "Zenme-Development"`。不要用真实用户数据目录运行测试或演示。通过 MCP 启动长期运行的桌面开发应用时，按仓库 `AGENTS.md` 使用独立进程并将输出重定向到 `.logs/`。
+
+`check` 依次运行 ESLint、Vitest 和桌面 Node 测试；`verify` 在其后运行生产构建。前一阶段失败会短路后续命令，交付时必须分别记录通过、失败、跳过和未运行，不能用部分通过代表整个门禁通过。当前带日期的本地结果见 [故障排查](docs/troubleshooting.md)，完整发布条件见 [发布手册](docs/release.md)。
+
+纯文档改动应核对相关生产代码、测试、命令与相对链接，并执行 `git diff --check`；没有改动代码时不要求重复运行全量测试，也不因此改变已有测试失败的状态。
+
 ## Pull Request
 
 PR 描述必须包含：
@@ -43,3 +49,5 @@ PR 描述必须包含：
 - 产品需求、设计资料和研究维护在独立 `zenme-doc` 仓库。
 - 与代码版本绑定的架构、数据、安全和发布说明维护在本仓库 `docs/`。
 - 行为变化必须同步更新对应文档，不能只更新 README。
+- `package.json` 记录应用版本，`CHANGELOG.md` 的 `Unreleased` 记录尚未发布的源码变化；产品 PRD 的修订日期不等于应用发布版本。
+- 当前工程契约、产品要求、历史规划和验证快照需要明确区分。历史文档保留原始日期，新增索引或状态说明，不把历史验收数字直接改成当前结论。

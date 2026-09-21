@@ -2,6 +2,38 @@
 
 文档状态：当前用户与维护者排查入口。
 
+## 配置监听超时修复（2026-09-21）
+
+初次检查后单独复跑 `project-config-change-runtime.test.ts`，7 项中仍有 2 项超时。跟踪确认：清理监听器时，已经开始的配置重载仍可能在 `watcher.close()` 之后执行 `watcher.add()`；Chokidar 会因此重新打开监听器，导致残留监听和后续测试耗时异常。
+
+修复为运行时增加关闭状态，关闭后丢弃排队通知，并在异步 Hook、配置读取和监听目录解析完成后重新检查状态，禁止重新注册监听或写回配置代数。测试显式指定隔离的托管配置目录，不再依赖本机安装目录。新增两个受控异步回归用例覆盖正式关闭与测试重置，旧代码均失败，修复后相关 9 项全部通过；未提高测试超时阈值。
+
+修复后 `npm run verify` 通过：ESLint、Vitest 1,601 项通过 / 1 项跳过（256 个文件通过 / 1 个跳过）、桌面 Node 测试 29 项通过、生产构建通过。日志位于本地 `.logs/config-timeout-verify.log`，不纳入版本控制。
+
+随后重新生成 Windows x64 NSIS 安装包，打包运行时检查及 `npm run desktop:smoke` 均通过，使用临时数据完成 Browser 与 Workspace 流程。日志见 `.logs/config-timeout-package.log` 和 `.logs/config-timeout-smoke.log`。未执行安装、升级、卸载、依赖发布审计及 macOS Intel 真机验证，不据此声明完成公开发布验收。
+
+## 修复前验证快照（2026-09-21）
+
+对照代码提交 `56d0f39`，Windows 环境为 Node.js `24.16.0`、npm `11.13.0`。本次运行 `npm run check`，结果如下；这是本地快照，不代表远端 CI 或发布验收状态。
+
+| 检查 | 结果 |
+| --- | --- |
+| ESLint | 通过 |
+| Vitest | 255 个文件通过、1 个失败、1 个跳过；1,594 项通过、5 项失败、1 项跳过 |
+| 桌面 Node 测试 | 未运行：Vitest 失败后被命令链短路 |
+| 生产构建、目录包与桌面冒烟 | 未运行 |
+| 安装、升级、卸载、发布审计与 macOS Intel 真机 | 未运行 |
+
+5 项失败均位于 `lib/agent/project-config-change-runtime.test.ts`，涉及 Skill 配置阻止、首次用户设置写入、托管设置监听和自定义发现失效。日志显示测试超时（5 秒或 10 秒），并在 `afterEach` 出现 10 秒 Hook 超时；当时尚未定位根因，也未单独复跑，后续定位与修复见上节。
+
+需要排查时先运行最窄测试：
+
+```powershell
+npx vitest run lib/agent/project-config-change-runtime.test.ts
+```
+
+核对配置监听器初始化、通知处理和 `resetProjectConfigChangeRuntimeForTests()` 的清理过程，使用临时数据目录复现；不要通过读取真实用户数据或直接提高超时来替代定位。修复后重新运行 `npm run check`，需要构建或发布结论时继续执行对应门禁。
+
 ## 历史改动收敛时的验证快照（2026-09-06）
 
 本次快照用于交接已知验证结果，不代表后续版本的实时状态，也不豁免后续验证要求。
@@ -11,7 +43,7 @@
 - 已修复（2026-09-06）：Windows `npm run desktop:smoke` 原先直接启动 `npm.cmd`，返回 `EINVAL`，但错误输出遗漏了启动异常，只显示 `unknown error`。现通过 npm 提供的绝对 Node/npm CLI 路径执行工作区脚本，无需 shell 字符串拼接；保留启动错误、限定测试命令超时，并在预览结束时清理 Windows 子进程树。重新生成的 Windows 目录包已通过 Browser 与 Workspace 完整冒烟检查，日志见 `.logs/workspace-smoke-pack.log` 和 `.logs/workspace-smoke-after.log`。
 - 后续验证（2026-09-06）：修复测试隔离与冒烟命令启动后，`npm run verify` 完整通过，包含 ESLint、Vitest 1,553 项通过 / 1 项跳过、桌面 Node 测试 29 项通过及生产构建，日志见 `.logs/workspace-smoke-verify.log`。Windows 目录包与完整冒烟检查通过。未进行安装、升级、卸载、发布审计及 macOS Intel 真机验证，不能据此宣称发布验收通过。
 
-维护者本地日志位于 `.logs/reading-position-check.log`、`.logs/reading-position-desktop-tests.log` 和 `.logs/history-cleanup-{build,pack,smoke}.log`；日志不纳入版本控制。后续修复相关问题时应更新本节，避免将已解决的问题继续当作当前阻塞。
+上述日志路径属于当时维护者的本地环境，不保证新检出仓库中存在，日志不纳入版本控制。当前状态以最近修复复验记录为准；后续修复应新增带日期的验证结果，保留检查范围与未运行项。
 
 ## 桌面窗口启动失败
 

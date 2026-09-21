@@ -1,10 +1,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import chokidar from "chokidar";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  closeProjectConfigChangeRuntime,
+  getProjectConfigGeneration,
   notifyProjectConfigFileChanged,
   resetProjectConfigChangeRuntimeForTests,
   resolveProjectAgentHooksWithConfigChangeRuntime,
@@ -18,6 +21,7 @@ const temporaryPaths: string[] = [];
 
 afterEach(async () => {
   await resetProjectConfigChangeRuntimeForTests();
+  vi.restoreAllMocks();
   await Promise.all(temporaryPaths.splice(0).map((target) => fs.rm(target, {
     recursive: true,
     force: true,
@@ -27,6 +31,45 @@ afterEach(async () => {
 });
 
 describe("Project ConfigChange runtime", () => {
+  it.each(["close", "reset"] as const)("does not restart a disposed watcher after an in-flight change (%s)", async (action) => {
+    const dataDir = await temporaryDirectory("zenme-config-disposal-data-");
+    const homeDir = await temporaryDirectory("zenme-config-disposal-home-");
+    const project = await createLocalProject({ name: "Config disposal", prompt: "", model: "" }, dataDir);
+    const settingsPath = path.join(homeDir, ".zenme", "settings.json");
+    const started = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const callback = vi.fn(async () => {
+      started.resolve();
+      await release.promise;
+      return { blocked: false };
+    });
+    const watch = vi.spyOn(chokidar, "watch");
+    await resolveProjectAgentHooksWithConfigChangeRuntime({
+      projectId: project.id, dataDir, homeDir, managedDirectories: [],
+      onConfigChange: callback, waitUntilReady: true,
+    });
+    const watcher = watch.mock.results[0].value;
+    const add = vi.spyOn(watcher, "add");
+    const notification = notifyProjectConfigFileChanged(settingsPath);
+    await started.promise;
+    // Queue a second change while the first callback is still pending.
+    const queued = notifyProjectConfigFileChanged(settingsPath);
+    try {
+      if (action === "close") await closeProjectConfigChangeRuntime(project.id, dataDir);
+      else await resetProjectConfigChangeRuntimeForTests();
+      release.resolve();
+      await Promise.all([notification, queued]);
+      expect(add).not.toHaveBeenCalled();
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(watcher.closed).toBe(true);
+      expect(getProjectConfigGeneration(project.id, dataDir)).toBeUndefined();
+    } finally {
+      release.resolve();
+      await Promise.all([notification, queued]);
+      await watcher.close();
+    }
+  });
+
   it("keeps the accepted Hook configuration when ConfigChange blocks a stable file update", async () => {
     const dataDir = await temporaryDirectory("zenme-config-runtime-data-");
     const homeDir = await temporaryDirectory("zenme-config-runtime-home-");
@@ -36,12 +79,13 @@ describe("Project ConfigChange runtime", () => {
     const settingsPath = path.join(workspace, ".zenme", "settings.json");
     await writeSettings(settingsPath, "https://hooks.example.test/original");
     const callback = vi.fn(async () => ({ blocked: true }));
-    const initial = await loadProjectAgentHooks(project.id, dataDir, { homeDir });
+    const initial = await loadProjectAgentHooks(project.id, dataDir, { homeDir, managedDirectories: [] });
     expect(initial?.ConfigChange?.[0]?.hooks[0]).toMatchObject({ url: "https://hooks.example.test/original" });
     await resolveProjectAgentHooksWithConfigChangeRuntime({
       projectId: project.id,
       dataDir,
       homeDir,
+      managedDirectories: [],
       acceptedCandidate: initial,
       onConfigChange: callback,
       waitUntilReady: true,
@@ -57,6 +101,7 @@ describe("Project ConfigChange runtime", () => {
       projectId: project.id,
       dataDir,
       homeDir,
+      managedDirectories: [],
       acceptedCandidate: initial,
       onConfigChange: callback,
       waitUntilReady: true,
@@ -73,13 +118,14 @@ describe("Project ConfigChange runtime", () => {
     const settingsPath = path.join(workspace, ".zenme", "settings.json");
     await writeSettings(settingsPath, "https://hooks.example.test/original");
     const callback = vi.fn(async () => ({ blocked: false }));
-    const initial = await loadProjectAgentHooks(project.id, dataDir, { homeDir });
+    const initial = await loadProjectAgentHooks(project.id, dataDir, { homeDir, managedDirectories: [] });
     expect(initial?.ConfigChange?.[0]?.hooks[0]).toMatchObject({ url: "https://hooks.example.test/original" });
 
     await resolveProjectAgentHooksWithConfigChangeRuntime({
       projectId: project.id,
       dataDir,
       homeDir,
+      managedDirectories: [],
       acceptedCandidate: initial,
       onConfigChange: callback,
       waitUntilReady: true,
@@ -91,6 +137,7 @@ describe("Project ConfigChange runtime", () => {
         projectId: project.id,
         dataDir,
         homeDir,
+        managedDirectories: [],
         acceptedCandidate: undefined,
         onConfigChange: callback,
       });
@@ -111,11 +158,12 @@ describe("Project ConfigChange runtime", () => {
       projectId: project.id,
       dataDir,
       homeDir,
+      managedDirectories: [],
       acceptedCandidate: undefined,
       onConfigChange: callback,
       waitUntilReady: true,
     });
-    await expect(listProjectSkills(project.id, dataDir, undefined, { homeDir })).resolves.toContainEqual(
+    await expect(listProjectSkills(project.id, dataDir, undefined, { homeDir, managedDirectories: [] })).resolves.toContainEqual(
       expect.objectContaining({ name: "review" }),
     );
 
@@ -124,7 +172,7 @@ describe("Project ConfigChange runtime", () => {
       expect.objectContaining({ source: "skills" }),
       undefined,
     ), { timeout: 5_000 });
-    await expect(loadProjectSkill({ projectId: project.id, dataDir, skill: "review", homeDir }))
+    await expect(loadProjectSkill({ projectId: project.id, dataDir, skill: "review", homeDir, managedDirectories: [] }))
       .resolves.toMatchObject({ content: expect.stringContaining("Original instructions") });
   }, 10_000);
 
@@ -138,6 +186,7 @@ describe("Project ConfigChange runtime", () => {
       projectId: project.id,
       dataDir,
       homeDir,
+      managedDirectories: [],
       acceptedCandidate: undefined,
       onConfigChange: callback,
       waitUntilReady: true,
@@ -152,6 +201,7 @@ describe("Project ConfigChange runtime", () => {
       projectId: project.id,
       dataDir,
       homeDir,
+      managedDirectories: [],
       acceptedCandidate: undefined,
       onConfigChange: callback,
     });

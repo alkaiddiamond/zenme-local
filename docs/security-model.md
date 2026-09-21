@@ -16,7 +16,8 @@
 - 图片复制使用专用 `writeClipboardImage` IPC，只接收图片字节和画布节点文本标记；主进程校验输入类型、非空且不超过 50 MiB 的字节长度，以及实际图片解码结果后，一次写入系统剪贴板的图片和文本表示。该接口不接受文件路径或远程 URL。
 - preload 只额外提供 Electron `File` 到其原始路径的单用途转换；渲染器不能借此枚举或任意读取文件系统。外部音频路径只能在桌面模式登记，服务端规范化并确认其为普通文件后，以项目内不可猜测 ID 提供 Range 读取。
 - 导入文件名和路径段拒绝绝对路径、父目录、UNC 与路径分隔符。
-- 主 Workspace 只能通过 Electron 系统目录选择器绑定。Agent 请求访问 Workspace 外绝对目录时，Renderer 只能展示由服务端规范化并记录身份的精确目录；用户可在 AI 回复节点中批准单次命令，或显式将该目录加入当前项目的附加 Workspace roots。Renderer 不获得通用文件系统 IPC，也不能静默建立信任。
+- 主 Workspace 只能通过 Electron 系统目录选择器绑定。Agent 请求在 Workspace 外绝对目录执行命令时，Renderer 只能展示由服务端规范化并记录身份的精确目录；用户可在 AI 回复节点中批准单次命令，或显式将该目录加入当前项目的附加 Workspace roots。Renderer 不获得通用文件系统 IPC，也不能静默建立信任。
+- Agent 的 `read_file/list_directory` 接受绝对 `relativePath`，`glob_files/search_files` 接受绝对 `pathPrefix`，可在不添加 Root 的情况下读取、浏览和搜索外部目录。这些读取不走外部命令的单次目录审批；请求路径与真实路径都要检查敏感文件和 Zenme 内部数据边界。分配了 Root 或路径范围的 Sub-agent 仍不能越界，专用写入、图片和诊断工具仍使用 Workspace 相对路径。
 - Workspace 内相对路径在每次访问时都要经过规范化与 `realpath` 边界校验；符号链接、Windows Junction、UNC 与大小写差异不得逃逸授权根目录。
 - Workspace capability 分为读取、写入、删除、命令和 Git 写入。绑定目录不会自动授予后四项，目录身份变化会暂停全部 capability。
 - Workspace 外单次授权绑定命令 ID、规范化绝对路径和目录身份，只可执行一次；“加入项目”持久化附加 root，后续仍受命令允许列表、敏感路径和目录身份复核约束。“从不请求审批”模式下越界请求直接失败。

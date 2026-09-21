@@ -17,6 +17,7 @@
 运行方式：
 
 ```powershell
+npm run build
 npm run desktop:pack
 npm run desktop:perf:assert
 npm run desktop:perf

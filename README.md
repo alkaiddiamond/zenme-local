@@ -24,6 +24,8 @@ Zenme 是一款**本地优先的 AI 无限画布桌面应用**：把提示词、
 > [!IMPORTANT]
 > Zenme 当前处于 `v0.1.x Alpha`。Windows 10/11 x64 是当前公开发布目标；数据格式、升级流程和部分交互仍可能调整。具体版本以 `package.json`、CHANGELOG 与发布标签为准。
 
+本文描述当前源码能力，不代表已发布安装包包含全部功能。`package.json` 当前版本为 `0.1.2`，后续开发变更见 [Unreleased](CHANGELOG.md#unreleased)；带日期的本地验证结果见 [故障排查](docs/troubleshooting.md)。
+
 ---
 
 ## 桌面端
@@ -70,6 +72,8 @@ Zenme 用无限画布替代线性对话列表。提示词、AI 回复、生成�
 - **多模型服务商**：支持 ChatGPT OAuth，以及兼容 OpenAI / Anthropic 协议的自定义服务商。
 - **能力化模型管理**：按文本、视觉、图片、视频、向量、音频和工具能力管理模型，节点只展示可用选项。
 - **图片生成与编辑**：支持提示词、参考图片、画幅和模型选择，生成结果可以继续编辑并保留来源。
+- **本地图片编辑**：裁剪、普通画笔和蒙版笔共用编辑器，合成为相连的新图片节点，保留原图；不保存独立蒙版或可调图层。
+- **节点对话与附件**：图片和视频结果节点可继续发起 Project Agent 对话，支持图片与阅读文档附件；视频对话当前只提供节点信息和生成设置，不自动解析画面或音轨。
 - **异步视频生成**：创建任务后保存服务商任务 ID，独立轮询状态，关闭并重新打开项目后可继续恢复。
 - **阅读与笔记**：在画布中打开 PDF、EPUB、DOCX、Markdown 和 TXT；DOCX 使用无需 Word 或 LibreOffice 的内置版式渲染，保留页面尺寸、字体、页眉页脚等样式，并支持自动分页、标题目录、阅读进度、标注与页内笔记。
 - **任务管理**：支持父子任务、进度、状态、优先级、复杂度、负责人和标签。
@@ -102,6 +106,7 @@ Zenme 是纯本地桌面应用，不提供 Zenme 账号、远程数据库或自�
 - 升级和卸载不会主动删除用户数据；删除数据需要用户明确操作。
 - 调用外部模型时，发送给服务商的内容仍受对应服务商的隐私政策约束。
 - 启用本机 MCP Server 等同于运行用户选择的第三方程序；Windows 当前不提供进程级文件系统沙箱，具体边界见安全模型。
+- Agent 的读取、目录浏览和搜索工具支持 Workspace 外的显式绝对路径，继续过滤敏感文件并保护 Zenme 内部数据；Workspace 不是这些读取工具的唯一访问范围。写入、命令审批和 Sub-agent 范围限制见 [安全模型](docs/security-model.md)。
 
 默认数据目录位于 Electron `userData` 下，也可以在应用设置中切换。开发环境请使用 `ZENME_DATA_DIR` 指定独立测试目录，避免读取真实数据。
 
@@ -121,7 +126,7 @@ Zenme 是纯本地桌面应用，不提供 Zenme 账号、远程数据库或自�
 git clone https://github.com/alkaiddiamond/zenme-local.git
 cd zenme-local
 npm ci
-$env:ZENME_DATA_DIR="G:\data\zenme-development"
+$env:ZENME_DATA_DIR = Join-Path $env:LOCALAPPDATA "Zenme-Development"
 npm run desktop:dev
 ```
 

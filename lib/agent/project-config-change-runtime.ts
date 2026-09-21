@@ -36,6 +36,7 @@ type RuntimeContext = {
 
 type RuntimeEntry = {
   acceptedHooks?: ProjectAgentHooks;
+  closed: boolean;
   context: RuntimeContext;
   homeDir: string;
   managedDirectories: string[];
@@ -104,7 +105,7 @@ export async function closeProjectConfigChangeRuntime(projectId: string, dataDir
   const pending = runtime.entries.get(key);
   runtime.entries.delete(key);
   const entry = await pending?.catch(() => null);
-  await entry?.watcher.close();
+  if (entry) await closeEntry(entry);
   disposeProjectPluginLspClients(projectId, dataDir);
   clearProjectConfigGeneration(projectId, dataDir);
 }
@@ -112,7 +113,7 @@ export async function closeProjectConfigChangeRuntime(projectId: string, dataDir
 export async function notifyProjectConfigFileChanged(filePath: string) {
   const entries = await Promise.all([...runtime.entries.values()].map((pending) => pending.catch(() => null)));
   await Promise.all(entries.flatMap((entry) => {
-    if (!entry) return [];
+    if (!entry || entry.closed) return [];
     const event = matchTarget(entry.targets, filePath);
     if (!event) return [];
     suppressedWatcherPaths.set(suppressionKey(entry, filePath), Date.now() + 3_000);
@@ -125,8 +126,18 @@ export async function resetProjectConfigChangeRuntimeForTests() {
   const entries = [...runtime.entries.values()];
   runtime.entries.clear();
   suppressedWatcherPaths.clear();
-  await Promise.all(entries.map(async (pending) => (await pending.catch(() => null))?.watcher.close()));
+  await Promise.all(entries.map(async (pending) => {
+    const entry = await pending.catch(() => null);
+    if (entry) await closeEntry(entry);
+  }));
   resetProjectConfigGenerationsForTests();
+}
+
+async function closeEntry(entry: RuntimeEntry) {
+  // Chokidar.add() reopens a closed watcher. In-flight reloads must not add
+  // roots or publish configuration after disposal, even if a Hook is pending.
+  entry.closed = true;
+  await entry.watcher.close();
 }
 
 async function createEntry(input: {
@@ -155,6 +166,7 @@ async function createEntry(input: {
   watcher.on("error", () => undefined);
   const entry: RuntimeEntry = {
     acceptedHooks: input.acceptedHooks,
+    closed: false,
     context: input.context,
     dataDir: input.dataDir,
     generation: 0,
@@ -167,6 +179,7 @@ async function createEntry(input: {
     watcher,
   };
   const schedule = (filePath: string) => {
+    if (entry.closed) return;
     const key = suppressionKey(entry, filePath);
     const suppressUntil = suppressedWatcherPaths.get(key) ?? 0;
     if (suppressUntil >= Date.now()) {
@@ -206,17 +219,24 @@ function collapseNestedWatchRoots(roots: string[]) {
 }
 
 async function processConfigChange(entry: RuntimeEntry, event: ProjectConfigChangeEvent) {
+  if (entry.closed) return;
   const outcome = await entry.context.onConfigChange(event, entry.acceptedHooks);
-  if (outcome.blocked) return;
-  entry.acceptedHooks = await loadProjectAgentHooks(entry.projectId, entry.dataDir, {
+  if (entry.closed || outcome.blocked) return;
+  const acceptedHooks = await loadProjectAgentHooks(entry.projectId, entry.dataDir, {
     homeDir: entry.homeDir,
     managedDirectories: entry.managedDirectories,
   });
+  if (entry.closed) return;
+  entry.acceptedHooks = acceptedHooks;
   entry.generation += 1;
   disposeProjectPluginLspClients(entry.projectId, entry.dataDir);
   setProjectConfigGeneration(entry.projectId, entry.dataDir, entry.generation);
-  entry.targets = await projectConfigTargets(entry.projectId, entry.dataDir, entry.homeDir, entry.managedDirectories);
-  entry.watcher.add(await existingWatchRoots(entry.targets));
+  const targets = await projectConfigTargets(entry.projectId, entry.dataDir, entry.homeDir, entry.managedDirectories);
+  if (entry.closed) return;
+  const roots = await existingWatchRoots(targets);
+  if (entry.closed) return;
+  entry.targets = targets;
+  entry.watcher.add(roots);
 }
 
 async function projectConfigTargets(

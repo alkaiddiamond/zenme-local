@@ -11,12 +11,23 @@
 - 新增本地 Workspace、多 Root、Live File、ChangeSet、Project Memory、Project Knowledge 与可选 Git Worktree 隔离。
 - 新增 Shell、代码诊断/语义导航、网页取证、隔离浏览器、Skill、MCP、Hooks、Workflow、Task V2、Sub-agent 和持续 Team 能力。
 - 新增 Conversation 分支、分层上下文、独立压缩状态和结构化 `contextSnapshot` 持久化。
+- 图片裁剪、普通画笔和蒙版笔合并为本地编辑器，导出相连的派生图片并保留源图。
+- 视频结果节点新增统一 Project Agent 对话入口，草稿与模型独立于视频生成设置；当前上下文不包含视频画面或音轨。
+- 节点对话支持图片及 TXT、Markdown、PDF、DOCX、EPUB 文档附件，复用现有阅读资料与会话快照。
 
 ### Changed
 
 - 普通问答、Workspace Agent 与 Global Agent 收敛为单一 Project Agent 入口；历史独立节点和 API 仅保留兼容读取、审计与必要停止操作。
 - Agent 的文件变更统一形成可审阅 ChangeSet；命令审批、权限模式、Plan Mode、Hook 与 Worktree 状态改为按 Conversation 持久化。
 - Agent、工具、命令、Sub-agent 和后台任务统一使用服务端生命周期与持久化恢复边界。
+- Agent 读取、目录浏览和搜索支持 Workspace 外的显式绝对路径，继续校验敏感文件、内部数据和 Sub-agent 分配范围；专用写入工具继续使用 Workspace 相对路径。
+- 阅读器正文缩放上限提高到 250%，并调整 PDF 页面渲染窗口。
+
+### Fixed
+
+- 修复配置监听器关闭后被未完成的配置重载重新打开的问题；丢弃关闭后的排队通知，避免残留监听器干扰后续操作和测试。
+- 修正画布缩放下阅读器选区标注控件的坐标换算与定位。
+- 修正节点对话的附件粘贴传播和准备期间提交边界，带附件草稿不会作为纯文本运行中追加指令提交。
 
 ### Removed
 

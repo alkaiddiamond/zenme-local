@@ -20,7 +20,7 @@
 - 桌面窗口是正式入口，本地服务只监听 loopback 并校验同源访问。
 - 渲染器保持 `contextIsolation`、sandbox 和禁用 Node integration。
 - 密钥只保存在本地数据目录，备份默认移除密钥。
-- 所有用户输入路径必须经过限定根目录的安全解析。
+- Workspace 相对路径、导入与持久化路径必须经过限定根目录的安全解析。Agent 读取、目录浏览和搜索另外支持显式外部绝对路径，检查敏感文件与内部数据边界，并继续限制 Sub-agent 的任务范围；该能力不隐式授予外部写入或命令权限。
 - Windows Agent 命令和本机 MCP Server 当前没有进程级文件系统沙箱；安全边界依赖 Workspace Root、能力授权、路径校验、命令分类和逐次审批。
 - 公开 Windows Alpha 可能是未签名产物；Release 必须明确标注签名状态、SmartScreen 风险并提供 SHA-256。macOS 公开产物必须签名并 notarize。
 

@@ -15,6 +15,8 @@ Apple Silicon 原生包和 Linux 尚未进入当前 v0.1.x 公开发布范围。
 
 ## 发布门禁
 
+当前源码版本号为 `0.1.2`，开发变化仍归入 [Unreleased](../CHANGELOG.md#unreleased)。最近一次本地检查与修复复验结果见 [故障排查](troubleshooting.md)；发布候选仍需完成全部门禁，历史通过记录不构成当前发布许可。
+
 所有平台发布前必须完成：
 
 ```bash
@@ -31,6 +33,19 @@ npm run licenses:check
 - 工作区没有真实数据、密钥、日志、截图或生成缓存被跟踪。
 - 第三方许可清单已重新生成并审核。
 - 备份恢复、数据目录切换和旧数据打开完成真机验证。
+
+`npm run release:check` 顺序执行 `verify`、生产依赖审计、许可证核对、目录包和冒烟检查；任一步失败都会停止后续步骤。它不生成 NSIS 安装包，也不执行人工安装、升级和卸载验证。
+
+仓库 CI 分工如下，workflow 配置存在不代表最近一次运行已经通过：
+
+| Workflow | 触发与检查范围 |
+| --- | --- |
+| `quality.yml` | PR 与 `main` push；Linux 上运行 verify、生产依赖审计和许可证核对 |
+| `verify-windows.yml` | 相关代码 PR 或手动触发；Windows verify、目录包、冒烟与未签名安装包 |
+| `verify-macos-intel.yml` | 手动触发的 Intel macOS 构建验证；不恢复公开发布 |
+| `release.yml` | `v*` 标签触发；Windows 验证、审计、许可证、签名或未签名安装包及草稿 Release |
+
+发布 workflow 不代替 Windows 目录包冒烟与安装真机记录，创建标签前仍需完成本节和对应平台要求。
 
 ## Windows x64
 
