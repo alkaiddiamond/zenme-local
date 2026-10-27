@@ -2,9 +2,21 @@
 
 Zenme 使用 ChatGPT 账号的 Codex 模型发现与 Responses 接口。兼容声明在 `lib/ai/openai-oauth.ts` 中维护；模型列表和上下文窗口始终以账号接口返回为准，不由公开 API 模型目录硬编码补全。
 
-## 源码兼容声明与历史验证
+## 当前兼容声明与 Sol 6.1 验证（2026-10-25）
 
-以下版本常量已于 2026-09-21 对照当前源码；远程接口结果仍是 2026-09-05 的历史快照，本轮文档更新没有重新调用账号接口，也不声明这是当前最新 Codex 版本。
+- 模型发现 `client_version` 和请求身份版本更新为 `0.164.0-alpha.11.1`，来源为本机 `codex --version`。这是接口兼容声明，应用不安装或运行该版本的 Codex Runtime。
+- 使用本机 Codex 现有登录态、同一账号比较模型发现：`0.153.4` 返回 HTTP 200，但没有 `gpt-6.1-sol`；`0.164.0-alpha.11.1` 返回 HTTP 200，包含 `visibility=list` 的 `gpt-6.1-sol`，返回的 `minimal_client_version=0.153.0`、`context_window=500000`。最低版本字段不能代替实际发现验证；上下文窗口以账号同步结果为准。
+- 标准 Responses 和 Responses Lite 均以 `gpt-6.1-sol` 返回 HTTP 200、`response.output_text.delta` 和 `response.completed`，返回模型 ID 一致，文本为固定测试标记。仅发送连通性短句，不发送项目内容，不记录令牌或账号标识。
+- 本机未发现 Zenme 登录凭据，因此上述实测验证的是本机 Codex 账号的接口可用性；没有复制凭据、修改真实设置或替 Zenme 登录。Zenme 登录后仍需在模型配置中重新同步。
+- Sol 6.1 接入现有 ChatGPT Responses Lite 路径，复用原生工具和网页上下文适配；旧节点关闭思考时使用 `low` 并省略思考摘要，不发送不支持的 `none`。不修改默认模型，不硬编码模型列表，不扩展图片生成候选或自定义 Chat Completions 路由。
+- 模型同步、设置兼容和请求路由的隔离回归测试 54 项通过。工具执行、网页检索、图片与快速模式未做真实远程调用验证，不能从最小文本请求推断这些能力已验收。
+- 完整 `npm run verify` 通过：ESLint、Vitest 1,604 项通过 / 1 项跳过、桌面 Node 测试 29 项通过、生产构建通过。未执行平台打包、桌面冒烟或 macOS Intel 真机验证。
+
+官方依据：[GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)。公开 API 文档用于核对模型 ID 和参数限制，ChatGPT 账号权限与上下文窗口仍以实际接口返回为准。
+
+## 历史兼容声明与 Astra 验证
+
+以下为 2026-09-21 核对时的版本常量；远程接口结果是 2026-09-05 的历史快照，不代表当前兼容声明或最新 Codex 版本。
 
 - 模型发现 `client_version`：`0.153.4`。
 - 请求身份 `User-Agent`：`codex_exec/0.153.4`。

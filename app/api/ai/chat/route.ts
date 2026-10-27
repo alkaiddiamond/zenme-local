@@ -451,7 +451,7 @@ export async function fetchProviderChatCompletion(input: {
 }
 
 function usesOpenAiResponsesLite(model: string) {
-  return model.startsWith("gpt-5.6-") || model === "gpt-6-astra";
+  return model.startsWith("gpt-5.6-") || model === "gpt-6-astra" || model === "gpt-6.1-sol";
 }
 
 async function fetchOpenAiOAuthChat(
@@ -637,7 +637,7 @@ export function createOpenAiOAuthRequestBody(input: {
       parallel_tool_calls: false,
       reasoning: {
         effort: input.reasoningEffort ?? (
-          input.thinkingEnabled === false && input.provider.model !== "gpt-6-astra"
+          input.thinkingEnabled === false && input.provider.model.startsWith("gpt-5.6-")
             ? "none" as const
             : "low" as const
         ),

@@ -17,6 +17,7 @@
 
 ### Changed
 
+- ChatGPT Codex 接口兼容版本更新为 `0.164.0-alpha.11.1`，验证 `gpt-6.1-sol` 模型发现和最小文本请求，并接入现有 Responses Lite 与推理设置适配。
 - 普通问答、Workspace Agent 与 Global Agent 收敛为单一 Project Agent 入口；历史独立节点和 API 仅保留兼容读取、审计与必要停止操作。
 - Agent 的文件变更统一形成可审阅 ChangeSet；命令审批、权限模式、Plan Mode、Hook 与 Worktree 状态改为按 Conversation 持久化。
 - Agent、工具、命令、Sub-agent 和后台任务统一使用服务端生命周期与持久化恢复边界。

@@ -31,7 +31,7 @@ describe("project agent system prompt", () => {
 });
 
 describe("provider request cancellation", () => {
-  it("sends Astra through Responses Lite with native Agent tools and web context", async () => {
+  it.each(["gpt-6-astra", "gpt-6.1-sol"])("sends %s through Responses Lite with native Agent tools and web context", async (model) => {
     const tokens = { accessToken: "test-token", refreshToken: "test-refresh", expiresAt: Date.now() + 3_600_000 };
     const tokenSpy = vi.spyOn(openAiOAuth, "ensureFreshOpenAiTokens").mockResolvedValue(tokens);
     const fetchMock = vi.fn<typeof fetch>()
@@ -46,7 +46,7 @@ describe("provider request cancellation", () => {
         provider: {
           apiKey: "", apiFormat: "openai_oauth", authType: "none",
           baseUrl: "https://chatgpt.com/backend-api/codex", id: "chatgpt-official",
-          model: "gpt-6-astra", name: "ChatGPT",
+          model, name: "ChatGPT",
           networkProxy: { mode: "direct", noProxy: "", url: "" },
         },
         systemContent: "系统提示",
@@ -62,7 +62,7 @@ describe("provider request cancellation", () => {
       });
       const body = JSON.parse(request?.body as string);
       expect(body).toMatchObject({
-        model: "gpt-6-astra", reasoning: { effort: "low" },
+        model, reasoning: { effort: "low" },
         tools: [{ type: "function", name: "read_file", strict: false }],
       });
       expect(body.input[0].content[0].text).toContain("Source https://example.com");
@@ -175,7 +175,7 @@ describe("ChatGPT OAuth chat request", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
-  it.each(["gpt-5.6-sol", "gpt-6-astra"])("uses the Responses Lite shape for %s", (model) => {
+  it.each(["gpt-5.6-sol", "gpt-6-astra", "gpt-6.1-sol"])("uses the Responses Lite shape for %s", (model) => {
     expect(createOpenAiOAuthRequestBody({
       messages: [
         { role: "system", content: "旧系统提示" },
@@ -312,10 +312,10 @@ describe("ChatGPT OAuth chat request", () => {
     expect(body).not.toHaveProperty("service_tier");
   });
 
-  it("keeps Astra at low effort when legacy thinking is disabled", () => {
+  it.each(["gpt-6-astra", "gpt-6.1-sol"])("keeps %s at low effort when legacy thinking is disabled", (model) => {
     const body = createOpenAiOAuthRequestBody({
       messages: [{ role: "user", content: "快速回答" }],
-      provider: { model: "gpt-6-astra" },
+      provider: { model },
       systemContent: "系统提示",
       thinkingEnabled: false,
     });

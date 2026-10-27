@@ -21,8 +21,8 @@ const CALLBACK_PATH = "/auth/callback";
 const REDIRECT_URI = `http://localhost:${CALLBACK_PORT}${CALLBACK_PATH}`;
 // Verified against the account models and Responses endpoints; see
 // docs/api/chatgpt-codex-model-version-maintenance.md before changing.
-const CODEX_CLIENT_VERSION = "0.153.4";
-const CODEX_RUNTIME_VERSION = "0.153.4";
+const CODEX_CLIENT_VERSION = "0.164.0-alpha.11.1";
+const CODEX_RUNTIME_VERSION = "0.164.0-alpha.11.1";
 const MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLIENT_VERSION}`;
 export const RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
 export const SEARCH_URL = "https://chatgpt.com/backend-api/codex/alpha/search";
