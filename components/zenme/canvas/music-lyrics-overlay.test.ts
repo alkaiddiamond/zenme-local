@@ -84,7 +84,7 @@ describe("music lyrics overlay", () => {
     expect(overlaySource).toContain("group-hover/music-mini:opacity-100");
     expect(overlaySource).toContain("group-focus-within/music-mini:opacity-100");
     expect(overlaySource).not.toContain("min-h-24 min-w-0 flex-col");
-    expect(overlaySource).toContain("<MusicLyricsPlaybackControls\n            floating");
+    expect(overlaySource).toMatch(/<MusicLyricsPlaybackControls\r?\n            floating/);
     expect(overlaySource.match(/<MusicLyricsMiniContent/g)).toHaveLength(2);
     expect(overlaySource).toContain("--lyrics-progress-fill-foreground");
     expect(overlaySource).toContain("clipPath");

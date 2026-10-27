@@ -38,8 +38,8 @@ describe("PDF render window", () => {
   });
 
   it("passes the display pixel ratio into PDF.js rendering", () => {
-    expect(pageSource).toContain(
-      "window.devicePixelRatio,\n        canvasScale",
+    expect(pageSource).toMatch(
+      /window\.devicePixelRatio,\r?\n        canvasScale/,
     );
     expect(pageSource).toContain(
       "[outputScale, 0, 0, outputScale, 0, 0]",

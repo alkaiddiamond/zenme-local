@@ -16,8 +16,8 @@ describe("managed text node editing", () => {
     expect(editor).toContain('defaultValue={nodeData.plainText ?? ""}');
     expect(editor).toContain("ref={contentEditorRef}");
     expect(editor).toContain("zenme-overlay-scroll-container");
-    expect(managedTextNodeSource).toContain(
-      "<OverlayScrollbars\n            contentKey={nodeData.plainText}",
+    expect(managedTextNodeSource).toMatch(
+      /<OverlayScrollbars\r?\n            contentKey=\{nodeData\.plainText\}/,
     );
     expect(editor).not.toContain("value={content}");
     expect(editor).not.toContain("setContent(nextContent)");
